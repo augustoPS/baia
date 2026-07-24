@@ -28,8 +28,12 @@ make run       # launch
 
 The terminal engine is [`Lakr233/libghostty-spm`](https://github.com/Lakr233/libghostty-spm),
 consumed as a package dependency. baia supplies the app shell, window and pane
-management, and the workspace UI. See `CLAUDE.md` for the constraints that keep
-that boundary intact.
+management, and the workspace UI.
+
+`project.yml` is the single source of truth for the build; `baia.xcodeproj` is
+generated and not checked in. Architecture notes, decisions, and gotchas live in
+the vault at `vault/projects/baia/baia.md`; agent-facing conventions live in
+`.claude/rules/baia.md`.
 
 ## License
 
