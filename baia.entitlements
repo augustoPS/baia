@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- A general-purpose dev terminal cannot be sandboxed: it spawns arbitrary
+	     processes over a PTY and needs the whole filesystem. This is the same
+	     posture as Ghostty, iTerm2, and kero. It also means a compromised
+	     dependency runs with your full user privileges, so treat the dependency
+	     list as a security boundary. -->
+	<key>com.apple.security.app-sandbox</key>
+	<false/>
+
+	<!-- Hardened runtime is on, so child processes only reach the microphone if
+	     the host app carries this. Pairs with NSMicrophoneUsageDescription. -->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+</dict>
+</plist>

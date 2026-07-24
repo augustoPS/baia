@@ -1,0 +1,16 @@
+# Generated from project.yml by xcodegen. Never edit or commit it.
+# Run `make gen` after cloning, or `make build` which does it for you.
+baia.xcodeproj/
+
+# Local build output and the resolved package checkouts
+.build/
+DerivedData/
+
+# Xcode user state
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+.swiftpm/
+
+# macOS
+.DS_Store
