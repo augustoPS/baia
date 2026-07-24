@@ -43,7 +43,7 @@ final class TerminalPaneController: NSViewController {
     }
 
     override func loadView() {
-        let container = NSView()
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 1024, height: 680))
         container.wantsLayer = true
         view = container
     }
@@ -61,11 +61,23 @@ final class TerminalPaneController: NSViewController {
         terminalView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(terminalView)
 
+        // Edge pinning alone leaves the hierarchy with no size of its own.
+        // TerminalView has no intrinsic content size, so `fittingSize` collapses
+        // to zero and a window using this controller as its contentViewController
+        // shrinks to a 1x32 sliver. These two constraints supply a preferred size
+        // at a priority the window can override when the user resizes.
+        let preferredWidth = terminalView.widthAnchor.constraint(equalToConstant: 1024)
+        let preferredHeight = terminalView.heightAnchor.constraint(equalToConstant: 680)
+        preferredWidth.priority = .defaultLow
+        preferredHeight.priority = .defaultLow
+
         NSLayoutConstraint.activate([
             terminalView.topAnchor.constraint(equalTo: view.topAnchor),
             terminalView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             terminalView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             terminalView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            preferredWidth,
+            preferredHeight,
         ])
     }
 

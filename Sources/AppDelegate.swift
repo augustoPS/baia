@@ -14,8 +14,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         window.contentViewController = pane
         window.title = "baia"
-        window.setFrameAutosaveName("baia.main")
+
+        // Assigning a contentViewController makes the window adopt the content's
+        // fitting size and discard the contentRect above, so set the size after
+        // the assignment, not before. contentMinSize stops a future layout change
+        // from collapsing the window to an invisible sliver.
+        window.contentMinSize = NSSize(width: 480, height: 320)
+        window.setContentSize(NSSize(width: 1024, height: 680))
         window.center()
+
+        // After sizing: naming the autosave restores a previously saved frame if
+        // one exists, and otherwise persists the good default just established.
+        window.setFrameAutosaveName("baia.main")
         window.makeKeyAndOrderFront(nil)
 
         self.window = window
