@@ -50,8 +50,11 @@ build: gen ## Build Debug. Full log at .build/xcodebuild.log, only errors on std
 		build > $(LOG) 2>&1; \
 	status=$$?; \
 	if [[ $$status -ne 0 ]]; then \
-		echo "build failed. errors:"; \
-		grep -E "(error|warning): |FAILED|Undefined symbol" $(LOG) | sort -u | head -40 || true; \
+		echo "build failed:"; \
+		echo ""; \
+		grep -E -A5 "(error:|error;|FAILED|Undefined symbol|Could not resolve)" $(LOG) \
+			| head -60 \
+			|| tail -40 $(LOG); \
 		echo ""; \
 		echo "full log: $(LOG)"; \
 		exit $$status; \
