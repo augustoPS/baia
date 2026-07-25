@@ -8,8 +8,9 @@
 #   ./design-captures/capture.sh
 #
 # Two things that will bite anyone editing this:
-#   - `~` is a dead key on this keyboard layout, so every path typed into a pane
-#     must be absolute. `cd ~/Projects` silently becomes `cd a/Projects`.
+#   - Text is pasted, never typed. `System Events keystroke` cannot produce `~` or
+#     `^` under the U.S. International layout and silently substitutes `a`, so
+#     `cd ~/Projects` arrives as `cd a/Projects`. See `type_line`.
 #   - baia must be frontmost before any keystroke, or the key goes to whatever is.
 #     That is what `act` is for, and why every helper calls it first.
 set -uo pipefail
@@ -36,9 +37,19 @@ act() {
     exit 1
 }
 key() { act; osascript -e "tell application \"System Events\" to $1" >/dev/null 2>&1; sleep 1.3; }
+
+# Pastes rather than types, because `keystroke` is translated through the active
+# keyboard layout and this one is U.S. International, where `~` and `^` exist only
+# as shifted dead keys. AppleScript cannot map either and falls back to virtual
+# keycode 0, which is the `a` key, so `~` arrives as a plain `a` with no error.
+# Measured: `~` and `^` both break, while backtick, `"` and `'` type correctly.
+# Pressing the dead key directly does not help either: `key code 50 using shift`
+# followed by space yields a bare space, and followed by `/` yields a bare `/`.
+# The clipboard bypasses layout translation entirely and is also faster.
 type_line() {
     act
-    osascript -e "tell application \"System Events\" to keystroke \"$1\"" \
+    printf '%s' "$1" | pbcopy
+    osascript -e 'tell application "System Events" to keystroke "v" using command down' \
               -e 'tell application "System Events" to key code 36' >/dev/null 2>&1
     sleep 1.4
 }
@@ -55,7 +66,7 @@ shot() {
     h=$(echo "$geom" | cut -d, -f4 | tr -d ' ')
     # The AX position already includes the titlebar, so only a hairline margin is
     # wanted. A larger one drags in whatever sits above the window.
-    screencapture -x -o -R"$((x-2)),$((y-2)),$((w+4)),$((h+4))" "$OUT/$1.png"
+    screencapture -x -o -R"$x,$y,$w,$h" "$OUT/$1.png"
     echo "  wrote $OUT/$1.png"
 }
 
@@ -79,11 +90,11 @@ echo "02 three repositories, three git states"
 restart
 key 'keystroke "d" using command down'
 key 'keystroke "d" using command down'
-type_line "cd /Users/pasqualotto/Projects/website/admin"
+type_line "cd ~/Projects/website/admin"
 key 'key code 123 using {command down, option down}'
-type_line "cd /Users/pasqualotto/Projects/vault"
+type_line "cd ~/Projects/vault"
 key 'key code 123 using {command down, option down}'
-type_line "cd /Users/pasqualotto/Projects/baia"
+type_line "cd ~/Projects/baia"
 shot 02-three-repos-git-states
 
 echo "03 pinned pane"
@@ -112,8 +123,8 @@ shot 04-attention-marker
 
 echo "05 four tabs"
 restart
-type_line "cd /Users/pasqualotto/Projects/baia"
-key 'keystroke "t" using command down'; type_line "cd /Users/pasqualotto/Projects/vault"
+type_line "cd ~/Projects/baia"
+key 'keystroke "t" using command down'; type_line "cd ~/Projects/vault"
 key 'keystroke "t" using command down'; type_line "cd /Users/pasqualotto/Projects/website/shop"
 key 'keystroke "t" using command down'; type_line "cd /Users/pasqualotto/Projects/scripts"
 shot 05-four-tab-bar
