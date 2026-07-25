@@ -23,7 +23,17 @@ public struct Anchor: Equatable, Sendable {
     public let source: Source
 
     public init(url: URL, kind: Kind, source: Source) {
-        self.url = url
+        // Canonicalized so two URLs for one directory cannot produce two unequal
+        // anchors. The resolver passes a pin and a non-repository working
+        // directory through verbatim, and a caller that built either without a
+        // directory hint would otherwise read as a changed anchor to
+        // PaneAnchorTracker, which notifies on inequality.
+        //
+        // Symlinks are deliberately not resolved: a pin is shown to the user as
+        // they chose it, and the automatic path is already resolved by the
+        // locator. So pinning a symlink to a repository yields `.repository`
+        // with the symlink's own `displayName`, which is intended.
+        self.url = URL(filePath: url.path(percentEncoded: false), directoryHint: .isDirectory)
         self.kind = kind
         self.source = source
     }

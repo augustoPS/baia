@@ -64,6 +64,39 @@ import Testing
         #expect(resolution.anchor == Anchor(url: inside, kind: .plain, source: .pinned))
     }
 
+    @Test func pinnedWorktreeRootReportsItselfAsARepository() throws {
+        // A linked worktree (or a submodule) holds `.git` as a file, not a
+        // directory. The walk covers that shape; the pin has its own check.
+        let tree = try fixture.worktree("wt", pointingAt: "/somewhere/.git/worktrees/wt")
+
+        let resolution = resolver.resolve(workingDirectory: nil, pin: tree)
+
+        #expect(resolution.anchor == Anchor(url: tree, kind: .repository, source: .pinned))
+    }
+
+    @Test func pinningTheDirectoryTheShellIsAlreadyInChangesTheAnchor() throws {
+        // Same directory both ways, so only `source` differs. This is the case
+        // Anchor's source-in-equality decision exists for, and the tracker has to
+        // see a change so the display can show the pin.
+        let plain = try fixture.directory("notes")
+
+        let pinned = resolver.resolve(workingDirectory: plain, pin: plain)
+        let automatic = resolver.resolve(workingDirectory: plain, pin: nil)
+
+        #expect(pinned.anchor?.source == .pinned)
+        #expect(automatic.anchor?.source == .automatic)
+        #expect(pinned.anchor != automatic.anchor)
+    }
+
+    @Test func stalePinWithNoWorkingDirectoryHasNoAnchor() throws {
+        let gone = fixture.root.appending(path: "deleted")
+
+        let resolution = resolver.resolve(workingDirectory: nil, pin: gone)
+
+        #expect(resolution.anchor == nil)
+        #expect(resolution.pinIsStale)
+    }
+
     @Test func deletedPinIsReportedStaleAndFallsBackToAutomatic() throws {
         let repo = try fixture.repository("proj")
         let deep = try fixture.directory("proj/src")

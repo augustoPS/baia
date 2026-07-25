@@ -13,8 +13,10 @@ import Foundation
 public struct GitRepositoryLocator: Sendable {
     private let ceilingPath: String
 
-    /// - Parameter ceiling: the walk stops *below* this directory, so a
-    ///   repository sitting at the ceiling itself is never claimed. Defaults to
+    /// - Parameter ceiling: the walk stops *below* this directory while the start
+    ///   is inside it, so a repository sitting at the ceiling itself is never
+    ///   claimed. A start outside the ceiling is not bounded by it at all, and a
+    ///   repository at the ceiling path can then be claimed. Defaults to
     ///   the user's home directory: a dotfiles repository at `$HOME` would
     ///   otherwise claim every non-repository directory the shell ever enters,
     ///   which is worse than falling back to the working directory. The pin
@@ -42,6 +44,13 @@ public struct GitRepositoryLocator: Sendable {
         )
         guard FileManager.default.fileExists(atPath: start) else { return nil }
 
+        // Defence in depth: `deletingLastPathComponent` on a relative path
+        // reaches "" and stays there, so the loop below would never terminate.
+        // No current caller can get here, since URL(filePath:) always resolves to
+        // an absolute path, but this runs on a main-actor poll timer where a
+        // non-terminating loop is a frozen UI rather than a wrong answer.
+        guard start.hasPrefix("/") else { return nil }
+
         // The ceiling only bounds the walk when the start is inside it. Starting
         // outside home (/opt/homebrew, /Volumes/...) walks to "/" instead, so
         // resolution keeps working there rather than returning nil everywhere.
@@ -60,15 +69,19 @@ public struct GitRepositoryLocator: Sendable {
 
     /// A repository root holds `.git` as either a directory (a normal clone) or
     /// a regular file (a linked worktree or a submodule, holding a `gitdir:`
-    /// pointer). `fileExists` covers both in one call.
+    /// pointer). `fileExists` covers both in one call. It follows symlinks, so a
+    /// `.git` that is a *broken* symlink does not count and the walk carries on
+    /// to the parent repository, which is right: a broken `.git` is a broken
+    /// repository.
     private func holdsGitEntry(_ directoryPath: String) -> Bool {
         FileManager.default.fileExists(atPath: directoryPath + "/.git")
     }
 
-    /// Drops a trailing slash so prefix comparisons and equality behave. Leaves
+    /// Drops trailing slashes so prefix comparisons and equality behave. Leaves
     /// "/" alone.
     private static func normalized(_ path: String) -> String {
-        guard path.count > 1, path.hasSuffix("/") else { return path }
-        return String(path.dropLast())
+        var path = path
+        while path.count > 1, path.hasSuffix("/") { path.removeLast() }
+        return path
     }
 }

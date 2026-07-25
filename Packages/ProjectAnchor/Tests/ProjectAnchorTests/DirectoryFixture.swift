@@ -2,10 +2,12 @@ import Foundation
 
 /// A throwaway directory tree under a unique temporary root.
 ///
-/// `root` is stored with symlinks resolved. On macOS the temporary directory
-/// lives under `/var/folders`, and `/var` is a symlink to `/private/var`. The
-/// locator resolves symlinks before walking, so it returns `/private/var/...`
-/// paths and an unresolved fixture root would never compare equal to them.
+/// `root` is stored with symlinks resolved, so comparisons against locator
+/// output (which resolves symlinks before walking) cannot diverge on a path
+/// spelling. On this platform that resolution happens to be a no-op for the
+/// temporary directory: `NSTemporaryDirectory()` already returns a
+/// `/var/folders/...` path that resolves to itself byte for byte. The call stays
+/// as defensive normalization for a fixture root that is not the temp directory.
 final class DirectoryFixture {
     let root: URL
     private let manager = FileManager.default
@@ -21,12 +23,10 @@ final class DirectoryFixture {
         try? FileManager.default.removeItem(at: root)
     }
 
-    /// Creates `path`, relative to the fixture root, as a plain directory. The
-    /// directory hint matters: the locator returns directory URLs, and a hintless
-    /// URL for the same path compares unequal to one carrying the hint.
+    /// Creates `path`, relative to the fixture root, as a plain directory.
     @discardableResult
     func directory(_ path: String) throws -> URL {
-        let url = root.appending(path: path, directoryHint: .isDirectory)
+        let url = root.appending(path: path)
         try manager.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }

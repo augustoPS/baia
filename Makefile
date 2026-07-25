@@ -75,4 +75,4 @@ clean: ## Remove build products, keep resolved packages
 	rm -rf $(DERIVED)/Build
 
 distclean: ## Remove everything generated, including the xcodeproj
-	rm -rf $(DERIVED) $(PROJECT)
+	rm -rf $(DERIVED) $(PROJECT) $(PACKAGE)/.build

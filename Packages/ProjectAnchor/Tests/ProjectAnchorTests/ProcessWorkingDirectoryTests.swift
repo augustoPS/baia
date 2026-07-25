@@ -6,12 +6,13 @@ import Testing
 
 @Suite struct ProcessWorkingDirectoryTests {
     @Test func readsItsOwnWorkingDirectory() {
-        // proc_pidinfo returns the vnode path, which is symlink-resolved, so the
-        // expectation has to be resolved too (/var vs /private/var). It also has
-        // to be a directory URL, because that is what url(ofProcess:) hands back
-        // and the hint is what puts the trailing slash on the rendered path.
+        // getcwd (behind currentDirectoryPath) and proc_pidinfo both report the
+        // physical vnode path, so no normalization is wanted here. Resolving
+        // would strip a leading /private and break the comparison for a checkout
+        // under a temporary directory. The directory hint stays, because that is
+        // what url(ofProcess:) hands back and it is what puts the trailing slash
+        // on the rendered path.
         let expected = URL(filePath: FileManager.default.currentDirectoryPath, directoryHint: .isDirectory)
-            .resolvingSymlinksInPath()
             .path(percentEncoded: false)
 
         let mine = ProcessWorkingDirectory.url(ofProcess: getpid())
