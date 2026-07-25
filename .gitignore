@@ -17,3 +17,9 @@ xcuserdata/
 
 # macOS
 .DS_Store
+
+# Screenshots for the Claude Design handover. The images are local only: they are
+# large, they go stale the moment the UI changes, and they would bloat the history
+# of a repo whose whole build output is already ignored. The script that
+# regenerates them is tracked, because that is the part worth keeping.
+design-captures/*.png
