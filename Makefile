@@ -8,7 +8,9 @@ DERIVED     := .build
 APP         := $(DERIVED)/Build/Products/$(CONFIG)/baia.app
 BINARY      := $(APP)/Contents/MacOS/baia
 LOG         := $(DERIVED)/xcodebuild.log
-PACKAGE     := Packages/ProjectAnchor
+# Every local package, discovered rather than listed, so adding one under
+# Packages/ needs no edit here and cannot be silently left out of `make test`.
+PACKAGES    := $(wildcard Packages/*)
 
 .DEFAULT_GOAL := help
 .PHONY: help doctor bootstrap gen build test run run-attached clean distclean
@@ -62,8 +64,12 @@ build: gen ## Build Debug. Full log at .build/xcodebuild.log, only errors on std
 	fi; \
 	echo "built $(APP)"
 
-test: ## Run the ProjectAnchor package tests. No app build, no signing, about 1s
-	swift test --package-path $(PACKAGE)
+test: ## Run every local package's tests. No app build, no signing, no Metal
+	@for pkg in $(PACKAGES); do \
+		echo ""; \
+		echo "=== $$pkg ==="; \
+		swift test --package-path $$pkg; \
+	done
 
 run: build ## Build and launch detached
 	open $(APP)
@@ -75,4 +81,4 @@ clean: ## Remove build products, keep resolved packages
 	rm -rf $(DERIVED)/Build
 
 distclean: ## Remove everything generated, including the xcodeproj
-	rm -rf $(DERIVED) $(PROJECT) $(PACKAGE)/.build
+	rm -rf $(DERIVED) $(PROJECT) $(PACKAGES:%=%/.build)
