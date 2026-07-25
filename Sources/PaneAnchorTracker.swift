@@ -28,15 +28,14 @@ final class PaneAnchorTracker {
     /// window subtitle, which is the cwd rather than the anchor.
     private(set) var workingDirectory: URL?
 
-    private(set) var anchor: Anchor? {
-        didSet {
-            guard anchor != oldValue else { return }
-            onAnchorChange?(anchor)
-        }
-    }
+    private(set) var anchor: Anchor?
 
-    /// Fires on a real change, not once per poll.
-    var onAnchorChange: ((Anchor?) -> Void)?
+    /// Fires when anything the pane displays changes, which is the anchor *or*
+    /// the working directory. Keying this on the anchor alone was a bug: under an
+    /// active pin the anchor never moves, so a `cd` left the subtitle showing a
+    /// directory the shell had already left. Not once per poll, because `apply`
+    /// returns early when the directory is unchanged.
+    var onChange: (() -> Void)?
 
     var isPinned: Bool { pinnedDirectory != nil }
 
@@ -90,10 +89,12 @@ final class PaneAnchorTracker {
         apply(URL(filePath: path, directoryHint: .isDirectory))
     }
 
+    /// The early return is what keeps this quiet: a poll that reads the same
+    /// directory changes nothing and notifies nobody.
     private func apply(_ directory: URL) {
         guard directory != workingDirectory else { return }
         workingDirectory = directory
-        resolve()
+        resolveAndNotify()
     }
 
     // MARK: - Pin
@@ -101,21 +102,24 @@ final class PaneAnchorTracker {
     func setPin(_ directory: URL) {
         pinnedDirectory = directory
         defaults.set(directory.path(percentEncoded: false), forKey: Self.pinDefaultsKey)
-        resolve()
+        resolveAndNotify()
     }
 
     func clearPin() {
         pinnedDirectory = nil
         defaults.removeObject(forKey: Self.pinDefaultsKey)
-        resolve()
+        resolveAndNotify()
     }
 
-    private func resolve() {
+    /// Every caller has already changed an input the pane displays, so this
+    /// always notifies rather than comparing the resulting anchor.
+    private func resolveAndNotify() {
         let resolution = resolver.resolve(workingDirectory: workingDirectory, pin: pinnedDirectory)
         if resolution.pinIsStale {
             pinnedDirectory = nil
             defaults.removeObject(forKey: Self.pinDefaultsKey)
         }
         anchor = resolution.anchor
+        onChange?()
     }
 }

@@ -86,8 +86,8 @@ final class TerminalPaneController: NSViewController {
             preferredHeight,
         ])
 
-        anchorTracker.onAnchorChange = { [weak self] anchor in
-            self?.updateWindowTitle(for: anchor)
+        anchorTracker.onChange = { [weak self] in
+            self?.updateWindowTitle()
         }
     }
 
@@ -95,7 +95,7 @@ final class TerminalPaneController: NSViewController {
         super.viewDidAppear()
         view.window?.makeFirstResponder(terminalView)
         observeWindowFocus()
-        updateWindowTitle(for: anchorTracker.anchor)
+        updateWindowTitle()
         if view.window?.isKeyWindow == true {
             anchorTracker.startPolling()
         }
@@ -141,9 +141,9 @@ final class TerminalPaneController: NSViewController {
     /// Title carries the anchor, subtitle the working directory. The subtitle is
     /// the cwd rather than the anchor: seeing both is the point, since the whole
     /// feature is about them differing.
-    private func updateWindowTitle(for anchor: Anchor?) {
+    private func updateWindowTitle() {
         guard let window = view.window else { return }
-        guard let anchor else {
+        guard let anchor = anchorTracker.anchor else {
             window.title = "baia"
             window.subtitle = ""
             return
