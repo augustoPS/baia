@@ -1,5 +1,6 @@
 import AppKit
 import GhosttyTerminal
+import ProjectAnchor
 
 /// One terminal surface backed by a real PTY.
 ///
@@ -13,6 +14,11 @@ final class TerminalPaneController: NSViewController {
     /// be traced back to the pane that owns it. That is how a future session
     /// list knows which pane is running which agent.
     let paneID = UUID()
+
+    /// Non-private: AppDelegate's Pane menu actions drive the pin through it.
+    lazy var anchorTracker = PaneAnchorTracker(
+        foregroundPid: { [weak self] in self?.terminalView.foregroundPid }
+    )
 
     private let workingDirectory: String
 
@@ -79,28 +85,90 @@ final class TerminalPaneController: NSViewController {
             preferredWidth,
             preferredHeight,
         ])
+
+        anchorTracker.onAnchorChange = { [weak self] anchor in
+            self?.updateWindowTitle(for: anchor)
+        }
     }
 
     override func viewDidAppear() {
         super.viewDidAppear()
         view.window?.makeFirstResponder(terminalView)
+        observeWindowFocus()
+        updateWindowTitle(for: anchorTracker.anchor)
+        if view.window?.isKeyWindow == true {
+            anchorTracker.startPolling()
+        }
+    }
+
+    /// Polling is gated on focus, so an unfocused window costs nothing and a
+    /// focused one refreshes on the first tick after it comes forward.
+    private func observeWindowFocus() {
+        guard let window = view.window else { return }
+        let center = NotificationCenter.default
+        center.removeObserver(self)
+        center.addObserver(
+            self,
+            selector: #selector(windowDidBecomeKey),
+            name: NSWindow.didBecomeKeyNotification,
+            object: window
+        )
+        center.addObserver(
+            self,
+            selector: #selector(windowDidResignKey),
+            name: NSWindow.didResignKeyNotification,
+            object: window
+        )
+    }
+
+    @objc private func windowDidBecomeKey() {
+        anchorTracker.startPolling()
+    }
+
+    @objc private func windowDidResignKey() {
+        anchorTracker.stopPolling()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     override func viewDidLayout() {
         super.viewDidLayout()
         terminalView.fitToSize()
     }
+
+    /// Title carries the anchor, subtitle the working directory. The subtitle is
+    /// the cwd rather than the anchor: seeing both is the point, since the whole
+    /// feature is about them differing.
+    private func updateWindowTitle(for anchor: Anchor?) {
+        guard let window = view.window else { return }
+        guard let anchor else {
+            window.title = "baia"
+            window.subtitle = ""
+            return
+        }
+        window.title = "baia — \(anchor.displayName)"
+        let cwd = anchorTracker.workingDirectory?.path(percentEncoded: false) ?? ""
+        let shown = (cwd as NSString).abbreviatingWithTildeInPath
+        window.subtitle = anchor.source == .pinned ? "\(shown) · pinned" : shown
+    }
 }
 
 // MARK: - Surface callbacks
 
 extension TerminalPaneController:
-    TerminalSurfaceTitleDelegate,
+    TerminalSurfacePwdDelegate,
     TerminalSurfaceResizeDelegate,
     TerminalSurfaceCloseDelegate
 {
-    func terminalDidChangeTitle(_ title: String) {
-        view.window?.title = title.isEmpty ? "baia" : title
+    /// OSC 7. Nothing emits it today: the bundled libghostty ships no
+    /// shell-integration resources and macOS gates its own emitter on
+    /// TERM_PROGRAM=Apple_Terminal. The tracker's polling covers that. This stays
+    /// because it is one method, and it makes updates instant if anything ever
+    /// does emit.
+    func terminalDidChangeWorkingDirectory(_ path: String) {
+        anchorTracker.reportWorkingDirectory(path)
     }
 
     func terminalDidResize(columns _: Int, rows _: Int) {}
