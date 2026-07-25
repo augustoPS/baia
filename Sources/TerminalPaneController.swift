@@ -36,6 +36,16 @@ final class TerminalPaneController: NSViewController {
         builder.withCustom("clipboard-read", "deny")
         builder.withCustom("clipboard-write", "deny")
         builder.withCustom("clipboard-paste-protection", "true")
+
+        // Give the two keys baia's menu bar claims back to AppKit. Ghostty binds
+        // super+q (quit) and super+shift+p (command palette) by default, and
+        // AppTerminalView.performKeyEquivalent turns any key ghostty has a
+        // binding for into a surface keyDown and returns true. AppKit reads that
+        // as handled and never consults the main menu, so both menu items worked
+        // when clicked while their key equivalents did nothing at all. Unbinding
+        // makes keyIsBinding report false and the event falls through to the menu.
+        builder.withCustom("keybind", "super+q=unbind")
+        builder.withCustom("keybind", "super+shift+p=unbind")
     }
 
     init(workingDirectory: String) {
