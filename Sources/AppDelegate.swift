@@ -2,9 +2,13 @@ import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
+    private var pane: TerminalPaneController?
 
     func applicationDidFinishLaunching(_: Notification) {
+        MainMenu.install(into: NSApp)
+
         let pane = TerminalPaneController(workingDirectory: Self.defaultWorkingDirectory)
+        self.pane = pane
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1024, height: 680),
@@ -36,6 +40,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         true
     }
 
+    @objc func setProjectDirectory(_: Any?) {
+        guard let pane else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Pin"
+        panel.message = "Choose the directory to anchor this pane's project to."
+        panel.directoryURL = pane.anchorTracker.workingDirectory
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        pane.anchorTracker.setPin(url)
+    }
+
+    @objc func clearProjectDirectoryPin(_: Any?) {
+        pane?.anchorTracker.clearPin()
+    }
+
     /// Opens in the workspace root for now. Once panes are per-project this
     /// becomes the selected project's directory instead.
     private static var defaultWorkingDirectory: String {
@@ -43,5 +64,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .homeDirectoryForCurrentUser
             .appending(path: "Projects")
             .path(percentEncoded: false)
+    }
+}
+
+extension AppDelegate: NSMenuItemValidation {
+    /// Clear Pin is meaningless with nothing pinned.
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(clearProjectDirectoryPin(_:)) {
+            return pane?.anchorTracker.isPinned ?? false
+        }
+        return true
     }
 }
