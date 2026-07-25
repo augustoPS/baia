@@ -8,9 +8,10 @@ DERIVED     := .build
 APP         := $(DERIVED)/Build/Products/$(CONFIG)/baia.app
 BINARY      := $(APP)/Contents/MacOS/baia
 LOG         := $(DERIVED)/xcodebuild.log
+PACKAGE     := Packages/ProjectAnchor
 
 .DEFAULT_GOAL := help
-.PHONY: help doctor bootstrap gen build run run-attached clean distclean
+.PHONY: help doctor bootstrap gen build test run run-attached clean distclean
 
 help: ## Show available targets
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -60,6 +61,9 @@ build: gen ## Build Debug. Full log at .build/xcodebuild.log, only errors on std
 		exit $$status; \
 	fi; \
 	echo "built $(APP)"
+
+test: ## Run the ProjectAnchor package tests. No app build, no signing, about 1s
+	swift test --package-path $(PACKAGE)
 
 run: build ## Build and launch detached
 	open $(APP)
