@@ -6,10 +6,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
     private var tree: PaneTreeController?
 
+    private let sessionStore = SessionStore(fileURL: SessionStore.defaultFileURL())
+
+    /// Coalesces the writes. Every `cd` in every pane reports a session change
+    /// through the one-second anchor poll, so writing on each one would rewrite
+    /// the file several times a second for a workspace nobody is restructuring.
+    private var saveTimer: Timer?
+
+    /// Cleared during teardown so the flush at termination cannot be followed by
+    /// an empty snapshot that overwrites a good file with nothing.
+    private var isTerminating = false
+
     func applicationDidFinishLaunching(_: Notification) {
         MainMenu.install(into: NSApp)
+        PaneAnchorTracker.removeLegacyPin()
 
-        let tree = PaneTreeController(workingDirectory: Self.defaultWorkingDirectory)
+        let tree = Self.restoredTree(from: sessionStore)
         self.tree = tree
 
         let window = NSWindow(
@@ -29,9 +41,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.setContentSize(NSSize(width: 1024, height: 680))
         window.center()
 
-        // After sizing: naming the autosave restores a previously saved frame if
-        // one exists, and otherwise persists the good default just established.
-        window.setFrameAutosaveName("baia.main")
+        // The session file owns the frame now, so there is no autosave name. Two
+        // mechanisms restoring one frame would fight, and the autosave one
+        // already persisted a collapsed window once, which then survived a code
+        // fix and made it look like the fix had done nothing.
+        if let frame = sessionStore.load()?.windowFrame {
+            let restored = NSRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height)
+            // Only when it lands on a screen that still exists. A frame saved on
+            // a monitor that has since been unplugged would put the window off
+            // every display, where it is running, focusable, and invisible.
+            if NSScreen.screens.contains(where: { $0.visibleFrame.intersects(restored) }) {
+                window.setFrame(restored, display: false)
+            }
+        }
         window.makeKeyAndOrderFront(nil)
 
         // The window owns its title because with several panes only the focused
@@ -42,16 +64,97 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window.title = tree.windowTitle.title
             window.subtitle = tree.windowTitle.subtitle
         }
-        tree.onEmpty = { [weak window] in
+        tree.onEmpty = { [weak self, weak window] in
+            // The last pane is gone, so there is nothing left worth restoring.
+            // Cleared before the close so the teardown flush cannot write a
+            // snapshot of a window that is on its way out.
+            self?.isTerminating = true
             window?.close()
         }
+        tree.onSessionChange = { [weak self] in
+            self?.scheduleSave()
+        }
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowDidChangeFrame),
+            name: NSWindow.didEndLiveResizeNotification,
+            object: window
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowDidChangeFrame),
+            name: NSWindow.didMoveNotification,
+            object: window
+        )
 
         self.window = window
         NSApp.activate(ignoringOtherApps: true)
+        scheduleSave()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool {
         true
+    }
+
+    func applicationWillTerminate(_: Notification) {
+        // Written synchronously rather than through the timer, which would never
+        // fire: the run loop stops before a scheduled save comes due.
+        saveTimer?.invalidate()
+        saveTimer = nil
+        save()
+        isTerminating = true
+    }
+
+    // MARK: - Session
+
+    @objc private func windowDidChangeFrame() {
+        scheduleSave()
+    }
+
+    private func scheduleSave() {
+        guard !isTerminating else { return }
+        saveTimer?.invalidate()
+        saveTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.save()
+            }
+        }
+    }
+
+    private func save() {
+        guard !isTerminating, let tree else { return }
+        _ = sessionStore.save(tree.snapshot(windowFrame: windowFrame))
+    }
+
+    private var windowFrame: WindowFrame? {
+        guard let frame = window?.frame else { return nil }
+        return WindowFrame(
+            x: Double(frame.origin.x),
+            y: Double(frame.origin.y),
+            width: Double(frame.width),
+            height: Double(frame.height)
+        )
+    }
+
+    /// Restores the last session, or opens a fresh single pane.
+    ///
+    /// Reconciliation drops panes whose directory no longer exists and repairs
+    /// focus, so a workspace that pointed at a deleted worktree opens without it
+    /// rather than failing to open. A snapshot with nothing left after that is
+    /// treated as no snapshot at all.
+    private static func restoredTree(from store: SessionStore) -> PaneTreeController {
+        let fallback = PaneTreeController(workingDirectory: defaultWorkingDirectory)
+        guard let snapshot = store.load() else { return fallback }
+        let (reconciled, _) = SessionStore.reconciled(snapshot) { path in
+            var isDirectory: ObjCBool = false
+            let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+            return exists && isDirectory.boolValue
+        }
+        guard reconciled.workspace.focusedPane != nil else { return fallback }
+        return PaneTreeController(
+            restoring: reconciled,
+            defaultWorkingDirectory: defaultWorkingDirectory
+        )
     }
 
     // MARK: - Pane commands

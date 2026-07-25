@@ -37,8 +37,14 @@ final class TerminalPaneController: NSViewController {
 
     /// Non-private: the Pane menu actions drive the pin through it.
     lazy var anchorTracker = PaneAnchorTracker(
-        foregroundPid: { [weak self] in self?.terminalView.foregroundPid }
+        foregroundPid: { [weak self] in self?.terminalView.foregroundPid },
+        pinnedDirectory: restoredPin
     )
+
+    /// Held until the lazy tracker is first touched. A restored pin has to be in
+    /// place before the first poll resolves an anchor, or the pane would show its
+    /// unpinned anchor for a tick and then jump.
+    private let restoredPin: URL?
 
     private let workingDirectory: String
 
@@ -80,10 +86,27 @@ final class TerminalPaneController: NSViewController {
         }
     }
 
-    init(paneID: PaneID, workingDirectory: String) {
+    init(paneID: PaneID, workingDirectory: String, pinnedDirectory: URL? = nil) {
         self.paneID = paneID
         self.workingDirectory = workingDirectory
+        restoredPin = pinnedDirectory
         super.init(nibName: nil, bundle: nil)
+    }
+
+    /// What a session snapshot records for this pane.
+    ///
+    /// The working directory is the shell's current one rather than the one the
+    /// pane opened with, so restoring lands where the pane was left. It falls
+    /// back to the opening directory because the tracker reads nil until the
+    /// surface exists, and a pane snapshotted in that window would otherwise
+    /// restore with no directory at all.
+    var paneState: PaneState {
+        PaneState(
+            id: paneID,
+            workingDirectory: anchorTracker.workingDirectory?.path(percentEncoded: false)
+                ?? workingDirectory,
+            pinnedDirectory: anchorTracker.pinnedDirectory?.path(percentEncoded: false)
+        )
     }
 
     @available(*, unavailable)

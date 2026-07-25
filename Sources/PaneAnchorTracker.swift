@@ -8,21 +8,25 @@ import ProjectAnchor
 /// never learns libghostty exists and this type never reaches into a surface.
 @MainActor
 final class PaneAnchorTracker {
-    /// The pin is app-wide rather than per-pane because pane identity is not yet
-    /// stable: `TerminalPaneController.paneID` is a fresh UUID each launch, so a
-    /// per-pane key could not survive a relaunch anyway. Migrating to per-session
-    /// storage later means deleting this key.
-    static let pinDefaultsKey = "pinnedProjectDirectory"
+    /// The `UserDefaults` key the pin used to live under, kept only to delete it.
+    ///
+    /// It was app-wide, which was wrong in a way that only showed up once a
+    /// window held several panes: every pane resolved to the one pinned project
+    /// regardless of where its own shell was, so the footer confidently named the
+    /// wrong repository. The pin is now per-pane and lives in the session file
+    /// alongside the pane it belongs to.
+    private static let legacyPinDefaultsKey = "pinnedProjectDirectory"
 
-    /// Read with `defaults read gutons.baia pinnedProjectDirectory`. A plain path
-    /// rather than a security-scoped bookmark: baia is unsandboxed by design, so
-    /// a path is enough and stays inspectable.
-    private let defaults: UserDefaults
     private let foregroundPid: () -> pid_t?
     private let resolver: AnchorResolver
 
     private var timer: Timer?
-    private var pinnedDirectory: URL?
+
+    /// A plain path rather than a security-scoped bookmark: baia is unsandboxed
+    /// by design, so a path is enough and stays readable in the session file.
+    /// Exposed so the owner can snapshot it; this type no longer persists
+    /// anything itself.
+    private(set) var pinnedDirectory: URL?
 
     /// Last directory successfully read. Exposed so the pane can show it as the
     /// window subtitle, which is the cwd rather than the anchor.
@@ -42,14 +46,21 @@ final class PaneAnchorTracker {
     init(
         foregroundPid: @escaping () -> pid_t?,
         resolver: AnchorResolver = .init(),
-        defaults: UserDefaults = .standard
+        pinnedDirectory: URL? = nil
     ) {
         self.foregroundPid = foregroundPid
         self.resolver = resolver
-        self.defaults = defaults
-        if let stored = defaults.string(forKey: Self.pinDefaultsKey) {
-            pinnedDirectory = URL(filePath: stored, directoryHint: .isDirectory)
-        }
+        self.pinnedDirectory = pinnedDirectory
+    }
+
+    /// Removes the app-wide pin the earlier design left behind.
+    ///
+    /// Nothing reads that key any more, so a leftover value is inert rather than
+    /// harmful, but it would sit in the defaults domain forever looking like live
+    /// configuration to anyone inspecting it. One call at launch is cheaper than
+    /// explaining it later.
+    static func removeLegacyPin(from defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: legacyPinDefaultsKey)
     }
 
     // MARK: - Polling
@@ -99,15 +110,16 @@ final class PaneAnchorTracker {
 
     // MARK: - Pin
 
+    /// Nothing is written here. The pin is part of the pane's state and is
+    /// persisted with it, so the owner snapshots after `onChange` rather than
+    /// this type reaching into storage of its own.
     func setPin(_ directory: URL) {
         pinnedDirectory = directory
-        defaults.set(directory.path(percentEncoded: false), forKey: Self.pinDefaultsKey)
         resolveAndNotify()
     }
 
     func clearPin() {
         pinnedDirectory = nil
-        defaults.removeObject(forKey: Self.pinDefaultsKey)
         resolveAndNotify()
     }
 
@@ -115,9 +127,11 @@ final class PaneAnchorTracker {
     /// always notifies rather than comparing the resulting anchor.
     private func resolveAndNotify() {
         let resolution = resolver.resolve(workingDirectory: workingDirectory, pin: pinnedDirectory)
+        // A pin whose directory has been deleted is dropped rather than kept and
+        // ignored, so the next snapshot records the pane as unpinned instead of
+        // restoring a pin that will never resolve again.
         if resolution.pinIsStale {
             pinnedDirectory = nil
-            defaults.removeObject(forKey: Self.pinDefaultsKey)
         }
         anchor = resolution.anchor
         onChange?()

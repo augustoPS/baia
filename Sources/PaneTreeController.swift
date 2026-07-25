@@ -34,12 +34,58 @@ final class PaneTreeController: NSViewController {
     private var renderedTree: PaneTree?
     private var renderedZoom: PaneID?
 
+    /// Raised whenever something worth persisting changes: the tree, the focus,
+    /// a pin, or a pane's working directory. The owner debounces and writes.
+    var onSessionChange: (() -> Void)?
+
     init(workingDirectory: String) {
         let first = PaneID()
         workspace = Workspace(pane: first)
         self.workingDirectory = workingDirectory
         super.init(nibName: nil, bundle: nil)
         panes[first] = makePane(id: first, workingDirectory: workingDirectory)
+    }
+
+    /// Rebuilds a window from a snapshot.
+    ///
+    /// The snapshot is expected to have been reconciled already, so every pane in
+    /// the tree has a matching record and every recorded directory exists. A pane
+    /// the tree names but the records do not still gets built, at the default
+    /// directory, because a window that renders is better than one that refuses
+    /// to open over a bookkeeping mismatch.
+    init(restoring snapshot: SessionSnapshot, defaultWorkingDirectory: String) {
+        workspace = snapshot.workspace
+        workingDirectory = defaultWorkingDirectory
+        super.init(nibName: nil, bundle: nil)
+
+        let records = Dictionary(
+            snapshot.panes.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        for id in snapshot.workspace.tabs.flatMap({ $0.tree.paneIDs }) {
+            let record = records[id]
+            panes[id] = makePane(
+                id: id,
+                workingDirectory: record?.workingDirectory ?? defaultWorkingDirectory,
+                pinnedDirectory: record?.pinnedDirectory.map {
+                    URL(filePath: $0, directoryHint: .isDirectory)
+                }
+            )
+        }
+    }
+
+    /// What the session file records for this window.
+    ///
+    /// Pane records are taken from the live controllers rather than from anything
+    /// cached, so a directory the shell moved to since the last write is included.
+    func snapshot(windowFrame: WindowFrame?) -> SessionSnapshot {
+        SessionSnapshot(
+            workspace: workspace,
+            panes: workspace.tabs
+                .flatMap { $0.tree.paneIDs }
+                .compactMap { panes[$0]?.paneState },
+            windowFrame: windowFrame
+        )
     }
 
     private var focusedPaneID: PaneID? { workspace.focusedPane }
@@ -90,6 +136,7 @@ final class PaneTreeController: NSViewController {
         panes[new] = makePane(id: new, workingDirectory: directory)
         rebuild()
         focusPane(new)
+        onSessionChange?()
     }
 
     func closeFocusedPane() {
@@ -106,6 +153,7 @@ final class PaneTreeController: NSViewController {
         panes[closing] = nil
         rebuild()
         if let next = focusedPaneID { focusPane(next) }
+        onSessionChange?()
     }
 
     func moveFocus(_ direction: FocusDirection) {
@@ -128,12 +176,21 @@ final class PaneTreeController: NSViewController {
         guard let pane = panes[id] else { return }
         pane.takeFocus()
         onFocusedPaneChange?()
+        onSessionChange?()
     }
 
     // MARK: - Rendering
 
-    private func makePane(id: PaneID, workingDirectory: String) -> TerminalPaneController {
-        let pane = TerminalPaneController(paneID: id, workingDirectory: workingDirectory)
+    private func makePane(
+        id: PaneID,
+        workingDirectory: String,
+        pinnedDirectory: URL? = nil
+    ) -> TerminalPaneController {
+        let pane = TerminalPaneController(
+            paneID: id,
+            workingDirectory: workingDirectory,
+            pinnedDirectory: pinnedDirectory
+        )
         // Clicking a pane makes its surface first responder, and the workspace
         // has to agree, or the next arrow key would traverse from wherever the
         // model still thought focus was.
@@ -143,7 +200,12 @@ final class PaneTreeController: NSViewController {
             onFocusedPaneChange?()
         }
         pane.onAnchorChange = { [weak self] in
-            guard let self, focusedPaneID == id else { return }
+            guard let self else { return }
+            // Every pane reports, not only the focused one, because the session
+            // records each pane's own directory and pin. Only the focused pane
+            // renames the window.
+            onSessionChange?()
+            guard focusedPaneID == id else { return }
             onFocusedPaneChange?()
         }
         pane.onProcessClose = { [weak self] in
