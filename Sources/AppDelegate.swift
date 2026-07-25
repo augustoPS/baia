@@ -1,14 +1,16 @@
 import AppKit
+import WorkspaceLayout
+import WorkspaceMenu
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
-    private var pane: TerminalPaneController?
+    private var tree: PaneTreeController?
 
     func applicationDidFinishLaunching(_: Notification) {
         MainMenu.install(into: NSApp)
 
-        let pane = TerminalPaneController(workingDirectory: Self.defaultWorkingDirectory)
-        self.pane = pane
+        let tree = PaneTreeController(workingDirectory: Self.defaultWorkingDirectory)
+        self.tree = tree
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1024, height: 680),
@@ -16,7 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
-        window.contentViewController = pane
+        window.contentViewController = tree
         window.title = "baia"
 
         // Assigning a contentViewController makes the window adopt the content's
@@ -32,6 +34,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.setFrameAutosaveName("baia.main")
         window.makeKeyAndOrderFront(nil)
 
+        // The window owns its title because with several panes only the focused
+        // one may name it. A pane that set the title itself would have every
+        // pane overwriting it on every one-second poll.
+        tree.onFocusedPaneChange = { [weak tree, weak window] in
+            guard let tree, let window else { return }
+            window.title = tree.windowTitle.title
+            window.subtitle = tree.windowTitle.subtitle
+        }
+        tree.onEmpty = { [weak window] in
+            window?.close()
+        }
+
         self.window = window
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -40,8 +54,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         true
     }
 
+    // MARK: - Pane commands
+
+    @objc func splitPaneRight(_: Any?) {
+        tree?.splitFocusedPane(axis: .horizontal)
+    }
+
+    @objc func splitPaneDown(_: Any?) {
+        tree?.splitFocusedPane(axis: .vertical)
+    }
+
+    @objc func closePane(_: Any?) {
+        tree?.closeFocusedPane()
+    }
+
+    @objc func zoomPane(_: Any?) {
+        tree?.toggleZoom()
+    }
+
+    @objc func focusPaneLeft(_: Any?) { tree?.moveFocus(.left) }
+
+    @objc func focusPaneRight(_: Any?) { tree?.moveFocus(.right) }
+
+    @objc func focusPaneUp(_: Any?) { tree?.moveFocus(.up) }
+
+    @objc func focusPaneDown(_: Any?) { tree?.moveFocus(.down) }
+
+    @objc func selectNextPane(_: Any?) {
+        tree?.focusNextPane()
+    }
+
+    // MARK: - Project commands
+
     @objc func setProjectDirectory(_: Any?) {
-        guard let pane else { return }
+        guard let pane = tree?.focusedPane else { return }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -54,7 +100,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func clearProjectDirectoryPin(_: Any?) {
-        pane?.anchorTracker.clearPin()
+        tree?.focusedPane?.anchorTracker.clearPin()
+    }
+
+    @objc func revealAnchor(_: Any?) {
+        guard let anchor = tree?.focusedPane?.anchorTracker.anchor else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([anchor.url])
+    }
+
+    @objc func copyAnchorPath(_: Any?) {
+        guard let anchor = tree?.focusedPane?.anchorTracker.anchor else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(anchor.url.path(percentEncoded: false), forType: .string)
     }
 
     /// Opens in the workspace root for now. Once panes are per-project this
@@ -68,11 +126,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 extension AppDelegate: NSMenuItemValidation {
-    /// Clear Pin is meaningless with nothing pinned.
+    /// Every rule lives in `MenuValidation`, an exhaustive switch over the
+    /// command set, so adding a command is a compile error in the package until
+    /// its rule is written. This method's only job is to describe the current
+    /// state and recover which command an item is.
+    ///
+    /// The command is read from the item's tag rather than its selector, because
+    /// several commands share one selector shape and a title can be localised.
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if menuItem.action == #selector(clearProjectDirectoryPin(_:)) {
-            return pane?.anchorTracker.isPinned ?? false
+        guard let command = MenuCommand(tag: menuItem.tag) else { return true }
+        let state = MenuValidation.state(for: command, given: availability)
+        // Set here rather than when the menu is built. AppKit revalidates on
+        // every menu open, so a checkmark applied at build time would sit on
+        // whichever item held it at launch until the app was relaunched.
+        if let checked = state.isChecked {
+            menuItem.state = checked ? .on : .off
         }
-        return true
+        return state.isEnabled
+    }
+
+    private var availability: MenuAvailability {
+        guard let tree else { return .empty }
+        let anchor = tree.focusedPane?.anchorTracker.anchor
+        return MenuAvailability(
+            paneCount: tree.paneCount,
+            tabCount: 1,
+            isPinned: tree.focusedPane?.anchorTracker.isPinned ?? false,
+            hasAnchor: anchor != nil,
+            anchorIsRepository: anchor?.kind == .repository,
+            isZoomed: tree.isZoomed,
+            statusBarsVisible: true,
+            paletteAvailable: false
+        )
     }
 }

@@ -122,6 +122,23 @@ public struct Workspace: Sendable, Equatable, Codable {
         }
     }
 
+    /// Focuses a named pane, which is what a click on a surface reports.
+    ///
+    /// The containment check is the whole point. The app learns about focus from
+    /// a terminal callback that can arrive after the pane was closed, and a
+    /// focused id that names no pane in the tree would leave every later
+    /// `moveFocus` and `closeFocusedPane` operating from nowhere and silently
+    /// doing nothing. False when the pane is absent or already focused, so the
+    /// caller can skip redrawing.
+    public mutating func focusPane(_ pane: PaneID) -> Bool {
+        withFocusedTab { tab in
+            guard tab.focusedPane != pane, tab.tree.contains(pane) else { return false }
+            tab.focusedPane = pane
+            tab.zoomedPane = nil
+            return true
+        }
+    }
+
     /// Moves focus to the next pane in visual order, wrapping. False when the tab
     /// has one pane, since there is nowhere to go.
     public mutating func focusNextPane() -> Bool {

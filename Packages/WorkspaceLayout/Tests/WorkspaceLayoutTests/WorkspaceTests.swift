@@ -413,6 +413,7 @@ import Testing
         let moved = workspace.moveFocus(.right)
         let cycled = workspace.focusNextPane()
         let zoomed = workspace.toggleZoomOnFocusedPane()
+        let focused = workspace.focusPane(PaneID())
 
         #expect(!split)
         #expect(!closedPane)
@@ -420,6 +421,55 @@ import Testing
         #expect(!moved)
         #expect(!cycled)
         #expect(!zoomed)
+        #expect(!focused)
+        #expect(workspace == before)
+    }
+
+    /// A click reports focus by pane id, and the id can name a pane that has
+    /// since been closed. Accepting it would leave `focusedPane` pointing outside
+    /// the tree, after which every later `moveFocus` and `closeFocusedPane`
+    /// resolves from nowhere and silently does nothing.
+    @Test func focusingAPaneThatIsNotInTheTreeIsRefused() {
+        let first = PaneID()
+        let second = PaneID()
+        var workspace = Workspace(pane: first)
+        let didSplit = workspace.splitFocusedPane(axis: .horizontal, newPane: second, ratio: 0.5)
+        #expect(didSplit)
+        let before = workspace
+
+        let didFocus = workspace.focusPane(PaneID())
+
+        #expect(!didFocus)
+        #expect(workspace == before)
+    }
+
+    @Test func focusingAPaneMovesFocusAndClearsTheZoom() {
+        let first = PaneID()
+        let second = PaneID()
+        var workspace = Workspace(pane: first)
+        let didSplit = workspace.splitFocusedPane(axis: .horizontal, newPane: second, ratio: 0.5)
+        #expect(didSplit)
+        let didZoom = workspace.toggleZoomOnFocusedPane()
+        #expect(didZoom)
+        #expect(workspace.focusedTab?.zoomedPane == second)
+
+        let didFocus = workspace.focusPane(first)
+
+        #expect(didFocus)
+        #expect(workspace.focusedPane == first)
+        // The zoom has to clear, or the window would keep rendering the pane the
+        // user just clicked away from.
+        #expect(workspace.focusedTab?.zoomedPane == nil)
+    }
+
+    @Test func focusingTheAlreadyFocusedPaneReportsNoChange() {
+        let first = PaneID()
+        var workspace = Workspace(pane: first)
+        let before = workspace
+
+        let didFocus = workspace.focusPane(first)
+
+        #expect(!didFocus)
         #expect(workspace == before)
     }
 }
