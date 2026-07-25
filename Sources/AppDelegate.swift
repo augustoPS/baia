@@ -8,6 +8,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let sessionStore = SessionStore(fileURL: SessionStore.defaultFileURL())
 
+    private let notifier = AttentionNotifier()
+
     /// Coalesces the writes. Every `cd` in every pane reports a session change
     /// through the one-second anchor poll, so writing on each one would rewrite
     /// the file several times a second for a workspace nobody is restructuring.
@@ -20,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_: Notification) {
         MainMenu.install(into: NSApp)
         PaneAnchorTracker.removeLegacyPin()
+        notifier.requestAuthorizationIfNeeded()
 
         let tree = Self.restoredTree(from: sessionStore)
         self.tree = tree
@@ -59,10 +62,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The window owns its title because with several panes only the focused
         // one may name it. A pane that set the title itself would have every
         // pane overwriting it on every one-second poll.
-        tree.onFocusedPaneChange = { [weak tree, weak window] in
-            guard let tree, let window else { return }
-            window.title = tree.windowTitle.title
-            window.subtitle = tree.windowTitle.subtitle
+        tree.onFocusedPaneChange = { [weak self] in
+            self?.updateWindowTitle()
         }
         tree.onEmpty = { [weak self, weak window] in
             // The last pane is gone, so there is nothing left worth restoring.
@@ -73,6 +74,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         tree.onSessionChange = { [weak self] in
             self?.scheduleSave()
+        }
+        tree.onAttentionChange = { [weak self, weak window] projects in
+            guard let self else { return }
+            updateWindowTitle()
+            // Only for a window the user is not already looking at. A banner for
+            // a pane on screen is noise, and the footer already shows it.
+            guard window?.isKeyWindow != true, let project = projects.last else { return }
+            notifier.notify(project: project, message: nil)
         }
         NotificationCenter.default.addObserver(
             self,
@@ -103,6 +112,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         saveTimer = nil
         save()
         isTerminating = true
+    }
+
+    /// Composes the window title from the focused pane plus anything waiting.
+    ///
+    /// The waiting count lives in the title because that is the one place macOS
+    /// shows reliably for a background app: the window menu, Mission Control, and
+    /// the window switcher all read it. A dock badge would be the obvious home
+    /// and does not work here, see `AttentionNotifier`.
+    private func updateWindowTitle() {
+        guard let tree, let window else { return }
+        let waiting = tree.waitingProjects.count
+        let marker = waiting > 0 ? "\u{25CF} \(waiting) waiting  " : ""
+        window.title = marker + tree.windowTitle.title
+        window.subtitle = tree.windowTitle.subtitle
     }
 
     // MARK: - Session
@@ -142,15 +165,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// focus, so a workspace that pointed at a deleted worktree opens without it
     /// rather than failing to open. A snapshot with nothing left after that is
     /// treated as no snapshot at all.
+    /// The fresh controller is built only on the paths that return it. Building
+    /// it up front as a fallback and discarding it spawned a shell and killed it
+    /// again on every restore, which is invisible but real: a pty allocated, a
+    /// login and a zsh forked, and all of it torn down a millisecond later.
     private static func restoredTree(from store: SessionStore) -> PaneTreeController {
-        let fallback = PaneTreeController(workingDirectory: defaultWorkingDirectory)
-        guard let snapshot = store.load() else { return fallback }
+        guard let snapshot = store.load() else {
+            return PaneTreeController(workingDirectory: defaultWorkingDirectory)
+        }
         let (reconciled, _) = SessionStore.reconciled(snapshot) { path in
             var isDirectory: ObjCBool = false
             let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
             return exists && isDirectory.boolValue
         }
-        guard reconciled.workspace.focusedPane != nil else { return fallback }
+        guard reconciled.workspace.focusedPane != nil else {
+            return PaneTreeController(workingDirectory: defaultWorkingDirectory)
+        }
         return PaneTreeController(
             restoring: reconciled,
             defaultWorkingDirectory: defaultWorkingDirectory

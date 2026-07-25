@@ -34,6 +34,10 @@ final class PaneTreeController: NSViewController {
     private var renderedTree: PaneTree?
     private var renderedZoom: PaneID?
 
+    /// Raised when any pane starts or stops asking for attention, with the
+    /// projects that are asking. The window badges itself and notifies from this.
+    var onAttentionChange: (([String]) -> Void)?
+
     /// Raised whenever something worth persisting changes: the tree, the focus,
     /// a pin, or a pane's working directory. The owner debounces and writes.
     var onSessionChange: (() -> Void)?
@@ -208,6 +212,12 @@ final class PaneTreeController: NSViewController {
             guard focusedPaneID == id else { return }
             onFocusedPaneChange?()
         }
+        pane.onAttentionChange = { [weak self] in
+            guard let self else { return }
+            // Reported for every pane, not only the focused one. A pane asking
+            // while the user looks at another is the entire case this serves.
+            onAttentionChange?(waitingProjects)
+        }
         pane.onProcessClose = { [weak self] in
             guard let self else { return }
             // The shell that exited is not necessarily the focused one, so the
@@ -273,6 +283,16 @@ final class PaneTreeController: NSViewController {
             )
             return split
         }
+    }
+
+    /// The projects of every pane currently asking for attention, in visual
+    /// order so the same set always reads the same way.
+    var waitingProjects: [String] {
+        workspace.tabs
+            .flatMap { $0.tree.paneIDs }
+            .compactMap { panes[$0] }
+            .filter(\.wantsAttention)
+            .map { $0.anchorTracker.anchor?.displayName ?? "baia" }
     }
 
     var windowTitle: (title: String, subtitle: String) {

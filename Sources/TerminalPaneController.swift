@@ -52,6 +52,16 @@ final class TerminalPaneController: NSViewController {
 
     private let gitStatus = PaneGitStatus()
 
+    private lazy var activityTracker = PaneActivityTracker(
+        foregroundPid: { [weak self] in self?.terminalView.foregroundPid }
+    )
+
+    /// Raised when the pane starts or stops asking for attention, so the window
+    /// can badge itself and post a notification naming the project.
+    var onAttentionChange: (() -> Void)?
+
+    var wantsAttention: Bool { activityTracker.wantsAttention }
+
     private lazy var terminalView = TerminalView(
         frame: NSRect(x: 0, y: 0, width: 1024, height: 680)
     )
@@ -184,6 +194,11 @@ final class TerminalPaneController: NSViewController {
         gitStatus.onChange = { [weak self] _ in
             self?.refreshStatus()
         }
+
+        activityTracker.onChange = { [weak self] in
+            self?.refreshStatus()
+            self?.onAttentionChange?()
+        }
     }
 
     /// Rebuilds the footer's value from the anchor. Git and agent state are left
@@ -210,7 +225,7 @@ final class TerminalPaneController: NSViewController {
             isPinned: anchor.source == .pinned,
             workingDirectory: shown,
             git: gitStatus.git,
-            agent: nil
+            agent: activityTracker.agent
         )
     }
 
@@ -230,6 +245,7 @@ final class TerminalPaneController: NSViewController {
         if view.window?.isKeyWindow == true {
             anchorTracker.startPolling()
             gitStatus.startPolling()
+            activityTracker.startPolling()
         }
     }
 
@@ -242,6 +258,7 @@ final class TerminalPaneController: NSViewController {
         super.viewDidDisappear()
         anchorTracker.stopPolling()
         gitStatus.stopPolling()
+        activityTracker.stopPolling()
     }
 
     /// Polling is gated on focus, so an unfocused window costs nothing and a
@@ -273,6 +290,11 @@ final class TerminalPaneController: NSViewController {
     @objc private func windowDidBecomeKey() {
         anchorTracker.startPolling()
         gitStatus.startPolling()
+        // Activity keeps polling while the window is unfocused. It is the one
+        // tracker whose whole purpose is to notice something while the user is
+        // looking elsewhere, so gating it on focus would disable the feature
+        // exactly when it matters.
+        activityTracker.startPolling()
     }
 
     @objc private func windowDidResignKey() {
@@ -320,6 +342,8 @@ extension TerminalPaneController:
     TerminalSurfacePwdDelegate,
     TerminalSurfaceResizeDelegate,
     TerminalSurfaceFocusDelegate,
+    TerminalSurfaceBellDelegate,
+    TerminalSurfaceDesktopNotificationDelegate,
     TerminalSurfaceCloseDelegate
 {
     /// OSC 7. Nothing emits it today: the bundled libghostty ships no
@@ -341,7 +365,24 @@ extension TerminalPaneController:
     func terminalDidChangeFocus(_ focused: Bool) {
         statusBar.isFocused = focused
         guard focused else { return }
+        // Looking at the pane is the acknowledgement, so the request clears here
+        // rather than on any timer.
+        activityTracker.noteFocused()
         onFocusGained?()
+    }
+
+    /// A bell. Claude Code rings one when it wants input, if its notification
+    /// channel is set to a form that rings, which makes this the signal that
+    /// turns "which of my agents needs me" from a guess into a fact.
+    func terminalDidRingBell() {
+        activityTracker.noteBell()
+    }
+
+    /// OSC 9 and OSC 777. Needs no shell integration, since it is emitted by
+    /// whatever is running rather than by the shell, which matters because the
+    /// trimmed libghostty ships no shell integration at all.
+    func terminalDidRequestDesktopNotification(title: String, body: String) {
+        activityTracker.noteNotification(title: title, body: body)
     }
 
     /// Closing the window here was right while a window held exactly one pane.
