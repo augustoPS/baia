@@ -12,6 +12,8 @@ packages:
   libghostty:
     url: https://github.com/Lakr233/libghostty-spm
     from: "1.2.0"
+  ProjectAnchor:
+    path: Packages/ProjectAnchor
 
 targets:
   baia:
@@ -31,6 +33,7 @@ targets:
         product: GhosttyTerminal
       - package: libghostty
         product: GhosttyTheme
+      - package: ProjectAnchor
 
     settings:
       base:
