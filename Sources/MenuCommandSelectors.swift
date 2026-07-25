@@ -18,10 +18,10 @@ enum MenuCommandSelectors {
         case .showAll: #selector(NSApplication.unhideAllApplications(_:))
         case .quit: #selector(NSApplication.terminate(_:))
 
-        case .newWindow: nil
-        case .newTab: nil
+        case .newWindow: #selector(AppDelegate.newWorkspaceWindow(_:))
+        case .newTab: #selector(AppDelegate.newTab(_:))
         case .closePane: #selector(AppDelegate.closePane(_:))
-        case .closeTab: nil
+        case .closeTab: #selector(AppDelegate.closeTab(_:))
         case .closeWindow: #selector(NSWindow.performClose(_:))
         case .openConfiguration: nil
 
@@ -59,9 +59,12 @@ enum MenuCommandSelectors {
 
         case .minimize: #selector(NSWindow.performMiniaturize(_:))
         case .zoomWindow: #selector(NSWindow.performZoom(_:))
-        case .showPreviousTab: nil
-        case .showNextTab: nil
-        case .mergeAllWindows: nil
+        // AppKit implements tab selection and merging on NSWindow itself, so
+        // these reach the key window through the responder chain and behave
+        // exactly as they do in every other tabbed Mac app.
+        case .showPreviousTab: #selector(NSWindow.selectPreviousTab(_:))
+        case .showNextTab: #selector(NSWindow.selectNextTab(_:))
+        case .mergeAllWindows: #selector(NSWindow.mergeAllWindows(_:))
         case .bringAllToFront: #selector(NSApplication.arrangeInFront(_:))
 
         case .copyDiagnostics: nil
