@@ -6,11 +6,11 @@ import Foundation
 /// Two `URL`s for the same directory compare unequal when one was built with a
 /// directory hint and the other was not, which makes URL equality a trap here.
 ///
-/// `@unchecked` because `FileManager` is not `Sendable` and this stores one.
-/// Every use here is a read-only existence check, which `FileManager` documents
-/// as thread safe, and the locator itself is immutable once built.
-public struct GitRepositoryLocator: @unchecked Sendable {
-    private let fileManager: FileManager
+/// Reaches `FileManager.default` directly rather than storing an injected one.
+/// Storing a `FileManager` would forfeit `Sendable`, since it is not itself
+/// `Sendable`, and no caller ever needed to substitute one: the tests drive
+/// behaviour through the `ceiling` parameter and a real temporary directory.
+public struct GitRepositoryLocator: Sendable {
     private let ceilingPath: String
 
     /// - Parameter ceiling: the walk stops *below* this directory, so a
@@ -19,9 +19,8 @@ public struct GitRepositoryLocator: @unchecked Sendable {
     ///   otherwise claim every non-repository directory the shell ever enters,
     ///   which is worse than falling back to the working directory. The pin
     ///   covers anyone whose home is their project.
-    public init(ceiling: URL? = nil, fileManager: FileManager = .default) {
-        self.fileManager = fileManager
-        let resolved = (ceiling ?? fileManager.homeDirectoryForCurrentUser)
+    public init(ceiling: URL? = nil) {
+        let resolved = (ceiling ?? FileManager.default.homeDirectoryForCurrentUser)
             .resolvingSymlinksInPath()
         ceilingPath = Self.normalized(resolved.path(percentEncoded: false))
     }
@@ -41,7 +40,7 @@ public struct GitRepositoryLocator: @unchecked Sendable {
         let start = Self.normalized(
             directory.resolvingSymlinksInPath().path(percentEncoded: false)
         )
-        guard fileManager.fileExists(atPath: start) else { return nil }
+        guard FileManager.default.fileExists(atPath: start) else { return nil }
 
         // The ceiling only bounds the walk when the start is inside it. Starting
         // outside home (/opt/homebrew, /Volumes/...) walks to "/" instead, so
@@ -63,7 +62,7 @@ public struct GitRepositoryLocator: @unchecked Sendable {
     /// a regular file (a linked worktree or a submodule, holding a `gitdir:`
     /// pointer). `fileExists` covers both in one call.
     private func holdsGitEntry(_ directoryPath: String) -> Bool {
-        fileManager.fileExists(atPath: directoryPath + "/.git")
+        FileManager.default.fileExists(atPath: directoryPath + "/.git")
     }
 
     /// Drops a trailing slash so prefix comparisons and equality behave. Leaves
