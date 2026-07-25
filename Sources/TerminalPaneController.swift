@@ -44,6 +44,8 @@ final class TerminalPaneController: NSViewController {
 
     let statusBar = PaneStatusBarView(frame: .zero)
 
+    private let gitStatus = PaneGitStatus()
+
     private lazy var terminalView = TerminalView(
         frame: NSRect(x: 0, y: 0, width: 1024, height: 680)
     )
@@ -147,8 +149,17 @@ final class TerminalPaneController: NSViewController {
         ])
 
         anchorTracker.onChange = { [weak self] in
+            guard let self else { return }
+            // Handed the anchor on every change, and it returns immediately
+            // unless the repository actually moved. Without that guard this
+            // would fork git once a second per pane.
+            gitStatus.setAnchor(anchorTracker.anchor)
+            refreshStatus()
+            onAnchorChange?()
+        }
+
+        gitStatus.onChange = { [weak self] _ in
             self?.refreshStatus()
-            self?.onAnchorChange?()
         }
     }
 
@@ -175,7 +186,7 @@ final class TerminalPaneController: NSViewController {
             anchorIsRepository: anchor.kind == .repository,
             isPinned: anchor.source == .pinned,
             workingDirectory: shown,
-            git: nil,
+            git: gitStatus.git,
             agent: nil
         )
     }
@@ -195,7 +206,19 @@ final class TerminalPaneController: NSViewController {
         onAnchorChange?()
         if view.window?.isKeyWindow == true {
             anchorTracker.startPolling()
+            gitStatus.startPolling()
         }
+    }
+
+    /// A pane that leaves the window stops polling. Both timers are scheduled on
+    /// the run loop, which retains them, so a closed pane that relied on
+    /// deallocation would leave two timers firing against a nil target forever.
+    /// This also covers the rebuild path, where a pane is detached and
+    /// reattached and `viewDidAppear` starts it again.
+    override func viewDidDisappear() {
+        super.viewDidDisappear()
+        anchorTracker.stopPolling()
+        gitStatus.stopPolling()
     }
 
     /// Polling is gated on focus, so an unfocused window costs nothing and a
@@ -226,10 +249,12 @@ final class TerminalPaneController: NSViewController {
 
     @objc private func windowDidBecomeKey() {
         anchorTracker.startPolling()
+        gitStatus.startPolling()
     }
 
     @objc private func windowDidResignKey() {
         anchorTracker.stopPolling()
+        gitStatus.stopPolling()
     }
 
     deinit {
