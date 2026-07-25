@@ -38,14 +38,19 @@ act() {
 }
 key() { act; osascript -e "tell application \"System Events\" to $1" >/dev/null 2>&1; sleep 1.3; }
 
-# Pastes rather than types, because `keystroke` is translated through the active
-# keyboard layout and this one is U.S. International, where `~` and `^` exist only
-# as shifted dead keys. AppleScript cannot map either and falls back to virtual
-# keycode 0, which is the `a` key, so `~` arrives as a plain `a` with no error.
-# Measured: `~` and `^` both break, while backtick, `"` and `'` type correctly.
-# Pressing the dead key directly does not help either: `key code 50 using shift`
-# followed by space yields a bare space, and followed by `/` yields a bare `/`.
-# The clipboard bypasses layout translation entirely and is also faster.
+# Pastes rather than types, because typing `~` through AppleScript on this layout
+# fails in three different ways and the clipboard sidesteps all of them.
+#
+# The layout is U.S. International, where `~` and `^` are shifted dead keys.
+# `keystroke "~"` cannot map the character and falls back to virtual keycode 0,
+# which is the `a` key, so `cd ~/Projects` arrives as `cd a/Projects`. Driving the
+# key by code works only with an explicit `key down shift` / `key up shift` around
+# it; the `key code 50 using shift` form arms nothing and emits nothing. And a
+# dead key committed with anything other than space yields U+02DC MODIFIER LETTER
+# SMALL TILDE rather than ASCII `~`, which renders almost identically and fails as
+# a path.
+#
+# Pasting is immune to all three, and is faster than per-character keystrokes.
 type_line() {
     act
     printf '%s' "$1" | pbcopy
