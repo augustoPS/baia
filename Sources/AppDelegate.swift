@@ -14,10 +14,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let sessionStore = SessionStore(fileURL: SessionStore.defaultFileURL())
 
+    /// The config file, and everything derived from it. Created before any
+    /// window, because a pane built before it exists would come up in
+    /// libghostty's defaults.
+    private lazy var configuration: ConfigurationCenter = {
+        let center = ConfigurationCenter()
+        center.onSettingsChange = { [weak self] in self?.settingsDidChange() }
+        return center
+    }()
+
     private let notifier = AttentionNotifier()
 
     private lazy var palette: CommandPaletteController = {
         let palette = CommandPaletteController()
+        palette.theme = configuration.paneTheme
         palette.onOpen = { [weak self] project, action in
             self?.open(project, action: action)
         }
@@ -64,7 +74,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_: Notification) {
         MainMenu.install(into: NSApp)
         PaneAnchorTracker.removeLegacyPin()
+        // Authorization is requested regardless of the setting, so turning
+        // notifications back on later does not need a relaunch to get the
+        // prompt. Only `notify` is gated.
         notifier.requestAuthorizationIfNeeded()
+        notifier.isEnabled = configuration.settings.notificationsEnabled
 
         restoreSession()
         NSApp.activate(ignoringOtherApps: true)
@@ -178,7 +192,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let directory = tree?.focusedPane?.anchorTracker.workingDirectory?
             .path(percentEncoded: false) ?? Self.defaultWorkingDirectory
         openWindow(
-            tree: PaneTreeController(workingDirectory: directory),
+            tree: PaneTreeController(workingDirectory: directory, configuration: configuration),
             joining: focused?.window
         )
     }
@@ -187,7 +201,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Detached on purpose: New Window means a window, and joining the group
         // would make it indistinguishable from New Tab.
         openWindow(
-            tree: PaneTreeController(workingDirectory: Self.defaultWorkingDirectory),
+            tree: PaneTreeController(
+                workingDirectory: Self.defaultWorkingDirectory,
+                configuration: configuration
+            ),
             joining: nil,
             tabbing: .disallowed
         )
@@ -231,7 +248,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard discoveredProjects == nil, !isDiscovering else { return }
         isDiscovering = true
 
-        let settings = Settings.defaultSettings
+        let settings = configuration.settings
         let roots = settings.projectRoots.map {
             URL(filePath: $0, directoryHint: .isDirectory)
         }
@@ -269,7 +286,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch action {
         case .newTab:
             openWindow(
-                tree: PaneTreeController(workingDirectory: directory),
+                tree: PaneTreeController(workingDirectory: directory, configuration: configuration),
                 joining: focused?.window
             )
         case .splitRight:
@@ -329,6 +346,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The project and message come from the pane that changed, not from the
     /// waiting list. Re-deriving them with `waitingProjects.last` named whichever
     /// pane sorted last and dropped the OSC 9 text the pane had already sent.
+    /// Re-derives everything that is not a pane after the config file changes.
+    /// The panes themselves are updated by the configuration center directly.
+    private func settingsDidChange() {
+        notifier.isEnabled = configuration.settings.notificationsEnabled
+        // Dropped so the next palette walks the roots the file now names. The
+        // walk is not started here: it would fire on every keystroke of an
+        // editor holding the file open.
+        discoveredProjects = nil
+        for controller in windows {
+            controller.tree.refreshTheme()
+        }
+        palette.theme = configuration.paneTheme
+    }
+
     private func notifyIfUnfocused(
         _ controller: WorkspaceWindowController?,
         project: String,
@@ -401,6 +432,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// rather than failing to open. A snapshot with nothing left after that is
     /// treated as no snapshot at all.
     private func restoreSession() {
+        // Opt out entirely rather than restoring and discarding. Someone who
+        // turns this off wants a clean window, not the old one rebuilt and
+        // thrown away, which would spawn every recorded shell on the way past.
+        guard configuration.settings.restoreSession else { return openFresh() }
         guard let snapshot = sessionStore.load() else { return openFresh() }
         let (reconciled, _) = SessionStore.reconciled(snapshot) { path in
             var isDirectory: ObjCBool = false
@@ -425,7 +460,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let controller = openWindow(
                 tree: PaneTreeController(
                     restoring: piece,
-                    defaultWorkingDirectory: Self.defaultWorkingDirectory
+                    defaultWorkingDirectory: Self.defaultWorkingDirectory,
+                    configuration: configuration
                 ),
                 joining: previous
             )
@@ -445,7 +481,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func openFresh() {
         openWindow(
-            tree: PaneTreeController(workingDirectory: Self.defaultWorkingDirectory),
+            tree: PaneTreeController(
+                workingDirectory: Self.defaultWorkingDirectory,
+                configuration: configuration
+            ),
             joining: nil
         )
     }

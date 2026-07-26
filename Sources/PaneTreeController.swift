@@ -30,7 +30,11 @@ final class PaneTreeController: NSViewController {
     private let workingDirectory: String
 
     /// The palette every pane and every divider in this window derives from.
-    let theme: PaneTheme = .darkPastel
+    /// The palette the split dividers are drawn from, from the config file's
+    /// theme rather than fixed. Chrome matches the theme, never the reverse, so a
+    /// hardcoded Dark Pastel here would put a Dark Pastel line between two panes
+    /// of some other theme.
+    var theme: PaneTheme { configuration.paneTheme }
 
     /// Held so they can be removed in ``viewWillDisappear()``.
     ///
@@ -63,10 +67,18 @@ final class PaneTreeController: NSViewController {
     /// a pin, or a pane's working directory. The owner debounces and writes.
     var onSessionChange: (() -> Void)?
 
-    init(workingDirectory: String) {
+    /// The settings the panes of this window are configured from.
+    ///
+    /// Passed in rather than reached for, because both initializers build panes
+    /// before the caller could assign it, and a pane that comes up unconfigured
+    /// and is corrected a frame later flickers through libghostty's defaults.
+    private let configuration: ConfigurationCenter
+
+    init(workingDirectory: String, configuration: ConfigurationCenter) {
         let first = PaneID()
         workspace = Workspace(pane: first)
         self.workingDirectory = workingDirectory
+        self.configuration = configuration
         super.init(nibName: nil, bundle: nil)
         panes[first] = makePane(id: first, workingDirectory: workingDirectory)
     }
@@ -78,9 +90,14 @@ final class PaneTreeController: NSViewController {
     /// the tree names but the records do not still gets built, at the default
     /// directory, because a window that renders is better than one that refuses
     /// to open over a bookkeeping mismatch.
-    init(restoring snapshot: SessionSnapshot, defaultWorkingDirectory: String) {
+    init(
+        restoring snapshot: SessionSnapshot,
+        defaultWorkingDirectory: String,
+        configuration: ConfigurationCenter
+    ) {
         workspace = snapshot.workspace
         workingDirectory = defaultWorkingDirectory
+        self.configuration = configuration
         super.init(nibName: nil, bundle: nil)
 
         let records = Dictionary(
@@ -267,7 +284,12 @@ final class PaneTreeController: NSViewController {
             workingDirectory: workingDirectory,
             pinnedDirectory: pinnedDirectory
         )
-        pane.theme = theme
+        // Configured before anything else touches it, and before the view loads,
+        // so the surface is built already themed rather than coming up in
+        // libghostty's defaults and changing under the owner a frame later. This
+        // also supplies the pane's theme, so the local `theme` assignment that
+        // used to be here would only overwrite it with a stale value.
+        configuration.register(pane)
         // Clicking a pane makes its surface first responder, and the workspace
         // has to agree, or the next arrow key would traverse from wherever the
         // model still thought focus was.
@@ -314,6 +336,15 @@ final class PaneTreeController: NSViewController {
     /// new shell, losing the scrollback and whatever was running. Moving a live
     /// terminal view to a new parent is safe, because libghostty rebuilds a
     /// surface only when it has none, so the instance carries its pty with it.
+    /// Redraws the dividers after a theme change.
+    ///
+    /// A split takes its colour at construction, so the containers have to be
+    /// rebuilt for a new theme to reach them. The panes themselves are updated
+    /// directly by the configuration center and do not need this.
+    func refreshTheme() {
+        rebuild()
+    }
+
     private func rebuild() {
         guard let current = tree else { return }
         guard renderedTree != current || renderedZoom != zoomedPane else { return }
