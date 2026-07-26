@@ -203,11 +203,23 @@ final class ConfigurationCenter {
 
     private func reload() {
         let result = store.load()
+        // Reported *before* the equality guard, and this ordering is the whole
+        // point. What the decoder could not use is a fact about the file, not
+        // about whether the file changed anything, and the two cases where it
+        // matters most both decode to no change at all: a value that clamps back
+        // to what is already loaded (`unfocusedScrim: 0.9` under a live 0.34),
+        // and a document so malformed that nothing in it applied. Reporting
+        // after the guard meant the owner edited the file, saw no effect, and was
+        // told nothing. Found by the live pass, which read an empty log.
+        //
+        // This does not become chatter: `report` writes only when the decoder
+        // actually rejected something, so a clean file stays silent no matter how
+        // often an editor touches it.
+        Self.report(result)
         // A file that decodes to what is already loaded changes nothing. Editors
         // touch a file on save even when its bytes are unchanged.
         guard result.settings != settings else { return }
         settings = result.settings
-        Self.report(result)
         applyToEveryPane()
         onSettingsChange?()
     }

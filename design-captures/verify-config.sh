@@ -89,47 +89,39 @@ shot() {
     geom=$(osascript -e 'tell application "System Events" to tell process "baia" to get {position, size} of window 1' 2>/dev/null) || return 1
     x=$(echo "$geom"|cut -d, -f1|tr -d ' '); y=$(echo "$geom"|cut -d, -f2|tr -d ' ')
     w=$(echo "$geom"|cut -d, -f3|tr -d ' '); h=$(echo "$geom"|cut -d, -f4|tr -d ' ')
-    screencapture -x -o -R"$x,$y,$w,$h" "$OUT/$1.png" && echo "        wrote $OUT/$1.png"
+    rm -f "$OUT/$1.png"
+    screencapture -x -o -R"$x,$y,$w,$h" "$OUT/$1.png"
+    # `screencapture` exits 0 even when it refused to write, so the file has to be
+    # tested rather than the status. It refuses a dot-prefixed name outright
+    # ("cannot write file to intended destination"), which is what made the probe
+    # captures vanish while every `|| return 1` in the callers stayed quiet.
+    [ -s "$OUT/$1.png" ] || { echo "        CAPTURE FAILED for $OUT/$1.png" >&2; return 1; }
+    echo "        wrote $OUT/$1.png"
 }
 
-# Reads one pixel well inside the terminal area, above the 22 pt footer and clear
-# of the padding, and prints it as #rrggbb.
-pixel() {
-    local geom x y w h px py
-    geom=$(osascript -e 'tell application "System Events" to tell process "baia" to get {position, size} of window 1' 2>/dev/null) || return 1
-    x=$(echo "$geom"|cut -d, -f1|tr -d ' '); y=$(echo "$geom"|cut -d, -f2|tr -d ' ')
-    w=$(echo "$geom"|cut -d, -f3|tr -d ' '); h=$(echo "$geom"|cut -d, -f4|tr -d ' ')
-    px=$((x + w - 60)); py=$((y + h - 120))
-    screencapture -x -o -R"$px,$py,2,2" "$OUT/.probe.png" 2>/dev/null || return 1
-    python3 - "$OUT/.probe.png" <<'PY'
-import sys, subprocess, tempfile, os
-src = sys.argv[1]
-raw = tempfile.mktemp(suffix=".txt")
-# sips cannot print a pixel, so go through a 1x1 BMP-ish route: use Python's
-# built-in PNG decode via `sips` conversion to TIFF then read the first pixel.
-subprocess.run(["sips","-s","format","png","-z","1","1",src,"--out",src+".1.png"],
-               capture_output=True)
-data = open(src+".1.png","rb").read()
-import zlib, struct
-# minimal PNG reader for a 1x1 truecolour image
-pos = 8; idat = b""; depth = None; ctype = None
-while pos < len(data):
-    ln = struct.unpack(">I", data[pos:pos+4])[0]; typ = data[pos+4:pos+8]
-    chunk = data[pos+8:pos+8+ln]
-    if typ == b"IHDR":
-        _, _, depth, ctype = struct.unpack(">IIBB", chunk[:10])
-    elif typ == b"IDAT":
-        idat += chunk
-    pos += 12 + ln
-buf = zlib.decompress(idat)
-px = buf[1:]  # skip the filter byte of the single row
-if ctype == 6: r,g,b = px[0],px[1],px[2]
-elif ctype == 2: r,g,b = px[0],px[1],px[2]
-else: r=g=b=px[0]
-print("#%02x%02x%02x" % (r,g,b))
-os.remove(src+".1.png")
-PY
+# Colour helpers. They capture the window, then read the PNG with pixel.py; the
+# first version of this shelled out to `sips` to resize a probe to 1x1 and read
+# that, which produced no file and reported an empty colour as a measurement.
+probe() {
+    shot probe >/dev/null || return 1
+    python3 design-captures/pixel.py "$@" "$OUT/probe.png"
 }
+# Terminal background, sampled well clear of the text and the 22 pt footer.
+term_bg()  { probe_at 0.75 0.55; }
+probe_at() { shot probe >/dev/null || return 1; python3 design-captures/pixel.py at "$OUT/probe.png" "$1" "$2"; }
+# The default-foreground text of the `Last login` line, which is the reliable
+# read on whether a theme applied: a themed shell prompt often uses truecolor
+# escapes and is immune to a palette change.
+term_fg()  { shot probe >/dev/null || return 1; python3 design-captures/pixel.py brightest "$OUT/probe.png" 0.01 0.11 0.30 0.13; }
+# Mean of the right-hand pane, for the scrim.
+pane_mean() { shot probe >/dev/null || return 1; python3 design-captures/pixel.py mean "$OUT/probe.png" "$1" 0.20 "$2" 0.90; }
+
+luma() { python3 -c "
+import sys
+h=sys.argv[1].lstrip('#')
+r,g,b=(int(h[i:i+2],16) for i in (0,2,4))
+print(round(0.2126*r+0.7152*g+0.0722*b,1))
+" "$1"; }
 
 write_cfg() { python3 -c "
 import json,sys
@@ -163,7 +155,7 @@ fi
 
 echo
 echo "Step 2: the terminal reproduces the owner's ghostty"
-bg=$(pixel)
+bg=$(term_bg)
 echo "        terminal background reads $bg"
 case "$bg" in
     "#141414"|"#131313"|"#151515") ok "background is #141414, so the theme layer did not overwrite it" ;;
@@ -174,31 +166,72 @@ shot 01-defaults
 look "01-defaults.png: font 11.5, padding 8, blur, transparent titlebar, block cursor"
 
 echo
-echo "Step 3: a live theme change moves surface and chrome together, losing nothing"
+echo "Step 3: a live theme change moves the surface, losing nothing"
 type_line "sleep 300"
 shot 02-before-theme
-write_cfg '{"themeName":"Solarized Light"}'
+before_fg=$(term_fg)
+write_cfg '{"themeName":"Nord"}'
 sleep 2
+after_fg=$(term_fg)
 shot 03-after-theme
-[ "$(shells)" -ge 1 ] && ok "the shell survived the theme change (no surface respawn)" || bad "the pty died: something assigned view.configuration"
-look "02 vs 03: the surface AND every footer moved, and 'sleep 300' is still on screen"
+[ "$(shells)" -ge 1 ] && ok "the shell survived the theme change (no surface respawn)" \
+    || bad "the pty died: something assigned view.configuration"
+# Measured on the `Last login` line, which uses the theme's own foreground. The
+# shell prompt is not a witness: a themed prompt emits truecolor escapes and
+# looks identical under every palette, which is what made an earlier run read as
+# "the theme did nothing".
+echo "        default foreground $before_fg -> $after_fg  (Nord declares #d8dee9)"
+if [ "$before_fg" != "$after_fg" ]; then
+    ok "the theme reached the surface"
+else
+    bad "the surface did not change: setTheme did not apply, or the name is not in the catalog"
+fi
+look "02 vs 03: 'sleep 300' is still on screen and the footers moved too"
 
 echo
-echo "Step 4: the decoder clamps and says so"
-write_cfg '{"themeName":"Dark Pastel","unfocusedScrim":0.9}'
-grep -q "unfocusedScrim" "$LOG" && ok "the clamp was reported on stderr" || bad "0.9 was clamped silently"
-write_cfg '{"unfocusedScrim":0}'; shot 04-scrim-off
-write_cfg '{"unfocusedScrim":0.34}'; shot 05-scrim-max
-look "04 vs 05: the unfocused panes darken, the focused one does not"
+echo "Step 4: an unknown theme name falls back rather than half-applying"
+write_cfg '{"themeName":"Solarized Light"}'
+fallback_fg=$(term_fg)
+# There is no "Solarized Light" in the catalog; the nearest real names are
+# "Solarized Darcula" and "Solarized Osaka Night". The fallback is Dark Pastel.
+[ "$fallback_fg" != "$after_fg" ] && ok "an unknown name fell back off Nord" \
+    || bad "an unknown name left Nord applied"
+write_cfg '{"themeName":"Dark Pastel"}'
 
 echo
-echo "Step 5: focusStyle"
+echo "Step 5: the scrim, which needs two panes to mean anything"
+key 'keystroke "d" using command down'      # split, so one pane is unfocused
+sleep 2
+if [ "$(shells)" -ge 2 ]; then
+    ok "split to two panes"
+    write_cfg '{"unfocusedScrim":0}'
+    off=$(pane_mean 0.05 0.45); shot 04-scrim-off
+    write_cfg '{"unfocusedScrim":0.34}'
+    max=$(pane_mean 0.05 0.45); shot 05-scrim-max
+    lo=$(luma "$off"); hi=$(luma "$max")
+    echo "        unfocused pane luma $lo (scrim 0) -> $hi (scrim 0.34)"
+    python3 -c "import sys; sys.exit(0 if float('$hi') < float('$lo') - 0.5 else 1)" \
+        && ok "the unfocused pane darkened" \
+        || bad "the scrim did nothing: $lo -> $hi"
+    # Deliberately from a value 0.9 does NOT clamp onto. The report used to sit
+    # behind the settings-changed guard, so clamping 0.9 down onto a live 0.34
+    # produced no diagnostic at all.
+    write_cfg '{"unfocusedScrim":0.28}'
+    write_cfg '{"unfocusedScrim":0.9}'
+    grep -q "unfocusedScrim" "$LOG" && ok "0.9 was clamped and reported on stderr" \
+        || bad "0.9 was clamped silently"
+    write_cfg '{"unfocusedScrim":0.28}'
+else
+    bad "the split did not take, so the scrim is untested"
+fi
+
+echo
+echo "Step 5b: focusStyle"
 write_cfg '{"focusStyle":"invert"}'; shot 06-invert
 look "06-invert.png: the focused footer is filled, and attention is quiet rather than also filled"
 write_cfg '{"focusStyle":"frame"}'; shot 07-frame
 write_cfg '{"focusStyle":"recede"}'
 
-echo
 echo "Step 6: a broken file leaves the last good values standing"
 cp "$CFG" "$OUT/.good.json"
 printf '{ this is not json' > "$CFG.tmp"; mv "$CFG.tmp" "$CFG"; sleep 2
