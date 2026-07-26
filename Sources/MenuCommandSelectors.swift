@@ -53,8 +53,8 @@ enum MenuCommandSelectors {
         case .revealAnchor: #selector(AppDelegate.revealAnchor(_:))
         case .copyAnchorPath: #selector(AppDelegate.copyAnchorPath(_:))
 
-        case .commandPalette: nil
-        case .reloadProjectList: nil
+        case .commandPalette: #selector(AppDelegate.showCommandPalette(_:))
+        case .reloadProjectList: #selector(AppDelegate.reloadProjectList(_:))
         case .refreshGitStatus: nil
 
         case .minimize: #selector(NSWindow.performMiniaturize(_:))

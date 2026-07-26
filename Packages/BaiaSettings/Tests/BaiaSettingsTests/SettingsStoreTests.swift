@@ -105,6 +105,10 @@ import Testing
             "gitPollSeconds",
             "activityPollSeconds",
             "restoreSession",
+            "focusStyle",
+            "focusAccent",
+            "attentionStyle",
+            "unfocusedScrim",
         ])
     }
 

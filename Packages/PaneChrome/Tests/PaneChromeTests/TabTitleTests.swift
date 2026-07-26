@@ -104,4 +104,139 @@ import Testing
     @Test func noTitlesDisambiguateToNoTitles() {
         #expect(TabTitle.disambiguated([]) == [])
     }
+
+    // MARK: - The tab grammar
+
+    @Test func aTabNoLongerSpendsAQuarterOfItselfOnTheAppName() {
+        // Every tab used to open with `baia — `, about 56 pt of a 240 pt tab, to
+        // say the one thing every tab in the bar had in common. The window
+        // already knows which application it belongs to, and so does the person
+        // reading it.
+        #expect(TabTitle.tab(project: "vault") == "vault")
+        #expect(!TabTitle.tab(project: "vault").contains("baia"))
+    }
+
+    @Test func onlyAnUnacknowledgedPaneEarnsTheAskingGlyph() {
+        // An acknowledged pane shows nothing in the tab: you have already been
+        // there, and the tab is not where you were told about it. Keeping the
+        // glyph would leave a bar of exclamation marks that no longer mean
+        // anything is new, which is the state the single `Blow.aiff` was in.
+        #expect(TabTitle.tab(project: "vault", attention: .asking) == "! vault")
+        #expect(TabTitle.tab(project: "vault", attention: .acknowledged) == "vault")
+        #expect(TabTitle.tab(project: "vault", attention: .none) == "vault")
+    }
+
+    @Test func aBusyPaneReadsAsBusyOnlyWhileItIsNotAsking() {
+        // Asking outranks busy: both are true of a pane whose agent just stopped
+        // to ask, and only one of them is worth a tab's width.
+        #expect(TabTitle.tab(project: "vault", isBusy: true) == "\u{25D0} vault")
+        #expect(TabTitle.tab(project: "vault", attention: .asking, isBusy: true) == "! vault")
+    }
+
+    @Test func theBranchAppearsOnlyWhenItIsNotTheDefault() {
+        // A branch that matches the default says nothing the project name did
+        // not, and the tab bar is the one place in the app with no room to spare.
+        #expect(TabTitle.tab(project: "vault", branch: "main", isDefaultBranch: true) == "vault")
+        #expect(TabTitle.tab(project: "vault", branch: "fix-auth", isDefaultBranch: false)
+            == "vault:fix-auth")
+    }
+
+    @Test func theWorktreePrefixIsRedundantInATabAndIsDropped() {
+        // The footer earns `wt:` because a worktree pane and a main-checkout pane
+        // can show the same branch. A tab only shows a branch at all when it is
+        // not the default, and a worktree always qualifies, so the prefix would
+        // be spending width to repeat what showing the branch already said.
+        #expect(TabTitle.tab(project: "baia", branch: "exif-display", isDefaultBranch: false)
+            == "baia:exif-display")
+    }
+
+    @Test func theBudgetDropsMarkersThenTheBranchAsTabsAreAdded() {
+        // Driven off the tab count because AppKit gives no way to measure a
+        // native tab: the bar divides the titlebar between however many tabs
+        // exist and the width is known only to it.
+        let full = { (budget: TabTitle.Budget) in
+            TabTitle.tab(
+                project: "vault",
+                branch: "fix-auth",
+                isDefaultBranch: false,
+                markers: "*?3",
+                attention: .asking,
+                budget: budget
+            )
+        }
+        #expect(full(.everything) == "! vault:fix-auth *?3")
+        #expect(full(.withoutMarkers) == "! vault:fix-auth")
+        #expect(full(.withoutBranch) == "! vault")
+        #expect(full(.projectOnly) == "! vault")
+    }
+
+    @Test func theBudgetIsChosenFromTheTabCount() {
+        #expect(TabTitle.Budget.forTabCount(1) == .everything)
+        #expect(TabTitle.Budget.forTabCount(2) == .everything)
+        #expect(TabTitle.Budget.forTabCount(3) == .withoutMarkers)
+        #expect(TabTitle.Budget.forTabCount(4) == .withoutMarkers)
+        #expect(TabTitle.Budget.forTabCount(5) == .withoutBranch)
+        #expect(TabTitle.Budget.forTabCount(6) == .withoutBranch)
+        #expect(TabTitle.Budget.forTabCount(7) == .projectOnly)
+        #expect(TabTitle.Budget.forTabCount(40) == .projectOnly)
+    }
+
+    @Test func theStateGlyphSurvivesEveryBudget() {
+        // The one part that is never dropped. Two characters answer the question
+        // the whole feature exists for, and a seven-tab window is precisely where
+        // "which one wants me" is hardest to answer by looking.
+        for budget in TabTitle.Budget.allCases {
+            #expect(TabTitle.tab(project: "vault", attention: .asking, budget: budget)
+                .hasPrefix("!"))
+        }
+    }
+
+    @Test func theProjectNameIsNeverTruncatedHere() {
+        // A tab nobody can identify is the failure the bar exists to prevent, so
+        // truncation is left to AppKit, which does it per tab rather than to all
+        // of them at once.
+        let long = String(repeating: "verylongproject", count: 4)
+        #expect(TabTitle.tab(project: long, budget: .projectOnly).contains(long))
+    }
+
+    // MARK: - The window title
+
+    @Test func aQuietWindowIsCalledWhateverItsTabIsCalled() {
+        #expect(TabTitle.windowTitle(waitingProjects: [], tab: "baia") == "baia")
+    }
+
+    @Test func oneOrTwoWaitingPanesAreNamedRatherThanCounted() {
+        // A count answers "how many", which nobody asked. A name answers
+        // "which", which is the entire reason the marker exists: the signal it
+        // replaces was one identical sound per session, and the whole failure was
+        // that it could not say which pane had made it.
+        #expect(TabTitle.windowTitle(waitingProjects: ["vault"], tab: "baia")
+            == "! vault  \u{00B7}  baia")
+        #expect(TabTitle.windowTitle(waitingProjects: ["vault", "admin"], tab: "baia")
+            == "! vault, admin  \u{00B7}  baia")
+    }
+
+    @Test func threeOrMoreFallBackToACountWhereNamingStopsPayingForItsWidth() {
+        #expect(TabTitle.windowTitle(waitingProjects: ["vault", "admin", "shop"], tab: "baia")
+            == "! 3 waiting  \u{00B7}  baia")
+        #expect(TabTitle.windowTitle(waitingProjects: ["a", "b", "c", "d"], tab: "baia")
+            == "! 4 waiting  \u{00B7}  baia")
+    }
+
+    @Test func theWindowKeepsItsOwnNameAfterTheAnnouncement() {
+        // The announcement goes on every window, because a window nobody is
+        // looking at is exactly the one the title has to speak for. Replacing the
+        // window's own name with it would make every tab in the group read
+        // identically for as long as anything was waiting.
+        let title = TabTitle.windowTitle(waitingProjects: ["vault"], tab: "shop:fix-auth *")
+        #expect(title.hasSuffix("shop:fix-auth *"))
+        #expect(title.hasPrefix("! vault"))
+    }
+
+    @Test func theWindowTitleUsesTheSameGlyphAsTheFooterAndTheGitMarkers() {
+        // `!` rather than a filled circle. It is already the glyph for "act now"
+        // in the conflicted-files marker and in the footer, and a second symbol
+        // for one idea is one the reader has to learn separately.
+        #expect(TabTitle.windowTitle(waitingProjects: ["vault"], tab: "baia").hasPrefix("!"))
+    }
 }

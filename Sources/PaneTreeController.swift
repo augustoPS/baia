@@ -1,4 +1,5 @@
 import AppKit
+import PaneChrome
 import WorkspaceLayout
 
 /// One window's worth of panes.
@@ -27,6 +28,18 @@ final class PaneTreeController: NSViewController {
     private var workspace: Workspace
     private var panes: [PaneID: TerminalPaneController] = [:]
     private let workingDirectory: String
+
+    /// The palette every pane and every divider in this window derives from.
+    let theme: PaneTheme = .darkPastel
+
+    /// Held so they can be removed in ``viewWillDisappear()``.
+    ///
+    /// Not in a `deinit`, for the same reason the trackers do not invalidate
+    /// their timers there: Swift 6 forbids touching non-`Sendable` state from a
+    /// nonisolated deinit, and an observer token is not `Sendable`. Removing them
+    /// as the window goes away is the symmetric half of registering them as it
+    /// appears, and it happens while the controller is unambiguously alive.
+    private var activationObservers: [any NSObjectProtocol] = []
 
     /// The hierarchy currently on screen. Compared against the tree before a
     /// rebuild so a focus change, which happens on every click, does not tear
@@ -125,17 +138,66 @@ final class PaneTreeController: NSViewController {
     override func viewDidAppear() {
         super.viewDidAppear()
         focusedPane?.takeFocus()
+        observeWindowActivation()
+        syncPanePresentation()
+    }
+
+    override func viewWillDisappear() {
+        super.viewWillDisappear()
+        for observer in activationObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        activationObservers.removeAll()
+    }
+
+    /// The whole window recedes when it stops being key.
+    ///
+    /// Observed here rather than in the window controller because the scrim is a
+    /// property of each pane, and this is the only object that knows them all.
+    /// Both notifications are needed: `didResignKey` does not fire for a window
+    /// that was never key, so a window restored behind another one would open at
+    /// full contrast and only correct itself once clicked.
+    private func observeWindowActivation() {
+        guard let window = view.window, activationObservers.isEmpty else { return }
+        let centre = NotificationCenter.default
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+            activationObservers.append(
+                centre.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.syncPanePresentation() }
+                }
+            )
+        }
+    }
+
+    /// Tells every pane whether it is the focused one and whether its window is
+    /// key.
+    ///
+    /// Driven from here rather than left to `terminalDidChangeFocus` alone. That
+    /// callback fires on a responder change, which covers a click but not a pane
+    /// created by a split, a pane restored from a session, or a window that
+    /// changed key state without any pane's responder moving.
+    private func syncPanePresentation() {
+        let active = view.window?.isKeyWindow ?? true
+        for (id, pane) in panes {
+            pane.setPaneFocused(id == focusedPaneID)
+            pane.isWindowActive = active
+        }
     }
 
     // MARK: - Commands
 
-    func splitFocusedPane(axis: SplitAxis) {
+    /// - Parameter workingDirectory: where the new pane opens. Nil means beside
+    ///   the focused pane, in whatever directory it is currently in, which is the
+    ///   ⌘D case. The palette passes a project instead, because splitting to a
+    ///   project is a different intent from splitting to see more of this one.
+    func splitFocusedPane(axis: SplitAxis, workingDirectory requested: String? = nil) {
         let new = PaneID()
         // The new pane opens where the focused one currently is rather than at
         // the window's default, because splitting is how a second view of the
         // same project is opened and starting at $HOME would defeat that.
-        let directory = focusedPane?.anchorTracker.workingDirectory?
-            .path(percentEncoded: false) ?? workingDirectory
+        let directory = requested
+            ?? focusedPane?.anchorTracker.workingDirectory?.path(percentEncoded: false)
+            ?? workingDirectory
         guard workspace.splitFocusedPane(axis: axis, newPane: new, ratio: 0.5) else { return }
         panes[new] = makePane(id: new, workingDirectory: directory)
         rebuild()
@@ -174,11 +236,13 @@ final class PaneTreeController: NSViewController {
         guard workspace.toggleZoomOnFocusedPane() else { return }
         rebuild()
         focusedPane?.takeFocus()
+        syncPanePresentation()
     }
 
     private func focusPane(_ id: PaneID) {
         guard let pane = panes[id] else { return }
         pane.takeFocus()
+        syncPanePresentation()
         onFocusedPaneChange?()
         onSessionChange?()
     }
@@ -195,12 +259,14 @@ final class PaneTreeController: NSViewController {
             workingDirectory: workingDirectory,
             pinnedDirectory: pinnedDirectory
         )
+        pane.theme = theme
         // Clicking a pane makes its surface first responder, and the workspace
         // has to agree, or the next arrow key would traverse from wherever the
         // model still thought focus was.
         pane.onFocusGained = { [weak self] in
             guard let self, focusedPaneID != id else { return }
             workspace.focusPane(id)
+            syncPanePresentation()
             onFocusedPaneChange?()
         }
         pane.onAnchorChange = { [weak self] in
@@ -276,7 +342,7 @@ final class PaneTreeController: NSViewController {
             // and taking the whole window down with it.
             return panes[id] ?? NSViewController()
         case let .split(axis, ratio, first, second):
-            let split = PaneSplitController(axis: axis, ratio: ratio)
+            let split = PaneSplitController(axis: axis, ratio: ratio, theme: theme)
             split.setChildren(
                 first: makeViewController(for: first),
                 second: makeViewController(for: second)
@@ -298,6 +364,14 @@ final class PaneTreeController: NSViewController {
     var windowTitle: (title: String, subtitle: String) {
         focusedPane?.windowTitle ?? ("baia", "")
     }
+
+    /// The path this window's tab is disambiguated with.
+    var tabPath: String { focusedPane?.tabPath ?? "baia" }
+
+    /// This window's tab label, given the disambiguated project name.
+    func tabTitle(project: String, budget: TabTitle.Budget) -> String {
+        focusedPane?.tabTitle(project: project, budget: budget) ?? project
+    }
 }
 
 /// One split node: exactly two children and one divider.
@@ -308,11 +382,24 @@ final class PaneTreeController: NSViewController {
 final class PaneSplitController: NSSplitViewController {
     private let axis: SplitAxis
     private let ratio: Double
+    private let theme: PaneTheme
 
-    init(axis: SplitAxis, ratio: Double) {
+    init(axis: SplitAxis, ratio: Double, theme: PaneTheme) {
         self.axis = axis
         self.ratio = ratio
+        self.theme = theme
         super.init(nibName: nil, bundle: nil)
+    }
+
+    /// The split view is built here rather than left to `NSSplitViewController`
+    /// so that the divider can be a subclass. Assigned before `viewDidLoad`
+    /// touches it, since the controller creates a plain one lazily on first
+    /// access and replacing it afterwards loses the items already added.
+    override func loadView() {
+        let split = PaneSplitView()
+        split.paneTheme = theme
+        splitView = split
+        super.loadView()
     }
 
     @available(*, unavailable)
@@ -328,7 +415,10 @@ final class PaneSplitController: NSSplitViewController {
         // so it maps to `isVertical == true`. Getting this backwards produces a
         // layout that works and is rotated, which no test of the tree can catch.
         splitView.isVertical = (axis == .horizontal)
-        splitView.dividerStyle = .thin
+        // `dividerStyle = .thin` is deliberately absent. AppKit's thin separator
+        // is drawn from the *system* appearance, so a pane on a dark terminal
+        // theme under a light system appearance grows a bright line across it,
+        // which is the one rule the whole chrome layer exists to keep.
     }
 
     func setChildren(first: NSViewController, second: NSViewController) {
@@ -349,6 +439,20 @@ final class PaneSplitController: NSSplitViewController {
         applyRatio()
     }
 
+    /// Widens the region the mouse can grab without widening the divider itself.
+    ///
+    /// This is the reason `PaneSplitView` exists. Making the divider thicker to
+    /// make it grabbable takes seven points of terminal away from one side, and
+    /// every one of those changes the ghostty grid and sends `SIGWINCH` to
+    /// whatever is running in the pane. The additional rect changes only where
+    /// the mouse finds it, and costs the panes nothing.
+    override func splitView(
+        _ splitView: NSSplitView,
+        additionalEffectiveRectOfDividerAt _: Int
+    ) -> NSRect {
+        (splitView as? PaneSplitView)?.effectiveDividerRect() ?? .zero
+    }
+
     /// Applied after layout because the ratio is a fraction of a thickness that
     /// does not exist until the split view has been sized. Guarded on a real
     /// thickness so the first pass, where everything is zero, does not pin the
@@ -366,5 +470,82 @@ final class PaneSplitController: NSSplitViewController {
         // the layout that would immediately undo it.
         guard abs(current - target) > 0.5 else { return }
         splitView.setPosition(target, ofDividerAt: 0)
+    }
+}
+
+/// The plank between two stalls.
+///
+/// Three things it does that AppKit's own divider does not. It takes its colour
+/// from the terminal theme rather than from the system appearance, which is the
+/// one place that leak was still open. It sits two steps below the footer
+/// hairline, so the line *between* panes never outranks the line *under* one.
+/// And it widens the region the mouse can grab without widening the divider
+/// itself.
+///
+/// That last one is the reason this class exists at all. Making the divider
+/// thicker to make it grabbable takes seven points of terminal away from one
+/// side, and every one of those changes the ghostty grid and sends `SIGWINCH` to
+/// whatever is running. `additionalEffectiveRectOfDivider(at:)` changes only
+/// where the mouse finds it, and costs the panes nothing.
+final class PaneSplitView: NSSplitView {
+    var paneTheme: PaneTheme = .darkPastel {
+        didSet {
+            guard paneTheme != oldValue else { return }
+            needsDisplay = true
+        }
+    }
+
+    /// True while the user is dragging this divider, so it can brighten.
+    private var isDragging = false
+
+    override var dividerThickness: CGFloat { 1 }
+
+    override var dividerColor: NSColor {
+        let colour = isDragging ? paneTheme.edgeFocus : paneTheme.divider
+        return NSColor(
+            srgbRed: CGFloat(colour.red),
+            green: CGFloat(colour.green),
+            blue: CGFloat(colour.blue),
+            alpha: 1
+        )
+    }
+
+    /// Three and a half points either side, so a seven-point band answers the
+    /// mouse for a one-point line.
+    ///
+    /// Not an override: `additionalEffectiveRectOfDivider(at:)` is declared on
+    /// `NSSplitViewDelegate`, not on `NSSplitView`. Written as an override here
+    /// it compiles as a new method that AppKit never calls, which looks exactly
+    /// like a divider that is simply hard to grab.
+    var grabSlack: CGFloat { 3.5 }
+
+    func effectiveDividerRect() -> NSRect {
+        guard subviews.count >= 2 else { return .zero }
+        let first = subviews[0].frame
+
+        if isVertical {
+            return NSRect(
+                x: first.maxX - grabSlack,
+                y: bounds.minY,
+                width: dividerThickness + grabSlack * 2,
+                height: bounds.height
+            )
+        }
+        return NSRect(
+            x: bounds.minX,
+            y: first.maxY - grabSlack,
+            width: bounds.width,
+            height: dividerThickness + grabSlack * 2
+        )
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        isDragging = true
+        needsDisplay = true
+        super.mouseDown(with: event)
+        // `super.mouseDown` runs the drag to completion in its own event loop, so
+        // this lands when the mouse comes up rather than immediately.
+        isDragging = false
+        needsDisplay = true
     }
 }

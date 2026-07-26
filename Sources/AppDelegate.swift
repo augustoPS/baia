@@ -1,4 +1,7 @@
 import AppKit
+import BaiaSettings
+import GitWorkspace
+import PaneChrome
 import WorkspaceLayout
 import WorkspaceMenu
 
@@ -12,6 +15,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let sessionStore = SessionStore(fileURL: SessionStore.defaultFileURL())
 
     private let notifier = AttentionNotifier()
+
+    private lazy var palette: CommandPaletteController = {
+        let palette = CommandPaletteController()
+        palette.onOpen = { [weak self] project, action in
+            self?.open(project, action: action)
+        }
+        return palette
+    }()
+
+    /// The project list, discovered once and reused until something asks for it
+    /// again.
+    ///
+    /// Walking the roots stats a large tree, and doing it on every ⌘K would put
+    /// that cost between the key and the first character typed, which is exactly
+    /// where it is most noticeable. Reload Project List is the escape hatch for a
+    /// project created since launch.
+    private var discoveredProjects: [Project]?
+
+    private let recentProjects = RecentProjects(fileURL: RecentProjects.defaultFileURL())
 
     /// Coalesces the writes. Every `cd` in every pane reports a session change
     /// through the one-second anchor poll, so writing on each one would rewrite
@@ -117,20 +139,103 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         focused?.window.close()
     }
 
+    // MARK: - Command palette
+
+    @objc func showCommandPalette(_: Any?) {
+        palette.toggle(
+            over: focused?.window,
+            projects: projects(),
+            recency: recentProjects.load()
+        )
+    }
+
+    /// Discards the cached project list so the next ⌘K walks the roots again.
+    @objc func reloadProjectList(_: Any?) {
+        discoveredProjects = nil
+    }
+
+    /// The projects under the configured roots, discovered on first use.
+    ///
+    /// The roots come from `Settings.defaultSettings` rather than from a file,
+    /// because nothing reads the config file yet. That is the same gap every
+    /// other setting is in, and it is one line to close once a
+    /// `ConfigurationCenter` exists.
+    private func projects() -> [Project] {
+        if let discoveredProjects { return discoveredProjects }
+
+        let settings = Settings.defaultSettings
+        let git = GitCommand()
+        let discovery = ProjectDiscovery(
+            roots: settings.projectRoots.map {
+                URL(filePath: $0, directoryHint: .isDirectory)
+            },
+            maxDepth: settings.discoveryMaxDepth,
+            ignoredNames: ProjectDiscovery.defaultIgnoredNames
+        )
+        // git names the worktrees rather than the walk finding them. They are
+        // full file copies living inside the repository, so walking into them
+        // triples the tree and reports the same files twice.
+        let found = discovery.discover { git.worktrees(ofRepositoryRoot: $0) }
+        discoveredProjects = found
+        return found
+    }
+
+    /// Opens a project chosen in the palette.
+    private func open(_ project: Project, action: PaletteAction) {
+        let directory = project.url.path(percentEncoded: false)
+
+        // Recorded before the open, so the ranking reflects the choice even if
+        // the window fails to come up. False means the path could not be written
+        // and costs a ranking hint, which is why it is not surfaced.
+        _ = recentProjects.recordUse(of: directory)
+
+        switch action {
+        case .newTab:
+            openWindow(
+                tree: PaneTreeController(workingDirectory: directory),
+                joining: focused?.window
+            )
+        case .splitRight:
+            // Splits the focused pane and points the new one at the project. The
+            // split has to happen first: the new pane does not exist until the
+            // workspace has made it, and it opens at the focused pane's directory
+            // by default rather than at the project's.
+            tree?.splitFocusedPane(axis: .horizontal, workingDirectory: directory)
+        }
+        updateWindowTitles()
+    }
+
     // MARK: - Title
 
     /// Retitles every window, because the waiting count is a property of the
     /// workspace rather than of one tab: a tab in the background that starts
     /// asking has to be visible from whichever tab is in front.
     private func updateWindowTitles() {
-        let waiting = windows.reduce(0) { $0 + $1.tree.waitingProjects.count }
-        // The marker goes in the title because that is the one place macOS shows
-        // reliably for a background app: the Window menu, Mission Control, and
-        // the window switcher all read it. A dock badge would be the obvious home
-        // and does not work here, see `AttentionNotifier`.
-        let marker = waiting > 0 ? "\u{25CF} \(waiting) waiting  " : ""
-        for controller in windows {
-            controller.window.title = marker + controller.tree.windowTitle.title
+        // Named rather than counted. A count answers "how many", which nobody
+        // asked; a name answers "which", which is the entire reason the marker
+        // exists, since the signal it replaces was one identical sound per
+        // session. It goes on every window because that is the one surface macOS
+        // shows reliably for a background app: the Window menu, Mission Control
+        // and the window switcher all read it. A dock badge would be the obvious
+        // home and does not work here, see `AttentionNotifier`.
+        let waiting = windows.flatMap { $0.tree.waitingProjects }
+
+        // One disambiguation pass across every window, so two tabs on the same
+        // project name become `baia (Projects)` and `baia (sandbox)` rather than
+        // two tabs nobody can tell apart. It has to see all of them at once,
+        // which is why it happens here and not in a pane.
+        let projects = TabTitle.disambiguated(windows.map { $0.tree.tabPath })
+
+        for (controller, project) in zip(windows, projects) {
+            // The budget comes from this window's own tab group rather than from
+            // the app's window count. A detached window is not competing for
+            // titlebar width with a group of six somewhere else.
+            let siblings = controller.window.tabGroup?.windows.count ?? 1
+            let tab = controller.tree.tabTitle(
+                project: project,
+                budget: TabTitle.Budget.forTabCount(siblings)
+            )
+            controller.window.title = TabTitle.windowTitle(waitingProjects: waiting, tab: tab)
             controller.window.subtitle = controller.tree.windowTitle.subtitle
         }
     }
@@ -367,7 +472,14 @@ extension AppDelegate: NSMenuItemValidation {
             anchorIsRepository: anchor?.kind == .repository,
             isZoomed: tree.isZoomed,
             statusBarsVisible: true,
-            paletteAvailable: false
+            // Enabled until the walk proves otherwise. `MenuValidation` wants
+            // this to mean "there are projects to show", and the honest answer
+            // needs a walk of every root, which cannot happen here: AppKit
+            // revalidates on every menu open and on every key equivalent, so a
+            // walk behind this property would stat the workspace continuously.
+            // Nil means not yet discovered, and an optimistic answer costs at
+            // worst one empty palette that corrects itself the moment it opens.
+            paletteAvailable: discoveredProjects.map { !$0.isEmpty } ?? true
         )
     }
 }

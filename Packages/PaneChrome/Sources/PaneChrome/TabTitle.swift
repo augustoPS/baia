@@ -81,6 +81,120 @@ public enum TabTitle {
         max(0, components.count - 1)
     }
 
+    /// How much of the grammar a tab has room for.
+    ///
+    /// Driven off the tab count rather than off a measurement, because AppKit
+    /// gives no way to ask how wide a native tab is: the bar divides the titlebar
+    /// between however many tabs exist, and the width is known only to it. The
+    /// count is the one input that predicts the width, so the drop order is
+    /// expressed against the count and lands on the same answer.
+    public enum Budget: Sendable, Equatable, CaseIterable {
+        /// One or two tabs. Everything fits.
+        case everything
+
+        /// Three or four. The markers go first, being the only part that is
+        /// still readable from the pane's own footer.
+        case withoutMarkers
+
+        /// Five or six. The branch goes too.
+        case withoutBranch
+
+        /// Seven or more. The project name, and the state glyph in front of it.
+        case projectOnly
+
+        public static func forTabCount(_ count: Int) -> Budget {
+            switch count {
+            case ...2: .everything
+            case 3 ... 4: .withoutMarkers
+            case 5 ... 6: .withoutBranch
+            default: .projectOnly
+            }
+        }
+
+        var showsBranch: Bool { self == .everything || self == .withoutMarkers }
+        var showsMarkers: Bool { self == .everything }
+    }
+
+    /// What a tab says: `[state] project [:branch] [markers]`.
+    ///
+    /// The app name is deliberately absent. Every tab used to open with
+    /// `baia — `, which cost about a quarter of a 240 pt tab to say the thing
+    /// every tab in the bar had in common. The window already knows which
+    /// application it belongs to and so does the person reading it.
+    ///
+    /// - Parameters:
+    ///   - project: already abbreviated and disambiguated by ``title(anchorName:isWorktree:)``
+    ///     and ``disambiguated(_:)``. Never truncated here: it is the identity,
+    ///     and a tab nobody can identify is the failure the whole bar exists to
+    ///     prevent. AppKit truncates it if it must, which is the right last
+    ///     resort because it happens per tab rather than to all of them.
+    ///   - branch: shown as `:branch` only when it is not the repository's
+    ///     default. A branch that matches the default says nothing that the
+    ///     project name did not, and a worktree always qualifies, which is why
+    ///     the footer's `wt:` prefix is redundant here and is dropped.
+    ///   - markers: the footer's own vocabulary, dropped whole rather than
+    ///     trimmed, exactly as the footer drops them.
+    ///   - attention: `!` when asking. An acknowledged pane shows nothing,
+    ///     because you have already been there and the tab is not where you were
+    ///     told about it.
+    public static func tab(
+        project: String,
+        branch: String? = nil,
+        isDefaultBranch: Bool = true,
+        markers: String = "",
+        attention: PaneStatus.Attention = .none,
+        isBusy: Bool = false,
+        budget: Budget = .everything
+    ) -> String {
+        var title = ""
+
+        // Only the unacknowledged level earns a glyph. A busy pane gets the
+        // half-filled circle, which reads as motion without animating anything:
+        // a tab bar that animates is a tab bar that pulls the eye off the pane
+        // being worked in.
+        switch attention {
+        case .asking: title += "! "
+        case .acknowledged, .none: if isBusy { title += "\u{25D0} " }
+        }
+
+        title += project
+
+        if budget.showsBranch, let branch, !branch.isEmpty, !isDefaultBranch {
+            title += ":" + branch
+        }
+
+        if budget.showsMarkers, !markers.isEmpty {
+            title += " " + markers
+        }
+
+        return title
+    }
+
+    /// A window's full title: what is waiting anywhere, then what this window is.
+    ///
+    /// The waiting half is the only cross-window carrier baia has.
+    /// `NSApp.dockTile.badgeLabel` does nothing in this app, so the title is what
+    /// macOS shows for a window nobody is looking at: the Window menu, Mission
+    /// Control and the switcher all read it. That is why it goes on *every*
+    /// window rather than only the one that is asking, and why the window keeps
+    /// its own name after it rather than being replaced by the announcement.
+    ///
+    /// Names rather than a count, up to two. A count answers "how many", which
+    /// nobody asked; a name answers "which", which is the entire reason the
+    /// marker exists, since the signal it replaces was one identical sound per
+    /// session. Three or more is where naming stops paying for its width.
+    ///
+    /// `!` rather than a filled circle, because it is the glyph the footer and
+    /// the git markers already use for "act now", and a second symbol for the
+    /// same idea is one the reader has to learn separately.
+    public static func windowTitle(waitingProjects: [String], tab: String) -> String {
+        guard !waitingProjects.isEmpty else { return tab }
+        let subject = waitingProjects.count <= 2
+            ? waitingProjects.joined(separator: ", ")
+            : "\(waitingProjects.count) waiting"
+        return "! \(subject)  \u{00B7}  \(tab)"
+    }
+
     private static let agentPrefix = "agent-"
 
     /// Six digits of a hex id, which is what `git rev-parse --short` and the

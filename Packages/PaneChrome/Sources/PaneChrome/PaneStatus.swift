@@ -69,6 +69,30 @@ public struct PaneStatus: Sendable, Equatable {
         }
     }
 
+    /// How hard a pane is asking, which is not the same question as whether it is
+    /// asking.
+    ///
+    /// The requirement reads as a contradiction: urgent enough to find across
+    /// four panes, tolerable to sit beside while it waits, and settled once it
+    /// has been seen. It is only contradictory while attention is one state. A
+    /// pane that has been looked at and is still waiting is a different thing
+    /// from one that just started asking, and the two want opposite volumes.
+    ///
+    /// A third case rather than a second boolean, so the exhaustive switches that
+    /// draw it fail to compile when a state is added rather than falling through
+    /// to whatever `else` was nearest.
+    public enum Attention: Sendable, Equatable, CaseIterable {
+        /// Not asking. Either idle or working.
+        case none
+
+        /// Asking, and not yet seen. The loud level.
+        case asking
+
+        /// Still asking, but the owner has been here since it started. Quiet
+        /// enough to work beside, still visible from across the window.
+        case acknowledged
+    }
+
     /// What is running in the pane, and whether it asked for the owner.
     public struct Agent: Sendable, Equatable {
         public var label: String
@@ -80,9 +104,34 @@ public struct PaneStatus: Sendable, Equatable {
         /// about which.
         public var wantsAttention: Bool
 
-        public init(label: String, wantsAttention: Bool) {
+        /// True once the pane has taken focus, or a key has reached its surface,
+        /// since it started asking.
+        ///
+        /// Never stored as an independent fact: ``PaneStatus/attention`` only
+        /// consults it while ``wantsAttention`` is true, so an acknowledgement
+        /// cannot outlive the request that earned it. That is the "cleared
+        /// whenever wantsAttention goes false" rule, expressed as something that
+        /// cannot be forgotten rather than as a line someone has to remember to
+        /// write.
+        public var isAcknowledged: Bool
+
+        /// True while the agent is working rather than waiting. Drawn as a dot
+        /// beside the label, and it is the state most panes are in most of the
+        /// time, so it must be the calmest thing in the app.
+        public var isBusy: Bool
+
+        /// Defaulted so that adding the two newer facts did not have to touch
+        /// every call site that only ever knew about a label and a bell.
+        public init(
+            label: String,
+            wantsAttention: Bool,
+            isAcknowledged: Bool = false,
+            isBusy: Bool = false
+        ) {
             self.label = label
             self.wantsAttention = wantsAttention
+            self.isAcknowledged = isAcknowledged
+            self.isBusy = isBusy
         }
     }
 
@@ -104,6 +153,16 @@ public struct PaneStatus: Sendable, Equatable {
 
     public var git: Git?
     public var agent: Agent?
+
+    /// How hard this pane is asking.
+    ///
+    /// Derived rather than stored, which is what keeps the acknowledgement from
+    /// surviving the request. A pane whose agent stops asking goes straight back
+    /// to ``Attention/none`` with no transition to run and nothing to reset.
+    public var attention: Attention {
+        guard let agent, agent.wantsAttention else { return .none }
+        return agent.isAcknowledged ? .acknowledged : .asking
+    }
 
     public init(
         anchorName: String,

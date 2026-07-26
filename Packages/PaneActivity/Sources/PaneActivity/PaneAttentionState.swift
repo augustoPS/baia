@@ -32,14 +32,32 @@ public struct PaneAttentionState: Sendable, Equatable {
     /// may ring on every keystroke it rejects, and a pane whose indicator
     /// redrew on each one would flash rather than stay lit.
     public mutating func noteBell() -> Bool {
-        // A bare bell must not overwrite a message that arrived first. The
-        // message carries which repository asked, which is the entire reason
-        // for showing it, and OSC 9 plus a bell is one event delivered twice:
-        // Claude Code's `iterm2_with_bell` channel emits both for a single
-        // request.
-        guard case .none = current else { return false }
-        current = .requested(message: nil)
-        return true
+        switch current {
+        case .none:
+            current = .requested(message: nil)
+            return true
+
+        // A bell after the owner has already been here is a *new* request, and
+        // it goes back to the loud level. An agent that finishes twice in one
+        // session has to light the indicator twice, and the acknowledgement it
+        // earned the first time was for the first request.
+        //
+        // The message is carried across rather than dropped. A bare bell has
+        // none of its own, and the one already held names which repository
+        // asked, which is the entire reason for showing it. A genuinely new
+        // message arrives through `noteNotification` and overwrites this.
+        case let .acknowledged(message):
+            current = .requested(message: message)
+            return true
+
+        // A bare bell must not overwrite a message that arrived first, and a
+        // repeat while already asking is not a change. OSC 9 plus a bell is one
+        // event delivered twice: Claude Code's `iterm2_with_bell` channel emits
+        // both for a single request, and a program at a prompt may ring on every
+        // keystroke it rejects.
+        case .requested:
+            return false
+        }
     }
 
     public mutating func noteNotification(title: String, body: String) -> Bool {
@@ -52,14 +70,36 @@ public struct PaneAttentionState: Sendable, Equatable {
         return true
     }
 
-    /// Focusing a pane is the acknowledgement. Clears attention.
+    /// Focusing a pane acknowledges its request without ending it.
     ///
     /// There is no timeout and no explicit dismiss. The owner moving to the
     /// pane is the only acknowledgement that means anything, and a timeout
     /// would clear the indicator on a pane that is still sitting at a prompt
     /// waiting.
+    ///
+    /// This used to drop straight to ``PaneAttention/none``, which is the bug the
+    /// two levels fix: a pane the owner glanced at is still waiting for him, and
+    /// clearing the marker on sight made it indistinguishable from one that had
+    /// gone back to work. The request now stays visible, quietly, until the pane
+    /// actually resumes.
     public mutating func noteFocused() -> Bool {
-        guard case .requested = current else { return false }
+        guard case let .requested(message) = current else { return false }
+        current = .acknowledged(message: message)
+        return true
+    }
+
+    /// The pane went back to work, so whatever it was waiting for has arrived.
+    ///
+    /// This is the only thing that ends a request, and it is driven by the
+    /// activity classifier rather than by a user action, because the question
+    /// "is it still waiting" is about the pane and not about who looked at it.
+    ///
+    /// Called on the transition into a running agent rather than on every poll:
+    /// an idle shell is not a resumption, or a pane whose bell arrived after its
+    /// command exited would clear itself on the very next tick and the marker
+    /// would never be seen at all.
+    public mutating func noteResumed() -> Bool {
+        guard current.isRequesting else { return false }
         current = .none
         return true
     }

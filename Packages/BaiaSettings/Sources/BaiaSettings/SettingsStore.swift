@@ -137,7 +137,11 @@ public struct SettingsStore: Sendable {
       "notificationsEnabled": true,
       "gitPollSeconds": 2,
       "activityPollSeconds": 1,
-      "restoreSession": true
+      "restoreSession": true,
+      "focusStyle": "recede",
+      "focusAccent": "accent",
+      "attentionStyle": "loud",
+      "unfocusedScrim": 0.28
     }
 
     """

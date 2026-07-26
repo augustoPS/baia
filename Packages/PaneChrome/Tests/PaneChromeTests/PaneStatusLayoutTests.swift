@@ -11,7 +11,14 @@ import Testing
         content + PaneStatusBarMetrics.horizontalInset * 2
     }
 
-    private var spacing: Double { PaneStatusBarMetrics.segmentSpacing }
+    /// The gap the solver will actually leave between two roles, which now
+    /// depends on whether they answer the same question. Spelled as a call rather
+    /// than a constant so a test states which pair it means and cannot quietly
+    /// assume the wrong one of the two spacings.
+    private func spacing(_ from: PaneStatusSegmentRole, _ to: PaneStatusSegmentRole) -> Double {
+        PaneStatusBarMetrics.spacing(from: from.group, to: to.group)
+    }
+
     private var inset: Double { PaneStatusBarMetrics.horizontalInset }
 
     @Test func mismatchedWidthCountsReturnAnEmptyResult() {
@@ -48,7 +55,7 @@ import Testing
             widths: [40, 30],
             availableWidth: 400
         )
-        #expect(result.placed.map(\.x) == [inset, inset + 40 + spacing])
+        #expect(result.placed.map(\.x) == [inset, inset + 40 + spacing(.anchorName, .branch)])
         #expect(result.placed.map(\.width) == [40, 30])
     }
 
@@ -68,7 +75,10 @@ import Testing
         )
         let rightEdge = barWidth(content: 300) - inset
         #expect(result.placed.map(\.segment.role) == [.agent, .workingDirectory])
-        #expect(result.placed.map(\.x) == [rightEdge - 70 - spacing - 50, rightEdge - 70])
+        #expect(result.placed.map(\.x) == [
+            rightEdge - 70 - spacing(.agent, .workingDirectory) - 50,
+            rightEdge - 70,
+        ])
     }
 
     @Test func theLowestPrioritySegmentDropsFirst() {
@@ -160,7 +170,13 @@ import Testing
         let result = PaneStatusLayout.solve(
             segments: segments,
             widths: [40, 30, 50, 60],
-            availableWidth: barWidth(content: 204)
+            // Spelled as the sum rather than as a number, because the gaps are no
+            // longer one constant times three. Writing 204 here again would say
+            // the bar was full when it had in fact overflowed by a whole gap.
+            availableWidth: barWidth(content: 40 + 30 + 50 + 60
+                + spacing(.anchorName, .branch)
+                + spacing(.branch, .agent)
+                + spacing(.agent, .workingDirectory))
         )
         #expect(result.dropped.isEmpty)
         for (left, right) in zip(result.placed, result.placed.dropFirst()) {
@@ -180,12 +196,53 @@ import Testing
         let result = PaneStatusLayout.solve(
             segments: segments,
             widths: [40, 60],
-            availableWidth: barWidth(content: 40 + 60 + PaneStatusBarMetrics.segmentSpacing)
+            availableWidth: barWidth(content: 40 + 60 + spacing(.anchorName, .agent))
         )
         #expect(result.dropped.isEmpty)
         for (left, right) in zip(result.placed, result.placed.dropFirst()) {
             #expect(left.x + left.width <= right.x)
         }
+    }
+
+    @Test func twoSegmentsInOneGroupSitCloserThanTwoInDifferentGroups() {
+        // The visible half of the grouping rule. A branch and its markers answer
+        // the same question and read as one fact; the markers and the agent label
+        // do not. With one spacing constant the bar read as a sentence when it is
+        // a table, and spacing is the only device left to say so now that every
+        // tier shares a baseline.
+        let sameGroup = PaneStatusLayout.solve(
+            segments: [Sample.segment(role: .branch), Sample.segment(role: .indicators)],
+            widths: [40, 30],
+            availableWidth: 400
+        )
+        let differentGroups = PaneStatusLayout.solve(
+            segments: [Sample.segment(role: .anchorName), Sample.segment(role: .branch)],
+            widths: [40, 30],
+            availableWidth: 400
+        )
+        #expect(sameGroup.placed[1].x < differentGroups.placed[1].x)
+        #expect(sameGroup.placed[1].x == inset + 40 + PaneStatusBarMetrics.spacingWithinGroup)
+    }
+
+    @Test func theFitCheckSumsTheGapsItIsAboutToAddRatherThanAssumingOne() {
+        // With one constant, `spacing × (n − 1)` was the same number. With two it
+        // is not, and a solver that assumed either would drop a segment that
+        // fitted or place one past the inset, depending on how many groups
+        // happened to survive. Three segments in one group is the case where
+        // assuming the wide gap costs a segment that had room.
+        let segments = [
+            Sample.segment(role: .operation, priority: 80),
+            Sample.segment(role: .branch, priority: 40),
+            Sample.segment(role: .indicators, priority: 60),
+        ]
+        let exact = 30.0 * 3 + PaneStatusBarMetrics.spacingWithinGroup * 2
+        let result = PaneStatusLayout.solve(
+            segments: segments,
+            widths: [30, 30, 30],
+            availableWidth: barWidth(content: exact)
+        )
+        #expect(result.dropped.isEmpty)
+        #expect(result.placed.count == 3)
     }
 
     @Test func aNegativeMeasurementNeverBecomesANegativeWidth() {

@@ -56,7 +56,11 @@ import Testing
           "notificationsEnabled": false,
           "gitPollSeconds": 5,
           "activityPollSeconds": 0.5,
-          "restoreSession": false
+          "restoreSession": false,
+          "focusStyle": "frame",
+          "focusAccent": "bone",
+          "attentionStyle": "quiet",
+          "unfocusedScrim": 0.1
         }
         """#)
         #expect(result.settings == Settings(
@@ -76,7 +80,11 @@ import Testing
             notificationsEnabled: false,
             gitPollSeconds: 5,
             activityPollSeconds: 0.5,
-            restoreSession: false
+            restoreSession: false,
+            focusStyle: .frame,
+            focusAccent: .bone,
+            attentionStyle: .quiet,
+            unfocusedScrim: 0.1
         ))
         #expect(result.unknownKeys.isEmpty)
         #expect(result.invalidKeys.isEmpty)
@@ -390,5 +398,59 @@ import Testing
         """#)
         #expect(result.unknownKeys == ["aaa", "zzz"])
         #expect(result.invalidKeys == ["fontSize", "themeName", "windowPadding"])
+    }
+
+    @Test func anUnspellableDesignValueFallsBackWithoutTakingTheOthersWithIt() {
+        // Three bad spellings at once, each reported by name and each falling back
+        // on its own. The scrim in the same document still applies, which is the
+        // property that matters: a file with one typo in it must not revert the
+        // three keys around the typo.
+        let result = decode(#"""
+        {
+          "focusStyle": "receed",
+          "focusAccent": "#B5D5FF",
+          "attentionStyle": "LOUD",
+          "unfocusedScrim": 0.2
+        }
+        """#)
+        #expect(result.settings.focusStyle == .recede)
+        #expect(result.settings.focusAccent == .accent)
+        #expect(result.settings.attentionStyle == .loud)
+        #expect(result.settings.unfocusedScrim == 0.2)
+        #expect(result.invalidKeys == ["attentionStyle", "focusAccent", "focusStyle"])
+    }
+
+    @Test func aHexInTheFocusAccentIsRejectedRatherThanHonoured() {
+        // The one wrong answer a reasonable person will try, since every other
+        // colour in the config file is a hex. Honouring it would break the rule the
+        // whole derivation scheme exists for: a literal survives a theme switch that
+        // moves everything around it, and no contrast figure in `PaneTheme` would
+        // still hold.
+        // Doubled delimiters: a `#` inside a single-hashed raw string closes it at
+        // the `"#` of the hex, which is a fine demonstration of why the config
+        // takes a name.
+        #expect(decode(##"{"focusAccent": "#e0e0e0"}"##).invalidKeys == ["focusAccent"])
+        #expect(decode(#"{"focusAccent": "bone"}"#).settings.focusAccent == .bone)
+    }
+
+    @Test func aScrimPastTheCeilingIsClampedAndReported() {
+        // Clamped rather than rejected, matching every other bounded number here: a
+        // value out of range is still a direction the file asked for. The report is
+        // what stops it reading as a key that does nothing.
+        let heavy = decode(#"{"unfocusedScrim": 0.9}"#)
+        #expect(heavy.settings.unfocusedScrim == 0.34)
+        #expect(heavy.invalidKeys == ["unfocusedScrim"])
+
+        let negative = decode(#"{"unfocusedScrim": -1}"#)
+        #expect(negative.settings.unfocusedScrim == 0)
+        #expect(negative.invalidKeys == ["unfocusedScrim"])
+    }
+
+    @Test func aScrimOfZeroIsAcceptedAndTurnsTheTreatmentOff() {
+        // The way out for someone who dislikes the scrim without having to learn
+        // that `focusStyle` exists. It is in range, so it must not be reported.
+        let result = decode(#"{"unfocusedScrim": 0}"#)
+        #expect(result.settings.unfocusedScrim == 0)
+        #expect(result.invalidKeys.isEmpty)
     }
 }

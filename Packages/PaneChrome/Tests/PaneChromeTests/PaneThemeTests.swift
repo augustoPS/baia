@@ -4,11 +4,6 @@ import Testing
 @testable import PaneChrome
 
 @Suite struct PaneThemeTests {
-    /// Every emphasis, so the sweeping assertions cannot miss one that was added
-    /// to the enum later. ``PaneStatusEmphasis`` is not `CaseIterable` in the
-    /// public API, since nothing outside a test wants to enumerate it.
-    private let emphases: [PaneStatusEmphasis] = [.normal, .strong, .muted, .alert]
-
     /// A theme that is light in ghostty's own terms, for the tests that pin the
     /// chrome to the theme rather than to a dark palette.
     private let paper = PaneTheme(
@@ -22,10 +17,9 @@ import Testing
         // The same candidate, kept on one background and replaced on another. A
         // function that scored the candidate on its own luminance, or always
         // against the theme's own background rather than the one it was handed,
-        // would answer identically for both. The bar is a lifted blend of the
-        // terminal background, and a focused bar is lifted further, so judging
-        // against the theme background is off by a whole ratio point where it
-        // matters.
+        // would answer identically for both. It matters more now than it did:
+        // an inverted focused pane and an asking pane both fill the bar with a
+        // colour that is nothing like `barBackground`.
         let theme = PaneTheme.darkPastel
         let dim = RGB.eightBit(0x3A, 0x3A, 0x3A)
         #expect(theme.readable(dim, on: RGB.eightBit(0xFF, 0xFF, 0xFF), minimumRatio: 4.5) == dim)
@@ -72,14 +66,6 @@ import Testing
         #expect(theme.readable(dim, on: theme.barBackground, minimumRatio: 21) == theme.foreground)
     }
 
-    @Test func theFocusedBarBackgroundDiffersFromTheUnfocusedOne() {
-        // Focus has to be visible somewhere, and colour is the only place it is
-        // allowed to be: the height is a constant precisely so that focus
-        // cannot be shown by growing the bar.
-        let theme = PaneTheme.darkPastel
-        #expect(theme.focusedBarBackground != theme.barBackground)
-    }
-
     @Test func theBarBackgroundIsDerivedFromTheThemeRatherThanFixed() {
         // A light theme gets a light bar. The standing rule here is to match
         // chrome to the theme and never the reverse, and a hard-coded bar
@@ -94,45 +80,70 @@ import Testing
         // on the bar is chosen from that verdict.
         let theme = PaneTheme.darkPastel
         #expect(theme.barBackground.contrastRatio(against: theme.background) < 1.5)
-        #expect(theme.focusedBarBackground.isDark)
+        #expect(theme.barBackground.isDark)
     }
 
-    @Test func everyEmphasisClearsTheMinimumContrastOnBothBars() {
-        // The invariant the whole colour chain exists for. It is checked on the
-        // focused bar as well, which is the harder one: the accent tint lifts
-        // it, and a tint chosen for looks rather than for this would put the
-        // alert red under the threshold there while it still passed unfocused.
+    @Test func everyEmphasisClearsTheMinimumContrastOnTheOrdinaryBar() {
+        // The invariant the whole colour chain exists for.
         let theme = PaneTheme.darkPastel
-        for emphasis in emphases {
-            let focused = theme.color(for: emphasis, focused: true)
-            let unfocused = theme.color(for: emphasis, focused: false)
-            #expect(focused.contrastRatio(against: theme.focusedBarBackground)
-                >= PaneTheme.minimumTextContrast)
-            #expect(unfocused.contrastRatio(against: theme.barBackground)
-                >= PaneTheme.minimumTextContrast)
+        for emphasis in PaneStatusEmphasis.allCases {
+            for focused in [true, false] {
+                let colour = theme.color(for: emphasis, focused: focused)
+                #expect(colour.contrastRatio(against: theme.barBackground)
+                    >= PaneTheme.minimumTextContrast)
+            }
         }
     }
 
     @Test func everyEmphasisClearsTheMinimumContrastOnALightTheme() {
-        for emphasis in emphases {
+        // A light theme needs no branch anywhere in the derivations. This is what
+        // says so: the same formulas, judged the same way, on a palette whose
+        // foreground is the dark end.
+        for emphasis in PaneStatusEmphasis.allCases {
             #expect(paper.color(for: emphasis, focused: true)
-                .contrastRatio(against: paper.focusedBarBackground)
-                >= PaneTheme.minimumTextContrast)
-            #expect(paper.color(for: emphasis, focused: false)
-                .contrastRatio(against: paper.barBackground)
-                >= PaneTheme.minimumTextContrast)
+                .contrastRatio(against: paper.barBackground) >= PaneTheme.minimumTextContrast)
         }
     }
 
-    @Test func anUnfocusedPaneDimsItsTextButNeverItsAlerts() {
-        // The pane that needs the owner is by definition not the one he is
-        // looking at. The signal this replaces is a single `afplay Blow.aiff`
-        // on the Stop hook, identical for every session, and dimming its
-        // replacement in exactly the panes it is meant for would put baia back
-        // where it started.
+    @Test func aFilledBarTakesItsInkFromTheBackgroundRatherThanTheForeground() {
+        // The case an emphasis colour cannot serve. Both fills are bright enough
+        // to flip `isDark`, so the repair chain turns around and pushes towards
+        // black: a foreground-derived candidate starts at the wrong end, runs out
+        // of steps around 4.3:1 on the alert fill, and then falls back to the
+        // foreground itself at about 1.4:1, which is unreadable. Starting from the
+        // background lands on the first try.
+        for theme in [PaneTheme.darkPastel, paper] {
+            for fill in [theme.focusedAccent, theme.alert] {
+                #expect(theme.ink(on: fill).contrastRatio(against: fill)
+                    >= PaneTheme.minimumTextContrast)
+                #expect(theme.mutedInk(on: fill).contrastRatio(against: fill)
+                    >= PaneTheme.minimumTextContrast)
+            }
+        }
+    }
+
+    @Test func theMutedInkOnAFilledBarIsQuieterThanTheInkBesideIt() {
+        // Tier 4 has to keep receding when the bar is filled, or an inverted
+        // footer flattens every tier it worked to separate.
         let theme = PaneTheme.darkPastel
-        #expect(theme.color(for: .normal, focused: false) != theme.color(for: .normal, focused: true))
-        #expect(theme.color(for: .alert, focused: false) == theme.color(for: .alert, focused: true))
+        let fill = theme.focusedAccent
+        #expect(theme.mutedInk(on: fill).contrastRatio(against: fill)
+            < theme.ink(on: fill).contrastRatio(against: fill))
+    }
+
+    @Test func focusChangesTheProjectNameAndNothingElse() {
+        // Every other emphasis is focus-independent now. Unfocused panes recede
+        // behind a scrim over the whole pane rather than by fading their own
+        // text, which is what removed `unfocusedDim`: text faded into its own bar
+        // gets repaired straight back up the moment it drops under the minimum,
+        // so the old mechanism had a ceiling built into it and the scrim has none.
+        let theme = PaneTheme.darkPastel
+        for emphasis in PaneStatusEmphasis.allCases where emphasis != .strong {
+            #expect(theme.color(for: emphasis, focused: true)
+                == theme.color(for: emphasis, focused: false))
+        }
+        #expect(theme.color(for: .strong, focused: true)
+            != theme.color(for: .strong, focused: false))
     }
 
     @Test func onlyTheFocusedPaneSpendsTheAccent() {
@@ -143,24 +154,77 @@ import Testing
         #expect(theme.color(for: .strong, focused: false) != theme.focusedAccent)
     }
 
-    @Test func theProjectNameStaysFullStrengthInAnUnfocusedPane() {
-        // Scanning a wall of unfocused panes for a project name is the thing
-        // the bar exists for, so strong does not dim while normal does. Without
-        // this the two emphases collapse to one colour in every pane the owner
-        // is not typing in.
+    @Test func theFourTiersAreOrderedAndNoneIsRepairedIntoAnother() {
+        // The tiers pull against the minimum ratio: fade a tier harder and
+        // `readable` repairs it back towards the foreground, at which point two
+        // tiers collapse into one colour and the hierarchy silently stops
+        // existing. This is the test that catches that, and it is why
+        // `inkFaint` sits at 0.30 rather than anywhere past it.
         let theme = PaneTheme.darkPastel
-        #expect(theme.color(for: .strong, focused: false) != theme.color(for: .normal, focused: false))
+        let normal = theme.color(for: .normal, focused: false)
+        let context = theme.color(for: .context, focused: false)
+        let faint = theme.color(for: .faint, focused: false)
+        #expect(normal.relativeLuminance > context.relativeLuminance)
+        #expect(context.relativeLuminance > faint.relativeLuminance)
     }
 
-    @Test func mutedIsDimmerThanNormalWithoutBeingRepairedBackUp() {
-        // The muted fade and the minimum ratio pull against each other: fade
-        // harder and readable() repairs the result straight back to something
-        // brighter, which quietly makes muted mean nothing.
+    @Test func aFainterTierWouldBeRepairedBackUpWhichIsWhyThirtyIsTheFloor() {
+        // The specific collision, pinned. At 0.32 the blend lands under the
+        // minimum on the bar it is drawn on, `readable` moves it, and the value
+        // that comes back is no longer the one the derivation asked for.
         let theme = PaneTheme.darkPastel
-        let muted = theme.color(for: .muted, focused: true)
-        let normal = theme.color(for: .normal, focused: true)
-        #expect(muted != normal)
-        #expect(muted.relativeLuminance < normal.relativeLuminance)
+        let tooFaint = theme.foreground.blended(with: theme.background, fraction: 0.32)
+        #expect(tooFaint.contrastRatio(against: theme.barBackground) < PaneTheme.minimumTextContrast)
+        #expect(theme.inkFaint.contrastRatio(against: theme.barBackground)
+            >= PaneTheme.minimumTextContrast)
+    }
+
+    @Test func theDerivationsResolveToTheValuesTheDesignPassQuotes() {
+        // The hexes the handoff prints for Dark Pastel on #141414. They are not
+        // the spec, the formulas are, but they are what someone reads the design
+        // document against, so a formula edited without meaning to shows up here
+        // rather than as a colour nobody recognises.
+        let theme = PaneTheme.darkPastel
+        #expect(theme.barBackground.hexString == "#212121")
+        #expect(theme.hairline.hexString == "#323232")
+        #expect(theme.inkContext.hexString == "#9d9d9d")
+        #expect(theme.inkFaint.hexString == "#898989")
+        #expect(theme.warn.hexString == "#c4c445")
+        #expect(theme.edgeFocus.hexString == "#6d7e95")
+        #expect(theme.boneAccent.hexString == "#e0e0e0")
+        #expect(theme.alert.hexString == "#ff5555")
+        #expect(theme.ok.hexString == "#55ff55")
+    }
+
+    @Test func theDividerSitsBelowTheFooterHairline() {
+        // The plank between two stalls must never outrank the plank under one.
+        // Both are blends towards the foreground, so this is an ordering on the
+        // fractions and it is the only thing keeping the split lines from
+        // becoming the loudest geometry in a four-pane window.
+        let theme = PaneTheme.darkPastel
+        #expect(theme.divider.relativeLuminance < theme.hairline.relativeLuminance)
+        #expect(theme.divider.relativeLuminance > theme.background.relativeLuminance)
+    }
+
+    @Test func infoIsRepairedAtThePointOfUseRatherThanPreBrightened() {
+        // Raw ansi[4] on Dark Pastel is #5555ff, which scores about 3.3:1 on the
+        // bar and would be unreadable if it were used as-is. It is left raw in
+        // the derivation so a theme whose blue already passes keeps its own blue,
+        // and the repair happens where the background is known.
+        let theme = PaneTheme.darkPastel
+        #expect(theme.info.contrastRatio(against: theme.barBackground)
+            < PaneTheme.minimumTextContrast)
+        #expect(theme.color(for: .info, focused: false).contrastRatio(against: theme.barBackground)
+            >= PaneTheme.minimumTextContrast)
+    }
+
+    @Test func theScrimIsHeavierThanTheInactiveOneAndBothStayReadable() {
+        // Two different statements. An unfocused pane inside the key window
+        // recedes further than every pane does when the window itself is not
+        // key, because the first is a comparison the eye makes inside one window
+        // and the second is one it makes between windows.
+        #expect(PaneTheme.unfocusedScrim > PaneTheme.inactiveScrim)
+        #expect(PaneTheme.unfocusedScrim <= 0.34)
     }
 
     @Test func aThemeWithAShortAnsiPaletteFallsBackToTheForeground() {
@@ -176,6 +240,9 @@ import Testing
             ansi: []
         )
         #expect(sparse.color(for: .alert, focused: true) == sparse.foreground)
+        // And the newer roles take the same route rather than trapping.
+        #expect(sparse.ok == sparse.foreground)
+        #expect(sparse.info == sparse.foreground)
     }
 
     @Test func darkPastelReproducesTheOwnersGhosttyConfig() {

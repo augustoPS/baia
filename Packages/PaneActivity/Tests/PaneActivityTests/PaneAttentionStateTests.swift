@@ -109,13 +109,51 @@ import Testing
         #expect(state.attention == .requested(message: "baia: Permission needed"))
     }
 
-    @Test func focusingClearsAttention() {
+    @Test func focusingAcknowledgesWithoutEndingTheRequest() {
+        // This used to drop straight to `.none`, and that was the bug the two
+        // levels fix. A pane the owner glanced at is still waiting for him, so
+        // clearing the marker on sight made it indistinguishable from one that
+        // had gone back to work, which is the exact confusion the marker exists
+        // to remove.
         var state = PaneAttentionState()
         let rang = state.noteBell()
-        let cleared = state.noteFocused()
+        let seen = state.noteFocused()
         #expect(rang)
-        #expect(cleared)
+        #expect(seen)
+        #expect(state.attention == .acknowledged(message: nil))
+        #expect(state.attention.isRequesting)
+        #expect(!state.attention.isUnacknowledged)
+    }
+
+    @Test func onlyThePaneGoingBackToWorkEndsTheRequest() {
+        // The one thing that ends it, and it is about the pane rather than about
+        // who looked at it.
+        var state = PaneAttentionState()
+        _ = state.noteBell()
+        _ = state.noteFocused()
+        let resumed = state.noteResumed()
+        #expect(resumed)
         #expect(state.attention == PaneAttention.none)
+    }
+
+    @Test func aPaneThatWasNeverAskingHasNothingToResumeFrom() {
+        // Reported as no change, because the activity poll calls this on every
+        // idle-to-running transition and a redraw per transition would repaint
+        // every pane's footer for nothing.
+        var state = PaneAttentionState()
+        let resumed = state.noteResumed()
+        #expect(!resumed)
+        #expect(state.attention == PaneAttention.none)
+    }
+
+    @Test func anAcknowledgedRequestKeepsTheMessageThatNamedIt() {
+        // The message says which repository asked. Losing it on acknowledgement
+        // would leave the quiet level saying only that something, somewhere, is
+        // still waiting.
+        var state = PaneAttentionState()
+        _ = state.noteNotification(title: "vault", body: "Permission needed")
+        _ = state.noteFocused()
+        #expect(state.attention.message == "vault: Permission needed")
     }
 
     @Test func focusingAPaneThatWantsNothingIsNotAChange() {
@@ -129,16 +167,19 @@ import Testing
     }
 
     @Test func aBellAfterFocusingRequestsAgain() {
-        // Clearing has to leave the state usable rather than latched. An agent
-        // that finishes twice in one session must light the indicator twice.
+        // Acknowledging has to leave the state usable rather than latched. An
+        // agent that finishes twice in one session must light the indicator
+        // twice, and the acknowledgement it earned the first time was for the
+        // first request.
         var state = PaneAttentionState()
         let first = state.noteBell()
-        let cleared = state.noteFocused()
+        let seen = state.noteFocused()
         let again = state.noteBell()
         #expect(first)
-        #expect(cleared)
+        #expect(seen)
         #expect(again)
         #expect(state.attention == .requested(message: nil))
+        #expect(state.attention.isUnacknowledged)
     }
 
     @Test func twoPanesTrackTheirAttentionSeparately() {
