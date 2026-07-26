@@ -25,10 +25,23 @@ final class PaneActivityTracker {
     private var activity: PaneActivity = .idleShell
     private var timer: Timer?
 
-    /// Slower than the anchor's poll. Walking every process on the machine is
-    /// more expensive than one `proc_pidinfo` call, and a label naming what is
-    /// running does not need to be current to the second.
-    private static let pollInterval: TimeInterval = 2
+    /// Seconds between reads, from `activityPollSeconds`.
+    ///
+    /// Slower than the anchor's poll by default. Walking every process on the
+    /// machine is more expensive than one `proc_pidinfo` call, and a label naming
+    /// what is running does not need to be current to the second.
+    ///
+    /// Restarted in place when it changes, so a live config edit takes effect
+    /// rather than waiting for the window to lose and regain key.
+    var pollInterval: TimeInterval = defaultPollInterval {
+        didSet {
+            guard pollInterval != oldValue, timer != nil else { return }
+            stopPolling()
+            startPolling()
+        }
+    }
+
+    static let defaultPollInterval: TimeInterval = 2
 
     init(foregroundPid: @escaping () -> pid_t?) {
         self.foregroundPid = foregroundPid
@@ -37,7 +50,7 @@ final class PaneActivityTracker {
     func startPolling() {
         guard timer == nil else { return }
         poll()
-        timer = Timer.scheduledTimer(withTimeInterval: Self.pollInterval, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.poll()
             }

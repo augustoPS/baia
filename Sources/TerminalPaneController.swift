@@ -152,6 +152,37 @@ final class TerminalPaneController: NSViewController {
     /// nothing in a pane may take first responder.
     func noteInput() { activityTracker.noteInput() }
 
+    var gitPollInterval: TimeInterval {
+        get { gitStatus.pollInterval }
+        set { gitStatus.pollInterval = newValue }
+    }
+
+    var activityPollInterval: TimeInterval {
+        get { activityTracker.pollInterval }
+        set { activityTracker.pollInterval = newValue }
+    }
+
+    /// Applies the config file's terminal settings to this pane's surface.
+    ///
+    /// Through the controller, never through the view. `view.configuration` and
+    /// `view.controller` both have a `didSet` that tears the surface down and
+    /// respawns the shell, guarded only by `isEquivalent`, so changing a font
+    /// size that way would lose the scrollback and kill whatever was running.
+    /// `setTerminalConfiguration` and `setTheme` re-resolve and patch the
+    /// existing surface instead.
+    ///
+    /// Called once before the surface exists, from registration, and again on
+    /// every config file change. The first call is what makes a new pane come up
+    /// already themed rather than coming up in libghostty's defaults and
+    /// changing a frame later.
+    func applyTerminalConfiguration(
+        _ configuration: TerminalConfiguration,
+        theme: TerminalTheme
+    ) {
+        controller.setTerminalConfiguration(configuration)
+        controller.setTheme(theme)
+    }
+
     private lazy var terminalView = TerminalView(
         frame: NSRect(x: 0, y: 0, width: 1024, height: 680)
     )

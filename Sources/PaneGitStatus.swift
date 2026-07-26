@@ -40,7 +40,21 @@ final class PaneGitStatus {
 
     private var timer: Timer?
 
-    private static let pollInterval: TimeInterval = 3
+    /// Seconds between reads, from `gitPollSeconds`.
+    ///
+    /// Restarted in place when it changes, rather than taking effect at the next
+    /// start. A value that only applied after the window lost and regained key
+    /// would make a live config edit look like it had done nothing, which is the
+    /// class of half-working the config file is meant to avoid.
+    var pollInterval: TimeInterval = defaultPollInterval {
+        didSet {
+            guard pollInterval != oldValue, timer != nil else { return }
+            stopPolling()
+            startPolling()
+        }
+    }
+
+    static let defaultPollInterval: TimeInterval = 3
 
     /// Points at a new anchor, or at none.
     ///
@@ -64,7 +78,7 @@ final class PaneGitStatus {
     func startPolling() {
         guard timer == nil else { return }
         refresh()
-        timer = Timer.scheduledTimer(withTimeInterval: Self.pollInterval, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: pollInterval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.refresh()
             }

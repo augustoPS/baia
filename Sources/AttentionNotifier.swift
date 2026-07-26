@@ -16,6 +16,12 @@ import UserNotifications
 /// banner is posted on top of it.
 @MainActor
 final class AttentionNotifier {
+    /// From `notificationsEnabled`. Gates the banner only: the per-pane footer
+    /// marker and the window title are not covered by it, because a notification
+    /// the user denied at the system level never appears and reports no error, so
+    /// it can only ever be an addition to an indicator that already works.
+    var isEnabled = true
+
     private var isAuthorized = false
     private var hasRequested = false
 
@@ -63,6 +69,9 @@ final class AttentionNotifier {
     /// Nothing is posted for a focused window: the user is already looking at the
     /// pane, and a banner for something on screen is noise.
     func notify(project: String, message: String?) {
+        // Both halves are gated, the bounce included. Turning notifications off
+        // and still having the Dock jump would read as the setting not working.
+        guard isEnabled else { return }
         // Bouncing works with no authorization at all, so it happens whether or
         // not the banner will. `.informationalRequest` bounces once rather than
         // until the app is activated, which is right for a pane that will still
