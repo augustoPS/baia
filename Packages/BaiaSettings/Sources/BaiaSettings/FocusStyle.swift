@@ -59,6 +59,17 @@ public enum FocusAccent: String, Sendable, Equatable, CaseIterable {
 
     /// Raw `ansi[6]`, cyan on most palettes.
     case ansi6
+
+    /// `ansi[4]` blended halfway to `ansi[5]`: info blue towards magenta, which
+    /// on Dark Pastel is `#aa55ff` before repair.
+    ///
+    /// It borrows two slots rather than spending one, which is the argument for
+    /// it over raw `ansi5` or `ansi6`: four brights already carry meaning as
+    /// alert, warn, info and ok, and a mixture can never be misread as one of
+    /// them. Midnight names the hue, not the value. A footer ink has to clear
+    /// 4.5:1 on the bar, so the repair chain decides how dark it is allowed to
+    /// be and it lands lighter than the name suggests.
+    case midnight
 }
 
 /// How hard an unacknowledged pane asks.

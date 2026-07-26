@@ -12,7 +12,8 @@ import Testing
         // invalid. Pinned here so that shows up as a failing test rather than as a
         // focus treatment that quietly reverted.
         #expect(FocusStyle.allCases.map(\.rawValue) == ["recede", "invert", "frame"])
-        #expect(FocusAccent.allCases.map(\.rawValue) == ["accent", "bone", "ansi5", "ansi6"])
+        #expect(FocusAccent.allCases.map(\.rawValue)
+            == ["accent", "bone", "ansi5", "ansi6", "midnight"])
         #expect(AttentionStyle.allCases.map(\.rawValue) == ["loud", "quiet"])
     }
 

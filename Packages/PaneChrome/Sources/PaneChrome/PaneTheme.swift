@@ -1,3 +1,4 @@
+import BaiaSettings
 import Foundation
 
 /// The colours a pane's chrome is drawn from, derived from the terminal's own
@@ -118,6 +119,39 @@ public struct PaneTheme: Sendable, Equatable {
     /// is a visible change, and it belongs to whoever is looking at the app.
     public var boneAccent: RGB {
         foreground.blended(with: ansiColor(15), fraction: 0.55)
+    }
+
+    /// `ansi[4]` blended halfway to `ansi[5]`. See ``BaiaSettings/FocusAccent/midnight``.
+    public var midnightAccent: RGB {
+        ansiColor(4).blended(with: ansiColor(5), fraction: 0.5)
+    }
+
+    /// The raw derivation a `focusAccent` choice names, before repair.
+    ///
+    /// A name rather than a hex, and this is where that promise is kept: the
+    /// theme decides what each name resolves to, so switching ghostty themes
+    /// moves the accent with everything around it. A settable hex would survive
+    /// the switch and void every contrast figure measured against a bar whose
+    /// colour the theme owns.
+    public func accent(for choice: FocusAccent) -> RGB {
+        switch choice {
+        case .accent: focusedAccent
+        case .bone: boneAccent
+        case .ansi5: ansiColor(5)
+        case .ansi6: ansiColor(6)
+        case .midnight: midnightAccent
+        }
+    }
+
+    /// The focus colour as it is actually drawn: the accent, repaired for the
+    /// bar.
+    ///
+    /// One value for the focused anchor name, the footer's frame and the
+    /// divider's drag colour, so the three read as one signal rather than three
+    /// decorations. The frame is not text and the ratio is not owed to it, but
+    /// drawing an unrepaired accent beside a repaired name is two blues arguing.
+    public var inkFocus: RGB {
+        readable(focusedAccent, on: barBackground, minimumRatio: Self.minimumTextContrast)
     }
 
     /// A half-finished operation, and the dirty marker. Blended a long way
@@ -306,10 +340,10 @@ public struct PaneTheme: Sendable, Equatable {
     /// something drawable rather than trapping inside a draw call, in the same way
     /// a failed working-directory read leaves the last known directory in place.
     ///
-    /// Public so the app can resolve a `focusAccent` choice against the live
-    /// palette. Reaching into ``ansi`` directly would be an unchecked index, and
-    /// the whole reason this exists is that a theme is allowed to declare fewer
-    /// than sixteen colours.
+    /// Every derivation that names a palette slot goes through here rather than
+    /// subscripting ``ansi``, ``accent(for:)`` included. A theme is allowed to
+    /// declare fewer than sixteen colours, so a direct index is a trap waiting
+    /// for the first sparse theme somebody configures.
     public func ansiColor(_ index: Int) -> RGB {
         ansi.indices.contains(index) ? ansi[index] : foreground
     }

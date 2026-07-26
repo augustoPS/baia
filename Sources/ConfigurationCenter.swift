@@ -101,14 +101,25 @@ final class ConfigurationCenter {
     /// matches the theme and never the reverse, and two sources for one theme is
     /// how a footer ends up in Dark Pastel while the surface is in something
     /// else.
+    ///
+    /// The configured `focusAccent` is applied here and nowhere else, so the
+    /// choice reaches every pane through the same assignment as the rest of the
+    /// palette.
     var paneTheme: PaneTheme {
         guard let themeDefinition else { return .darkPastel }
-        return PaneTheme(
+        var theme = PaneTheme(
             background: settings.backgroundHex,
             foreground: themeDefinition.foreground,
             selectionBackground: themeDefinition.selectionBackground,
             palette: themeDefinition.palette
         )
+        // The one place `focusAccent` is read. Applied after construction rather
+        // than through the initializer, because the derivations are expressed in
+        // terms of the palette that initializer is what builds: `bone` needs
+        // `ansi[15]` and `midnight` needs `ansi[4]` and `ansi[5]`, none of which
+        // exist until the holes are filled.
+        theme.focusedAccent = theme.accent(for: settings.focusAccent)
+        return theme
     }
 
     // MARK: - Applying

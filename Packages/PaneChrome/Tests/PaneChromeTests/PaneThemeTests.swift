@@ -1,3 +1,4 @@
+import BaiaSettings
 import Foundation
 import Testing
 
@@ -194,6 +195,43 @@ import Testing
         let theme = PaneTheme.darkPastel
         #expect(theme.color(for: .strong, focused: true) == theme.focusedAccent)
         #expect(theme.color(for: .strong, focused: false) != theme.focusedAccent)
+    }
+
+    @Test func everyFocusAccentDerivationIsReachable() {
+        // The point of this test is that four of these five were not. The key
+        // was decoded, stored and covered by its own tests while `paneTheme`
+        // resolved the accent from the theme's selection colour and never looked
+        // at settings, so `"focusAccent": "bone"` was a no-op in a config file
+        // that reported no error.
+        let theme = PaneTheme.darkPastel
+        #expect(theme.accent(for: .accent) == theme.focusedAccent)
+        #expect(theme.accent(for: .bone).hexString == "#e0e0e0")
+        #expect(theme.accent(for: .ansi5).hexString == "#ff55ff")
+        #expect(theme.accent(for: .ansi6).hexString == "#55ffff")
+        #expect(theme.accent(for: .midnight).hexString == "#aa55ff")
+        // No two of the five collide, or one of them is not a choice.
+        let resolved = FocusAccent.allCases.map { theme.accent(for: $0).hexString }
+        #expect(Set(resolved).count == FocusAccent.allCases.count)
+    }
+
+    @Test func inkFocusIsTheAccentRepairedForTheBarItIsDrawnOn() {
+        // The frame and the anchor name are one colour doing one job, so the
+        // stroke has to be the repaired value rather than the raw derivation:
+        // the name goes through `readable` on the way to the screen and an
+        // unrepaired frame beside it would be a second, darker blue.
+        let theme = PaneTheme.darkPastel
+        #expect(theme.inkFocus == theme.color(for: .strong, focused: true))
+        // The shipped accent already clears the floor, so repair is a no-op.
+        #expect(theme.inkFocus.hexString == "#b5d5ff")
+
+        // Midnight does not. Raw #aa55ff scores about 4.2:1 on #212121 and the
+        // chain's first step is what lifts it over.
+        var midnight = theme
+        midnight.focusedAccent = theme.accent(for: .midnight)
+        #expect(midnight.focusedAccent.contrastRatio(against: midnight.barBackground)
+            < PaneTheme.minimumTextContrast)
+        #expect(midnight.inkFocus.contrastRatio(against: midnight.barBackground)
+            >= PaneTheme.minimumTextContrast)
     }
 
     @Test func theFourTiersAreOrderedAndNoneIsRepairedIntoAnother() {
