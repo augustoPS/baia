@@ -145,6 +145,13 @@ final class TerminalPaneController: NSViewController {
 
     var wantsAttention: Bool { activityTracker.wantsAttention }
 
+    /// What this pane asked for, when it said so rather than only ringing.
+    var attentionMessage: String? { activityTracker.attentionMessage }
+
+    /// A keystroke reached this pane. Driven by the app's key monitor, since
+    /// nothing in a pane may take first responder.
+    func noteInput() { activityTracker.noteInput() }
+
     private lazy var terminalView = TerminalView(
         frame: NSRect(x: 0, y: 0, width: 1024, height: 680)
     )
@@ -295,11 +302,42 @@ final class TerminalPaneController: NSViewController {
             self?.refreshStatus()
         }
 
+        // Weak, so the footer cannot keep the pane alive. `PaneTreeController`
+        // is the only strong owner of a pane, and a leaked pane is a leaked
+        // shell.
+        statusBar.onClick = { [weak self] in self?.takeFocus() }
+
         activityTracker.onChange = { [weak self] in
-            self?.refreshStatus()
-            self?.onAttentionChange?()
+            guard let self else { return }
+            // Unconditional, so the footer keeps tracking the label.
+            refreshStatus()
+            // The upward callback is not. `onChange` fires for any change to the
+            // whole agent value, and the label changes as a build walks its
+            // targets, so raising attention from here re-bounced the Dock and
+            // re-posted the banner on every poll of a pane that was merely
+            // compiling. Only a real transition of the attention state escapes.
+            let now = statusBar.status?.agent.map(Self.attention(of:)) ?? .none
+            guard now != lastAttention else { return }
+            lastAttention = now
+            onAttentionChange?()
         }
     }
+
+    /// The attention level a footer agent value represents.
+    private static func attention(of agent: PaneStatus.Agent) -> PaneAttentionLevel {
+        guard agent.wantsAttention else { return .none }
+        return agent.isAcknowledged ? .acknowledged : .asking
+    }
+
+    /// Mirrors the two-level model without reaching into `PaneAttentionState`,
+    /// which is a value the tracker owns.
+    private enum PaneAttentionLevel {
+        case none
+        case acknowledged
+        case asking
+    }
+
+    private var lastAttention: PaneAttentionLevel = .none
 
     /// Rebuilds the footer's value from the anchor. Git and agent state are left
     /// nil until their subsystems are wired, and `PaneStatusSegments` already

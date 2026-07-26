@@ -207,11 +207,22 @@ public struct PaneTheme: Sendable, Equatable {
     /// one. Bounded by the same collision as every other tier: blend further and
     /// the repair chain hands back something brighter than the tier above it.
     public func mutedInk(on fill: RGB) -> RGB {
-        readable(
+        let muted = readable(
             background.blended(with: fill, fraction: 0.35),
             on: fill,
             minimumRatio: Self.minimumTextContrast
         )
+        let ink = ink(on: fill)
+        // On a mid-luminance fill the muted candidate starts *closer* to the
+        // fill than the ink does, fails the floor, and is then repaired away from
+        // it. The repair overshoots: tier 4 comes back louder than tier 3, so an
+        // inverted footer reads with the quiet tier shouting. Where that happens
+        // the two tiers collapse into one. Flattening loses a distinction;
+        // inverting states a false one.
+        guard muted.contrastRatio(against: fill) <= ink.contrastRatio(against: fill) else {
+            return ink
+        }
+        return muted
     }
 
     /// Judges `candidate` as it will be seen, composited on `background`, and
@@ -223,23 +234,39 @@ public struct PaneTheme: Sendable, Equatable {
     /// the theme background can be a whole ratio point off what it scores where it
     /// is actually drawn.
     ///
-    /// The chain pushes the candidate away from the background, by a third and
-    /// then by two thirds, towards white or black according to ``RGB/isDark`` on
-    /// the background so the push agrees with the terminal's own theme test. The
-    /// last resort is the theme foreground, which passes for any theme whose text
-    /// is legible on its own background, and a theme that fails that is broken in
-    /// the surface long before it is broken in the bar.
+    /// The chain pushes the candidate away from the background, by a third, by
+    /// two thirds, and finally the whole way, towards white or black.
+    ///
+    /// The direction is chosen by ``RGB/relativeLuminance``, the same measure the
+    /// ratio is graded with, rather than by ``RGB/isDark``. Those two disagree:
+    /// `isDark` is a YIQ test kept deliberately in step with ghostty's own theme
+    /// classification, and on a mid-luminance fill it can call a background dark
+    /// while WCAG puts it above the midpoint. The repair then walked the
+    /// candidate *towards* the background it was trying to escape, every link of
+    /// the chain failed, and the function fell through to a last resort that was
+    /// never contrast-checked at all. On an alert fill that returned the theme
+    /// foreground at about 1.4:1, which is unreadable, from a function whose whole
+    /// job is to guarantee 4.5:1. `isDark` keeps its place elsewhere; it is only
+    /// wrong as the direction for a WCAG-graded repair.
+    ///
+    /// The last resort is now the best of the two ends and the theme foreground,
+    /// measured. It can still be below `minimumRatio` for a fill no colour clears,
+    /// which is a broken theme rather than a broken bar, but it can no longer be
+    /// worse than the alternatives that were available.
     public func readable(_ candidate: RGB, on background: RGB, minimumRatio: Double) -> RGB {
-        let away = background.isDark ? Self.paleEnd : Self.darkEnd
+        let away = background.relativeLuminance < 0.5 ? Self.paleEnd : Self.darkEnd
         let chain = [
             candidate,
             candidate.blended(with: away, fraction: Self.firstRepair),
             candidate.blended(with: away, fraction: Self.secondRepair),
+            away,
         ]
         for colour in chain where colour.contrastRatio(against: background) >= minimumRatio {
             return colour
         }
-        return foreground
+        return [foreground, Self.paleEnd, Self.darkEnd]
+            .max { $0.contrastRatio(against: background) < $1.contrastRatio(against: background) }
+            ?? foreground
     }
 
     /// The colour an emphasis starts from, before an unfocused pane dims it.

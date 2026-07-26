@@ -49,7 +49,15 @@ final class PaneTreeController: NSViewController {
 
     /// Raised when any pane starts or stops asking for attention, with the
     /// projects that are asking. The window badges itself and notifies from this.
-    var onAttentionChange: (([String]) -> Void)?
+    /// The full waiting list, plus the project and message of the pane whose
+    /// attention just changed.
+    ///
+    /// The asking pane is carried rather than re-derived. Reading
+    /// `waitingProjects.last` at the far end names whichever pane happens to sit
+    /// last in visual order, so with two panes asking the banner announced the
+    /// wrong repository, and the message the pane sent through OSC 9 was thrown
+    /// away entirely.
+    var onAttentionChange: (([String], String, String?) -> Void)?
 
     /// Raised whenever something worth persisting changes: the tree, the focus,
     /// a pin, or a pane's working directory. The owner debounces and writes.
@@ -278,11 +286,15 @@ final class PaneTreeController: NSViewController {
             guard focusedPaneID == id else { return }
             onFocusedPaneChange?()
         }
-        pane.onAttentionChange = { [weak self] in
+        pane.onAttentionChange = { [weak self, weak pane] in
             guard let self else { return }
             // Reported for every pane, not only the focused one. A pane asking
             // while the user looks at another is the entire case this serves.
-            onAttentionChange?(waitingProjects)
+            onAttentionChange?(
+                waitingProjects,
+                pane?.anchorTracker.anchor?.displayName ?? "baia",
+                pane?.attentionMessage
+            )
         }
         pane.onProcessClose = { [weak self] in
             guard let self else { return }

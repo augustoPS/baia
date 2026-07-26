@@ -32,11 +32,22 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
             queryView.theme = theme
             listView.theme = theme
             hintsView.theme = theme
-            panel.backgroundColor = nsColor(theme.panelBackground)
+            content.layer?.backgroundColor = nsColor(theme.panelBackground).cgColor
         }
     }
 
     private let panel: PalettePanel
+
+    /// Held because it carries the tint and the rounded corners both. The window
+    /// behind it stays clear: an `NSWindow` fills its whole frame rect with
+    /// `backgroundColor` underneath the content view, so an opaque window colour
+    /// refilled the corners `masksToBounds` had just clipped away, in the same
+    /// colour, and the panel rendered square with the border curving inward into
+    /// a filled wedge. `isOpaque = false` permits transparency, it does not
+    /// suppress that fill.
+    private let content = NSView(
+        frame: NSRect(x: 0, y: 0, width: CommandPaletteController.width, height: 300)
+    )
     private let queryView = PaletteQueryView(frame: .zero)
     private let listView = PaletteListView(frame: .zero)
     private let hintsView = PaletteHintsView(frame: .zero)
@@ -77,13 +88,13 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
         panel.level = .floating
         panel.hidesOnDeactivate = true
         panel.isOpaque = false
-        panel.backgroundColor = nsColor(theme.panelBackground)
+        panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.isMovable = false
         panel.animationBehavior = .none
 
-        let content = NSView(frame: NSRect(x: 0, y: 0, width: Self.width, height: 300))
         content.wantsLayer = true
+        content.layer?.backgroundColor = nsColor(theme.panelBackground).cgColor
         content.layer?.cornerRadius = 6
         content.layer?.masksToBounds = true
         content.layer?.borderWidth = 1
@@ -147,13 +158,37 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
         }
     }
 
+    /// Replaces the project list, refiltering in place when the palette is up.
+    ///
+    /// Discovery walks the workspace and forks one `git worktree list` per
+    /// repository, so it cannot happen between ⌘K and the first drawn frame. The
+    /// palette opens on whatever is cached, empty on a cold launch, and this
+    /// fills it in when the walk lands. The query is preserved rather than
+    /// cleared, because the results arriving is not a reason to discard what the
+    /// user has already typed.
+    func setProjects(_ projects: [Project], recency: [String: Int]) {
+        self.projects = projects
+        self.recency = recency
+        guard panel.isVisible else { return }
+        refilter()
+        position()
+    }
+
     func dismiss() {
         guard panel.isVisible else { return }
+        // Read before ordering out, and only honoured when the palette itself
+        // still held the keyboard. The resign-key observer is delivered through
+        // `OperationQueue.main`, so it runs a turn *after* AppKit has already
+        // handed key to whatever the user clicked. Restoring unconditionally
+        // then yanked the keyboard back to the host window while a different
+        // window sat in front of it, which is the exact case the observer's own
+        // comment says it covers.
+        let hadKey = panel.isKeyWindow
         panel.orderOut(nil)
         // Key goes back to the window the palette was summoned over rather than
         // to nothing, so the focused pane gets its keyboard back and every pane
         // comes out of the inactive scrim.
-        hostWindow?.makeKey()
+        if hadKey { hostWindow?.makeKey() }
     }
 
     /// Centres the panel horizontally over the host window and sits it in the
@@ -269,7 +304,13 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
     /// length of the list to reach the thing furthest from what was asked for.
     private func move(by delta: Int) {
         guard !results.isEmpty else { return }
-        listView.selection = max(0, min(results.count - 1, listView.selection + delta))
+        // Clamped first, and a no-op returns before the git read. Holding an
+        // arrow key at either end kept re-selecting the same row, and each of
+        // those re-selections forked another `git status` at the key-repeat
+        // rate for a row that had not changed.
+        let next = max(0, min(results.count - 1, listView.selection + delta))
+        guard next != listView.selection else { return }
+        listView.selection = next
         refreshSelectedGitState()
     }
 

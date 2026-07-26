@@ -55,15 +55,23 @@ import Testing
             == theme.foreground)
     }
 
-    @Test func readableFallsBackToTheThemeForegroundWhenNothingClears() {
+    @Test func readableFallsBackToTheMostReadableColourWhenNothingClears() {
         // 21 is the top of the WCAG scale and only black against white reaches
-        // it, so no step of the chain can clear it here. Returning the
-        // foreground rather than the last failing step keeps the bar in the
-        // theme's own colours instead of drifting to white as the ratio gets
-        // harder.
+        // it, so no step of the chain can clear it here.
+        //
+        // This used to return the theme foreground unconditionally, on the
+        // argument that it keeps the bar in the theme's own colours. That
+        // argument holds for a bar and fails for a fill: the same last resort
+        // was reached from `ink(on:)` for an alert-filled bar and handed back
+        // 1.4:1 text, from the one function whose contract is 4.5:1. Nothing
+        // clearing the bar means the caller is going to draw *something*, so the
+        // honest answer is the most readable candidate available rather than the
+        // prettiest one.
         let theme = PaneTheme.darkPastel
         let dim = RGB.eightBit(0x3A, 0x3A, 0x3A)
-        #expect(theme.readable(dim, on: theme.barBackground, minimumRatio: 21) == theme.foreground)
+        let picked = theme.readable(dim, on: theme.barBackground, minimumRatio: 21)
+        #expect(picked.contrastRatio(against: theme.barBackground)
+            >= theme.foreground.contrastRatio(against: theme.barBackground))
     }
 
     @Test func theBarBackgroundIsDerivedFromTheThemeRatherThanFixed() {
@@ -119,6 +127,40 @@ import Testing
                 #expect(theme.mutedInk(on: fill).contrastRatio(against: fill)
                     >= PaneTheme.minimumTextContrast)
             }
+        }
+    }
+
+    /// The fills `isDark` and WCAG disagree about.
+    ///
+    /// Each of these reds sits near the middle: the YIQ test `isDark` uses calls
+    /// them dark while `relativeLuminance` puts them at or above 0.5. A repair
+    /// that took its direction from `isDark` pushed towards white, which is the
+    /// way it had just come, so every link of the chain failed and the function
+    /// returned an unchecked fallback. They are the ordinary alert colours of
+    /// Solarized, Nord and Gruvbox, so this is not a synthetic case.
+    @Test func inkStaysReadableOnAFillTheTwoDarknessTestsDisagreeAbout() {
+        for hex in ["#dc322f", "#bf616a", "#cc241d"] {
+            let fill = RGB(hex: hex)!
+            for theme in [PaneTheme.darkPastel, paper] {
+                #expect(theme.ink(on: fill).contrastRatio(against: fill)
+                    >= PaneTheme.minimumTextContrast)
+                #expect(theme.mutedInk(on: fill).contrastRatio(against: fill)
+                    >= PaneTheme.minimumTextContrast)
+                // The tier ordering has to survive the repair too, or an inverted
+                // footer flattens tier 4 into tier 3 on exactly these fills.
+                #expect(theme.mutedInk(on: fill).contrastRatio(against: fill)
+                    <= theme.ink(on: fill).contrastRatio(against: fill))
+            }
+        }
+    }
+
+    /// The guarantee itself, over the whole palette rather than the two fills the
+    /// footer happens to use today.
+    @Test func readableNeverReturnsAnUncheckedFallback() {
+        let theme = PaneTheme.darkPastel
+        for fill in theme.ansi + [theme.background, theme.foreground, theme.focusedAccent] {
+            #expect(theme.ink(on: fill).contrastRatio(against: fill)
+                >= PaneTheme.minimumTextContrast)
         }
     }
 

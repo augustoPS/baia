@@ -59,9 +59,17 @@ final class PaneStatusBarView: NSView {
             // transition rather than by the state. A pane that repaints while it
             // is still waiting must not blink again.
             let became = oldValue?.attention ?? .none
-            invalidate()
-            if became != .asking, attention == .asking { runArrivalPulse() }
+            // Stripped *before* the repaint, not after. `invalidate` only writes
+            // the wash's opacity when no animation is running, so removing the
+            // arrival pulse afterwards left the model value at 1 with the alert
+            // colour behind it: acknowledging a pane inside the 0.51 s pulse
+            // froze its footer as a solid red band until some later change
+            // happened to repaint it.
             if attention != .asking { attentionWash.layer?.removeAllAnimations() }
+            invalidate()
+            // `runArrivalPulse` removes animations itself, so the entry path is
+            // unaffected by the reordering above.
+            if became != .asking, attention == .asking { runArrivalPulse() }
         }
     }
 
@@ -140,6 +148,22 @@ final class PaneStatusBarView: NSView {
     override var acceptsFirstResponder: Bool { false }
 
     override var canBecomeKeyView: Bool { false }
+
+    /// Raised when the footer is clicked, so the pane can focus itself.
+    var onClick: (() -> Void)?
+
+    /// The footer is 22 pt of opaque view over the pane, and the child content
+    /// view returns nil from `hitTest` while this one did not, so a click landing
+    /// on the strip resolved here and stopped: the pane stayed scrimmed and the
+    /// keyboard stayed where it was. Handled as `mouseDown` rather than by
+    /// returning nil from `hitTest`, because the container underneath does
+    /// nothing with the click either.
+    ///
+    /// Safe against the rule above: `acceptsFirstResponder` stays false, and
+    /// AppKit does not make a view first responder for implementing `mouseDown`.
+    override func mouseDown(with _: NSEvent) {
+        onClick?()
+    }
 
     /// Height only. The width comes from the pane, and claiming a width here
     /// would fight the terminal for horizontal space.
@@ -382,7 +406,11 @@ final class PaneStatusBarView: NSView {
         )
         let path = NSBezierPath(roundedRect: box, xRadius: Self.chipRadius, yRadius: Self.chipRadius)
         path.lineWidth = 1
-        nsColor(theme.inkContext.blended(with: theme.barBackground, fraction: 0.45)).setStroke()
+        // Blended against the surface the chip is actually drawn on, not against
+        // `barBackground`. When the bar is filled for attention the real backdrop
+        // is `theme.alert`, and judging the stroke against the unfilled colour
+        // dropped it to 1.85:1 on exactly the pane that most wanted reading.
+        nsColor(colour(for: .context).blended(with: inkBackground, fraction: 0.45)).setStroke()
         path.stroke()
     }
 

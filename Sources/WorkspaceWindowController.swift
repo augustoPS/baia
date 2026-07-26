@@ -26,7 +26,9 @@ final class WorkspaceWindowController: NSObject {
     /// Raised for anything worth persisting or retitling.
     var onSessionChange: (() -> Void)?
     var onFocusedPaneChange: (() -> Void)?
-    var onAttentionChange: (() -> Void)?
+    /// Carries the project and message of the pane that just changed, so the
+    /// banner names the pane that asked rather than the last one in the list.
+    var onAttentionChange: ((String, String?) -> Void)?
 
     init(tree: PaneTreeController) {
         self.tree = tree
@@ -64,7 +66,9 @@ final class WorkspaceWindowController: NSObject {
 
         tree.onFocusedPaneChange = { [weak self] in self?.onFocusedPaneChange?() }
         tree.onSessionChange = { [weak self] in self?.onSessionChange?() }
-        tree.onAttentionChange = { [weak self] _ in self?.onAttentionChange?() }
+        tree.onAttentionChange = { [weak self] _, project, message in
+            self?.onAttentionChange?(project, message)
+        }
         tree.onEmpty = { [weak self] in
             // The last pane of this tab exited. Close the tab rather than leaving
             // an empty one, which also releases the tree and any remaining panes.

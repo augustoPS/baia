@@ -77,6 +77,30 @@ final class PaneActivityTracker {
         rebuild()
     }
 
+    /// A keystroke reached this pane.
+    ///
+    /// This is the other half of acknowledgement, and without it a pane running
+    /// a resident agent stays marked for the rest of its life. `noteResumed` is
+    /// driven from the idle-to-running transition in `poll`, and for a resident
+    /// agent that transition never happens: `PaneActivityClassifier` ranks the
+    /// agent above every child it spawns, so the classification stays
+    /// `.agent(claude)` while it thinks, while it waits, and after it is
+    /// answered. `isIdle` is only ever true for a bare shell, so `wasIdle` is
+    /// false at every transition that can occur while the agent is alive.
+    ///
+    /// The two calls in order give the two levels their meaning: the first key
+    /// drops a request from loud to quiet, the next ends it. `||` short circuits,
+    /// so a single keystroke never does both.
+    func noteInput() {
+        guard attention.noteFocused() || attention.noteResumed() else { return }
+        rebuild()
+    }
+
+    /// What the pane asked for, when it said so through OSC 9 or OSC 777.
+    var attentionMessage: String? {
+        attention.attention.message
+    }
+
     var wantsAttention: Bool {
         attention.attention.isRequesting
     }

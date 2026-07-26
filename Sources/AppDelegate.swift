@@ -33,6 +33,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// project created since launch.
     private var discoveredProjects: [Project]?
 
+    /// Guards against two walks running at once, which the launch warm-up and an
+    /// early ⌘K would otherwise start.
+    private var isDiscovering = false
+
+    /// Watches every keystroke that reaches a workspace window, so typing into a
+    /// pane answers its request for attention.
+    ///
+    /// A local monitor rather than anything in the responder chain, because
+    /// `AppTerminalView.performKeyEquivalent` opens with
+    /// `guard window?.firstResponder === self`, so any view in a pane that can
+    /// take first responder silently disables every ghostty binding in it. The
+    /// monitor sees the event and returns it unchanged, adding no responder.
+    /// `Any?` because that is what `addLocalMonitorForEvents` returns. Never
+    /// removed: the monitor lives as long as the app does, and the delegate
+    /// outlives every window.
+    private var keyMonitor: Any?
+
     private let recentProjects = RecentProjects(fileURL: RecentProjects.defaultFileURL())
 
     /// Coalesces the writes. Every `cd` in every pane reports a session change
@@ -52,6 +69,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         restoreSession()
         NSApp.activate(ignoringOtherApps: true)
         scheduleSave()
+        installKeyMonitor()
+        // Warmed here so the first ⌘K of a session opens on a full list rather
+        // than on an empty one that fills in a moment later.
+        discoverProjects()
+    }
+
+    /// Routes each keystroke to the pane that received it.
+    ///
+    /// `event.window` rather than the app's key window, and matched against the
+    /// windows baia owns: one monitor for the whole app, and typing in one tab
+    /// must not answer another tab's request. Events belonging to the palette
+    /// match nothing here and are ignored.
+    private func installKeyMonitor() {
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if let window = event.window,
+               let match = self?.windows.first(where: { $0.window === window }) {
+                match.tree.focusedPane?.noteInput()
+            }
+            return event
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool {
@@ -72,21 +109,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The window the commands act on. `keyWindow` rather than a stored value,
     /// because a tab is selected by AppKit and by dragging, neither of which
     /// routes through baia.
+    ///
+    /// `mainWindow` is consulted second because the ⌘K palette is a key window
+    /// baia does not own. While it is up, `keyWindow` matches nothing here and
+    /// the old fallback to `windows.first` handed every command to the *oldest*
+    /// tab, which is unordered and usually not the one on screen: ⌥⌘W closed a
+    /// background tab and all of its live shells while nothing visible changed.
+    /// `PalettePanel.canBecomeMain` is false precisely so the workspace window
+    /// stays main underneath it, which is what makes this resolve correctly.
     private var focused: WorkspaceWindowController? {
-        if let key = NSApp.keyWindow, let match = windows.first(where: { $0.window === key }) {
-            return match
+        for candidate in [NSApp.keyWindow, NSApp.mainWindow] {
+            if let candidate, let match = windows.first(where: { $0.window === candidate }) {
+                return match
+            }
         }
         return windows.first
     }
 
     private var tree: PaneTreeController? { focused?.tree }
 
+    /// The one place a workspace window is built and wired.
+    ///
+    /// `tabbing` exists so New Window can be this function too. It used to have
+    /// its own copy of the wiring, which drifted: a detached window never got
+    /// `onAttentionChange`, so a pane in it could ask for the owner and produce
+    /// no banner and no title marker at all.
     @discardableResult
     private func openWindow(
         tree: PaneTreeController,
-        joining sibling: NSWindow?
+        joining sibling: NSWindow?,
+        tabbing: NSWindow.TabbingMode = .preferred
     ) -> WorkspaceWindowController {
         let controller = WorkspaceWindowController(tree: tree)
+        controller.window.tabbingMode = tabbing
         windows.append(controller)
         controller.onClose = { [weak self, weak controller] in
             guard let self, let controller else { return }
@@ -94,12 +149,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Dropped before the save so a closed tab is gone from the next
             // snapshot rather than restored on the following launch.
             scheduleSave()
+            // Retitle the survivors. The waiting count is workspace-wide, so a
+            // closed tab whose pane was asking otherwise leaves `! project` on
+            // every remaining title, naming a pane that no longer exists.
+            updateWindowTitles()
         }
         controller.onSessionChange = { [weak self] in self?.scheduleSave() }
         controller.onFocusedPaneChange = { [weak self] in self?.updateWindowTitles() }
-        controller.onAttentionChange = { [weak self] in
+        // `weak controller` is not decoration. The controller stores this
+        // closure, so a strong capture is a cycle that outlives the close:
+        // `isReleasedWhenClosed` is false and `onClose` only drops *our*
+        // reference, so the controller, its tree, every pane and every live
+        // shell under them stayed alive with no window to reach them. There is
+        // no API to close a libghostty surface, so one leaked reference here is
+        // a leaked shell, visible only as a stray `login -flp` in `ps`.
+        controller.onAttentionChange = { [weak self, weak controller] project, message in
             self?.updateWindowTitles()
-            self?.notifyIfUnfocused(controller)
+            self?.notifyIfUnfocused(controller, project: project, message: message)
         }
         controller.show(joining: sibling)
         updateWindowTitles()
@@ -118,21 +184,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func newWorkspaceWindow(_: Any?) {
-        let controller = WorkspaceWindowController(
-            tree: PaneTreeController(workingDirectory: Self.defaultWorkingDirectory)
-        )
         // Detached on purpose: New Window means a window, and joining the group
         // would make it indistinguishable from New Tab.
-        controller.window.tabbingMode = .disallowed
-        windows.append(controller)
-        controller.onClose = { [weak self, weak controller] in
-            guard let self, let controller else { return }
-            windows.removeAll { $0 === controller }
-            scheduleSave()
-        }
-        controller.onSessionChange = { [weak self] in self?.scheduleSave() }
-        controller.onFocusedPaneChange = { [weak self] in self?.updateWindowTitles() }
-        controller.show(joining: nil)
+        openWindow(
+            tree: PaneTreeController(workingDirectory: Self.defaultWorkingDirectory),
+            joining: nil,
+            tabbing: .disallowed
+        )
     }
 
     @objc func closeTab(_: Any?) {
@@ -142,42 +200,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Command palette
 
     @objc func showCommandPalette(_: Any?) {
+        // Opens on the cache, which is empty only on the first ⌘K of a launch
+        // that beat the warm-up. The walk never happens between the key and the
+        // first frame: it stats the whole workspace and forks one
+        // `git worktree list` per repository, all synchronously, so running it
+        // here froze the app for the duration and one hung repository on a
+        // network mount would have frozen it indefinitely.
         palette.toggle(
             over: focused?.window,
-            projects: projects(),
+            projects: discoveredProjects ?? [],
             recency: recentProjects.load()
         )
+        discoverProjects()
     }
 
-    /// Discards the cached project list so the next ⌘K walks the roots again.
+    /// Discards the cached project list and walks again, so a project created
+    /// since launch shows up.
     @objc func reloadProjectList(_: Any?) {
         discoveredProjects = nil
+        discoverProjects()
     }
 
-    /// The projects under the configured roots, discovered on first use.
+    /// Walks the configured roots off the main thread and hands the result to
+    /// the palette.
     ///
-    /// The roots come from `Settings.defaultSettings` rather than from a file,
-    /// because nothing reads the config file yet. That is the same gap every
-    /// other setting is in, and it is one line to close once a
-    /// `ConfigurationCenter` exists.
-    private func projects() -> [Project] {
-        if let discoveredProjects { return discoveredProjects }
+    /// Re-entrant by design: `isDiscovering` collapses the launch warm-up, the
+    /// ⌘K that arrives before it finishes, and Reload Project List into one
+    /// walk rather than three concurrent ones.
+    private func discoverProjects() {
+        guard discoveredProjects == nil, !isDiscovering else { return }
+        isDiscovering = true
 
         let settings = Settings.defaultSettings
-        let git = GitCommand()
-        let discovery = ProjectDiscovery(
-            roots: settings.projectRoots.map {
-                URL(filePath: $0, directoryHint: .isDirectory)
-            },
-            maxDepth: settings.discoveryMaxDepth,
-            ignoredNames: ProjectDiscovery.defaultIgnoredNames
-        )
-        // git names the worktrees rather than the walk finding them. They are
-        // full file copies living inside the repository, so walking into them
-        // triples the tree and reports the same files twice.
-        let found = discovery.discover { git.worktrees(ofRepositoryRoot: $0) }
-        discoveredProjects = found
-        return found
+        let roots = settings.projectRoots.map {
+            URL(filePath: $0, directoryHint: .isDirectory)
+        }
+        let maxDepth = settings.discoveryMaxDepth
+
+        Task.detached(priority: .userInitiated) {
+            let git = GitCommand()
+            let discovery = ProjectDiscovery(
+                roots: roots,
+                maxDepth: maxDepth,
+                ignoredNames: ProjectDiscovery.defaultIgnoredNames
+            )
+            // git names the worktrees rather than the walk finding them. They
+            // are full file copies living inside the repository, so walking
+            // into them triples the tree and reports the same files twice.
+            let found = discovery.discover { git.worktrees(ofRepositoryRoot: $0) }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                isDiscovering = false
+                discoveredProjects = found
+                palette.setProjects(found, recency: recentProjects.load())
+            }
+        }
     }
 
     /// Opens a project chosen in the palette.
@@ -218,7 +295,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // shows reliably for a background app: the Window menu, Mission Control
         // and the window switcher all read it. A dock badge would be the obvious
         // home and does not work here, see `AttentionNotifier`.
-        let waiting = windows.flatMap { $0.tree.waitingProjects }
+        //
+        // Uniqued, because the list is one entry per waiting *pane*. Two panes
+        // in the same repository, which is the ordinary shape of this workspace,
+        // otherwise put `! vault ! vault` in the title. It happens here rather
+        // than in `PaneTreeController` so two windows on one project collapse
+        // too.
+        var seen: Set<String> = []
+        let waiting = windows
+            .flatMap { $0.tree.waitingProjects }
+            .filter { seen.insert($0).inserted }
 
         // One disambiguation pass across every window, so two tabs on the same
         // project name become `baia (Projects)` and `baia (sandbox)` rather than
@@ -240,12 +326,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func notifyIfUnfocused(_ controller: WorkspaceWindowController?) {
-        guard let controller,
-              controller.window.isKeyWindow != true,
-              let project = controller.tree.waitingProjects.last
-        else { return }
-        notifier.notify(project: project, message: nil)
+    /// The project and message come from the pane that changed, not from the
+    /// waiting list. Re-deriving them with `waitingProjects.last` named whichever
+    /// pane sorted last and dropped the OSC 9 text the pane had already sent.
+    private func notifyIfUnfocused(
+        _ controller: WorkspaceWindowController?,
+        project: String,
+        message: String?
+    ) {
+        guard let controller, controller.window.isKeyWindow != true else { return }
+        // Only a pane that is actually asking earns a banner. The callback also
+        // fires when attention *clears*, and notifying on that announced a pane
+        // that had just gone quiet.
+        guard controller.tree.waitingProjects.contains(project) else { return }
+        notifier.notify(project: project, message: message)
     }
 
     // MARK: - Session
