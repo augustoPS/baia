@@ -23,3 +23,5 @@ xcuserdata/
 # of a repo whose whole build output is already ignored. The script that
 # regenerates them is tracked, because that is the part worth keeping.
 design-captures/*.png
+
+verify-out/
