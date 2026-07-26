@@ -544,7 +544,12 @@ final class PaneSplitView: NSSplitView {
     override var dividerThickness: CGFloat { 1 }
 
     override var dividerColor: NSColor {
-        let colour = isDragging ? paneTheme.edgeFocus : paneTheme.divider
+        // `inkFocus`, not `edgeFocus`. The 0.55 blend existed to stop a full-pane
+        // frame shouting; a divider under the mouse is one point and can carry
+        // full chroma, and it matching the focused anchor name is what says the
+        // drag belongs to the same signal as focus rather than being a third
+        // colour the eye has to learn.
+        let colour = isDragging ? paneTheme.inkFocus : paneTheme.divider
         return NSColor(
             srgbRed: CGFloat(colour.red),
             green: CGFloat(colour.green),
