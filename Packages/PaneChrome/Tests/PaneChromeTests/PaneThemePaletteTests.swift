@@ -1,3 +1,4 @@
+import BaiaSettings
 import Testing
 
 @testable import PaneChrome
@@ -81,6 +82,36 @@ import Testing
         #expect(theme.focusedAccent != theme.background)
         #expect(theme.color(for: .strong, focused: true, on: theme.barBackground)
             .contrastRatio(against: theme.barBackground) >= PaneTheme.minimumTextContrast)
+    }
+
+    /// The bug this initializer's `focusAccent` parameter exists to make
+    /// impossible. The key was decoded, stored and covered by its own tests
+    /// while this construction resolved the accent from the selection colour and
+    /// never consulted the setting, so `"focusAccent": "bone"` was a no-op in a
+    /// config file that reported no error. Every earlier test here passes with
+    /// the setting ignored; this is the one that does not.
+    @Test func theConfiguredFocusAccentReachesTheTheme() {
+        let bone = PaneTheme(
+            background: "#141414", foreground: "#bbbbbb",
+            selectionBackground: "#b5d5ff", palette: Self.darkPastelPalette,
+            focusAccent: .bone
+        )
+        #expect(bone.focusedAccent.hexString == "#e0e0e0")
+
+        // `accent` keeps the theme's declared selection colour, which is what
+        // makes the default a no-op and this release not a colour change.
+        let declared = PaneTheme(
+            background: "#141414", foreground: "#bbbbbb",
+            selectionBackground: "#b5d5ff", palette: Self.darkPastelPalette,
+            focusAccent: .accent
+        )
+        #expect(declared.focusedAccent.hexString == "#b5d5ff")
+        // And the parameter's default is that same choice, so a caller written
+        // before the key existed renders identically.
+        #expect(PaneTheme(
+            background: "#141414", foreground: "#bbbbbb",
+            selectionBackground: "#b5d5ff", palette: Self.darkPastelPalette
+        ) == declared)
     }
 
     /// A light theme has to survive the same path, because every contrast repair

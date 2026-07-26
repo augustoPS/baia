@@ -197,19 +197,25 @@ import Testing
         #expect(theme.color(for: .strong, focused: false) != theme.focusedAccent)
     }
 
-    @Test func everyFocusAccentDerivationIsReachable() {
-        // The point of this test is that four of these five were not. The key
-        // was decoded, stored and covered by its own tests while `paneTheme`
-        // resolved the accent from the theme's selection colour and never looked
-        // at settings, so `"focusAccent": "bone"` was a no-op in a config file
-        // that reported no error.
+    @Test func everyFocusAccentChoiceResolvesToItsOwnColour() {
+        // The hexes the design pass quotes for each of the five, so a formula
+        // edited without meaning to shows up here rather than as a focus colour
+        // nobody recognises. Whether a choice ever reaches the screen is a
+        // separate question, answered by
+        // `PaneThemePaletteTests.theConfiguredFocusAccentReachesTheTheme`.
         let theme = PaneTheme.darkPastel
         #expect(theme.accent(for: .accent) == theme.focusedAccent)
         #expect(theme.accent(for: .bone).hexString == "#e0e0e0")
         #expect(theme.accent(for: .ansi5).hexString == "#ff55ff")
         #expect(theme.accent(for: .ansi6).hexString == "#55ffff")
         #expect(theme.accent(for: .midnight).hexString == "#aa55ff")
-        // No two of the five collide, or one of them is not a choice.
+        // No two of the five collide, on a theme that declares all sixteen
+        // slots. On one that declares none, four of them collapse onto the
+        // foreground and a focused name stops being distinguishable from an
+        // unfocused one. That degradation is the deliberate price of
+        // `ansiColor(_:)` answering rather than trapping, and it is why this
+        // assertion is scoped to a full palette rather than made a promise
+        // about every theme.
         let resolved = FocusAccent.allCases.map { theme.accent(for: $0).hexString }
         #expect(Set(resolved).count == FocusAccent.allCases.count)
     }
@@ -218,7 +224,9 @@ import Testing
         // The frame and the anchor name are one colour doing one job, so the
         // stroke has to be the repaired value rather than the raw derivation:
         // the name goes through `readable` on the way to the screen and an
-        // unrepaired frame beside it would be a second, darker blue.
+        // unrepaired frame beside it would be a second, darker blue. Equal to
+        // the name by construction now, so what this pins is the hex and the
+        // repair, not the identity.
         let theme = PaneTheme.darkPastel
         #expect(theme.inkFocus == theme.color(for: .strong, focused: true))
         // The shipped accent already clears the floor, so repair is a no-op.

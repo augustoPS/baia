@@ -102,24 +102,25 @@ final class ConfigurationCenter {
     /// how a footer ends up in Dark Pastel while the surface is in something
     /// else.
     ///
-    /// The configured `focusAccent` is applied here and nowhere else, so the
-    /// choice reaches every pane through the same assignment as the rest of the
-    /// palette.
+    /// `focusAccent` goes in as an argument rather than being applied to the
+    /// result, so this reads the setting and decides nothing about it. The
+    /// resolution is `PaneTheme.accent(for:)`, which has tests; a line here
+    /// would not, and a line here is how the key came to be decoded, stored and
+    /// never read.
+    ///
+    /// The fallback keeps the shipped accent. It is reached only when the
+    /// catalog cannot produce even its own default theme, which is a broken
+    /// build rather than a config the owner wrote, and there is no palette in
+    /// hand at that point to resolve a choice against anyway.
     var paneTheme: PaneTheme {
         guard let themeDefinition else { return .darkPastel }
-        var theme = PaneTheme(
+        return PaneTheme(
             background: settings.backgroundHex,
             foreground: themeDefinition.foreground,
             selectionBackground: themeDefinition.selectionBackground,
-            palette: themeDefinition.palette
+            palette: themeDefinition.palette,
+            focusAccent: settings.focusAccent
         )
-        // The one place `focusAccent` is read. Applied after construction rather
-        // than through the initializer, because the derivations are expressed in
-        // terms of the palette that initializer is what builds: `bone` needs
-        // `ansi[15]` and `midnight` needs `ansi[4]` and `ansi[5]`, none of which
-        // exist until the holes are filled.
-        theme.focusedAccent = theme.accent(for: settings.focusAccent)
-        return theme
     }
 
     // MARK: - Applying

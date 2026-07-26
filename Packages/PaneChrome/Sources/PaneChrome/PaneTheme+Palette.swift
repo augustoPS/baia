@@ -1,3 +1,4 @@
+import BaiaSettings
 import Foundation
 
 public extension PaneTheme {
@@ -16,11 +17,18 @@ public extension PaneTheme {
     /// palette without a leading `#` while `background` and `foreground` carry
     /// one, several hundred of its themes declare no selection colour, and a
     /// hand-edited config file can name anything at all.
+    ///
+    /// `focusAccent` is a parameter rather than something the app applies
+    /// afterwards, so there is no assignment for a caller to forget. Forgetting
+    /// it is not hypothetical: the key was decoded, stored and tested for a week
+    /// while this initializer resolved the accent from the selection colour and
+    /// nothing ever read the setting.
     init(
         background: String,
         foreground: String,
         selectionBackground: String?,
-        palette: [Int: String]
+        palette: [Int: String],
+        focusAccent: FocusAccent = .accent
     ) {
         // A rejected hex falls back to the known-good default rather than to
         // black or to zero. Black is a legitimate background, so a failed parse
@@ -46,6 +54,11 @@ public extension PaneTheme {
             ),
             ansi: ansi
         )
+        // After delegation rather than in the argument above, because the
+        // derivations are expressed in terms of the palette this initializer is
+        // what builds: `bone` needs `ansi[15]` and `midnight` needs `ansi[4]`
+        // and `ansi[5]`, none of which exist until the holes are filled.
+        focusedAccent = accent(for: focusAccent)
     }
 
     /// The focus colour, from the theme's selection colour where it has one.

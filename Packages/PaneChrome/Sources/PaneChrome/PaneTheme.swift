@@ -146,12 +146,18 @@ public struct PaneTheme: Sendable, Equatable {
     /// The focus colour as it is actually drawn: the accent, repaired for the
     /// bar.
     ///
-    /// One value for the focused anchor name, the footer's frame and the
-    /// divider's drag colour, so the three read as one signal rather than three
-    /// decorations. The frame is not text and the ratio is not owed to it, but
-    /// drawing an unrepaired accent beside a repaired name is two blues arguing.
+    /// Today its only consumer is the focused anchor name, which is why it is
+    /// spelled as that colour rather than as its own call to
+    /// ``readable(_:on:minimumRatio:)``. An edit to `.strong` then cannot leave
+    /// the two disagreeing. The footer's focus frame and the divider's drag
+    /// colour move onto it in the tasks that follow, replacing ``edgeFocus`` at
+    /// both sites: neither is text and the ratio is not owed to them, but an
+    /// unrepaired accent drawn beside a repaired name is two blues arguing.
+    ///
+    /// Unlike ``inkContext`` and ``inkFaint``, which are candidates the repair
+    /// chain still has the last word on, this is post-repair.
     public var inkFocus: RGB {
-        readable(focusedAccent, on: barBackground, minimumRatio: Self.minimumTextContrast)
+        color(for: .strong, focused: true)
     }
 
     /// A half-finished operation, and the dirty marker. Blended a long way
@@ -362,9 +368,11 @@ public struct PaneTheme: Sendable, Equatable {
     /// scrim sits *above* the surface and has no such ceiling, which is what lets
     /// one mechanism carry the whole treatment.
     ///
-    /// The app overrides this from the config file. It lives here as well so that
-    /// `PaneChrome` states the design's own number rather than depending on a
-    /// settings package it must not import.
+    /// The app overrides this from the config file, where the owner's own value
+    /// lives. It is stated here too so the design's number sits beside the
+    /// derivations it belongs with, readable without opening another package.
+    /// `Settings.defaultSettings` is the copy the config file is written from,
+    /// and `defaultsChangeNothingAboutHowTheAppAlreadyLooks` pins it to 0.28.
     public static let unfocusedScrim: Double = 0.28
 
     /// How far *every* pane is covered when the window is not key.
