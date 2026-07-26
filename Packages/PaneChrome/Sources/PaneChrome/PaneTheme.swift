@@ -86,6 +86,22 @@ public struct PaneTheme: Sendable, Equatable {
         background.blended(with: foreground, fraction: 0.18)
     }
 
+    /// The planks: the icon's dividers, and the PIN chip's border on an ordinary
+    /// bar.
+    ///
+    /// One derivation rather than two computed at their sites, because the two
+    /// are the same object at two scales and the icon is drawn by a standalone
+    /// script that cannot import this package. The script hardcodes the Dark
+    /// Pastel resolution of this formula, and `plankIsOneDerivationDoingTwoJobs`
+    /// is what keeps the two in step.
+    ///
+    /// Not used for the chip on a *filled* bar. That stroke is judged against
+    /// whatever the bar actually is, because a flat derivation off the theme
+    /// scored 1.85:1 over ``alert`` on exactly the pane that most wanted reading.
+    public var plank: RGB {
+        foreground.blended(with: background, fraction: 0.46)
+    }
+
     /// The stroke around a focused pane under `FocusStyle.frame`, and the colour
     /// a divider takes while it is being dragged.
     public var edgeFocus: RGB {

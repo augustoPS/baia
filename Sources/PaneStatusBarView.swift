@@ -393,10 +393,10 @@ final class PaneStatusBarView: NSView {
 
     /// The pin, as an outlined chip rather than a word in a sentence.
     ///
-    /// Stroked rather than filled, and stroked at 55% of the tier-4 ink, so it
-    /// reads as a label attached to the name without competing with it. Inset by
-    /// half a point so the one-point stroke lands on the pixel rather than
-    /// straddling it.
+    /// Stroked rather than filled, and stroked in `plank`, so it reads as a
+    /// label attached to the name without competing with it. Inset by half a
+    /// point so the one-point stroke lands on the pixel rather than straddling
+    /// it.
     private func drawChip(at x: Double, width: Double, in rect: CGRect) {
         let box = NSRect(
             x: x + 0.5,
@@ -410,7 +410,14 @@ final class PaneStatusBarView: NSView {
         // `barBackground`. When the bar is filled for attention the real backdrop
         // is `theme.alert`, and judging the stroke against the unfilled colour
         // dropped it to 1.85:1 on exactly the pane that most wanted reading.
-        nsColor(colour(for: .context).blended(with: inkBackground, fraction: 0.45)).setStroke()
+        // `plank` on an ordinary bar, because the chip's border and the icon's
+        // dividers are one derivation. On a filled bar it stays relative to the
+        // fill: judged against `barBackground` while the bar was actually
+        // `theme.alert`, this stroke dropped to 1.85:1.
+        let stroke = barIsFilled
+            ? colour(for: .context).blended(with: inkBackground, fraction: 0.45)
+            : theme.plank
+        nsColor(stroke).setStroke()
         path.stroke()
     }
 

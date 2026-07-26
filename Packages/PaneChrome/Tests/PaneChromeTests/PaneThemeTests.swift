@@ -238,6 +238,19 @@ import Testing
         #expect(theme.ok.hexString == "#55ff55")
     }
 
+    @Test func plankIsOneDerivationDoingTwoJobs() {
+        // The icon's dividers and the PIN chip's border are the same plank at two
+        // scales, which is the product's own metaphor rendered twice. Named here
+        // rather than computed at each site so `Icon/make-icon.swift`'s hardcoded
+        // #6e6e6e has something to be checked against.
+        let theme = PaneTheme.darkPastel
+        #expect(theme.plank.hexString == "#6e6e6e")
+        // Between the hairline and the foreground: heavier than the line under a
+        // footer, quieter than the text on it.
+        #expect(theme.plank.relativeLuminance > theme.hairline.relativeLuminance)
+        #expect(theme.plank.relativeLuminance < theme.foreground.relativeLuminance)
+    }
+
     @Test func theDividerSitsBelowTheFooterHairline() {
         // The plank between two stalls must never outrank the plank under one.
         // Both are blends towards the foreground, so this is an ordering on the
