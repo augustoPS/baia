@@ -34,6 +34,12 @@ targets:
 
     sources:
       - path: Sources
+      # The icon only. `Icon/make-icon.swift` is a script that draws it, run by
+      # hand with `swift Icon/make-icon.swift`, and naming the directory here
+      # instead of the file would compile that script into the app as a second
+      # `main`.
+      - path: Icon/baia.icns
+        buildPhase: resources
 
     # Info.plist and baia.entitlements are hand-maintained and wired in through
     # build settings below. Do NOT add `info:` or `entitlements:` keys here:

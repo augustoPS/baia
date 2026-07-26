@@ -1,4 +1,5 @@
 import AppKit
+import BaiaSettings
 import GhosttyTerminal
 import PaneChrome
 import ProjectAnchor
@@ -50,6 +51,88 @@ final class TerminalPaneController: NSViewController {
 
     let statusBar = PaneStatusBarView(frame: .zero)
 
+    /// Covers the terminal and the footer both, which is the point: focus is a
+    /// property of the pane rather than of its chrome, and a scrim that stopped
+    /// at the footer would leave every unfocused pane wearing a bright band.
+    private let scrim = PaneScrimView(frame: .zero)
+
+    private let focusFrame = PaneFocusFrameView(frame: .zero)
+
+    /// The palette everything in this pane derives from. One property rather than
+    /// one per view, so a theme change cannot land on the footer and miss the
+    /// scrim.
+    var theme: PaneTheme = .darkPastel {
+        didSet {
+            guard theme != oldValue else { return }
+            statusBar.theme = theme
+            applyFocusPresentation()
+        }
+    }
+
+    var focusStyle: FocusStyle = .recede {
+        didSet {
+            guard focusStyle != oldValue else { return }
+            applyFocusPresentation()
+        }
+    }
+
+    var attentionStyle: AttentionStyle = .loud {
+        didSet {
+            guard attentionStyle != oldValue else { return }
+            statusBar.attentionStyle = attentionStyle
+        }
+    }
+
+    var unfocusedScrim: Double = PaneTheme.unfocusedScrim {
+        didSet {
+            guard unfocusedScrim != oldValue else { return }
+            applyFocusPresentation()
+        }
+    }
+
+    private(set) var isPaneFocused = false
+
+    /// Whether this pane's window is the key window.
+    ///
+    /// Every pane recedes when the window is not key, including the focused one,
+    /// so an inactive window reads as one recessed object rather than as a window
+    /// that still has a live pane in it. macOS offers no other honest signal for
+    /// this here, because the titlebar is transparent.
+    var isWindowActive = true {
+        didSet {
+            guard isWindowActive != oldValue else { return }
+            applyFocusPresentation()
+        }
+    }
+
+    func setPaneFocused(_ focused: Bool) {
+        guard isPaneFocused != focused else { return }
+        isPaneFocused = focused
+        applyFocusPresentation()
+    }
+
+    private func applyFocusPresentation() {
+        statusBar.isFocused = isPaneFocused
+        statusBar.focusStyle = focusStyle
+        statusBar.theme = theme
+        scrim.colour = theme.background
+        scrim.amount = scrimAmount
+        focusFrame.colour = theme.edgeFocus
+        focusFrame.isVisible = isPaneFocused && focusStyle == .frame && isWindowActive
+    }
+
+    /// How far this pane is covered right now.
+    ///
+    /// The inactive case wins outright rather than adding to the unfocused one.
+    /// Stacking them would make the unfocused panes of a background window nearly
+    /// unreadable, and a background window is exactly when the owner is scanning
+    /// them to decide which one to come back to.
+    private var scrimAmount: Double {
+        guard isWindowActive else { return PaneTheme.inactiveScrim }
+        guard focusStyle == .recede else { return 0 }
+        return isPaneFocused ? 0 : unfocusedScrim
+    }
+
     private let gitStatus = PaneGitStatus()
 
     private lazy var activityTracker = PaneActivityTracker(
@@ -61,6 +144,13 @@ final class TerminalPaneController: NSViewController {
     var onAttentionChange: (() -> Void)?
 
     var wantsAttention: Bool { activityTracker.wantsAttention }
+
+    /// What this pane asked for, when it said so rather than only ringing.
+    var attentionMessage: String? { activityTracker.attentionMessage }
+
+    /// A keystroke reached this pane. Driven by the app's key monitor, since
+    /// nothing in a pane may take first responder.
+    func noteInput() { activityTracker.noteInput() }
 
     private lazy var terminalView = TerminalView(
         frame: NSRect(x: 0, y: 0, width: 1024, height: 680)
@@ -144,6 +234,12 @@ final class TerminalPaneController: NSViewController {
         statusBar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(terminalView)
         view.addSubview(statusBar)
+        // Added last so they sit above both. Neither can be hit, so ordering
+        // costs the terminal nothing.
+        for overlay in [scrim, focusFrame] {
+            overlay.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(overlay)
+        }
 
         // Edge pinning alone leaves the hierarchy with no size of its own.
         // TerminalView has no intrinsic content size, so `fittingSize` collapses
@@ -181,6 +277,17 @@ final class TerminalPaneController: NSViewController {
             preferredHeight,
         ])
 
+        for overlay in [scrim, focusFrame] {
+            NSLayoutConstraint.activate([
+                overlay.topAnchor.constraint(equalTo: view.topAnchor),
+                overlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                overlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                overlay.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            ])
+        }
+
+        applyFocusPresentation()
+
         anchorTracker.onChange = { [weak self] in
             guard let self else { return }
             // Handed the anchor on every change, and it returns immediately
@@ -195,11 +302,42 @@ final class TerminalPaneController: NSViewController {
             self?.refreshStatus()
         }
 
+        // Weak, so the footer cannot keep the pane alive. `PaneTreeController`
+        // is the only strong owner of a pane, and a leaked pane is a leaked
+        // shell.
+        statusBar.onClick = { [weak self] in self?.takeFocus() }
+
         activityTracker.onChange = { [weak self] in
-            self?.refreshStatus()
-            self?.onAttentionChange?()
+            guard let self else { return }
+            // Unconditional, so the footer keeps tracking the label.
+            refreshStatus()
+            // The upward callback is not. `onChange` fires for any change to the
+            // whole agent value, and the label changes as a build walks its
+            // targets, so raising attention from here re-bounced the Dock and
+            // re-posted the banner on every poll of a pane that was merely
+            // compiling. Only a real transition of the attention state escapes.
+            let now = statusBar.status?.agent.map(Self.attention(of:)) ?? .none
+            guard now != lastAttention else { return }
+            lastAttention = now
+            onAttentionChange?()
         }
     }
+
+    /// The attention level a footer agent value represents.
+    private static func attention(of agent: PaneStatus.Agent) -> PaneAttentionLevel {
+        guard agent.wantsAttention else { return .none }
+        return agent.isAcknowledged ? .acknowledged : .asking
+    }
+
+    /// Mirrors the two-level model without reaching into `PaneAttentionState`,
+    /// which is a value the tracker owns.
+    private enum PaneAttentionLevel {
+        case none
+        case acknowledged
+        case asking
+    }
+
+    private var lastAttention: PaneAttentionLevel = .none
 
     /// Rebuilds the footer's value from the anchor. Git and agent state are left
     /// nil until their subsystems are wired, and `PaneStatusSegments` already
@@ -323,9 +461,64 @@ final class TerminalPaneController: NSViewController {
         let cwd = anchorTracker.workingDirectory?.path(percentEncoded: false) ?? ""
         let shown = (cwd as NSString).abbreviatingWithTildeInPath
         return (
-            "baia — \(anchor.displayName)",
+            tabPath,
             anchor.source == .pinned ? "\(shown) · pinned" : shown
         )
+    }
+
+    /// The slash-separated path a tab is disambiguated with, whose last
+    /// component is the name the tab wants to show.
+    ///
+    /// A path rather than a bare name because two tabs called `baia` can only be
+    /// told apart by what is above them, and `TabTitle.disambiguated` needs the
+    /// parents to grow into.
+    var tabPath: String {
+        guard let anchor = anchorTracker.anchor else { return "baia" }
+        let title = TabTitle.title(
+            anchorName: anchor.displayName,
+            isWorktree: statusBar.status?.git?.isLinkedWorktree ?? false
+        )
+        let parent = anchor.url.deletingLastPathComponent().path(percentEncoded: false)
+        return parent.isEmpty ? title : parent + "/" + title
+    }
+
+    /// This pane's contribution to its window's tab label.
+    ///
+    /// - Parameter project: the already-disambiguated name, which only the owner
+    ///   of every window can compute, since disambiguating needs to see the
+    ///   others.
+    func tabTitle(project: String, budget: TabTitle.Budget) -> String {
+        let status = statusBar.status
+        let git = status?.git
+        let markers = status
+            .map { PaneStatusSegments.build(from: $0) }?
+            .first { $0.role == .indicators }?
+            .text ?? ""
+        return TabTitle.tab(
+            project: project,
+            branch: git?.head,
+            isDefaultBranch: Self.isConventionalDefaultBranch(git?.head),
+            markers: markers,
+            attention: status?.attention ?? .none,
+            isBusy: status?.agent?.isBusy ?? false,
+            budget: budget
+        )
+    }
+
+    /// Whether a branch is probably the repository's default.
+    ///
+    /// A name test rather than an answer from git, which is an approximation and
+    /// is the one place in this design that is. Resolving it properly means
+    /// reading `refs/remotes/origin/HEAD`, which `GitWorkspace` does not collect
+    /// today, and the cost of being wrong here is small and symmetric: a branch
+    /// genuinely called `main` in a repository whose default is something else
+    /// goes unnamed in the tab, and its own footer still says `main`.
+    ///
+    /// Kept as one predicate so that adding the real lookup later is a change to
+    /// this function and to nothing else.
+    private static func isConventionalDefaultBranch(_ branch: String?) -> Bool {
+        guard let branch else { return true }
+        return branch == "main" || branch == "master"
     }
 }
 
@@ -363,10 +556,11 @@ extension TerminalPaneController:
     /// incoming one, so raising the callback on both would have two panes racing
     /// to tell the workspace which of them is focused.
     func terminalDidChangeFocus(_ focused: Bool) {
-        statusBar.isFocused = focused
+        setPaneFocused(focused)
         guard focused else { return }
-        // Looking at the pane is the acknowledgement, so the request clears here
-        // rather than on any timer.
+        // Looking at the pane acknowledges the request without ending it. The
+        // pane may still be waiting, and it now says so quietly rather than
+        // falling silent the instant it is glanced at.
         activityTracker.noteFocused()
         onFocusGained?()
     }

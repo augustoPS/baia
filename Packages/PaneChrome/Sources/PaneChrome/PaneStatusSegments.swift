@@ -65,7 +65,10 @@ public enum PaneStatusSegments {
                 alignment: .leading,
                 priority: Priority.pin,
                 truncation: .none,
-                emphasis: .muted
+                // Tier 4. A pin is true and permanent and never urgent, and it
+                // is drawn as an outlined chip rather than a word, so that it
+                // stops reading as part of the sentence the bar is not.
+                emphasis: .context
             ))
         }
 
@@ -85,8 +88,10 @@ public enum PaneStatusSegments {
                 priority: Priority.agent,
                 truncation: .tail,
                 // An agent asking for input is the one thing on this bar that is
-                // worth interrupting for.
-                emphasis: agent.wantsAttention ? .alert : .normal
+                // worth interrupting for. An agent merely working is tier 4: it
+                // is the state four panes are in most of the time, so it has to
+                // be the calmest thing in the app.
+                emphasis: agent.wantsAttention ? .alert : .context
             ))
         }
 
@@ -96,12 +101,15 @@ public enum PaneStatusSegments {
                 text: directory,
                 alignment: .trailing,
                 priority: Priority.workingDirectory,
+                // Tier 4, and the quietest thing drawn. It is also the first
+                // segment dropped, so it is the least urgent thing the bar can
+                // still be showing.
                 // Truncated from the head, so `~/Projects/baia/Packages/…/Tests`
                 // keeps the end that says where the shell actually is. Cutting
                 // the tail of a path leaves every deep directory in one project
                 // looking identical.
                 truncation: .head,
-                emphasis: .muted
+                emphasis: .faint
             ))
         }
 
@@ -120,22 +128,36 @@ public enum PaneStatusSegments {
                 alignment: .leading,
                 priority: Priority.operation,
                 truncation: .none,
-                // Strong, not alert. Alert is reserved for conflicted files and
-                // for an agent asking for input, so that one colour on this bar
-                // means "act now" and a mid-rebase pane does not cry it every
-                // time.
-                emphasis: .strong
+                // Warn, not alert and no longer strong. A half-finished rebase
+                // changes what every other fact on the bar means, which is a
+                // warning rather than emphasis. Alert stays reserved for
+                // conflicted files and for an agent asking, so that one colour
+                // means "act now" and a mid-rebase pane does not cry it the
+                // whole time it is mid-rebase.
+                emphasis: .warn
             ))
         }
 
         if !git.head.isEmpty {
+            // The worktree prefix is a separate run rather than a separate
+            // segment: it must never be dropped away from the branch it
+            // qualifies, and it must not be the loudest thing here either. Drawn
+            // in tier 4 while the branch keeps tier 2, so the branch name reads
+            // first and the prefix answers "which checkout" only once you have
+            // read it.
+            let runs = git.isLinkedWorktree
+                ? [
+                    PaneStatusRun(text: worktreePrefix, emphasis: .context),
+                    PaneStatusRun(text: git.head, emphasis: .normal),
+                ]
+                : [PaneStatusRun(text: git.head, emphasis: .normal)]
+
             segments.append(PaneStatusSegment(
                 role: .branch,
-                text: git.isLinkedWorktree ? worktreePrefix + git.head : git.head,
+                runs: runs,
                 alignment: .leading,
                 priority: Priority.branch,
-                truncation: .tail,
-                emphasis: .normal
+                truncation: .tail
             ))
         }
 
@@ -143,47 +165,57 @@ public enum PaneStatusSegments {
         // A clean repository is the common case, and a zero-width segment still
         // costs a spacing gap, which would leave the bar looking mis-aligned
         // against the pane next to it.
-        let markers = indicators(git)
+        let markers = indicatorRuns(git)
         if !markers.isEmpty {
             segments.append(PaneStatusSegment(
                 role: .indicators,
-                text: markers,
+                runs: markers,
                 alignment: .leading,
                 priority: Priority.indicators,
-                truncation: .none,
-                emphasis: git.conflicted > 0 ? .alert : .normal
+                truncation: .none
             ))
         }
     }
 
-    /// The marker string, for example `↑1↓2*?3`.
+    /// The markers, for example `↑1↓2*?3`, as coloured runs.
     ///
-    /// Kept as one segment rather than five, because the markers are read as a
-    /// single word and splitting them would let width pressure drop the `*`
-    /// while keeping the `↑1`. It is a segment of its own rather than a suffix on
-    /// the branch, which is how the owner's statusline writes it, so that a long
-    /// branch name can be dropped with the markers surviving.
-    private static func indicators(_ git: PaneStatus.Git) -> String {
-        var text = ""
+    /// Still one segment rather than five. The markers are read as a single word
+    /// and splitting them would let width pressure drop the `*` while keeping the
+    /// `↑1`, which is exactly backwards. It is a segment of its own rather than a
+    /// suffix on the branch, which is how the owner's statusline writes it, so
+    /// that a long branch name can be dropped with the markers surviving.
+    ///
+    /// One string, one measured width, dropped whole, and four colours inside it.
+    /// The markers do not mean the same thing as each other: an ahead count is a
+    /// number to act on eventually, a dirty tree is the one that costs you if you
+    /// miss it, untracked files are a fact, and a conflict is an emergency.
+    /// Giving them one colour made the reader parse the glyphs to find that out.
+    private static func indicatorRuns(_ git: PaneStatus.Git) -> [PaneStatusRun] {
+        var runs: [PaneStatusRun] = []
 
         // Ahead and behind are dropped when there is no upstream, even when the
         // counts are non-zero. A detached HEAD or a deleted upstream leaves
         // whatever the last successful count was, and `↑3` against a branch that
         // has nowhere to push is worse than saying nothing.
         if git.hasUpstream {
-            if git.ahead > 0 { text += "↑\(git.ahead)" }
-            if git.behind > 0 { text += "↓\(git.behind)" }
+            if git.ahead > 0 { runs.append(PaneStatusRun(text: "↑\(git.ahead)", emphasis: .info)) }
+            if git.behind > 0 { runs.append(PaneStatusRun(text: "↓\(git.behind)", emphasis: .info)) }
         }
 
-        if git.dirty { text += "*" }
-        if git.untracked > 0 { text += "?\(git.untracked)" }
+        if git.dirty { runs.append(PaneStatusRun(text: "*", emphasis: .warn)) }
+        if git.untracked > 0 {
+            runs.append(PaneStatusRun(text: "?\(git.untracked)", emphasis: .context))
+        }
 
         // Conflicts come last so the owner's own four markers keep the exact
-        // prefix his prompt shows, and the whole segment turns alert anyway, so
-        // position costs nothing in noticing it.
-        if git.conflicted > 0 { text += "!\(git.conflicted)" }
+        // prefix his prompt shows. The segment's headline emphasis becomes alert
+        // as soon as this run exists, so anything reading only `emphasis` still
+        // sees the emergency.
+        if git.conflicted > 0 {
+            runs.append(PaneStatusRun(text: "!\(git.conflicted)", emphasis: .alert))
+        }
 
-        return text
+        return runs
     }
 
     /// True for a string with nothing but whitespace in it. A caller that

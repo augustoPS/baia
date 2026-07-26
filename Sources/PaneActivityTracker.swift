@@ -77,8 +77,32 @@ final class PaneActivityTracker {
         rebuild()
     }
 
+    /// A keystroke reached this pane.
+    ///
+    /// This is the other half of acknowledgement, and without it a pane running
+    /// a resident agent stays marked for the rest of its life. `noteResumed` is
+    /// driven from the idle-to-running transition in `poll`, and for a resident
+    /// agent that transition never happens: `PaneActivityClassifier` ranks the
+    /// agent above every child it spawns, so the classification stays
+    /// `.agent(claude)` while it thinks, while it waits, and after it is
+    /// answered. `isIdle` is only ever true for a bare shell, so `wasIdle` is
+    /// false at every transition that can occur while the agent is alive.
+    ///
+    /// The two calls in order give the two levels their meaning: the first key
+    /// drops a request from loud to quiet, the next ends it. `||` short circuits,
+    /// so a single keystroke never does both.
+    func noteInput() {
+        guard attention.noteFocused() || attention.noteResumed() else { return }
+        rebuild()
+    }
+
+    /// What the pane asked for, when it said so through OSC 9 or OSC 777.
+    var attentionMessage: String? {
+        attention.attention.message
+    }
+
     var wantsAttention: Bool {
-        attention.attention != .none
+        attention.attention.isRequesting
     }
 
     // MARK: - Polling
@@ -95,8 +119,20 @@ final class PaneActivityTracker {
         guard let shell = shellPid(above: foreground, in: tree) else { return }
         let next = PaneActivityClassifier.classify(tree: tree, shellPid: shell)
         guard next != activity else { return }
+        let wasIdle = Self.isIdle(activity)
         activity = next
+        // A pane that goes from idle back to running has been answered: whatever
+        // it was waiting for arrived and it is working again. This is the only
+        // thing that ends a request, and it is deliberately the transition rather
+        // than the state, so a bell that arrives after its command already exited
+        // is not cleared on the very next tick before anyone has seen it.
+        if wasIdle, !Self.isIdle(next) { _ = attention.noteResumed() }
         rebuild()
+    }
+
+    /// True for a pane sitting at a prompt with nothing under it.
+    private static func isIdle(_ activity: PaneActivity) -> Bool {
+        activity == .idleShell
     }
 
     /// The pane's shell: the nearest shell at or above the foreground process.
@@ -142,17 +178,25 @@ final class PaneActivityTracker {
         guard label != nil || wantsAttention else { return nil }
         return PaneStatus.Agent(
             label: label ?? attentionLabel,
-            wantsAttention: wantsAttention
+            wantsAttention: wantsAttention,
+            isAcknowledged: !attention.attention.isUnacknowledged,
+            // Busy means an agent is working, not that any command is running. A
+            // build or a `sleep` is named by its label and does not earn the dot,
+            // which is reserved for the thing the workspace exists to watch.
+            isBusy: Self.isWorkingAgent(activity)
         )
     }
 
     /// What an attention request says when nothing is running to name. A bell
     /// from a pane whose command already exited still deserves a marker.
     private var attentionLabel: String {
-        guard case let .requested(message) = attention.attention, let message else {
-            return "!"
-        }
-        return message
+        attention.attention.message ?? "!"
+    }
+
+    /// True while an agent is running in this pane.
+    private static func isWorkingAgent(_ activity: PaneActivity) -> Bool {
+        if case .agent = activity { return true }
+        return false
     }
 
     private func label(for activity: PaneActivity) -> String? {

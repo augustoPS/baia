@@ -67,10 +67,41 @@ import Testing
     }
 
     @Test func conflictedFilesRaiseTheIndicatorsToAlert() {
-        let clean = Sample.status(git: Sample.git(dirty: true))
+        // The headline emphasis of a multi-run segment is its loudest run, so a
+        // caller that reads only `emphasis` still sees the emergency. A dirty
+        // tree on its own is a warning rather than plain state, which is the one
+        // marker that costs you if you miss it.
+        let dirty = Sample.status(git: Sample.git(dirty: true))
         let conflicted = Sample.status(git: Sample.git(dirty: true, conflicted: 2))
-        #expect(segment(.indicators, in: clean)?.emphasis == .normal)
+        #expect(segment(.indicators, in: dirty)?.emphasis == .warn)
         #expect(segment(.indicators, in: conflicted)?.emphasis == .alert)
+    }
+
+    @Test func eachMarkerCarriesItsOwnMeaningWithoutSplittingTheSegment() {
+        // One string, one measured width, dropped whole, four colours inside it.
+        // The markers do not mean the same thing as each other, and giving them
+        // one colour made the reader parse the glyphs to find that out. Splitting
+        // them into segments instead would let width pressure keep the ahead
+        // count and drop the dirty marker, which is exactly backwards.
+        let status = Sample.status(
+            git: Sample.git(ahead: 1, behind: 2, dirty: true, untracked: 3, conflicted: 4)
+        )
+        let markers = segment(.indicators, in: status)
+        #expect(markers?.text == "↑1↓2*?3!4")
+        #expect(markers?.runs.map(\.text) == ["↑1", "↓2", "*", "?3", "!4"])
+        #expect(markers?.runs.map(\.emphasis) == [.info, .info, .warn, .context, .alert])
+    }
+
+    @Test func theRunsOfASegmentAlwaysJoinBackToItsText() {
+        // The width solver measures `text`, so a segment whose runs said anything
+        // else would measure one string and draw another, and the bar would
+        // overflow only on the panes carrying the most state.
+        for status in [Sample.everything(), Sample.status(git: Sample.git(isLinkedWorktree: true))] {
+            for segment in PaneStatusSegments.build(from: status) {
+                #expect(segment.runs.map(\.text).joined() == segment.text)
+                #expect(!segment.runs.isEmpty)
+            }
+        }
     }
 
     @Test func conflictedFilesAreCountedAfterTheOwnersOwnMarkers() {
@@ -120,13 +151,17 @@ import Testing
         #expect(segment(.operation, in: status)?.text == "REBASE 1/3")
     }
 
-    @Test func theOperationIsStrongRatherThanAlert() {
+    @Test func theOperationIsAWarningRatherThanAnAlert() {
         // One alert colour on the bar has to mean one thing. Conflicted files
         // and an agent waiting are worth interrupting for; a rebase in progress
-        // is worth noticing, and if both look identical neither gets read.
+        // is worth noticing, and if both look identical neither gets read. It is
+        // no longer `strong` either: strong is identity, and a half-finished
+        // rebase changes what every other fact on the bar means, which is the
+        // definition of a warning.
         let status = Sample.status(git: Sample.git(conflicted: 1, operation: "REBASE 1/3"))
-        #expect(segment(.operation, in: status)?.emphasis == .strong)
+        #expect(segment(.operation, in: status)?.emphasis == .warn)
         #expect(segment(.indicators, in: status)?.emphasis == .alert)
+        #expect(segment(.anchorName, in: status)?.emphasis == .strong)
     }
 
     @Test func theOperationLeadsTheBranchItIsHappeningTo() {
@@ -155,9 +190,13 @@ import Testing
     }
 
     @Test func anAgentSegmentIsAlertOnlyWhenItWantsAttention() {
+        // A working agent is tier 4. It is the state four panes are in most of
+        // the time, so it has to be the calmest thing in the app, and anything
+        // louder would spend the reader's attention on the one fact that is
+        // never actionable.
         let quiet = Sample.status(agent: .init(label: "claude", wantsAttention: false))
         let waiting = Sample.status(agent: .init(label: "claude", wantsAttention: true))
-        #expect(segment(.agent, in: quiet)?.emphasis == .normal)
+        #expect(segment(.agent, in: quiet)?.emphasis == .context)
         #expect(segment(.agent, in: waiting)?.emphasis == .alert)
     }
 

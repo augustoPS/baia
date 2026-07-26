@@ -42,13 +42,21 @@ final class AttentionNotifier {
     /// assigned, `display()` is called, and the Dock still reports no badge for
     /// baia through accessibility and shows none on screen. Setting the label
     /// unconditionally at launch to a fixed string does not appear either, which
-    /// rules out the wiring and leaves the API itself. baia is ad-hoc signed with
-    /// a placeholder icon, and that is the likeliest cause, but it was not worth
-    /// chasing for an indicator that has a working substitute.
+    /// rules out the wiring and leaves the API itself.
+    ///
+    /// The placeholder icon was the leading suspect and has been ruled out
+    /// (2026-07-25). baia now ships a real `.icns`, the Dock renders it, and a
+    /// fixed `badgeLabel = "9"` set in `applicationDidFinishLaunching` still
+    /// produces no badge on a tile that is otherwise drawing correctly. Whatever
+    /// the cause is, it is not the icon. Ad-hoc signing and the hardened runtime
+    /// are what remain untested; neither was worth chasing for an indicator that
+    /// has a working substitute.
     ///
     /// The waiting count goes in the window title instead, which macOS does show
     /// for a background app in the Window menu, Mission Control, and the window
-    /// switcher. `AppDelegate.updateWindowTitle` owns it.
+    /// switcher. That is the primary carrier rather than a fallback, precisely
+    /// because this one is not coming back. `AppDelegate.updateWindowTitles`
+    /// owns it.
 
     /// Posted when a pane starts asking while its window is not the key window.
     ///

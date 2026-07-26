@@ -70,4 +70,41 @@ import Testing
             home: ""
         ) == "/Users/gu/Projects/baia/Sources")
     }
+
+    // MARK: - Attention
+
+    @Test func aPaneWithNoAgentIsNotAsking() {
+        #expect(Sample.status().attention == .none)
+    }
+
+    @Test func aWorkingAgentIsNotAsking() {
+        // The state four panes are in most of the time. It must be the calmest
+        // thing in the app, which starts with it not being an attention state at
+        // all.
+        let busy = Sample.status(agent: .init(label: "claude", wantsAttention: false, isBusy: true))
+        #expect(busy.attention == .none)
+    }
+
+    @Test func theTwoLevelsAreTheSameRequestAtDifferentVolumes() {
+        // The requirement reads as a contradiction (urgent across four panes,
+        // tolerable to sit beside, settled once seen) and is only contradictory
+        // while attention is one state.
+        let asking = Sample.status(agent: .init(label: "claude", wantsAttention: true))
+        let seen = Sample.status(
+            agent: .init(label: "claude", wantsAttention: true, isAcknowledged: true)
+        )
+        #expect(asking.attention == .asking)
+        #expect(seen.attention == .acknowledged)
+    }
+
+    @Test func anAcknowledgementCannotOutliveTheRequestThatEarnedIt() {
+        // Derived rather than stored, which is what makes "cleared whenever
+        // wantsAttention goes false" a thing that cannot be forgotten rather than
+        // a line someone has to remember to write. A pane that stops asking goes
+        // straight back to none with no transition to run and nothing to reset.
+        let stale = Sample.status(
+            agent: .init(label: "claude", wantsAttention: false, isAcknowledged: true)
+        )
+        #expect(stale.attention == .none)
+    }
 }

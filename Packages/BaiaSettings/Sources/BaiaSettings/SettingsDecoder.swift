@@ -199,6 +199,44 @@ public enum SettingsDecoder {
             settings.restoreSession = restore
         }
 
+        // The four design keys. Each is read through `init(rawValue:)` and falls
+        // back on its own, the way `cursorStyle` does above, so a typo in one of
+        // them leaves the other three applied and names itself in `invalidKeys`.
+        // None of these spellings reaches ghostty, so an unknown one costs a
+        // reported rejection rather than a silently dropped terminal config line.
+        if let style = reader.text("focusStyle") {
+            if let style = FocusStyle(rawValue: style) {
+                settings.focusStyle = style
+            } else {
+                reader.reject("focusStyle")
+            }
+        }
+
+        if let accent = reader.text("focusAccent") {
+            if let accent = FocusAccent(rawValue: accent) {
+                settings.focusAccent = accent
+            } else {
+                reader.reject("focusAccent")
+            }
+        }
+
+        if let style = reader.text("attentionStyle") {
+            if let style = AttentionStyle(rawValue: style) {
+                settings.attentionStyle = style
+            } else {
+                reader.reject("attentionStyle")
+            }
+        }
+
+        if let scrim = reader.number("unfocusedScrim") {
+            settings.unfocusedScrim = Self.clamped(
+                scrim,
+                to: Settings.Limits.scrim,
+                key: "unfocusedScrim",
+                reader: &reader
+            )
+        }
+
         return SettingsDecodeResult(
             settings: settings,
             // Both lists are sorted, and a `Dictionary`'s key order is not stable

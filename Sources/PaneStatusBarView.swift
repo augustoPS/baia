@@ -1,5 +1,35 @@
 import AppKit
+import BaiaSettings
 import PaneChrome
+
+/// A pane of the footer that draws through a closure its owner supplies.
+///
+/// The footer needs three stacked surfaces: the bar, an alert wash that can be
+/// animated on its own, and the text above both. A view's own `draw(_:)` renders
+/// *below* its subviews and sublayers, so the text cannot live there if anything
+/// is to fade in behind it.
+///
+/// A view rather than a `CALayer` subclass. This target builds with
+/// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, and `CALayer`'s `draw(in:)`,
+/// `action(forKey:)` and initializers are all nonisolated, so a subclass of it
+/// cannot override them without being torn out of the isolation every other type
+/// here lives in. `NSView` is main-actor already.
+private final class PaneStatusContentView: NSView {
+    var render: ((NSRect) -> Void)?
+
+    override func draw(_: NSRect) { render?(bounds) }
+
+    override var isFlipped: Bool { true }
+
+    override var acceptsFirstResponder: Bool { false }
+
+    override var canBecomeKeyView: Bool { false }
+
+    /// The footer swallows no clicks. See the note on the view below: anything in
+    /// a pane that can take first responder silently disables every ghostty key
+    /// binding in it.
+    override func hitTest(_: NSPoint) -> NSView? { nil }
+}
 
 /// The thin footer under one terminal surface.
 ///
@@ -15,7 +45,8 @@ import PaneChrome
 /// ghostty key binding in that pane. That is why this is a plain `NSView` that
 /// draws text rather than an `NSStackView` of labels, and why there is no
 /// `NSControl` anywhere in it: an `NSTextField` or `NSButton` would join the key
-/// view loop and be reachable by tab.
+/// view loop and be reachable by tab. The pin chip looks like a button and is a
+/// stroked rectangle for exactly this reason.
 final class PaneStatusBarView: NSView {
     /// Set by the pane controller whenever the anchor, git state, or agent state
     /// moves. Redraws only on a real change, because the anchor tracker polls
@@ -24,23 +55,62 @@ final class PaneStatusBarView: NSView {
     var status: PaneStatus? {
         didSet {
             guard status != oldValue else { return }
-            needsDisplay = true
+            // Read before the redraw, so the arrival pulse is decided by the
+            // transition rather than by the state. A pane that repaints while it
+            // is still waiting must not blink again.
+            let became = oldValue?.attention ?? .none
+            // Stripped *before* the repaint, not after. `invalidate` only writes
+            // the wash's opacity when no animation is running, so removing the
+            // arrival pulse afterwards left the model value at 1 with the alert
+            // colour behind it: acknowledging a pane inside the 0.51 s pulse
+            // froze its footer as a solid red band until some later change
+            // happened to repaint it.
+            if attention != .asking { attentionWash.layer?.removeAllAnimations() }
+            invalidate()
+            // `runArrivalPulse` removes animations itself, so the entry path is
+            // unaffected by the reordering above.
+            if became != .asking, attention == .asking { runArrivalPulse() }
         }
     }
 
     var theme: PaneTheme = .darkPastel {
         didSet {
             guard theme != oldValue else { return }
-            needsDisplay = true
+            invalidate()
         }
     }
 
     var isFocused: Bool = false {
         didSet {
             guard isFocused != oldValue else { return }
-            needsDisplay = true
+            invalidate()
         }
     }
+
+    /// How the focused pane is marked. Only ``FocusStyle/invert`` changes
+    /// anything the footer draws; the other two are drawn over the whole pane by
+    /// the pane controller, which is the point of them.
+    var focusStyle: FocusStyle = .recede {
+        didSet {
+            guard focusStyle != oldValue else { return }
+            invalidate()
+        }
+    }
+
+    /// How loudly an unacknowledged pane asks. Set from
+    /// `Settings.resolvedAttentionStyle`, which owns the rule that an inverted
+    /// focus style forces this quiet. The same rule is applied again in
+    /// ``fillsBarForAttention`` so that setting the two properties directly, as
+    /// the app does today, cannot produce a bar filled for two reasons at once.
+    var attentionStyle: AttentionStyle = .loud {
+        didSet {
+            guard attentionStyle != oldValue else { return }
+            invalidate()
+        }
+    }
+
+    private let attentionWash = PaneStatusContentView(frame: .zero)
+    private let contentView = PaneStatusContentView(frame: .zero)
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -49,6 +119,17 @@ final class PaneStatusBarView: NSView {
         // repaint it as a side effect of the terminal above it resizing.
         layerContentsRedrawPolicy = .onSetNeedsDisplay
         focusRingType = .none
+
+        // Order matters and is the whole reason these are separate views. The bar
+        // itself is drawn by `draw(_:)`, which lands below both of them; the
+        // alert wash sits above it so it can fade in on its own; the text sits
+        // above the wash so it stays legible while that happens.
+        attentionWash.wantsLayer = true
+        attentionWash.layer?.opacity = 0
+        addSubview(attentionWash)
+
+        contentView.render = { [weak self] bounds in self?.drawContent(in: bounds) }
+        addSubview(contentView)
     }
 
     @available(*, unavailable)
@@ -68,48 +149,88 @@ final class PaneStatusBarView: NSView {
 
     override var canBecomeKeyView: Bool { false }
 
+    /// Raised when the footer is clicked, so the pane can focus itself.
+    var onClick: (() -> Void)?
+
+    /// The footer is 22 pt of opaque view over the pane, and the child content
+    /// view returns nil from `hitTest` while this one did not, so a click landing
+    /// on the strip resolved here and stopped: the pane stayed scrimmed and the
+    /// keyboard stayed where it was. Handled as `mouseDown` rather than by
+    /// returning nil from `hitTest`, because the container underneath does
+    /// nothing with the click either.
+    ///
+    /// Safe against the rule above: `acceptsFirstResponder` stays false, and
+    /// AppKit does not make a view first responder for implementing `mouseDown`.
+    override func mouseDown(with _: NSEvent) {
+        onClick?()
+    }
+
     /// Height only. The width comes from the pane, and claiming a width here
     /// would fight the terminal for horizontal space.
     override var intrinsicContentSize: NSSize {
         NSSize(width: NSView.noIntrinsicMetric, height: PaneStatusBarMetrics.height)
     }
 
-    /// The bar sits below the terminal, so a click near the boundary must not be
-    /// read as a click in the grid. Returning nil for everything except the bar's
-    /// own bounds is the default, but `isFlipped` matters for the drawing maths
-    /// below and is easy to get silently wrong.
     override var isFlipped: Bool { true }
 
-    private static let font = NSFont.monospacedDigitSystemFont(
-        ofSize: NSFont.smallSystemFontSize,
-        weight: .regular
-    )
+    override func layout() {
+        super.layout()
+        for child in [attentionWash, contentView] { child.frame = bounds }
+        contentView.needsDisplay = true
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        invalidate()
+    }
+
+    private func invalidate() {
+        needsDisplay = true
+        attentionWash.layer?.backgroundColor = nsColor(theme.alert).cgColor
+        // Held at its target rather than re-animated when the pane is already
+        // asking, so a redraw mid-wait does not restart the fade. A marker that
+        // pulsed on every git poll would be one the eye learns to ignore.
+        if attentionWash.layer?.animationKeys()?.isEmpty ?? true {
+            attentionWash.layer?.opacity = fillsBarForAttention ? 1 : 0
+        }
+        contentView.needsDisplay = true
+    }
+
+    // MARK: - State
+
+    private var attention: PaneStatus.Attention { status?.attention ?? .none }
+
+    /// True when the bar itself is filled with the alert colour.
+    ///
+    /// Both halves of the rule. Only the unacknowledged level fills anything, and
+    /// an inverted focused pane has already spent the bar's background on focus,
+    /// so a second meaning would leave it carrying neither.
+    private var fillsBarForAttention: Bool {
+        attention == .asking && attentionStyle == .loud && !invertsForFocus
+    }
+
+    private var invertsForFocus: Bool { isFocused && focusStyle == .invert }
+
+    /// The colour under everything. Not the alert fill, which is a layer above
+    /// this one so that it can fade in without taking the text with it.
+    private var baseFill: RGB {
+        invertsForFocus ? theme.focusedAccent : theme.barBackground
+    }
+
+    /// The surface the text is judged against, which is the alert wash when there
+    /// is one and the base otherwise.
+    private var inkBackground: RGB {
+        fillsBarForAttention ? theme.alert : baseFill
+    }
+
+    private var barIsFilled: Bool { fillsBarForAttention || invertsForFocus }
+
+    // MARK: - Base drawing
 
     override func draw(_: NSRect) {
-        let background = isFocused ? theme.focusedBarBackground : theme.barBackground
-        nsColor(background).setFill()
+        nsColor(baseFill).setFill()
         bounds.fill()
-
         drawHairline()
-        if isFocused { drawAccentStripe() }
-
-        guard let status else { return }
-        let segments = PaneStatusSegments.build(from: status)
-        guard !segments.isEmpty else { return }
-
-        let attributed = segments.map { attributedString(for: $0, on: background) }
-        let widths = attributed.map { Double($0.size().width) }
-        let available = Double(bounds.width) - 2 * PaneStatusBarMetrics.horizontalInset
-        let solved = PaneStatusLayout.solve(
-            segments: segments,
-            widths: widths,
-            availableWidth: available
-        )
-
-        for placed in solved.placed {
-            guard let index = segments.firstIndex(of: placed.segment) else { continue }
-            draw(attributed[index], at: placed.x, width: placed.width)
-        }
     }
 
     /// A one-point separator at the bottom edge rather than the top, so the
@@ -124,41 +245,73 @@ final class PaneStatusBarView: NSView {
             width: bounds.width,
             height: PaneStatusBarMetrics.hairlineHeight
         )
-        nsColor(theme.background.blended(with: theme.foreground, fraction: 0.18)).setFill()
+        nsColor(theme.hairline).setFill()
         hairline.fill()
     }
 
-    /// The focused pane is marked with a stripe drawn *inside* the fixed height,
-    /// never by making the bar taller. A footer that grew on focus would shrink
-    /// the terminal above it, which resizes the ghostty grid and sends SIGWINCH
-    /// to whatever is running in the pane, so moving focus would reflow a running
-    /// agent's output.
-    private func drawAccentStripe() {
-        let stripe = NSRect(
-            x: 0,
-            y: 0,
-            width: bounds.width,
-            height: PaneStatusBarMetrics.accentStripeHeight
+    // MARK: - Content drawing
+
+    private func drawContent(in rect: NSRect) {
+        // The quiet attention treatment: a line along the top edge instead of a
+        // filled band. It is what lets an asking pane and an inverted focused
+        // pane coexist, since it spends an edge rather than the background.
+        if attention == .asking, !fillsBarForAttention {
+            nsColor(theme.alert).setFill()
+            NSRect(x: 0, y: 0, width: rect.width, height: Self.quietAttentionLine).fill()
+        }
+
+        // The acknowledged mark. The smallest thing on the bar that is not grey,
+        // which is what lets it survive a glance across six panes without pulling
+        // at the eye of someone working in the pane beside it.
+        if attention == .acknowledged {
+            nsColor(theme.alert).setFill()
+            NSRect(
+                x: PaneStatusBarMetrics.horizontalInset,
+                y: (rect.height - Self.markSize) / 2,
+                width: Self.markSize,
+                height: Self.markSize
+            ).fill()
+        }
+
+        guard let status else { return }
+        let segments = PaneStatusSegments.build(from: status)
+        guard !segments.isEmpty else { return }
+
+        let rendered = segments.map { render($0) }
+        let offset = attention == .acknowledged ? Self.markSize + Self.markGap : 0
+        let solved = PaneStatusLayout.solve(
+            segments: segments,
+            widths: rendered.map(\.width),
+            // The full bar width. `solve` subtracts the insets itself, and
+            // subtracting them here as well is what used to cost the bar 16 pt of
+            // usable width and push every segment to twice its intended inset.
+            availableWidth: Double(rect.width) - offset
         )
-        nsColor(theme.focusedAccent).setFill()
-        stripe.fill()
+
+        for placed in solved.placed {
+            guard let index = segments.firstIndex(of: placed.segment) else { continue }
+            draw(rendered[index], at: placed.x + offset, width: placed.width, in: rect)
+        }
     }
 
-    private func draw(_ string: NSAttributedString, at x: Double, width: Double) {
-        let height = string.size().height
-        let rect = NSRect(
-            x: x + PaneStatusBarMetrics.horizontalInset,
-            y: (bounds.height - height) / 2,
-            width: width,
-            height: height
-        )
-        string.draw(with: rect, options: [.usesLineFragmentOrigin])
+    /// One segment, ready to measure and draw.
+    private struct Rendered {
+        var string: NSAttributedString
+        var role: PaneStatusSegmentRole
+        /// Space reserved before the text for a dot or a chip's left padding.
+        var leadingOrnament: Double
+        /// Space reserved after it, for a chip's right padding.
+        var trailingOrnament: Double
+
+        var width: Double {
+            Double(string.size().width) + leadingOrnament + trailingOrnament
+        }
     }
 
-    private func attributedString(
-        for segment: PaneStatusSegment,
-        on background: PaneChrome.RGB
-    ) -> NSAttributedString {
+    private func render(_ segment: PaneStatusSegment) -> Rendered {
+        let bold = segment.role == .agent && attention == .asking
+        let font = Self.font(for: segment.role, emphatic: bold)
+
         let paragraph = NSMutableParagraphStyle()
         // The path is informative at its tail and the names at their head, which
         // is why truncation is per-segment rather than one style for the bar.
@@ -167,19 +320,170 @@ final class PaneStatusBarView: NSView {
         case .tail: paragraph.lineBreakMode = .byTruncatingTail
         case .none: paragraph.lineBreakMode = .byClipping
         }
-        let colour = theme.readable(
-            theme.color(for: segment.emphasis, focused: isFocused),
-            on: background,
-            minimumRatio: PaneTheme.minimumTextContrast
-        )
-        return NSAttributedString(
-            string: segment.text,
-            attributes: [
-                .font: Self.font,
-                .foregroundColor: nsColor(colour),
+
+        let string = NSMutableAttributedString()
+        for run in segment.runs {
+            var attributes: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: nsColor(colour(for: run.emphasis)),
                 .paragraphStyle: paragraph,
             ]
+            // Letterspacing on the chip only. It is a label rather than a word,
+            // and the tracking is most of what stops `PIN` reading as part of the
+            // sentence the bar is not.
+            if segment.role == .pin { attributes[.tracking] = font.pointSize * 0.06 }
+            string.append(NSAttributedString(string: run.text, attributes: attributes))
+        }
+
+        let busy = segment.role == .agent && (status?.agent?.isBusy ?? false) && attention == .none
+        return Rendered(
+            string: string,
+            role: segment.role,
+            leadingOrnament: leading(for: segment.role, busy: busy),
+            trailingOrnament: segment.role == .pin ? Self.chipPadding : 0
         )
+    }
+
+    private func leading(for role: PaneStatusSegmentRole, busy: Bool) -> Double {
+        switch role {
+        case .pin: Self.chipPadding
+        case .agent: busy ? Self.dotDiameter + Self.dotGap : 0
+        default: 0
+        }
+    }
+
+    /// The colour a run is drawn in.
+    ///
+    /// On an ordinary bar this is the tier system. On a filled one every tier
+    /// collapses onto two inks derived from the terminal background, because a
+    /// fill bright enough to be worth filling a bar with reverses the direction
+    /// the repair chain pushes in, and the tier colours are all derived from the
+    /// foreground, which is the wrong end.
+    private func colour(for emphasis: PaneStatusEmphasis) -> RGB {
+        guard barIsFilled else {
+            return theme.color(for: emphasis, focused: isFocused, on: inkBackground)
+        }
+        switch emphasis {
+        case .context, .faint: return theme.mutedInk(on: inkBackground)
+        default: return theme.ink(on: inkBackground)
+        }
+    }
+
+    private func draw(_ rendered: Rendered, at x: Double, width: Double, in rect: CGRect) {
+        let font = (rendered.string.length > 0
+            ? rendered.string.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
+            : nil) ?? Self.font(for: rendered.role, emphatic: false)
+
+        if rendered.role == .pin { drawChip(at: x, width: width, in: rect) }
+        if rendered.leadingOrnament > 0, rendered.role == .agent { drawBusyDot(at: x, in: rect) }
+
+        // One baseline for the whole bar rather than each segment centred in the
+        // height. Four point sizes centred independently sit a fraction of a point
+        // apart, which does not read as a difference. It reads as a mistake.
+        let textX = x + rendered.leadingOrnament
+        let textWidth = max(0, width - rendered.leadingOrnament - rendered.trailingOrnament)
+        let box = NSRect(
+            x: textX,
+            y: PaneStatusBarMetrics.baselineFromTop - Double(font.ascender),
+            width: textWidth,
+            height: Double(font.ascender - font.descender)
+        )
+        rendered.string.draw(with: box, options: [.usesLineFragmentOrigin])
+    }
+
+    /// The pin, as an outlined chip rather than a word in a sentence.
+    ///
+    /// Stroked rather than filled, and stroked at 55% of the tier-4 ink, so it
+    /// reads as a label attached to the name without competing with it. Inset by
+    /// half a point so the one-point stroke lands on the pixel rather than
+    /// straddling it.
+    private func drawChip(at x: Double, width: Double, in rect: CGRect) {
+        let box = NSRect(
+            x: x + 0.5,
+            y: (rect.height - Self.chipHeight) / 2 + 0.5,
+            width: max(0, width - 1),
+            height: Self.chipHeight - 1
+        )
+        let path = NSBezierPath(roundedRect: box, xRadius: Self.chipRadius, yRadius: Self.chipRadius)
+        path.lineWidth = 1
+        // Blended against the surface the chip is actually drawn on, not against
+        // `barBackground`. When the bar is filled for attention the real backdrop
+        // is `theme.alert`, and judging the stroke against the unfilled colour
+        // dropped it to 1.85:1 on exactly the pane that most wanted reading.
+        nsColor(colour(for: .context).blended(with: inkBackground, fraction: 0.45)).setStroke()
+        path.stroke()
+    }
+
+    /// The working-agent dot. No motion: this is the state most panes are in most
+    /// of the time, and a spinner in every footer would make a quiet workspace
+    /// look like a busy one.
+    private func drawBusyDot(at x: Double, in rect: CGRect) {
+        let box = NSRect(
+            x: x,
+            y: (rect.height - Self.dotDiameter) / 2,
+            width: Self.dotDiameter,
+            height: Self.dotDiameter
+        )
+        nsColor(theme.ok).setFill()
+        NSBezierPath(ovalIn: box).fill()
+    }
+
+    // MARK: - The arrival pulse
+
+    /// Fires once, on the transition into an unacknowledged ask.
+    ///
+    /// Opacity only, on the wash below the text, so nothing moves and nothing
+    /// above a terminal grid is asked to animate. It runs once and then holds:
+    /// a marker that keeps pulsing while it waits is one the eye learns to
+    /// ignore, and this one has to still work an hour later.
+    private func runArrivalPulse() {
+        guard fillsBarForAttention, let washLayer = attentionWash.layer else { return }
+        washLayer.removeAllAnimations()
+
+        // Reduce-motion skips to the final frame rather than to nothing. The
+        // signal is the point; the animation is only how it arrives.
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            washLayer.opacity = 1
+            return
+        }
+
+        let pulse = CAKeyframeAnimation(keyPath: "opacity")
+        pulse.values = [0, 1, 1, 0.4, 1]
+        pulse.keyTimes = [0, 0.235, 0.422, 0.676, 1].map(NSNumber.init(value:))
+        pulse.duration = 0.51
+        pulse.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.1, 0.25, 1)
+        pulse.repeatCount = 1
+        pulse.isRemovedOnCompletion = true
+        washLayer.opacity = 1
+        washLayer.add(pulse, forKey: "baia.attention.arrival")
+    }
+
+    // MARK: - Constants
+
+    private static let chipPadding: Double = 4
+    private static let chipHeight: Double = 13
+    private static let chipRadius: Double = 2
+    private static let dotDiameter: Double = 5
+    private static let dotGap: Double = 5
+    private static let markSize: Double = 6
+    private static let markGap: Double = 6
+    private static let quietAttentionLine: Double = 2
+
+    /// Proportional for the name, monospaced for machine data.
+    ///
+    /// The font change is the tier boundary, and that is what makes the hierarchy
+    /// survive segments vanishing: when the branch disappears and the anchor name
+    /// is alone on the bar, the name still looks like a name rather than like
+    /// whatever happened to be left.
+    private static func font(for role: PaneStatusSegmentRole, emphatic: Bool) -> NSFont {
+        switch role {
+        case .anchorName: NSFont.systemFont(ofSize: 11, weight: .semibold)
+        case .pin: NSFont.systemFont(ofSize: 9.5, weight: .semibold)
+        case .agent: NSFont.systemFont(ofSize: 10.5, weight: emphatic ? .bold : .regular)
+        case .operation: NSFont.monospacedSystemFont(ofSize: 10.5, weight: .bold)
+        case .branch, .indicators: NSFont.monospacedSystemFont(ofSize: 10.5, weight: .regular)
+        case .workingDirectory: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
+        }
     }
 
     /// Built in explicit sRGB. `NSColor(red:green:blue:alpha:)` uses the calibrated
