@@ -1,0 +1,88 @@
+diff --git a/Sources/GhosttyTerminal/Platform/AppKit/AppTerminalView+PublicInput.swift b/Sources/GhosttyTerminal/Platform/AppKit/AppTerminalView+PublicInput.swift
+index 0b9e78d..347f0d5 100644
+--- a/Sources/GhosttyTerminal/Platform/AppKit/AppTerminalView+PublicInput.swift
++++ b/Sources/GhosttyTerminal/Platform/AppKit/AppTerminalView+PublicInput.swift
+@@ -8,6 +8,7 @@
+ 
+ #if canImport(AppKit) && !canImport(UIKit)
+     import AppKit
++    import GhosttyKit
+ 
+     extension AppTerminalView {
+         /// Send raw UTF-8 text directly to the underlying pty (bypassing
+@@ -18,6 +19,16 @@
+             surface?.sendText(text)
+         }
+ 
++        /// The whole terminal text including scrollback, or nil before the
++        /// surface exists.
++        public func readRow(_ row: UInt32, columns: UInt32) -> String? {
++            surface?.readRow(row, columns: columns)
++        }
++
++        public func readScreenText() -> String? {
++            surface?.readText(scope: GHOSTTY_POINT_SCREEN)
++        }
++
+         /// Invoke a named Ghostty binding action (e.g. "copy_to_clipboard",
+         /// "clear_screen"). Returns true when the action dispatched.
+         @discardableResult
+diff --git a/Sources/GhosttyTerminal/Surface/TerminalSurface.swift b/Sources/GhosttyTerminal/Surface/TerminalSurface.swift
+index 076d21f..e567c8c 100644
+--- a/Sources/GhosttyTerminal/Surface/TerminalSurface.swift
++++ b/Sources/GhosttyTerminal/Surface/TerminalSurface.swift
+@@ -111,6 +111,54 @@ public final class TerminalSurface {
+         }
+     }
+ 
++    // MARK: - Text
++
++    /// Reads the terminal's text for a point-tag scope.
++    ///
++    /// `GHOSTTY_POINT_SCREEN` covers the scrollback as well as the visible
++    /// rows, which is what a find-in-terminal needs; `GHOSTTY_POINT_VIEWPORT`
++    /// is the visible rows only.
++    public func readText(scope: ghostty_point_tag_e) -> String? {
++        guard let s = surface else { return nil }
++        let topLeft = ghostty_point_s(
++            tag: scope, coord: GHOSTTY_POINT_COORD_TOP_LEFT, x: 0, y: 0
++        )
++        let bottomRight = ghostty_point_s(
++            tag: scope, coord: GHOSTTY_POINT_COORD_BOTTOM_RIGHT, x: 0, y: 0
++        )
++        let selection = ghostty_selection_s(
++            top_left: topLeft, bottom_right: bottomRight, rectangle: false
++        )
++        var out = ghostty_text_s()
++        guard ghostty_surface_read_text(s, selection, &out) else { return nil }
++        defer { ghostty_surface_free_text(s, &out) }
++        guard let ptr = out.text, out.text_len > 0 else { return "" }
++        let bytes = UnsafeBufferPointer(start: ptr, count: Int(out.text_len))
++            .map { UInt8(bitPattern: $0) }
++        return String(decoding: bytes, as: UTF8.self)
++    }
++
++    /// Reads a single screen row, by exact coordinate.
++    public func readRow(_ row: UInt32, columns: UInt32) -> String? {
++        guard let s = surface else { return nil }
++        let left = ghostty_point_s(
++            tag: GHOSTTY_POINT_SCREEN, coord: GHOSTTY_POINT_COORD_EXACT, x: 0, y: row
++        )
++        let right = ghostty_point_s(
++            tag: GHOSTTY_POINT_SCREEN, coord: GHOSTTY_POINT_COORD_EXACT,
++            x: columns &- 1, y: row
++        )
++        let selection = ghostty_selection_s(
++            top_left: left, bottom_right: right, rectangle: false
++        )
++        var out = ghostty_text_s()
++        guard ghostty_surface_read_text(s, selection, &out) else { return nil }
++        defer { ghostty_surface_free_text(s, &out) }
++        guard let ptr = out.text, out.text_len > 0 else { return "" }
++        return String(decoding: UnsafeBufferPointer(start: ptr, count: Int(out.text_len))
++            .map { UInt8(bitPattern: $0) }, as: UTF8.self)
++    }
++
+     // MARK: - Actions
+ 
+     /// Invoke a named Ghostty binding action.
