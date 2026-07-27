@@ -52,20 +52,18 @@ class PaneOverlayView: NSView {
     }
 }
 
-/// The unfocused treatment: the pane's own background, laid back over it.
+/// The inactive-window treatment: the pane's own background, laid back over it.
 ///
-/// This is the whole of `FocusStyle.recede`, and it works the opposite way round
-/// from what it replaces. A 2 pt accent stripe on a 680 pt window is about
-/// 1,000 pt² of signal against 348,000 pt² of pane, and peripheral vision
-/// registers area rather than lines, so the stripe got harder to find as panes
-/// were added. A scrim gets easier: at four panes it is obvious and at eight it
-/// is more obvious.
+/// Every pane in a window that is not key wears this, so the window reads as one
+/// recessed object rather than as a window that still has a live pane in it.
+/// macOS gives no other honest signal there, because the titlebar is
+/// transparent, and the alternative of dimming each pane's own text is undone by
+/// the contrast repair chain the moment the result drops under the minimum. A
+/// scrim sits *above* the surface, so nothing repairs it away.
 ///
-/// It also has no ceiling, which the two mechanisms it replaces both had.
-/// Fading text into its own bar is undone by the contrast repair chain the
-/// moment the result drops under the minimum, so `unfocusedDim` and
-/// `focusedTint` could only ever be subtle. A scrim sits above the surface and
-/// is bounded by nothing but taste.
+/// Nothing else scrims a pane. Marking the focused pane by taxing every other
+/// one was tried and lost to the footer frame, and the panes it taxed were the
+/// ones carrying agent output the owner reads without typing in.
 final class PaneScrimView: PaneOverlayView {
     /// The pane's own terminal background. Deliberately not black and not the
     /// system's window background: over a light theme this lightens and over a
@@ -78,8 +76,8 @@ final class PaneScrimView: PaneOverlayView {
         }
     }
 
-    /// How far the pane is covered. 0 is off, which is how someone who dislikes
-    /// the treatment turns it off without having to know `focusStyle` exists.
+    /// How far the pane is covered. 0 is off, which is what every pane of the key
+    /// window sits at.
     var amount: Double = 0 {
         didSet {
             guard amount != oldValue else { return }
@@ -120,15 +118,20 @@ final class PaneScrimView: PaneOverlayView {
     }
 }
 
-/// The `FocusStyle.frame` treatment: a stroked rectangle inside the pane's edge.
+/// A 2 pt stroked rectangle inside a pane's edge, marking the pane that is
+/// asking.
 ///
-/// Enclosure is the fastest shape the visual system resolves, and a stall with
-/// planks around it is the product's own metaphor. The cost, which is why it is
-/// not the default: 2 pt against a 511 pt pane is thin, and the top and bottom
-/// edges land beside the split dividers, so in a four-pane window it can read as
-/// one divider being a different colour before it reads as a box.
-final class PaneFocusFrameView: PaneOverlayView {
-    var colour: RGB = PaneTheme.darkPastel.edgeFocus {
+/// The one place in the design a frame leaves the footer and takes the whole
+/// compartment. That is what makes attention rank above focus without either
+/// needing to know about the other: focus takes the footer's edges and attention
+/// takes the pane's, so a pane can be both at once and still be read correctly,
+/// which is the state the owner is in every time he answers an agent.
+///
+/// Drawing over a terminal surface is only defensible because this is temporary
+/// and because the alternative is missing an agent that is waiting.
+/// `TerminalPaneController.applyPresentation` is the only caller.
+final class PaneEdgeFrameView: PaneOverlayView {
+    var colour: RGB = PaneTheme.darkPastel.alert {
         didSet {
             guard colour != oldValue else { return }
             needsDisplay = true

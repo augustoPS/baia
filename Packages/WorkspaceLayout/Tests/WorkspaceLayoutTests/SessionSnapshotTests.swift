@@ -103,6 +103,39 @@ import Testing
         #expect(SessionSnapshot.currentSchemaVersion == 1)
     }
 
+    @Test func aDraggedRatioSurvivesTheFileAndComesBackAtThePathItWasSetOn() throws {
+        let a = PaneID()
+        let b = PaneID()
+        let c = PaneID()
+        var workspace = Workspace(
+            tabs: [Tab(
+                id: UUID(),
+                tree: .split(
+                    axis: .horizontal,
+                    ratio: 0.5,
+                    first: .leaf(a),
+                    second: .split(axis: .vertical, ratio: 0.5, first: .leaf(b), second: .leaf(c))
+                ),
+                focusedPane: a,
+                zoomedPane: nil
+            )],
+            focusedTabIndex: 0
+        )
+        let dragged = workspace.setRatio(at: SplitPath([1]), to: 0.32)
+        #expect(dragged)
+
+        let snapshot = SessionSnapshot(workspace: workspace, panes: [], windowFrame: nil)
+        let decoded = try JSONDecoder().decode(SessionSnapshot.self, from: JSONEncoder().encode(snapshot))
+
+        // The whole point of writing a drag into the model rather than leaving it in
+        // the split view: every ratio in the owner's live session file was exactly
+        // 0.5, which was on-disk proof that no drag had ever reached the model. This
+        // is that proof inverted.
+        #expect(decoded.workspace.tabs[0].tree.ratio(at: SplitPath([1])) == 0.32)
+        #expect(decoded.workspace.tabs[0].tree.ratio(at: SplitPath()) == 0.5)
+        #expect(decoded == snapshot)
+    }
+
     @Test func aRatioOfZeroThatSurvivedTheFileStillLaysOutTwoPanes() throws {
         let first = PaneID()
         let second = PaneID()

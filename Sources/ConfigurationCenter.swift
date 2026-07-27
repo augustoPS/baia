@@ -101,13 +101,25 @@ final class ConfigurationCenter {
     /// matches the theme and never the reverse, and two sources for one theme is
     /// how a footer ends up in Dark Pastel while the surface is in something
     /// else.
+    ///
+    /// `focusAccent` goes in as an argument rather than being applied to the
+    /// result, so this reads the setting and decides nothing about it. The
+    /// resolution is `PaneTheme.accent(for:)`, which has tests; a line here
+    /// would not, and a line here is how the key came to be decoded, stored and
+    /// never read.
+    ///
+    /// The fallback keeps the shipped accent. It is reached only when the
+    /// catalog cannot produce even its own default theme, which is a broken
+    /// build rather than a config the owner wrote, and there is no palette in
+    /// hand at that point to resolve a choice against anyway.
     var paneTheme: PaneTheme {
         guard let themeDefinition else { return .darkPastel }
         return PaneTheme(
             background: settings.backgroundHex,
             foreground: themeDefinition.foreground,
             selectionBackground: themeDefinition.selectionBackground,
-            palette: themeDefinition.palette
+            palette: themeDefinition.palette,
+            focusAccent: settings.focusAccent
         )
     }
 
@@ -127,12 +139,7 @@ final class ConfigurationCenter {
 
     private func apply(to pane: TerminalPaneController) {
         pane.theme = paneTheme
-        pane.focusStyle = settings.focusStyle
-        // Read through `resolvedAttentionStyle`, never the stored field. An
-        // inverted footer and a loud attention both fill the bar, and a bar
-        // filled for two reasons carries neither.
-        pane.attentionStyle = settings.resolvedAttentionStyle
-        pane.unfocusedScrim = settings.unfocusedScrim
+        pane.attentionStyle = settings.attentionStyle
         pane.gitPollInterval = settings.gitPollSeconds
         pane.activityPollInterval = settings.activityPollSeconds
         // Both go through the controller rather than through the view.
@@ -207,7 +214,7 @@ final class ConfigurationCenter {
         // point. What the decoder could not use is a fact about the file, not
         // about whether the file changed anything, and the two cases where it
         // matters most both decode to no change at all: a value that clamps back
-        // to what is already loaded (`unfocusedScrim: 0.9` under a live 0.34),
+        // to what is already loaded (`backgroundOpacity: 1.5` under a live 1),
         // and a document so malformed that nothing in it applied. Reporting
         // after the guard meant the owner edited the file, saw no effect, and was
         // told nothing. Found by the live pass, which read an empty log.

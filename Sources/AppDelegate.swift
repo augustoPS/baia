@@ -540,6 +540,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         tree?.focusNextPane()
     }
 
+    @objc func growPaneLeft(_: Any?) { tree?.resizeFocusedPane(.left) }
+
+    @objc func growPaneRight(_: Any?) { tree?.resizeFocusedPane(.right) }
+
+    @objc func growPaneUp(_: Any?) { tree?.resizeFocusedPane(.up) }
+
+    @objc func growPaneDown(_: Any?) { tree?.resizeFocusedPane(.down) }
+
+    @objc func equalizePanes(_: Any?) { tree?.equalizePanes() }
+
     // MARK: - Project commands
 
     @objc func setProjectDirectory(_: Any?) {

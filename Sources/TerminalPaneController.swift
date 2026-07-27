@@ -51,12 +51,12 @@ final class TerminalPaneController: NSViewController {
 
     let statusBar = PaneStatusBarView(frame: .zero)
 
-    /// Covers the terminal and the footer both, which is the point: focus is a
-    /// property of the pane rather than of its chrome, and a scrim that stopped
-    /// at the footer would leave every unfocused pane wearing a bright band.
+    /// Covers the terminal and the footer both, which is the point: a background
+    /// window recedes as one object, and a scrim that stopped at the footer would
+    /// leave every pane in it wearing a bright band.
     private let scrim = PaneScrimView(frame: .zero)
 
-    private let focusFrame = PaneFocusFrameView(frame: .zero)
+    private let edgeFrame = PaneEdgeFrameView(frame: .zero)
 
     /// The palette everything in this pane derives from. One property rather than
     /// one per view, so a theme change cannot land on the footer and miss the
@@ -65,14 +65,7 @@ final class TerminalPaneController: NSViewController {
         didSet {
             guard theme != oldValue else { return }
             statusBar.theme = theme
-            applyFocusPresentation()
-        }
-    }
-
-    var focusStyle: FocusStyle = .recede {
-        didSet {
-            guard focusStyle != oldValue else { return }
-            applyFocusPresentation()
+            applyPresentation()
         }
     }
 
@@ -80,13 +73,9 @@ final class TerminalPaneController: NSViewController {
         didSet {
             guard attentionStyle != oldValue else { return }
             statusBar.attentionStyle = attentionStyle
-        }
-    }
-
-    var unfocusedScrim: Double = PaneTheme.unfocusedScrim {
-        didSet {
-            guard unfocusedScrim != oldValue else { return }
-            applyFocusPresentation()
+            // The frame is gated on `loud` too, so a live config edit that
+            // quietens attention has to take the frame down with the fill.
+            applyPresentation()
         }
     }
 
@@ -101,36 +90,50 @@ final class TerminalPaneController: NSViewController {
     var isWindowActive = true {
         didSet {
             guard isWindowActive != oldValue else { return }
-            applyFocusPresentation()
+            applyPresentation()
         }
     }
 
     func setPaneFocused(_ focused: Bool) {
         guard isPaneFocused != focused else { return }
         isPaneFocused = focused
-        applyFocusPresentation()
+        applyPresentation()
     }
 
-    private func applyFocusPresentation() {
+    /// Pushes focus, window activation, theme and attention into the three views
+    /// that draw them, in one pass.
+    ///
+    /// One method rather than one per input, because every input moves more than
+    /// one view: a theme change has to reach the scrim as well as the footer, and
+    /// an attention change has to reach the pane frame as well as the bar. Split
+    /// setters are how a pane ends up with a repainted footer over a stale scrim.
+    private func applyPresentation() {
         statusBar.isFocused = isPaneFocused
-        statusBar.focusStyle = focusStyle
+        statusBar.isWindowActive = isWindowActive
         statusBar.theme = theme
         scrim.colour = theme.background
-        scrim.amount = scrimAmount
-        focusFrame.colour = theme.edgeFocus
-        focusFrame.isVisible = isPaneFocused && focusStyle == .frame && isWindowActive
+        // See `isWindowActive` above for why an inactive window is the only thing
+        // that scrims a pane. An unfocused pane in the key window is left alone
+        // and the focused one is enclosed by its footer instead.
+        scrim.amount = isWindowActive ? 0 : PaneTheme.inactiveScrim
+        // The pane frame has one reason to appear and therefore one colour, but
+        // the colour still has to be pushed on every pass: a live theme edit moves
+        // `alert` under a frame that is already on screen.
+        edgeFrame.colour = theme.alert
+        edgeFrame.isVisible = drawsAttentionFrame
     }
 
-    /// How far this pane is covered right now.
+    /// Whether this pane is asking loudly enough to wear a frame.
     ///
-    /// The inactive case wins outright rather than adding to the unfocused one.
-    /// Stacking them would make the unfocused panes of a background window nearly
-    /// unreadable, and a background window is exactly when the owner is scanning
-    /// them to decide which one to come back to.
-    private var scrimAmount: Double {
-        guard isWindowActive else { return PaneTheme.inactiveScrim }
-        guard focusStyle == .recede else { return 0 }
-        return isPaneFocused ? 0 : unfocusedScrim
+    /// Not gated on `isWindowActive`, unlike the footer's focus frame: focus is a
+    /// statement about a window that has the keyboard, while an unanswered agent
+    /// in a background window is exactly the thing worth finding.
+    ///
+    /// Both terms are `PaneStatusBarView.fillsBarForAttention`'s, so the frame and
+    /// the fill can only ever appear together. Splitting them would leave half of
+    /// level 2 on screen.
+    private var drawsAttentionFrame: Bool {
+        lastAttention == .asking && attentionStyle == .loud
     }
 
     private let gitStatus = PaneGitStatus()
@@ -267,7 +270,7 @@ final class TerminalPaneController: NSViewController {
         view.addSubview(statusBar)
         // Added last so they sit above both. Neither can be hit, so ordering
         // costs the terminal nothing.
-        for overlay in [scrim, focusFrame] {
+        for overlay in [scrim, edgeFrame] {
             overlay.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(overlay)
         }
@@ -308,7 +311,7 @@ final class TerminalPaneController: NSViewController {
             preferredHeight,
         ])
 
-        for overlay in [scrim, focusFrame] {
+        for overlay in [scrim, edgeFrame] {
             NSLayoutConstraint.activate([
                 overlay.topAnchor.constraint(equalTo: view.topAnchor),
                 overlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -317,7 +320,7 @@ final class TerminalPaneController: NSViewController {
             ])
         }
 
-        applyFocusPresentation()
+        applyPresentation()
 
         anchorTracker.onChange = { [weak self] in
             guard let self else { return }
@@ -347,28 +350,24 @@ final class TerminalPaneController: NSViewController {
             // targets, so raising attention from here re-bounced the Dock and
             // re-posted the banner on every poll of a pane that was merely
             // compiling. Only a real transition of the attention state escapes.
-            let now = statusBar.status?.agent.map(Self.attention(of:)) ?? .none
+            //
+            // Read from the tracker rather than from `statusBar.status`, which is
+            // nil until the anchor first resolves. A bell arriving in that window
+            // used to leave the level at `.none`, and since `refreshStatus` does
+            // not re-enter this block, an idle pane that rang once could sit there
+            // asking with nothing drawn and no notification posted.
+            let now = PaneStatus.Attention(activityTracker.agent)
             guard now != lastAttention else { return }
             lastAttention = now
+            // The frame follows the level, so it is repainted here rather than
+            // from `refreshStatus`, which fires on every poll of a pane that is
+            // merely compiling.
+            applyPresentation()
             onAttentionChange?()
         }
     }
 
-    /// The attention level a footer agent value represents.
-    private static func attention(of agent: PaneStatus.Agent) -> PaneAttentionLevel {
-        guard agent.wantsAttention else { return .none }
-        return agent.isAcknowledged ? .acknowledged : .asking
-    }
-
-    /// Mirrors the two-level model without reaching into `PaneAttentionState`,
-    /// which is a value the tracker owns.
-    private enum PaneAttentionLevel {
-        case none
-        case acknowledged
-        case asking
-    }
-
-    private var lastAttention: PaneAttentionLevel = .none
+    private var lastAttention: PaneStatus.Attention = .none
 
     /// Rebuilds the footer's value from the anchor. Git and agent state are left
     /// nil until their subsystems are wired, and `PaneStatusSegments` already

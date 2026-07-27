@@ -107,4 +107,21 @@ import Testing
         )
         #expect(stale.attention == .none)
     }
+
+    @Test func theLevelReadsTheSameFromABareAgentAsFromAWholeStatus() {
+        // The app's pane controller holds the agent without a status around it,
+        // and it used to answer this question with its own copy of the two lines.
+        // Both readings have to stay one derivation, or a pane could wear the
+        // attention frame the controller draws while its footer disagreed.
+        let cases: [PaneStatus.Agent?] = [
+            nil,
+            .init(label: "claude", wantsAttention: false),
+            .init(label: "claude", wantsAttention: true),
+            .init(label: "claude", wantsAttention: true, isAcknowledged: true),
+            .init(label: "claude", wantsAttention: false, isAcknowledged: true),
+        ]
+        for agent in cases {
+            #expect(PaneStatus.Attention(agent) == Sample.status(agent: agent).attention)
+        }
+    }
 }

@@ -1,3 +1,4 @@
+import BaiaSettings
 import Foundation
 
 /// The colours a pane's chrome is drawn from, derived from the terminal's own
@@ -86,10 +87,20 @@ public struct PaneTheme: Sendable, Equatable {
         background.blended(with: foreground, fraction: 0.18)
     }
 
-    /// The stroke around a focused pane under `FocusStyle.frame`, and the colour
-    /// a divider takes while it is being dragged.
-    public var edgeFocus: RGB {
-        background.blended(with: focusedAccent, fraction: 0.55)
+    /// The planks: the icon's dividers, and the PIN chip's border on an ordinary
+    /// bar.
+    ///
+    /// One derivation rather than two computed at their sites, because the two
+    /// are the same object at two scales and the icon is drawn by a standalone
+    /// script that cannot import this package. The script hardcodes the Dark
+    /// Pastel resolution of this formula, and `plankIsOneDerivationDoingTwoJobs`
+    /// is what keeps the two in step.
+    ///
+    /// Not used for the chip on a *filled* bar. That stroke is judged against
+    /// whatever the bar actually is, because a flat derivation off the theme
+    /// scored 1.85:1 over ``alert`` on exactly the pane that most wanted reading.
+    public var plank: RGB {
+        foreground.blended(with: background, fraction: 0.46)
     }
 
     /// An alternative focus colour: the foreground pushed towards the brightest
@@ -102,6 +113,44 @@ public struct PaneTheme: Sendable, Equatable {
     /// is a visible change, and it belongs to whoever is looking at the app.
     public var boneAccent: RGB {
         foreground.blended(with: ansiColor(15), fraction: 0.55)
+    }
+
+    /// `ansi[4]` blended halfway to `ansi[5]`. See ``BaiaSettings/FocusAccent/midnight``.
+    public var midnightAccent: RGB {
+        ansiColor(4).blended(with: ansiColor(5), fraction: 0.5)
+    }
+
+    /// The raw derivation a `focusAccent` choice names, before repair.
+    ///
+    /// A name rather than a hex, and this is where that promise is kept: the
+    /// theme decides what each name resolves to, so switching ghostty themes
+    /// moves the accent with everything around it. A settable hex would survive
+    /// the switch and void every contrast figure measured against a bar whose
+    /// colour the theme owns.
+    public func accent(for choice: FocusAccent) -> RGB {
+        switch choice {
+        case .accent: focusedAccent
+        case .bone: boneAccent
+        case .ansi5: ansiColor(5)
+        case .ansi6: ansiColor(6)
+        case .midnight: midnightAccent
+        }
+    }
+
+    /// The focus colour as it is actually drawn: the accent, repaired for the
+    /// bar.
+    ///
+    /// Spelled as the focused anchor name's own colour rather than as a separate
+    /// call to ``readable(_:on:minimumRatio:)``, so an edit to `.strong` cannot
+    /// leave the two disagreeing. Its other two consumers are the footer's focus
+    /// frame and the colour a divider takes while it is dragged: neither is text
+    /// and the 4.5:1 is not owed to them, but an unrepaired accent drawn beside a
+    /// repaired name is two blues arguing.
+    ///
+    /// Unlike ``inkContext`` and ``inkFaint``, which are candidates the repair
+    /// chain still has the last word on, this is post-repair.
+    public var inkFocus: RGB {
+        color(for: .strong, focused: true)
     }
 
     /// A half-finished operation, and the dirty marker. Blended a long way
@@ -160,16 +209,17 @@ public struct PaneTheme: Sendable, Equatable {
 
     /// The colour to draw a segment of this emphasis in, on a given bar.
     ///
-    /// The bar is passed in rather than assumed, because it is no longer always
-    /// ``barBackground``: an inverted focused pane fills it with the focus
-    /// colour, and an asking pane fills it with ``alert``. Judging contrast
-    /// against the wrong surface is precisely the mistake
+    /// The bar is passed in rather than assumed, because it is not always
+    /// ``barBackground``: an asking pane fills it with ``alert``. Judging
+    /// contrast against the wrong surface is precisely the mistake
     /// ``readable(_:on:minimumRatio:)`` was written to prevent, so the caller
     /// that decided the fill is the one that has to name it.
     ///
-    /// Nothing dims here any more. Unfocused panes recede behind a scrim drawn
-    /// over the whole pane, which has no ceiling, where fading text into its own
-    /// bar was bounded by the repair chain undoing it.
+    /// Nothing dims here. An unfocused pane is left alone entirely and the
+    /// focused one is enclosed instead, which is what removed `unfocusedDim`:
+    /// text faded into its own bar is repaired straight back up the moment it
+    /// drops under ``minimumTextContrast``, so a treatment made of dimming had a
+    /// ceiling built into it.
     public func color(for emphasis: PaneStatusEmphasis, focused: Bool, on bar: RGB) -> RGB {
         readable(
             baseColor(for: emphasis, focused: focused),
@@ -183,8 +233,8 @@ public struct PaneTheme: Sendable, Equatable {
         color(for: emphasis, focused: focused, on: barBackground)
     }
 
-    /// The text colour for a bar that has been filled with `fill`: an inverted
-    /// focused footer, or an asking one.
+    /// The text colour for a bar that has been filled with `fill`, which today
+    /// means an asking footer.
     ///
     /// The candidate is ``background`` rather than the emphasis colour, and that
     /// is the whole point. A fill loud enough to be worth filling a bar with is
@@ -194,13 +244,15 @@ public struct PaneTheme: Sendable, Equatable {
     /// fill the chain runs out of steps at about 4.3:1 and then falls back to
     /// ``foreground``, which scores 1.4:1 and is genuinely unreadable.
     /// ``background`` starts at the far end and lands around 6:1 on the first
-    /// try, which is also why option A's inverted bar needs no hand-written
-    /// branch for its alert red.
+    /// try, with no hand-written branch for the alert red.
+    ///
+    /// It is also what the focused pane's frame is drawn in on a bar that is
+    /// filled, so focus and attention stay one signal on the pane that is both.
     public func ink(on fill: RGB) -> RGB {
         readable(background, on: fill, minimumRatio: Self.minimumTextContrast)
     }
 
-    /// The quieter text colour on a filled bar, for tier 4 on an inverted footer.
+    /// The quieter text colour on a filled bar, for tier 4 on an asking footer.
     ///
     /// Pulled towards the fill rather than towards the foreground, so it recedes
     /// into the bar it sits on the way ``inkContext`` recedes into an ordinary
@@ -215,8 +267,8 @@ public struct PaneTheme: Sendable, Equatable {
         let ink = ink(on: fill)
         // On a mid-luminance fill the muted candidate starts *closer* to the
         // fill than the ink does, fails the floor, and is then repaired away from
-        // it. The repair overshoots: tier 4 comes back louder than tier 3, so an
-        // inverted footer reads with the quiet tier shouting. Where that happens
+        // it. The repair overshoots: tier 4 comes back louder than tier 3, so a
+        // filled footer reads with the quiet tier shouting. Where that happens
         // the two tiers collapse into one. Flattening loses a distinction;
         // inverting states a false one.
         guard muted.contrastRatio(against: fill) <= ink.contrastRatio(against: fill) else {
@@ -269,12 +321,14 @@ public struct PaneTheme: Sendable, Equatable {
             ?? foreground
     }
 
-    /// The colour an emphasis starts from, before an unfocused pane dims it.
+    /// The colour an emphasis starts from, before the repair chain judges it
+    /// against the bar it lands on.
     private func baseColor(for emphasis: PaneStatusEmphasis, focused: Bool) -> RGB {
         switch emphasis {
         // The accent only appears on the focused pane's name. It is the one place
-        // focus still touches the bar, and it is a colour swap on text that was
-        // going to be drawn anyway, so it cannot change the bar's height.
+        // focus touches the bar's *text*, the other being the frame around the
+        // bar, and it is a colour swap on text that was going to be drawn anyway,
+        // so it cannot change the bar's height.
         case .strong: return focused ? focusedAccent : foreground
         case .normal: return foreground
         case .warn: return warn
@@ -290,10 +344,10 @@ public struct PaneTheme: Sendable, Equatable {
     /// something drawable rather than trapping inside a draw call, in the same way
     /// a failed working-directory read leaves the last known directory in place.
     ///
-    /// Public so the app can resolve a `focusAccent` choice against the live
-    /// palette. Reaching into ``ansi`` directly would be an unchecked index, and
-    /// the whole reason this exists is that a theme is allowed to declare fewer
-    /// than sixteen colours.
+    /// Every derivation that names a palette slot goes through here rather than
+    /// subscripting ``ansi``, ``accent(for:)`` included. A theme is allowed to
+    /// declare fewer than sixteen colours, so a direct index is a trap waiting
+    /// for the first sparse theme somebody configures.
     public func ansiColor(_ index: Int) -> RGB {
         ansi.indices.contains(index) ? ansi[index] : foreground
     }
@@ -303,26 +357,18 @@ public struct PaneTheme: Sendable, Equatable {
     /// the boundary is visible without the hairline.
     private static let barLift: Double = 0.08
 
-    /// How far an unfocused pane is covered by its own background.
-    ///
-    /// The default for `FocusStyle.recede`, and the reason `focusedTint` and
-    /// `unfocusedDim` are gone. Both of those fought the repair chain: text faded
-    /// into its own bar gets repaired back up the moment it drops under
-    /// ``minimumTextContrast``, so the dimming had a ceiling built into it. A
-    /// scrim sits *above* the surface and has no such ceiling, which is what lets
-    /// one mechanism carry the whole treatment.
-    ///
-    /// The app overrides this from the config file. It lives here as well so that
-    /// `PaneChrome` states the design's own number rather than depending on a
-    /// settings package it must not import.
-    public static let unfocusedScrim: Double = 0.28
-
     /// How far *every* pane is covered when the window is not key.
     ///
-    /// Lighter than ``unfocusedScrim``, and applied on top of nothing else: an
-    /// inactive window reads as one recessed object rather than as a window that
-    /// still has a focused pane in it. macOS gives no other honest signal here,
-    /// since the titlebar is transparent.
+    /// The only scrim left, and it is a statement about windows rather than about
+    /// panes: an inactive window reads as one recessed object rather than as a
+    /// window that still has a live pane in it. macOS gives no other honest
+    /// signal here, since the titlebar is transparent.
+    ///
+    /// Light enough that the panes stay readable, because a background window is
+    /// exactly when the owner is scanning them to decide which one to come back
+    /// to. A heavier scrim above it once marked the focused pane by taxing every
+    /// other one; the focused pane's footer wears a frame now, so no pane is
+    /// taxed for being merely unfocused.
     public static let inactiveScrim: Double = 0.15
 
     /// The two steps of the repair chain in ``readable(_:on:minimumRatio:)``.

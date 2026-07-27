@@ -57,10 +57,8 @@ import Testing
           "gitPollSeconds": 5,
           "activityPollSeconds": 0.5,
           "restoreSession": false,
-          "focusStyle": "frame",
           "focusAccent": "bone",
-          "attentionStyle": "quiet",
-          "unfocusedScrim": 0.1
+          "attentionStyle": "quiet"
         }
         """#)
         #expect(result.settings == Settings(
@@ -81,10 +79,8 @@ import Testing
             gitPollSeconds: 5,
             activityPollSeconds: 0.5,
             restoreSession: false,
-            focusStyle: .frame,
             focusAccent: .bone,
-            attentionStyle: .quiet,
-            unfocusedScrim: 0.1
+            attentionStyle: .quiet
         ))
         #expect(result.unknownKeys.isEmpty)
         #expect(result.invalidKeys.isEmpty)
@@ -401,23 +397,21 @@ import Testing
     }
 
     @Test func anUnspellableDesignValueFallsBackWithoutTakingTheOthersWithIt() {
-        // Three bad spellings at once, each reported by name and each falling back
-        // on its own. The scrim in the same document still applies, which is the
+        // Two bad spellings at once, each reported by name and each falling back on
+        // its own. The valid key in the same document still applies, which is the
         // property that matters: a file with one typo in it must not revert the
-        // three keys around the typo.
+        // keys around the typo.
         let result = decode(#"""
         {
-          "focusStyle": "receed",
           "focusAccent": "#B5D5FF",
           "attentionStyle": "LOUD",
-          "unfocusedScrim": 0.2
+          "themeName": "Nord"
         }
         """#)
-        #expect(result.settings.focusStyle == .recede)
         #expect(result.settings.focusAccent == .accent)
         #expect(result.settings.attentionStyle == .loud)
-        #expect(result.settings.unfocusedScrim == 0.2)
-        #expect(result.invalidKeys == ["attentionStyle", "focusAccent", "focusStyle"])
+        #expect(result.settings.themeName == "Nord")
+        #expect(result.invalidKeys == ["attentionStyle", "focusAccent"])
     }
 
     @Test func aHexInTheFocusAccentIsRejectedRatherThanHonoured() {
@@ -433,24 +427,26 @@ import Testing
         #expect(decode(#"{"focusAccent": "bone"}"#).settings.focusAccent == .bone)
     }
 
-    @Test func aScrimPastTheCeilingIsClampedAndReported() {
-        // Clamped rather than rejected, matching every other bounded number here: a
-        // value out of range is still a direction the file asked for. The report is
-        // what stops it reading as a key that does nothing.
-        let heavy = decode(#"{"unfocusedScrim": 0.9}"#)
-        #expect(heavy.settings.unfocusedScrim == 0.34)
-        #expect(heavy.invalidKeys == ["unfocusedScrim"])
-
-        let negative = decode(#"{"unfocusedScrim": -1}"#)
-        #expect(negative.settings.unfocusedScrim == 0)
-        #expect(negative.invalidKeys == ["unfocusedScrim"])
-    }
-
-    @Test func aScrimOfZeroIsAcceptedAndTurnsTheTreatmentOff() {
-        // The way out for someone who dislikes the scrim without having to learn
-        // that `focusStyle` exists. It is in range, so it must not be reported.
-        let result = decode(#"{"unfocusedScrim": 0}"#)
-        #expect(result.settings.unfocusedScrim == 0)
+    @Test func theRetiredFocusKeysAreReportedRatherThanQuietlySwallowed() {
+        // The owner's own file carries both of these, so this is the migration
+        // decision written down. They are reported as unknown, which costs a line on
+        // stderr at every launch until he deletes them, and that is the point: the
+        // alternative is accepting a key that does nothing, which is precisely the
+        // failure `focusAccent` spent nine days in. Nothing about the deletion is
+        // recoverable by keeping the value, since there is no longer a treatment for
+        // it to select.
+        let result = decode(#"""
+        {
+          "focusStyle": "recede",
+          "unfocusedScrim": 0.28,
+          "attentionStyle": "quiet"
+        }
+        """#)
+        #expect(result.unknownKeys == ["focusStyle", "unfocusedScrim"])
+        // Reported, not fatal: every key beside them still applies, the same way an
+        // unknown key from a newer baia would.
+        #expect(result.settings.attentionStyle == .quiet)
         #expect(result.invalidKeys.isEmpty)
+        #expect(!result.documentIsUnreadable)
     }
 }

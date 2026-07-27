@@ -231,6 +231,217 @@ import Testing
         #expect(workspace == before)
     }
 
+    /// One tab holding two splits on the same spine, focus on the leftmost pane.
+    private struct NestedSplits {
+        let a = PaneID()
+        let b = PaneID()
+        let c = PaneID()
+
+        var workspace: Workspace {
+            Workspace(
+                tabs: [Tab(
+                    id: UUID(),
+                    tree: .split(
+                        axis: .horizontal,
+                        ratio: 0.5,
+                        first: .leaf(a),
+                        second: .split(axis: .vertical, ratio: 0.5, first: .leaf(b), second: .leaf(c))
+                    ),
+                    focusedPane: a,
+                    zoomedPane: nil
+                )],
+                focusedTabIndex: 0
+            )
+        }
+    }
+
+    @Test func setRatioAtPathMovesTheFocusedTabsSplit() {
+        let panes = NestedSplits()
+        var workspace = panes.workspace
+
+        let moved = workspace.setRatio(at: SplitPath([1]), to: 0.25)
+
+        #expect(moved)
+        #expect(workspace.focusedTab?.tree.ratio(at: SplitPath([1])) == 0.25)
+        // The outer divider is where the user left it. A drag reports the split it
+        // is the divider of, and nothing above it may move with it.
+        #expect(workspace.focusedTab?.tree.ratio(at: SplitPath()) == 0.5)
+    }
+
+    @Test func setRatioWhileZoomedIsRefused() {
+        let panes = NestedSplits()
+        var workspace = panes.workspace
+        _ = workspace.toggleZoomOnFocusedPane()
+        let before = workspace
+
+        let moved = workspace.setRatio(at: SplitPath([1]), to: 0.25)
+
+        // A zoomed tab shows one pane and no divider at all, so a ratio arriving
+        // while zoomed is a stale report from a view that is no longer on screen.
+        #expect(!moved)
+        #expect(workspace == before)
+    }
+
+    @Test func setRatioAtAPathThatNamesNoSplitIsRefused() {
+        let panes = NestedSplits()
+        var workspace = panes.workspace
+        let before = workspace
+
+        let intoALeaf = workspace.setRatio(at: SplitPath([0]), to: 0.25)
+        let offTheBottom = workspace.setRatio(at: SplitPath([1, 1]), to: 0.25)
+
+        #expect(!intoALeaf)
+        #expect(!offTheBottom)
+        #expect(workspace == before)
+    }
+
+    @Test func setRatioToTheValueTheSplitAlreadyHasIsRefused() {
+        let panes = NestedSplits()
+        var workspace = panes.workspace
+        let before = workspace
+
+        // False so the caller skips the session write. A click on a divider that
+        // moves it by nothing still ends a drag.
+        let moved = workspace.setRatio(at: SplitPath(), to: 0.5)
+
+        #expect(!moved)
+        #expect(workspace == before)
+    }
+
+    @Test func setRatioLeavesEveryOtherTabAlone() {
+        let tabs = ThreeTabs()
+        var workspace = tabs.workspace
+        let other = PaneID()
+        workspace.tabs[1].tree = .split(
+            axis: .horizontal,
+            ratio: 0.5,
+            first: .leaf(tabs.second),
+            second: .leaf(other)
+        )
+        workspace.tabs[0].tree = .split(
+            axis: .horizontal,
+            ratio: 0.5,
+            first: .leaf(tabs.first),
+            second: .leaf(PaneID())
+        )
+        let untouched = workspace.tabs[0].tree
+
+        let moved = workspace.setRatio(at: SplitPath(), to: 0.2)
+
+        #expect(moved)
+        #expect(workspace.tabs[1].tree.ratio(at: SplitPath()) == 0.2)
+        #expect(workspace.tabs[0].tree == untouched)
+    }
+
+    @Test func resizingTheFocusedPaneMovesTheDividerItTouches() {
+        let panes = NestedSplits()
+        var workspace = panes.workspace
+
+        // Focus is on `a`, the whole left column, so the only divider it can move
+        // is the root one, and growing right pushes it away from the origin.
+        let grew = workspace.resizeFocusedPane(.right, by: 0.1)
+
+        #expect(grew)
+        #expect(workspace.focusedTab?.tree.ratio(at: SplitPath()) == 0.6)
+        #expect(workspace.focusedTab?.tree.ratio(at: SplitPath([1])) == 0.5)
+    }
+
+    @Test func resizingWithNoDividerThatWayIsRefused() {
+        let panes = NestedSplits()
+        var workspace = panes.workspace
+        let before = workspace
+
+        // `a` is against the left edge of the window and spans its full height,
+        // so three of the four keys have nothing to move. Refusing rather than
+        // reaching for some other divider is the whole contract: a key that does
+        // nothing is readable, a key that resizes a pane across the window is not.
+        let left = workspace.resizeFocusedPane(.left, by: 0.1)
+        let up = workspace.resizeFocusedPane(.up, by: 0.1)
+        let down = workspace.resizeFocusedPane(.down, by: 0.1)
+
+        #expect(!left)
+        #expect(!up)
+        #expect(!down)
+        #expect(workspace == before)
+    }
+
+    @Test func resizingWhileZoomedIsRefused() {
+        let panes = NestedSplits()
+        var workspace = panes.workspace
+        _ = workspace.toggleZoomOnFocusedPane()
+        let before = workspace
+
+        let grew = workspace.resizeFocusedPane(.right, by: 0.1)
+
+        // A zoomed tab shows one pane and no divider, so the key would move
+        // something the user cannot see and spring it on them at the next unzoom.
+        #expect(!grew)
+        #expect(workspace == before)
+    }
+
+    @Test func resizingLeavesFocusWhereItWas() {
+        let panes = NestedSplits()
+        var workspace = panes.workspace
+
+        _ = workspace.resizeFocusedPane(.right, by: 0.1)
+
+        // Resizing is done from inside the pane being resized. Moving the cursor
+        // out of it, the way a split or a close does, would make the next
+        // keystroke land somewhere else.
+        #expect(workspace.focusedPane == panes.a)
+    }
+
+    @Test func equalizingPutsEveryDividerBackToTheMiddle() {
+        let panes = NestedSplits()
+        var workspace = panes.workspace
+        _ = workspace.setRatio(at: SplitPath(), to: 0.2)
+        _ = workspace.setRatio(at: SplitPath([1]), to: 0.9)
+
+        let evened = workspace.equalizeFocusedTab()
+
+        #expect(evened)
+        #expect(workspace.focusedTab?.tree == panes.workspace.focusedTab?.tree)
+    }
+
+    @Test func equalizingAnAlreadyEvenTabIsRefused() {
+        let panes = NestedSplits()
+        var workspace = panes.workspace
+        let before = workspace
+
+        let evened = workspace.equalizeFocusedTab()
+
+        // False so the caller skips the session write and the divider push. The
+        // key is the escape hatch from a layout that got away from the user, and
+        // it should cost nothing when it was not needed.
+        #expect(!evened)
+        #expect(workspace == before)
+    }
+
+    @Test func resizingLeavesEveryOtherTabAlone() {
+        let tabs = ThreeTabs()
+        var workspace = tabs.workspace
+        let other = PaneID()
+        workspace.tabs[0].tree = .split(
+            axis: .horizontal,
+            ratio: 0.5,
+            first: .leaf(tabs.first),
+            second: .leaf(other)
+        )
+        let untouched = workspace.tabs[0].tree
+        workspace.tabs[1].tree = .split(
+            axis: .horizontal,
+            ratio: 0.5,
+            first: .leaf(tabs.second),
+            second: .leaf(PaneID())
+        )
+
+        let grew = workspace.resizeFocusedPane(.right, by: 0.1)
+
+        #expect(grew)
+        #expect(workspace.tabs[1].tree.ratio(at: SplitPath()) == 0.6)
+        #expect(workspace.tabs[0].tree == untouched)
+    }
+
     @Test func zoomTogglesOnAndOffTheFocusedPane() {
         let panes = TwoPanes()
         var workspace = panes.workspace

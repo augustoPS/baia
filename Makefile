@@ -65,11 +65,23 @@ build: gen ## Build Debug. Full log at .build/xcodebuild.log, only errors on std
 	echo "built $(APP)"
 
 test: ## Run every local package's tests. No app build, no signing, no Metal
-	@for pkg in $(PACKAGES); do \
+# Every package runs even after one fails, because a single compile error in an
+# early package would otherwise hide the state of the six behind it. But the
+# failure is remembered and re-raised at the end: a bare `for` loop exits with
+# the status of its LAST command, so this target used to answer 0 while a
+# package failed to compile, and every agent and script that trusted the exit
+# code was making a weaker claim than it believed.
+	@failed=""; \
+	for pkg in $(PACKAGES); do \
 		echo ""; \
 		echo "=== $$pkg ==="; \
-		swift test --package-path $$pkg; \
-	done
+		swift test --package-path $$pkg || failed="$$failed $$pkg"; \
+	done; \
+	if [ -n "$$failed" ]; then \
+		echo ""; \
+		echo "FAILED:$$failed"; \
+		exit 1; \
+	fi
 
 run: build ## Build and launch detached
 	open $(APP)

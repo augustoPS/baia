@@ -91,6 +91,19 @@ public struct PaneStatus: Sendable, Equatable {
         /// Still asking, but the owner has been here since it started. Quiet
         /// enough to work beside, still visible from across the window.
         case acknowledged
+
+        /// The level an agent value represents, and the only copy of that
+        /// derivation anywhere.
+        ///
+        /// Takes the agent rather than the whole status, because a caller
+        /// holding only the agent would otherwise have to write the two lines
+        /// out again. The app target did exactly that, and a second copy of this
+        /// rule is a copy that can disagree with ``PaneStatus/attention`` about
+        /// whether a pane is asking.
+        public init(_ agent: Agent?) {
+            guard let agent, agent.wantsAttention else { self = .none; return }
+            self = agent.isAcknowledged ? .acknowledged : .asking
+        }
     }
 
     /// What is running in the pane, and whether it asked for the owner.
@@ -159,10 +172,7 @@ public struct PaneStatus: Sendable, Equatable {
     /// Derived rather than stored, which is what keeps the acknowledgement from
     /// surviving the request. A pane whose agent stops asking goes straight back
     /// to ``Attention/none`` with no transition to run and nothing to reset.
-    public var attention: Attention {
-        guard let agent, agent.wantsAttention else { return .none }
-        return agent.isAcknowledged ? .acknowledged : .asking
-    }
+    public var attention: Attention { Attention(agent) }
 
     public init(
         anchorName: String,

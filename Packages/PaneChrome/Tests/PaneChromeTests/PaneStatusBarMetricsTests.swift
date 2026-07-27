@@ -27,6 +27,33 @@ import Testing
             <= PaneStatusBarMetrics.height)
     }
 
+    @Test func theFocusFrameFitsInsideTheHeightItMayNotChange() {
+        // The frame is inset *within* the 22 pt rather than added to it, so the
+        // only thing between it and a resized ghostty grid is that the two
+        // strokes stay smaller than the band they are drawn in.
+        #expect(PaneStatusBarMetrics.focusFrameWidth * 2 < PaneStatusBarMetrics.height)
+
+        // The bottom stroke has to stop above the baseline, or the frame crosses
+        // the text instead of enclosing it. This is as far as the package can
+        // check: how far the descenders fall below that baseline is a font
+        // metric the app owns, and `PaneChrome` has no AppKit to ask. A width
+        // that clears this and still swallows the text is possible, and would
+        // have to be caught by looking at the app.
+        #expect(PaneStatusBarMetrics.height - PaneStatusBarMetrics.focusFrameWidth
+            > PaneStatusBarMetrics.baselineFromTop)
+    }
+
+    @Test func aNarrowBarDropsItsSideEdgesAndBecomesABracket() {
+        // A frame on a short bar reads as a chip rather than as a band: the
+        // rectangle stops being wide enough for enclosure to be the shape the
+        // eye resolves, and starts looking like a button, which is the one thing
+        // nothing in a pane may look like.
+        #expect(PaneStatusBarMetrics.framesSides(atWidth: 400))
+        #expect(PaneStatusBarMetrics.framesSides(atWidth: 120))
+        #expect(!PaneStatusBarMetrics.framesSides(atWidth: 119))
+        #expect(!PaneStatusBarMetrics.framesSides(atWidth: 0))
+    }
+
     @Test func segmentsInOneGroupSitCloserThanSegmentsInTwo() {
         // Spacing is the only grouping device left once every tier shares a
         // baseline, so the two gaps have to be far enough apart to read as

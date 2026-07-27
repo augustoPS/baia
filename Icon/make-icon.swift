@@ -83,8 +83,9 @@ func squircle() -> CGPath {
 ///
 /// - Parameter heavy: the small-size treatment. At 32 px and below the glyph is
 ///   thickened to 72 and its gap shrunk to 48, so the two shapes stay apart at a
-///   size where a 56-unit stroke closes up into a smudge. The unit keeps its
-///   width either way, which is what stops the mark from shifting between sizes.
+///   size where a 56-unit stroke closes up into a smudge. The unit's right edge
+///   and its ink baseline both hold, which is what stops the mark from shifting
+///   between sizes; the chevron gives up the five units the thicker stroke needs.
 func drawMark(in ctx: CGContext, heavy: Bool) {
     ctx.saveGState()
     ctx.addPath(squircle())
@@ -106,45 +107,55 @@ func drawMark(in ctx: CGContext, heavy: Bool) {
     ctx.restoreGState()
 }
 
-/// A drawn `>_` rather than set type.
+/// A drawn `>_` rather than set type, sitting a third of the way down.
 ///
 /// No font travels with the export, and the spacing becomes a number that can be
 /// tuned instead of whatever the face happened to ship. The gap is one stroke
 /// weight plus a touch, which is why it holds at both ends of the size ramp: the
 /// relationship is proportional to the drawing rather than to the canvas.
 ///
+/// The upper third rather than the middle. A prompt sits at the top of a fresh
+/// terminal, so centring the glyph made the mark read as a logo where this reads
+/// as a session that has just started. It also leaves the largest empty area at
+/// the bottom right, which is where the eye leaves the icon, so the mark exhales
+/// rather than filling.
+///
+/// Both shapes share a stroke weight and an *ink* baseline at 483, which is what
+/// makes them one unit rather than two marks. Mind the cap: a butt cap on a 45°
+/// segment overshoots its endpoint by `w/2 × √½`, so the path ends at 463 and
+/// the drawn edge lands at 483, exactly where the cursor's bottom is. The path
+/// numbers are not the baseline, and aligning to them puts the chevron nearly
+/// 20 units below the line.
+///
 /// The ghost plank from the design's base variant is deliberately absent. It is
 /// a hint that more stalls sit off-frame, and it reads as a smudge behind the
 /// glyph, which is why the handoff notes it comes out on any glyph variant.
 func drawPrompt(in ctx: CGContext, heavy: Bool) {
+    // Both variants are drawn rather than scaled from one. The heavy weight
+    // closes the gap, and the chevron has to give ground for it without the
+    // unit changing width, so the two sets of coordinates are not derivable
+    // from each other.
     let weight: CGFloat = heavy ? 72 : 56
-    let gap: CGFloat = heavy ? 48 : 64
-
-    // Both shapes hang off one baseline: the chevron sits on it, the cursor
-    // hangs from it, and the unit's right edge is fixed so the whole prompt
-    // keeps its width when the weight changes.
-    let baseline: CGFloat = 658
-    let vertexX: CGFloat = 560
-    let unitRight: CGFloat = 824
+    let vertex = CGPoint(x: heavy ? 560 : 559, y: 375)
+    let armX: CGFloat = heavy ? 477 : 471
+    let armTopY: CGFloat = heavy ? 292 : 287
+    let armBottomY: CGFloat = heavy ? 458 : 463
+    let cursor = heavy
+        ? CGRect(x: 608, y: 411, width: 216, height: 72)
+        : CGRect(x: 623, y: 427, width: 200, height: 56)
 
     ctx.setStrokeColor(plank)
     ctx.setLineWidth(weight)
     ctx.setLineCap(.butt)
     ctx.setLineJoin(.miter)
     ctx.beginPath()
-    ctx.move(to: CGPoint(x: 450, y: 442))
-    ctx.addLine(to: CGPoint(x: vertexX, y: 550))
-    ctx.addLine(to: CGPoint(x: 450, y: baseline))
+    ctx.move(to: CGPoint(x: armX, y: armTopY))
+    ctx.addLine(to: vertex)
+    ctx.addLine(to: CGPoint(x: armX, y: armBottomY))
     ctx.strokePath()
 
-    let cursorX = vertexX + gap
     ctx.setFillColor(plank)
-    ctx.fill(CGRect(
-        x: cursorX,
-        y: baseline - weight,
-        width: unitRight - cursorX,
-        height: weight
-    ))
+    ctx.fill(cursor)
 }
 
 /// One PNG at `pixels` square.
