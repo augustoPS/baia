@@ -107,6 +107,8 @@ import Testing
             "restoreSession",
             "focusAccent",
             "attentionStyle",
+            "attentionAccent",
+            "alertBehavior",
         ])
     }
 

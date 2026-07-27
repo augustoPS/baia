@@ -94,6 +94,16 @@ public struct Settings: Sendable, Equatable {
     /// How hard an unacknowledged pane asks. See ``AttentionStyle``.
     public var attentionStyle: AttentionStyle
 
+    /// Which derivation the attention signal is drawn from. See
+    /// ``AttentionAccent``.
+    ///
+    /// The git segments do not follow it. Red still means conflict.
+    public var attentionAccent: AttentionAccent
+
+    /// What to do when the attention colour and the focus colour resolve to the
+    /// same thing. See ``AlertBehavior``.
+    public var alertBehavior: AlertBehavior
+
     /// The owner's ghostty config, field for field, transcribed from
     /// `vault/projects/ghostty/config.ghostty`.
     ///
@@ -126,7 +136,9 @@ public struct Settings: Sendable, Equatable {
         activityPollSeconds: 1,
         restoreSession: true,
         focusAccent: .accent,
-        attentionStyle: .loud
+        attentionStyle: .loud,
+        attentionAccent: .alert,
+        alertBehavior: .stock
     )
 
     /// Expands a leading `~` the way a shell would.

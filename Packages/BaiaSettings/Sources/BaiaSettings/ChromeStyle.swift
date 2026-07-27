@@ -63,3 +63,78 @@ public enum AttentionStyle: String, Sendable, Equatable, CaseIterable {
     /// an ask that is never announced at all.
     case quiet
 }
+
+/// Which derivation the attention signal is drawn from.
+///
+/// This is ``AttentionStyle``'s question asked in hue rather than in volume, and
+/// it sits beside that key for the same reason: how a waiting pane should look is
+/// a preference, unlike the window's corner radius, which is a fact about the
+/// window with nothing for anyone to prefer.
+///
+/// It moves the attention signal only. ``PaneTheme/alert`` is also the
+/// conflicted-tree marker and the `!` glyph in the git segments, and neither
+/// follows this: red still means conflict, and an attention colour that took the
+/// conflict marker with it would leave a pane unable to say both things at once.
+public enum AttentionAccent: String, Sendable, Equatable, CaseIterable {
+    /// `ansiColor(1)`, what ships today. The default, so a config written before
+    /// this key existed renders identically.
+    ///
+    /// Spelled `alert` rather than `red` deliberately. `PaneTheme.alert` is
+    /// `ansi[1]`, so on a theme whose `ansi[1]` is orange or maroon the value
+    /// `red` would be a promise the theme does not keep. The standing rule is that
+    /// a config names a derivation and lets the theme decide what it resolves to,
+    /// which is the same argument ``FocusAccent`` makes against a settable hex.
+    case alert
+
+    /// The resolved focus accent, the value ``FocusAccent`` selected.
+    ///
+    /// Under this value the attention colour and the focus colour are the same by
+    /// construction, so ``AlertBehavior`` is what decides whether that matters.
+    case accent
+}
+
+/// What happens when the attention colour cannot be told apart from something
+/// else on the pane.
+///
+/// Deliberately not special-cased to ``AttentionAccent/accent``. A theme whose
+/// `ansi[1]` equals its selection colour collides under ``AttentionAccent/alert``
+/// too, and a rule that fires for only one value is a rule that will be wrong for
+/// someone.
+///
+/// "Cannot be told apart" is measured rather than compared, and it covers two
+/// things rather than one. The focus colour is the obvious one. The other is the
+/// footer itself: the loud treatment is a wash across the bar and a frame around
+/// the pane, and a wash the colour of the bar it washes leaves the pane asking
+/// with nothing on screen to say so. 124 of the 463 shipped ghostty themes do
+/// exactly that under `accent`, because a selection colour is usually the theme's
+/// own background lifted a step and so is the bar. Both repair values measure
+/// both.
+public enum AlertBehavior: String, Sendable, Equatable, CaseIterable {
+    /// Nothing. Whatever ``AttentionAccent`` names is used, collision and all.
+    ///
+    /// The default, and not only for the upgrade promise: shape already carries
+    /// the distinction, since focus takes an edge and attention takes a fill, so
+    /// two signals in one colour are still two signals.
+    ///
+    /// It means it. On the themes whose selection colour is their own bar, `accent`
+    /// plus this value paints the footer in the colour the footer already was.
+    /// That is the value doing what it says; the other two are what to set when it
+    /// is not what you want.
+    case stock
+
+    /// Where attention would be indistinguishable from focus or from the bar,
+    /// attention falls back to the theme's alert.
+    ///
+    /// Degenerate on a theme whose alert is *itself* the focus colour: the
+    /// fallback names the colour that is already there. That is what the setting
+    /// says rather than an oversight, "fall back to what shipped", and ``derive``
+    /// is the value for that theme.
+    case noCollision
+
+    /// Where attention would be indistinguishable from focus or from the bar, it is
+    /// blended away until it is visibly distinct while staying recognisably related.
+    ///
+    /// The blend, the directions it searches and the perceptual separation it is
+    /// measured to clear are on `PaneTheme.attentionColour(_:behavior:)`.
+    case derive
+}

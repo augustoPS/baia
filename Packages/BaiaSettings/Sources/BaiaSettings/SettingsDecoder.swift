@@ -227,6 +227,26 @@ public enum SettingsDecoder {
             }
         }
 
+        // The attention colour and the collision rule, read the same way. `red` is
+        // the spelling a reasonable person will try for the first of these and it
+        // is rejected on purpose: the key names a derivation, and `ansi[1]` is not
+        // red on every theme.
+        if let accent = reader.text("attentionAccent") {
+            if let accent = AttentionAccent(rawValue: accent) {
+                settings.attentionAccent = accent
+            } else {
+                reader.reject("attentionAccent")
+            }
+        }
+
+        if let behavior = reader.text("alertBehavior") {
+            if let behavior = AlertBehavior(rawValue: behavior) {
+                settings.alertBehavior = behavior
+            } else {
+                reader.reject("alertBehavior")
+            }
+        }
+
         return SettingsDecodeResult(
             settings: settings,
             // Both lists are sorted, and a `Dictionary`'s key order is not stable

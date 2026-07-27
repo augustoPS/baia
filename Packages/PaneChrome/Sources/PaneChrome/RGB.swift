@@ -138,6 +138,58 @@ public struct RGB: Sendable, Equatable {
         return (0.299 * red + 0.587 * green + 0.114 * blue) * 255 < 128
     }
 
+    /// How far apart two colours look, in CIEDE2000.
+    ///
+    /// A second measure beside ``contrastRatio(against:)``, which answers a
+    /// different question and cannot answer this one: contrast grades legibility
+    /// of ink on a surface and is blind to hue, so two colours of equal luminance
+    /// score 1:1 against each other however far apart they look. `alertBehavior:
+    /// derive` needs the opposite reading, whether two colours drawn in different
+    /// places are read as two signals, and that is a perceptual distance.
+    ///
+    /// CIEDE2000 rather than the Euclidean distance in CIELAB, which overstates
+    /// separation badly in exactly the saturated blue region a focus accent tends
+    /// to live in: `#0000ff` against `#3030d0` measures 37.7 the Euclidean way and
+    /// 6.0 this way, a factor of six. Overstating is the dangerous direction, since
+    /// it reports a floor cleared that was not.
+    public func perceptualDistance(to other: RGB) -> Double {
+        Lab.deltaE2000(lab, other.lab)
+    }
+
+    /// This colour in CIELAB, D65, which is the white point sRGB is defined
+    /// against.
+    var lab: Lab {
+        let (red, green, blue) = clampedComponents
+        let linearRed = Self.linearized(red)
+        let linearGreen = Self.linearized(green)
+        let linearBlue = Self.linearized(blue)
+
+        // sRGB to CIEXYZ, D65. The middle row is ``relativeLuminance`` spelled at
+        // the precision the conversion needs; the two are the same quantity and
+        // are deliberately not shared, because that property is quoted in WCAG's
+        // own rounded coefficients and matching WCAG is the point of it.
+        let x = 0.4124564 * linearRed + 0.3575761 * linearGreen + 0.1804375 * linearBlue
+        let y = 0.2126729 * linearRed + 0.7151522 * linearGreen + 0.0721750 * linearBlue
+        let z = 0.0193339 * linearRed + 0.1191920 * linearGreen + 0.9503041 * linearBlue
+
+        let fx = Self.labTransfer(x / 0.95047)
+        let fy = Self.labTransfer(y / 1.00000)
+        let fz = Self.labTransfer(z / 1.08883)
+        return Lab(lightness: 116 * fy - 16, a: 500 * (fx - fy), b: 200 * (fy - fz))
+    }
+
+    /// CIELAB's cube-root curve, with the linear toe that keeps its slope finite
+    /// at zero.
+    private static func labTransfer(_ value: Double) -> Double {
+        // (6/29)^3 and the matching slope, spelled as fractions rather than as
+        // 0.008856 and 7.787, which are the rounded forms and disagree with the
+        // CIEDE2000 reference data in the fourth decimal.
+        let epsilon = pow(6.0 / 29.0, 3)
+        return value > epsilon
+            ? cbrt(value)
+            : value / (3 * pow(6.0 / 29.0, 2)) + 4.0 / 29.0
+    }
+
     /// The components with any out-of-range value repaired.
     ///
     /// ``init(red:green:blue:)`` already clamps, but the three properties are

@@ -139,7 +139,9 @@ public struct SettingsStore: Sendable {
       "activityPollSeconds": 1,
       "restoreSession": true,
       "focusAccent": "accent",
-      "attentionStyle": "loud"
+      "attentionStyle": "loud",
+      "attentionAccent": "alert",
+      "alertBehavior": "stock"
     }
 
     """

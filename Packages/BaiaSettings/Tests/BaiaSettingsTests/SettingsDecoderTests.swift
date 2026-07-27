@@ -58,7 +58,9 @@ import Testing
           "activityPollSeconds": 0.5,
           "restoreSession": false,
           "focusAccent": "bone",
-          "attentionStyle": "quiet"
+          "attentionStyle": "quiet",
+          "attentionAccent": "accent",
+          "alertBehavior": "derive"
         }
         """#)
         #expect(result.settings == Settings(
@@ -80,7 +82,9 @@ import Testing
             activityPollSeconds: 0.5,
             restoreSession: false,
             focusAccent: .bone,
-            attentionStyle: .quiet
+            attentionStyle: .quiet,
+            attentionAccent: .accent,
+            alertBehavior: .derive
         ))
         #expect(result.unknownKeys.isEmpty)
         #expect(result.invalidKeys.isEmpty)
@@ -405,13 +409,22 @@ import Testing
         {
           "focusAccent": "#B5D5FF",
           "attentionStyle": "LOUD",
+          "attentionAccent": "red",
+          "alertBehavior": "no-collision",
           "themeName": "Nord"
         }
         """#)
         #expect(result.settings.focusAccent == .accent)
         #expect(result.settings.attentionStyle == .loud)
+        // `red` and `no-collision` are the two spellings a reasonable person
+        // reaches for and neither is the one the file uses: the colour is named
+        // for the derivation rather than the hue, and the behaviours are camel
+        // case like every other multi-word value baia reads.
+        #expect(result.settings.attentionAccent == .alert)
+        #expect(result.settings.alertBehavior == .stock)
         #expect(result.settings.themeName == "Nord")
-        #expect(result.invalidKeys == ["attentionStyle", "focusAccent"])
+        #expect(result.invalidKeys
+            == ["alertBehavior", "attentionAccent", "attentionStyle", "focusAccent"])
     }
 
     @Test func aHexInTheFocusAccentIsRejectedRatherThanHonoured() {

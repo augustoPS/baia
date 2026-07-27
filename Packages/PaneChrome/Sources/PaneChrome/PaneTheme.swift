@@ -137,6 +137,191 @@ public struct PaneTheme: Sendable, Equatable {
         }
     }
 
+    /// The colour the attention signal is drawn in: the wash under an asking
+    /// footer, the quiet line along its top edge, the acknowledged square, and the
+    /// frame around the whole pane.
+    ///
+    /// Not the git segments. ``alert`` is also the conflicted-tree marker and the
+    /// `!` glyph, and those stay red however this resolves, so a pane can say
+    /// "an agent is waiting" and "this tree is conflicted" at the same time.
+    ///
+    /// The collision guard is a measurement, not a test on `accent`. Under
+    /// ``BaiaSettings/AttentionAccent/accent`` the two are the same colour by
+    /// construction, but a theme whose `ansi[1]` *is* its selection colour collides
+    /// under ``BaiaSettings/AttentionAccent/alert`` as well, and a rule written
+    /// against the enum case would leave that theme with a fill and a frame in one
+    /// colour and no setting able to part them.
+    ///
+    /// A measurement rather than equality, for the reason ``derived(from:)`` is
+    /// measured: two colours one 8-bit step apart are unequal and
+    /// indistinguishable, so inequality proves nothing in either direction. An
+    /// equality guard never fired on 16 of the 2315 theme-by-`focusAccent` rows the
+    /// catalog produces, two of them on the default `focusAccent`, and Glacier is
+    /// the clearest: its `alert` `#bd0f2f` and its accent `#bd2523` are unequal,
+    /// measure ΔE00 5.44 apart, and under the old guard `derive` handed the
+    /// colliding colour straight back unchanged. The predicate that decides whether
+    /// to repair and the repair that follows it now use one definition of "the same
+    /// colour" rather than two that disagree by a factor of infinity.
+    ///
+    /// The fill is returned raw. A fill owes no contrast to itself; the ink drawn
+    /// on it owes 4.5:1, and ``ink(on:)`` and ``mutedInk(on:)`` are what guarantee
+    /// that, for whatever this hands back.
+    ///
+    /// ``BaiaSettings/AlertBehavior/stock`` is unguarded on purpose, because the
+    /// shipped answer to the collision question is "nothing" and shape carries the
+    /// distinction. It follows that `accent`/`stock` can resolve to a colour that
+    /// *is* the bar it fills: a selection colour is very often the theme's own
+    /// background lifted a step, which is exactly what ``barBackground`` is, and
+    /// 124 of the 463 catalog themes land within ΔE00 10 of their own bar that way.
+    /// The two repair behaviours are the answer to that, and both of them measure
+    /// against the bar as well as against focus.
+    public func attentionColour(_ accent: AttentionAccent, behavior: AlertBehavior) -> RGB {
+        let resolved = switch accent {
+        case .alert: alert
+        case .accent: focusedAccent
+        }
+        switch behavior {
+        case .stock: return resolved
+        case .noCollision: return collides(resolved) ? alert : resolved
+        case .derive: return collides(resolved) ? derived(from: resolved) : resolved
+        }
+    }
+
+    /// Whether `colour` would be read as something other than the attention signal.
+    ///
+    /// Two ways for that to happen, and only the first was checked at first. The
+    /// obvious one is the focus colour: focus and attention drawn in one hue is two
+    /// signals nobody can separate.
+    ///
+    /// The other is the surface underneath. The loud treatment is a 22 pt wash
+    /// across the footer plus a 2 pt frame around the pane, and a wash the colour
+    /// of the footer it washes is not a wash. The pane stops asking with nothing on
+    /// screen to explain it, which is a worse failure than the collision with focus
+    /// this key was written for, because at least a colliding focus is *a* colour.
+    /// Measured against ``barBackground`` and ``background`` both, since the wash
+    /// and the line land on the first while the pane frame lands mostly on the
+    /// second.
+    private func collides(_ colour: RGB) -> Bool {
+        attentionSeparation(of: colour) < Self.minimumAttentionSeparation
+    }
+
+    /// How far `colour` sits from the nearest thing it must not be mistaken for.
+    ///
+    /// Internal rather than private so the tests can grade a candidate by the same
+    /// measure the search grades it by. A test that spelled the `min` out again
+    /// would be asserting its own copy of the rule, which is how a floor comes to
+    /// be met in one file and missed in the other.
+    func attentionSeparation(of colour: RGB) -> Double {
+        min(
+            colour.perceptualDistance(to: focusedAccent),
+            colour.perceptualDistance(to: barBackground),
+            colour.perceptualDistance(to: background)
+        )
+    }
+
+    /// How far apart, in CIEDE2000, the attention colour has to be from the focus
+    /// colour and from the bar it is drawn on before
+    /// ``BaiaSettings/AlertBehavior/derive`` stops pushing it, and the distance
+    /// under which ``BaiaSettings/AlertBehavior/noCollision`` calls the two one
+    /// colour.
+    ///
+    /// Not a just-noticeable difference, which is around 1 and would be met by a
+    /// pair nobody could tell apart here. A JND is measured on two large patches
+    /// abutting each other under controlled light, and none of that holds: the
+    /// attention fill is 22 pt of one pane's footer and the focus edge is 2 pt of
+    /// another's, both over live terminal output, and the question is not whether
+    /// someone staring at the pair can separate them but whether a glance across
+    /// six panes reads two signals rather than one. 10 is where colours stop
+    /// sharing a name.
+    public static let minimumAttentionSeparation: Double = 10
+
+    /// The colliding attention colour, pushed until it clears
+    /// ``minimumAttentionSeparation`` from the focus colour and from the bar.
+    ///
+    /// Towards ``alert`` first, because the thing is still an alert: the pane is
+    /// asking, and a colour chosen for separation alone would say something the
+    /// pane does not mean. On Dark Pastel under `attentionAccent: accent` the first
+    /// step of the first direction is enough: `#b5d5ff` 35% of the way to `#ff5555`
+    /// is `#cfa8c3`, which measures **ΔE00 25.53** from the accent against a floor
+    /// of 10. On the light theme in the tests it is 18.23, and on a theme whose red
+    /// is its own selection colour the second direction gives 18.44. The first
+    /// fraction that clears the floor on the owner's theme clears it three times
+    /// over, which is why the search below almost never takes a second step.
+    ///
+    /// A walk rather than one fraction, for the same reason
+    /// ``readable(_:on:minimumRatio:)`` is one: the number that is enough for the
+    /// owner's theme is not a number that is enough for every theme, and a fixed
+    /// fraction that silently under-separates on someone else's palette is the
+    /// failure this whole key exists to fix. It stops at 0.75 because 1.0 towards
+    /// ``alert`` is ``BaiaSettings/AlertBehavior/noCollision`` under another name,
+    /// and two settings that resolve to one colour is a menu with a lie in it.
+    ///
+    /// Several directions rather than one, and ordered rather than optimised,
+    /// because the order is the semantic claim: ``alert``, then the theme's own
+    /// warn hue, then the rest of the palette, then the foreground. The first
+    /// candidate that clears the floor wins, so wherever the honest direction works
+    /// the answer *is* the honest direction and nothing further is tried.
+    ///
+    /// One direction was not enough, and the old code could not say so. It walked
+    /// towards ``alert`` alone, fell through to `ansi[3]` only when the colour was
+    /// already ``alert``, and returned its last step when nothing cleared, silently,
+    /// under a comment that scoped that escape to "a theme with no distinct colours
+    /// at all". That case does not occur in the shipped catalog. The case that does
+    /// is a theme whose one blend direction happens to sit near the colour being
+    /// blended, while fourteen other palette slots are far away: HaX0R Blue spends
+    /// `ansi[1]`, `ansi[3]` and `ansi[5]` on one colour, and `derive` returned the
+    /// colliding colour bit for bit at ΔE00 **0.00**. 83 of the 2315
+    /// theme-by-`focusAccent` rows landed under the floor that way, across 33
+    /// themes, and every one of them had a palette slot that would have cleared it.
+    ///
+    /// Towards ``background`` is not offered as a direction: a fill that is nearly
+    /// the bar it fills is not a fill. That is now enforced rather than avoided,
+    /// since ``attentionSeparation(of:)`` measures against the bar, so a candidate
+    /// that separates from focus by going dark cannot be accepted.
+    ///
+    /// It can still fail to clear the floor, and now only where the palette has
+    /// nothing to offer at all, which is what
+    /// `deriveOnAThemeWithNothingToBlendTowardsStillAnswers` pins. There it hands
+    /// back the best candidate it measured rather than the last one it happened to
+    /// try. A weaker promise than the floor, and the strongest one a palette of a
+    /// single colour can keep. Same contract as ``ansiColor(_:)``: answer with
+    /// something drawable rather than trap inside a draw call.
+    private func derived(from colour: RGB) -> RGB {
+        var best = colour
+        var bestSeparation = attentionSeparation(of: colour)
+        for target in derivationTargets {
+            for fraction in Self.attentionDerivation {
+                let candidate = colour.blended(with: target, fraction: fraction)
+                let separation = attentionSeparation(of: candidate)
+                if separation >= Self.minimumAttentionSeparation { return candidate }
+                if separation > bestSeparation {
+                    best = candidate
+                    bestSeparation = separation
+                }
+            }
+        }
+        return best
+    }
+
+    /// The colours ``derived(from:)`` blends towards, in the order it tries them.
+    ///
+    /// ``alert`` and the warn hue lead because they are the two hues that still
+    /// mean alarm. `ansi[1]` and `ansi[3]` appear twice, once at the front and
+    /// again inside the palette sweep, which costs three redundant blends on a
+    /// theme that has already failed both; deduplicating would buy nothing and
+    /// would put the ordering in two places.
+    ///
+    /// Blending towards a target that *is* the source is a no-op, which is what
+    /// makes the `alert`-first order safe on the theme that spends one slot on both
+    /// its red and its selection highlight: the first direction cannot move it, and
+    /// the search falls through to the warn hue exactly as it used to.
+    private var derivationTargets: [RGB] {
+        [alert, ansiColor(3)] + (0 ..< 16).map(ansiColor) + [foreground]
+    }
+
+    /// The steps ``derived(from:)`` walks along each direction.
+    private static let attentionDerivation: [Double] = [0.35, 0.55, 0.75]
+
     /// The focus colour as it is actually drawn: the accent, repaired for the
     /// bar.
     ///

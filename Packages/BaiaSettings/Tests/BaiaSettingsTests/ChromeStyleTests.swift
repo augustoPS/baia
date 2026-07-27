@@ -14,6 +14,17 @@ import Testing
         #expect(FocusAccent.allCases.map(\.rawValue)
             == ["accent", "bone", "ansi5", "ansi6", "midnight"])
         #expect(AttentionStyle.allCases.map(\.rawValue) == ["loud", "quiet"])
+        #expect(AttentionAccent.allCases.map(\.rawValue) == ["alert", "accent"])
+        #expect(AlertBehavior.allCases.map(\.rawValue) == ["stock", "noCollision", "derive"])
+    }
+
+    @Test func theAttentionAccentIsSpelledAlertRatherThanRed() {
+        // `PaneTheme.alert` is `ansi[1]`, so on a theme whose `ansi[1]` is orange
+        // or maroon the spelling `red` would be a promise the theme does not keep.
+        // A config names a derivation and lets the theme decide what it resolves
+        // to; this is the same reason `focusAccent` has no hex.
+        #expect(AttentionAccent(rawValue: "red") == nil)
+        #expect(AttentionAccent(rawValue: "alert") == .alert)
     }
 
     @Test func theDesignDefaultsChangeNothingAboutHowTheAppLooks() {
@@ -26,5 +37,12 @@ import Testing
         let defaults = Settings.defaultSettings
         #expect(defaults.focusAccent == .accent)
         #expect(defaults.attentionStyle == .loud)
+        // `alert` is `ansi[1]`, what the wash, the quiet line, the acknowledged
+        // square and the pane frame have always been drawn in, and `stock` leaves
+        // a collision alone. Together they are today's behaviour spelled out, so
+        // an upgrade renders an existing config identically rather than moving a
+        // colour nobody asked to move.
+        #expect(defaults.attentionAccent == .alert)
+        #expect(defaults.alertBehavior == .stock)
     }
 }
