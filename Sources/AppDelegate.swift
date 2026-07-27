@@ -34,6 +34,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return palette
     }()
 
+    /// The ⌘F panel. Built once and reused, like the palette, because a panel
+    /// rebuilt per invocation would rebuild its window on a keystroke.
+    private lazy var find: FindPanelController = {
+        let find = FindPanelController()
+        find.theme = configuration.paneTheme
+        find.onCollect = { [weak self] scope in self?.panesToSearch(scope) ?? [] }
+        find.onGo = { [weak self] result in self?.go(to: result) }
+        return find
+    }()
+
     /// The project list, discovered once and reused until something asks for it
     /// again.
     ///
@@ -231,6 +241,90 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         discoverProjects()
     }
 
+    // MARK: - Find
+
+    @objc func findInPane(_: Any?) {
+        find.toggle(over: focused?.window)
+    }
+
+    /// The panes a search covers, already read.
+    ///
+    /// Reading happens here rather than in the panel because only the delegate
+    /// knows what a tab is, and the read has to be on the main actor: surface
+    /// access requires it. Matching is on the main actor too, which is why the
+    /// panel calls this once per open rather than once per keystroke and why the
+    /// matching itself is capped.
+    ///
+    /// Lines and ids cross the boundary, never panes. The panel outlives every
+    /// window, and libghostty has no way to close a surface, so a pane reference
+    /// held there would be a live shell with nothing to reach it.
+    private func panesToSearch(
+        _ scope: FindScope
+    ) -> [(id: UUID, project: String, lines: [String])] {
+        let controllers: [PaneTreeController] = switch scope {
+        case .focusedPane: [tree].compactMap { $0 }
+        case .workspace: windows.map(\.tree)
+        }
+
+        return controllers.flatMap { controller -> [(id: UUID, project: String, lines: [String])] in
+            let panes = scope == .focusedPane
+                ? [controller.focusedPane].compactMap { $0 }
+                : controller.allPanes
+            return panes.compactMap { pane in
+                // A pane whose surface does not exist yet contributes nothing
+                // rather than an empty result that would read as "searched, no
+                // hits" for a pane that was never searched.
+                guard let lines = pane.readScreenLines() else { return nil }
+                return (
+                    pane.paneID.rawValue,
+                    pane.anchorTracker.anchor?.displayName ?? "baia",
+                    lines
+                )
+            }
+        }
+    }
+
+    /// Focuses the pane holding a match and scrolls it into view.
+    ///
+    /// The pane is looked up by id, and a match whose pane has closed since the
+    /// search simply does nothing. That is the cost of holding ids rather than
+    /// panes, and it is the cheaper of the two failures by a long way.
+    private func go(to result: FindResult) {
+        guard let (controller, pane) = paneNamed(result.paneID) else { return }
+        controller.window.makeKeyAndOrderFront(nil)
+        pane.takeFocus()
+        updateWindowTitles()
+
+        // No confirmed row means no scroll. The pane is focused either way, so
+        // the owner still lands where the match was found, and the beep is the
+        // only thing on screen that can say the jump did not happen: the panel
+        // is already dismissed by the time this runs. Scrolling to an
+        // unconfirmed estimate instead would move the viewport to output that
+        // does not hold the match and say nothing at all.
+        guard let row = pane.row(of: result.match, in: result.lines) else {
+            NSSound.beep()
+            return
+        }
+        pane.reveal(row: row, viewportRows: Self.viewportRowEstimate)
+    }
+
+    private func paneNamed(
+        _ id: UUID
+    ) -> (controller: WorkspaceWindowController, pane: TerminalPaneController)? {
+        for controller in windows {
+            if let pane = controller.tree.allPanes.first(where: { $0.paneID.rawValue == id }) {
+                return (controller, pane)
+            }
+        }
+        return nil
+    }
+
+    /// Rows to centre the match within. A fixed estimate rather than the pane's
+    /// real row count, which `TerminalPaneController` does not track: being a
+    /// few rows off moves the match within the viewport rather than out of it,
+    /// and the row itself was already estimated.
+    private static let viewportRowEstimate = 40
+
     /// Discards the cached project list and walks again, so a project created
     /// since launch shows up.
     @objc func reloadProjectList(_: Any?) {
@@ -358,6 +452,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             controller.tree.refreshTheme()
         }
         palette.theme = configuration.paneTheme
+        find.theme = configuration.paneTheme
     }
 
     private func notifyIfUnfocused(

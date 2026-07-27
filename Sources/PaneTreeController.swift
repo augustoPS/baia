@@ -145,6 +145,16 @@ final class PaneTreeController: NSViewController {
         focusedPaneID.flatMap { panes[$0] }
     }
 
+    /// Every pane in this window, in visual order, which is the order a
+    /// workspace-wide search reports its results in.
+    ///
+    /// Ordered through the layout tree rather than read off `panes`, which is a
+    /// dictionary and would hand back a different order on every call, so the
+    /// same search would list its hits differently each time it was run.
+    var allPanes: [TerminalPaneController] {
+        workspace.tabs.flatMap { $0.tree.paneIDs }.compactMap { panes[$0] }
+    }
+
     var paneCount: Int { panes.count }
 
     var isZoomed: Bool { zoomedPane != nil }
