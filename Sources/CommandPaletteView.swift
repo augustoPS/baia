@@ -366,6 +366,17 @@ final class PaletteListView: NSView {
 final class PaletteHintsView: NSView {
     var theme: PaneTheme = .darkPastel { didSet { needsDisplay = true } }
 
+    /// What Return and Shift-Return do in the panel this bar is in.
+    ///
+    /// A property rather than the constant it was, because the find panel reuses
+    /// this view and Return means something else there. Left hard-coded, the
+    /// find panel's footer offered "new tab" and "split right" under a list of
+    /// search hits, which is worse than no footer: a hint that names the wrong
+    /// action is read once and believed.
+    var hints: [(key: String, label: String)] = PaletteHintsView.paletteHints {
+        didSet { needsDisplay = true }
+    }
+
     override var isFlipped: Bool { true }
 
     override var acceptsFirstResponder: Bool { false }
@@ -377,7 +388,7 @@ final class PaletteHintsView: NSView {
         NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
 
         var x = 14.0
-        for hint in Self.hints {
+        for hint in hints {
             x = draw(hint.key, colour: theme.inkContext, at: x)
             x = draw(" " + hint.label, colour: theme.inkFaint, at: x) + 14
         }
@@ -400,7 +411,7 @@ final class PaletteHintsView: NSView {
 
     /// Two actions, not three. A new window is rare enough that the menu covers
     /// it, and every hint here is one the reader has to carry.
-    private static let hints: [(key: String, label: String)] = [
+    static let paletteHints: [(key: String, label: String)] = [
         ("\u{21A9}", "new tab"),
         ("\u{21E7}\u{21A9}", "split right"),
         ("esc", "close"),
