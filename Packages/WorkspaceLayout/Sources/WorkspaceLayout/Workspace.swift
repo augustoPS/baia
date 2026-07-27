@@ -150,6 +150,29 @@ public struct Workspace: Sendable, Equatable, Codable {
         }
     }
 
+    /// Moves the divider of the split at `path` in the focused tab.
+    ///
+    /// The only way a finished drag reaches the model. Without it the ratio lives
+    /// nowhere but in the split view, and the next layout pass, rebuild, or launch
+    /// restores whatever the tree still says.
+    ///
+    /// False when the tab is zoomed, because a zoomed tab shows one pane and no
+    /// divider at all, so a ratio arriving then comes from a view that is no longer
+    /// on screen. False when the path names no split, and false when the clamped
+    /// value is the one already stored, so the caller can skip the session write.
+    ///
+    /// Focus is deliberately untouched: dragging a divider is not a way of choosing
+    /// which pane to type in, and moving the cursor out from under the user's hands
+    /// would be a worse surprise than the divider moving.
+    public mutating func setRatio(at path: SplitPath, to ratio: Double) -> Bool {
+        withFocusedTab { tab in
+            guard tab.zoomedPane == nil else { return false }
+            guard let moved = tab.tree.replacingRatio(at: path, with: ratio) else { return false }
+            tab.tree = moved
+            return true
+        }
+    }
+
     /// Zooms the focused pane, or unzooms when it is already the zoomed one.
     ///
     /// A single-pane tab can be zoomed. The state renders as nothing, and making

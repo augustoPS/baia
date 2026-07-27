@@ -231,6 +231,108 @@ import Testing
         #expect(workspace == before)
     }
 
+    /// One tab holding two splits on the same spine, focus on the leftmost pane.
+    private struct NestedSplits {
+        let a = PaneID()
+        let b = PaneID()
+        let c = PaneID()
+
+        var workspace: Workspace {
+            Workspace(
+                tabs: [Tab(
+                    id: UUID(),
+                    tree: .split(
+                        axis: .horizontal,
+                        ratio: 0.5,
+                        first: .leaf(a),
+                        second: .split(axis: .vertical, ratio: 0.5, first: .leaf(b), second: .leaf(c))
+                    ),
+                    focusedPane: a,
+                    zoomedPane: nil
+                )],
+                focusedTabIndex: 0
+            )
+        }
+    }
+
+    @Test func setRatioAtPathMovesTheFocusedTabsSplit() {
+        let panes = NestedSplits()
+        var workspace = panes.workspace
+
+        let moved = workspace.setRatio(at: SplitPath([1]), to: 0.25)
+
+        #expect(moved)
+        #expect(workspace.focusedTab?.tree.ratio(at: SplitPath([1])) == 0.25)
+        // The outer divider is where the user left it. A drag reports the split it
+        // is the divider of, and nothing above it may move with it.
+        #expect(workspace.focusedTab?.tree.ratio(at: SplitPath()) == 0.5)
+    }
+
+    @Test func setRatioWhileZoomedIsRefused() {
+        let panes = NestedSplits()
+        var workspace = panes.workspace
+        _ = workspace.toggleZoomOnFocusedPane()
+        let before = workspace
+
+        let moved = workspace.setRatio(at: SplitPath([1]), to: 0.25)
+
+        // A zoomed tab shows one pane and no divider at all, so a ratio arriving
+        // while zoomed is a stale report from a view that is no longer on screen.
+        #expect(!moved)
+        #expect(workspace == before)
+    }
+
+    @Test func setRatioAtAPathThatNamesNoSplitIsRefused() {
+        let panes = NestedSplits()
+        var workspace = panes.workspace
+        let before = workspace
+
+        let intoALeaf = workspace.setRatio(at: SplitPath([0]), to: 0.25)
+        let offTheBottom = workspace.setRatio(at: SplitPath([1, 1]), to: 0.25)
+
+        #expect(!intoALeaf)
+        #expect(!offTheBottom)
+        #expect(workspace == before)
+    }
+
+    @Test func setRatioToTheValueTheSplitAlreadyHasIsRefused() {
+        let panes = NestedSplits()
+        var workspace = panes.workspace
+        let before = workspace
+
+        // False so the caller skips the session write. A click on a divider that
+        // moves it by nothing still ends a drag.
+        let moved = workspace.setRatio(at: SplitPath(), to: 0.5)
+
+        #expect(!moved)
+        #expect(workspace == before)
+    }
+
+    @Test func setRatioLeavesEveryOtherTabAlone() {
+        let tabs = ThreeTabs()
+        var workspace = tabs.workspace
+        let other = PaneID()
+        workspace.tabs[1].tree = .split(
+            axis: .horizontal,
+            ratio: 0.5,
+            first: .leaf(tabs.second),
+            second: .leaf(other)
+        )
+        workspace.tabs[0].tree = .split(
+            axis: .horizontal,
+            ratio: 0.5,
+            first: .leaf(tabs.first),
+            second: .leaf(PaneID())
+        )
+        let untouched = workspace.tabs[0].tree
+
+        let moved = workspace.setRatio(at: SplitPath(), to: 0.2)
+
+        #expect(moved)
+        #expect(workspace.tabs[1].tree.ratio(at: SplitPath()) == 0.2)
+        #expect(workspace.tabs[0].tree == untouched)
+    }
+
     @Test func zoomTogglesOnAndOffTheFocusedPane() {
         let panes = TwoPanes()
         var workspace = panes.workspace

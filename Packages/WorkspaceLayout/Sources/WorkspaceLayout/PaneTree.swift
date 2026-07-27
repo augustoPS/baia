@@ -1,5 +1,30 @@
 import Foundation
 
+/// Which child to descend into at each step from the root of a ``PaneTree``.
+/// `0` is the first child, `1` the second, and the empty path names the root.
+///
+/// The only way to name one split rather than one pane. Every other mutator here
+/// is pane-keyed, and pane-keyed addressing cannot express a drag: the divider
+/// between a pane and a nested column belongs to the outer split, while
+/// ``PaneTree/replacingRatio(forSplitContaining:with:)`` deliberately resolves to
+/// the innermost split holding that pane. Moving the wrong one resizes two panes
+/// the user never touched.
+///
+/// A path is only valid against the tree it was derived from. Nothing renumbers
+/// it, because every structural change tears the view hierarchy down and builds a
+/// fresh set of controllers, each handed the path it has under the new tree.
+public struct SplitPath: Hashable, Sendable, Codable {
+    public var indices: [Int]
+
+    public init(_ indices: [Int] = []) {
+        self.indices = indices
+    }
+
+    public func appending(_ index: Int) -> SplitPath {
+        SplitPath(indices + [index])
+    }
+}
+
 /// The pane arrangement of one tab: a leaf is a pane, a split is a divider.
 ///
 /// A binary tree rather than a flat list of rects, because closing a pane has to
@@ -62,7 +87,7 @@ public indirect enum PaneTree: Sendable, Equatable, Codable {
         ratio: Double
     ) -> PaneTree? {
         guard !contains(newPane) else { return nil }
-        return splittingLeaf(id, axis: axis, newPane: newPane, ratio: Self.clamped(ratio))
+        return splittingLeaf(id, axis: axis, newPane: newPane, ratio: Self.clampedRatio(ratio))
     }
 
     /// The tree without `id`'s pane, or nil when there would be no pane left.
@@ -99,14 +124,38 @@ public indirect enum PaneTree: Sendable, Equatable, Codable {
                 if let deeper = first.replacingRatio(forSplitContaining: id, with: ratio) {
                     return .split(axis: axis, ratio: existing, first: deeper, second: second)
                 }
-                return .split(axis: axis, ratio: Self.clamped(ratio), first: first, second: second)
+                return .split(axis: axis, ratio: Self.clampedRatio(ratio), first: first, second: second)
             }
             guard second.contains(id) else { return nil }
             if let deeper = second.replacingRatio(forSplitContaining: id, with: ratio) {
                 return .split(axis: axis, ratio: existing, first: first, second: deeper)
             }
-            return .split(axis: axis, ratio: Self.clamped(ratio), first: first, second: second)
+            return .split(axis: axis, ratio: Self.clampedRatio(ratio), first: first, second: second)
         }
+    }
+
+    /// The fraction the split at `path` lays out at, or nil when the path names a
+    /// leaf, runs off the bottom of the tree, or steps to a child a split does not
+    /// have.
+    ///
+    /// Clamped rather than raw, because a caller reads this to compare against a
+    /// fraction measured on screen and ``layout(in:)`` clamps as it draws. Handing
+    /// back a stored 0.99 would say the divider had moved when it had not.
+    public func ratio(at path: SplitPath) -> Double? {
+        ratio(descending: path.indices[...])
+    }
+
+    /// The tree with the split at `path` moved to `ratio`, or nil when nothing
+    /// should be persisted.
+    ///
+    /// Nil covers the two cases a caller treats the same way, since both mean
+    /// "persist nothing": the path names no split, and the clamped value is the
+    /// one the split already carries. The clamp is the
+    /// same ``clampedRatio(_:)`` the view layer applies before it reports a drag,
+    /// so a divider dragged past 0.95 settles where the model says it is instead of
+    /// being yanked back on some later layout pass.
+    public func replacingRatio(at path: SplitPath, with ratio: Double) -> PaneTree? {
+        replacingRatio(descending: path.indices[...], with: Self.clampedRatio(ratio))
     }
 
     /// Where every pane sits inside `rect`, in visual order.
@@ -122,7 +171,7 @@ public indirect enum PaneTree: Sendable, Equatable, Codable {
             // Clamped here rather than trusted, because a decoded session or a
             // directly constructed case can carry any Double at all and this is
             // the one place the number turns into pixels.
-            let fraction = Self.clamped(ratio)
+            let fraction = Self.clampedRatio(ratio)
             switch axis {
             case .horizontal:
                 let width = rect.width * fraction
@@ -228,6 +277,47 @@ public indirect enum PaneTree: Sendable, Equatable, Codable {
         return first.sibling(of: id) ?? second.sibling(of: id)
     }
 
+    /// Walks the remaining steps. An `ArraySlice` rather than a fresh `Array` per
+    /// level, so descending costs nothing beyond the recursion itself.
+    private func ratio(descending steps: ArraySlice<Int>) -> Double? {
+        guard case let .split(_, ratio, first, second) = self else { return nil }
+        guard let step = steps.first else { return Self.clampedRatio(ratio) }
+        switch step {
+        case 0: return first.ratio(descending: steps.dropFirst())
+        case 1: return second.ratio(descending: steps.dropFirst())
+        // A split has exactly two children, so any other index names nothing.
+        // Falling back to one of them would move a divider the caller did not ask
+        // about.
+        default: return nil
+        }
+    }
+
+    /// Rebuilds the spine down to the named split. `ratio` arrives clamped, so it
+    /// is not clamped again per level.
+    private func replacingRatio(descending steps: ArraySlice<Int>, with ratio: Double) -> PaneTree? {
+        guard case let .split(axis, existing, first, second) = self else { return nil }
+        guard let step = steps.first else {
+            // Nil rather than an identical tree, so a click that ended a drag
+            // without moving the divider does not write the session file. A stored
+            // value outside the range is not equal to any clamped one, so it gets
+            // normalised here rather than kept.
+            guard ratio != existing else { return nil }
+            return .split(axis: axis, ratio: ratio, first: first, second: second)
+        }
+        switch step {
+        case 0:
+            guard let replaced = first.replacingRatio(descending: steps.dropFirst(), with: ratio)
+            else { return nil }
+            return .split(axis: axis, ratio: existing, first: replaced, second: second)
+        case 1:
+            guard let replaced = second.replacingRatio(descending: steps.dropFirst(), with: ratio)
+            else { return nil }
+            return .split(axis: axis, ratio: existing, first: first, second: replaced)
+        default:
+            return nil
+        }
+    }
+
     /// Rebuilds the spine down to `id`'s leaf, splitting it in two. Nil when no
     /// leaf on the way holds `id`.
     private func splittingLeaf(
@@ -282,13 +372,19 @@ public indirect enum PaneTree: Sendable, Equatable, Codable {
 
     /// Holds a stored or incoming fraction inside ``ratioRange``.
     ///
+    /// Public because the view layer has to clamp with the *same* function before
+    /// it settles a finished drag. Clamping in only one of the two places stores
+    /// 0.95 while the divider sits at 0.98, and the divider then jumps on whatever
+    /// later layout pass happens to notice, which is a worse bug than the one that
+    /// made this necessary.
+    ///
     /// A non-finite ratio resets to an even split rather than clamping. Clamping
     /// would not even work, since `min` and `max` propagate NaN and both children
     /// would end up with a NaN size, which lays out as nothing at all. JSON has
     /// no NaN or Infinity literal, so a non-finite ratio never arrives from a
     /// decoded session: it arrives from a caller building the case by hand, where
     /// the intent is a mistake rather than an extreme worth honouring.
-    private static func clamped(_ ratio: Double) -> Double {
+    public static func clampedRatio(_ ratio: Double) -> Double {
         guard ratio.isFinite else { return 0.5 }
         return min(max(ratio, ratioRange.lowerBound), ratioRange.upperBound)
     }

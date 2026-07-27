@@ -357,7 +357,7 @@ final class PaneTreeController: NSViewController {
         }
 
         guard let displayed = displayedTree else { return }
-        let content = makeViewController(for: displayed)
+        let content = makeViewController(for: displayed, at: SplitPath())
         addChild(content)
         content.view.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(content.view)
@@ -377,7 +377,11 @@ final class PaneTreeController: NSViewController {
         return .leaf(zoomed)
     }
 
-    private func makeViewController(for node: PaneTree) -> NSViewController {
+    /// - Parameter path: where `node` sits in the displayed tree, so a split can
+    ///   name itself when its divider is dragged. Valid for the controller's whole
+    ///   lifetime: every structural change goes through ``rebuild()``, which
+    ///   reconstructs the lot against the new tree.
+    private func makeViewController(for node: PaneTree, at path: SplitPath) -> NSViewController {
         switch node {
         case let .leaf(id):
             // A pane missing from the map would be a tree and a controller set
@@ -385,13 +389,32 @@ final class PaneTreeController: NSViewController {
             // and taking the whole window down with it.
             return panes[id] ?? NSViewController()
         case let .split(axis, ratio, first, second):
-            let split = PaneSplitController(axis: axis, ratio: ratio, theme: theme)
+            let split = PaneSplitController(axis: axis, ratio: ratio, path: path, theme: theme)
+            split.onRatioChange = { [weak self] path, ratio in
+                self?.recordRatio(at: path, ratio)
+            }
             split.setChildren(
-                first: makeViewController(for: first),
-                second: makeViewController(for: second)
+                first: makeViewController(for: first, at: path.appending(0)),
+                second: makeViewController(for: second, at: path.appending(1))
             )
             return split
         }
+    }
+
+    /// Writes a finished drag into the tree.
+    ///
+    /// No `rebuild()`. A ratio is not a structural change, and rebuilding for one
+    /// would remove every child and reparent every live ghostty surface, which is
+    /// a `SIGWINCH` to whatever is running in each of them for a divider that has
+    /// already moved on screen.
+    private func recordRatio(at path: SplitPath, _ ratio: Double) {
+        guard workspace.setRatio(at: path, to: ratio) else { return }
+        // Load-bearing. `renderedTree` is what `rebuild()` compares against, and
+        // leaving it behind the tree would make the next rebuild, including the
+        // one `refreshTheme()` runs for a colour change, tear down and rebuild
+        // every pane in the window.
+        renderedTree = tree
+        onSessionChange?()
     }
 
     /// The projects of every pane currently asking for attention, in visual
@@ -423,13 +446,45 @@ final class PaneTreeController: NSViewController {
 /// the divider's autolayout constraints, and a terminal view has no intrinsic
 /// size to fall back on when those are wrong.
 final class PaneSplitController: NSSplitViewController {
+    /// The narrowest either pane may be, in points, and therefore how close to an
+    /// edge a divider can ever sit. A pane narrower than this cannot show a
+    /// useful terminal, and a pane at zero width is an invisible live shell.
+    ///
+    /// Shared with ``applyRatio()`` rather than written only on the items,
+    /// because a ratio whose position falls inside this margin is a target
+    /// `NSSplitView` will refuse, and asking for it again on every layout pass is
+    /// a loop the process does not survive.
+    static let minimumPaneThickness: CGFloat = 96
+
     private let axis: SplitAxis
-    private let ratio: Double
     private let theme: PaneTheme
 
-    init(axis: SplitAxis, ratio: Double, theme: PaneTheme) {
+    /// Where the divider sits, as the first child's fraction of this split.
+    ///
+    /// A `var`, and that is the whole bug this file used to have. Seeded from the
+    /// tree and then enforced on every layout pass, it was authoritative over a
+    /// value nothing could ever change, so every drag was undone by the layout
+    /// pass the drag itself triggered.
+    private var ratio: Double
+
+    /// Which split in the tree this controller renders, so a finished drag can
+    /// name it. Pane ids cannot: the divider between a pane and a nested column
+    /// belongs to the outer split, and the pane-keyed mutator resolves to the
+    /// innermost one.
+    private let path: SplitPath
+
+    /// Raised when a drag lands the divider somewhere new. The owner writes it
+    /// into the tree; nothing here persists anything itself.
+    var onRatioChange: ((SplitPath, Double) -> Void)?
+
+    /// Where the divider sat when the gesture in progress began, if one is.
+    /// Read once at mouse-up to tell a drag from a click.
+    private var positionAtDragStart: CGFloat?
+
+    init(axis: SplitAxis, ratio: Double, path: SplitPath, theme: PaneTheme) {
         self.axis = axis
         self.ratio = ratio
+        self.path = path
         self.theme = theme
         super.init(nibName: nil, bundle: nil)
     }
@@ -441,6 +496,11 @@ final class PaneSplitController: NSSplitViewController {
     override func loadView() {
         let split = PaneSplitView()
         split.paneTheme = theme
+        split.onDragWillBegin = { [weak self] in
+            guard let self else { return }
+            positionAtDragStart = firstChildThickness
+        }
+        split.onDragFinished = { [weak self] in self?.recordDrag() }
         splitView = split
         super.loadView()
     }
@@ -468,9 +528,7 @@ final class PaneSplitController: NSSplitViewController {
         for item in splitViewItems { removeSplitViewItem(item) }
         for child in [first, second] {
             let item = NSSplitViewItem(viewController: child)
-            // A pane narrower than this cannot show a useful terminal, and a
-            // pane at zero width is an invisible live shell.
-            item.minimumThickness = 96
+            item.minimumThickness = Self.minimumPaneThickness
             item.canCollapse = false
             item.holdingPriority = .defaultLow
             addSplitViewItem(item)
@@ -501,18 +559,93 @@ final class PaneSplitController: NSSplitViewController {
     /// thickness so the first pass, where everything is zero, does not pin the
     /// divider at the origin and leave one pane collapsed.
     private func applyRatio() {
+        // While the user's hand is on the divider the user is authoritative.
+        // Harnesses disagreed on whether a layout pass arrives mid-gesture at all,
+        // and this costs one bool to be right either way.
+        guard !((splitView as? PaneSplitView)?.isDragging ?? false) else { return }
         guard splitViewItems.count == 2 else { return }
         let thickness = splitView.isVertical ? splitView.bounds.width : splitView.bounds.height
         guard thickness > 0 else { return }
-        let target = thickness * ratio
-        let current = splitView.isVertical
-            ? splitViewItems[0].viewController.view.frame.width
-            : splitViewItems[0].viewController.view.frame.height
+        guard let target = reachablePosition(in: thickness) else { return }
+        let current = firstChildThickness
         // A half point of tolerance. Reassigning the position on every layout
         // pass would fight the user's own divider drag, since a drag triggers
         // the layout that would immediately undo it.
         guard abs(current - target) > 0.5 else { return }
         splitView.setPosition(target, ofDividerAt: 0)
+    }
+
+    /// Where the divider can actually sit for the stored ratio, or nil when the
+    /// split is too small to give both panes their minimum and there is no legal
+    /// position at all.
+    ///
+    /// This is the difference between a divider that stops at the edge of the
+    /// last usable column and a dead app. `NSSplitViewItem.minimumThickness`
+    /// refuses any position inside its margin, so once `thickness * ratio` falls
+    /// there, `setPosition` never lands, `current` never equals `target`, and
+    /// every layout pass asks again. Each refused request re-dirties layout, and
+    /// for a nested split, which its parent re-lays out on every pass anyway,
+    /// that never converges: AppKit gives up with `NSGenericException`, "the
+    /// window has been marked as needing another Update Constraints in Window
+    /// pass", and the process dies. It is reachable two ways, both ordinary. Drag
+    /// a nested divider near its stop and then make the window smaller. Or do
+    /// that, quit, and relaunch into the saved frame, which is worse: the crash
+    /// arrives during construction, every launch reads the same session file, and
+    /// the only way out is deleting it by hand.
+    ///
+    /// Clamping the applied position and not the stored ratio is deliberate. The
+    /// tree keeps what the user asked for, so re-widening the window restores the
+    /// arrangement instead of a value bent to fit the smallest it ever got.
+    private func reachablePosition(in thickness: CGFloat) -> CGFloat? {
+        let lowest = Self.minimumPaneThickness
+        let highest = thickness - Self.minimumPaneThickness - splitView.dividerThickness
+        guard highest >= lowest else { return nil }
+        return min(max(thickness * ratio, lowest), highest)
+    }
+
+    /// Where the divider ended up, measured the one way both halves of this
+    /// controller agree on.
+    ///
+    /// `splitViewItems[0].viewController.view.frame` rather than
+    /// `splitView.subviews[0].frame`: `NSSplitViewController` wraps each child in
+    /// an item view of its own and the two rects are not the same. Recording a
+    /// drag from one and enforcing it from the other would leave a permanent
+    /// disagreement, and `applyRatio` would tug the divider on every layout pass
+    /// instead of early-returning.
+    private var firstChildThickness: CGFloat {
+        guard let first = splitViewItems.first?.viewController.view else { return 0 }
+        return splitView.isVertical ? first.frame.width : first.frame.height
+    }
+
+    /// Turns a finished drag into a fraction and reports it.
+    ///
+    /// Clamped through ``PaneTree/clampedRatio(_:)``, the same function the model
+    /// applies, so the stored value and the drawn position cannot drift apart and
+    /// leave the divider to jump on some later layout pass.
+    private func recordDrag() {
+        let start = positionAtDragStart
+        positionAtDragStart = nil
+        guard splitViewItems.count == 2 else { return }
+        let thickness = splitView.isVertical ? splitView.bounds.width : splitView.bounds.height
+        guard thickness > 0 else { return }
+        let current = firstChildThickness
+        // Did the divider move, in the same half point `applyRatio` settles at.
+        // Comparing the measured fraction against the stored `ratio` instead
+        // destroyed arrangements: wherever `minimumPaneThickness` holds the
+        // divider off the stored ratio, and that is any split where the ratio
+        // puts the divider inside the margin, the two differ permanently, so a
+        // bare click wrote the clamped position into the tree and the session
+        // file. There is no `mouseDragged` to consult here, because
+        // `NSSplitView`'s tracking loop eats its own events, so where the divider
+        // started is the only honest record of what the gesture did.
+        guard let start, abs(current - start) > 0.5 else { return }
+        let fraction = PaneTree.clampedRatio(current / thickness)
+        ratio = fraction
+        onRatioChange?(path, fraction)
+        // Settle onto the clamped value now rather than waiting for a layout pass
+        // that may not come. A drag past the clamp otherwise sits where the mouse
+        // left it until something unrelated dirties the layout.
+        applyRatio()
     }
 }
 
@@ -539,7 +672,30 @@ final class PaneSplitView: NSSplitView {
     }
 
     /// True while the user is dragging this divider, so it can brighten.
-    private var isDragging = false
+    ///
+    /// Readable by the controller as well, which suspends its own ratio
+    /// enforcement for the length of the gesture. While the user's hand is on the
+    /// divider the user is authoritative, and a layout pass that arrives mid-drag
+    /// must not argue with it.
+    private(set) var isDragging = false
+
+    /// Raised once, when a real drag ends. Carries nothing: the controller
+    /// measures the result itself, with the same expression its own ratio
+    /// enforcement uses, so the two cannot disagree about where the divider is.
+    ///
+    /// Hung off `mouseDown` rather than `splitViewDidResizeSubviews`, which also
+    /// fires for the controller's own `setPosition` and would need a reentrancy
+    /// guard to avoid a write-back loop. This fires for a user drag and nothing
+    /// else.
+    var onDragFinished: (() -> Void)?
+
+    /// Raised as a gesture starts, before `NSSplitView`'s tracking loop has moved
+    /// anything, so the controller can note where the divider was.
+    ///
+    /// Whether the divider moved is the only honest way to tell a drag from a
+    /// click: `super.mouseDown` consumes its own drag events inside its tracking
+    /// loop, so overriding `mouseDragged` here would never fire.
+    var onDragWillBegin: (() -> Void)?
 
     override var dividerThickness: CGFloat { 1 }
 
@@ -590,10 +746,15 @@ final class PaneSplitView: NSSplitView {
     override func mouseDown(with event: NSEvent) {
         isDragging = true
         needsDisplay = true
+        // Before `super`, which does not return until the mouse comes up.
+        onDragWillBegin?()
         super.mouseDown(with: event)
         // `super.mouseDown` runs the drag to completion in its own event loop, so
         // this lands when the mouse comes up rather than immediately.
         isDragging = false
         needsDisplay = true
+        // After the flag clears, so the controller's own settling `setPosition` is
+        // not refused by its mid-drag guard.
+        onDragFinished?()
     }
 }
