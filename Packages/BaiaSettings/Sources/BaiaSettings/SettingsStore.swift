@@ -138,7 +138,7 @@ public struct SettingsStore: Sendable {
       "gitPollSeconds": 2,
       "activityPollSeconds": 1,
       "restoreSession": true,
-      "focusStyle": "recede",
+      "focusStyle": "barFrame",
       "focusAccent": "accent",
       "attentionStyle": "loud",
       "unfocusedScrim": 0.28

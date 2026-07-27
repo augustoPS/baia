@@ -372,7 +372,7 @@ public struct PaneTheme: Sendable, Equatable {
     /// lives. It is stated here too so the design's number sits beside the
     /// derivations it belongs with, readable without opening another package.
     /// `Settings.defaultSettings` is the copy the config file is written from,
-    /// and `defaultsChangeNothingAboutHowTheAppAlreadyLooks` pins it to 0.28.
+    /// and `theFocusTreatmentIsTheOnlyDefaultThatMoved` pins it to 0.28.
     public static let unfocusedScrim: Double = 0.28
 
     /// How far *every* pane is covered when the window is not key.

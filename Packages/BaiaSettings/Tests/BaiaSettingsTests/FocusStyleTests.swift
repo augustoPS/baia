@@ -11,19 +11,23 @@ import Testing
         // unspellable one, which falls back to the default and reports itself as
         // invalid. Pinned here so that shows up as a failing test rather than as a
         // focus treatment that quietly reverted.
-        #expect(FocusStyle.allCases.map(\.rawValue) == ["recede", "invert", "frame"])
+        #expect(FocusStyle.allCases.map(\.rawValue) == ["recede", "invert", "frame", "barFrame"])
         #expect(FocusAccent.allCases.map(\.rawValue)
             == ["accent", "bone", "ansi5", "ansi6", "midnight"])
         #expect(AttentionStyle.allCases.map(\.rawValue) == ["loud", "quiet"])
     }
 
-    @Test func defaultsChangeNothingAboutHowTheAppAlreadyLooks() {
-        // `accent` resolves to the theme's own `focusedAccent`, the value shipping
-        // today. The design pass recommends `bone` and deliberately does not default
-        // to it, so that installing this release is not also a colour change nobody
-        // asked for.
+    @Test func theFocusTreatmentIsTheOnlyDefaultThatMoved() {
+        // The colour defaults still change nothing. `accent` resolves to the theme's
+        // own `focusedAccent`, the value shipping today; the design pass recommends
+        // `bone` and deliberately does not default to it, so that installing this
+        // release is not also a colour change nobody asked for.
+        //
+        // The focus *treatment* did move, on purpose. `barFrame` is the pass's
+        // answer and `recede` stays reachable for the comparison, so the two are
+        // being judged in the running app rather than on paper.
         let defaults = Settings.defaultSettings
-        #expect(defaults.focusStyle == .recede)
+        #expect(defaults.focusStyle == .barFrame)
         #expect(defaults.focusAccent == .accent)
         #expect(defaults.attentionStyle == .loud)
         #expect(defaults.unfocusedScrim == 0.28)
@@ -69,7 +73,7 @@ import Testing
     }
 
     @Test func everyOtherFocusStyleLeavesTheAttentionStyleAlone() {
-        for style in [FocusStyle.recede, .frame] {
+        for style in [FocusStyle.recede, .frame, .barFrame] {
             var settings = Settings.defaultSettings
             settings.focusStyle = style
             settings.attentionStyle = .loud

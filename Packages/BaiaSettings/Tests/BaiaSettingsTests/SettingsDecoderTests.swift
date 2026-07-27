@@ -413,7 +413,7 @@ import Testing
           "unfocusedScrim": 0.2
         }
         """#)
-        #expect(result.settings.focusStyle == .recede)
+        #expect(result.settings.focusStyle == .barFrame)
         #expect(result.settings.focusAccent == .accent)
         #expect(result.settings.attentionStyle == .loud)
         #expect(result.settings.unfocusedScrim == 0.2)

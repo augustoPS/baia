@@ -2,25 +2,29 @@ import Foundation
 
 /// How a focused pane is told apart from the others.
 ///
-/// Three treatments rather than one, because the right answer depends on how
+/// Four treatments rather than one, because the right answer depends on how
 /// many panes are open and on how much unfocused output the owner is reading.
-/// The default is ``recede``, which draws nothing on the focused pane and dims
-/// every other one instead: peripheral vision registers area rather than lines,
-/// so a treatment made of area grows more legible as panes are added, where the
-/// accent stripe it replaces grew less.
+/// The default is ``barFrame``, which encloses the focused pane's footer and
+/// leaves every other pane untouched: enclosure is the fastest shape the visual
+/// system resolves, and a rectangle 22 pt tall is small enough to be taken as
+/// one object rather than scanned for as a line.
 ///
 /// Unlike ``CursorStyle``, none of these spellings is ever sent to ghostty, so
 /// they are baia's own. Renaming a case changes the config file baia reads and
 /// nothing else.
 public enum FocusStyle: String, Sendable, Equatable, CaseIterable {
     /// Every pane except the focused one is covered by a scrim of
-    /// ``Settings/unfocusedScrim``. Nothing at all is added to the focused pane,
-    /// which is what keeps the footer's height out of the question: there is no
-    /// focused branch left in the bar for a later edit to make taller.
+    /// ``Settings/unfocusedScrim``. Nothing at all is added to the focused pane.
+    ///
+    /// Peripheral vision registers area rather than lines, so a treatment made of
+    /// area grows more legible as panes are added. The cost is that it taxes
+    /// exactly the panes the owner reads without typing in, which is why it lost
+    /// the default to ``barFrame`` and why it stays reachable to be compared
+    /// against it.
     case recede
 
     /// The focused pane's footer is filled with the focus colour and its text is
-    /// drawn in the terminal background. The most findable of the three and the
+    /// drawn in the terminal background. The most findable of the four and the
     /// brightest object on screen at all times. It also fills the bar, which is
     /// how an asking pane marks itself, so ``Settings/resolvedAttentionStyle``
     /// quietens attention whenever this is chosen.
@@ -32,6 +36,40 @@ public enum FocusStyle: String, Sendable, Equatable, CaseIterable {
     /// at four panes it can read as one divider being a different colour before
     /// it reads as a box.
     case frame
+
+    /// A 2 pt inset stroke around the *footer bar*, in the focus ink, with the
+    /// bar's fill identical in both states. The default.
+    ///
+    /// Where ``frame`` strokes the whole pane and lands beside the split
+    /// dividers, this one closes a rectangle small enough that the eye takes it
+    /// as a single object rather than scanning for a line. It draws nothing over
+    /// the terminal surface and asks no hit-testing question, because it is
+    /// inside a view that already refuses first responder and returns nil from
+    /// `hitTest`.
+    ///
+    /// The frame is drawn in whatever ink the anchor name is drawn in, so focus
+    /// reads as one signal rather than two. That is a rule the frame follows
+    /// into a filled bar and not a colour it holds fixed: on an asking pane both
+    /// become the near-black the contrast repair picks for red, because the
+    /// focus accent scores 2.08:1 there and would be a frame nobody can see.
+    ///
+    /// Against ``AttentionStyle/loud``, the default, the two compose by
+    /// construction: focus takes the bar's edges and attention takes its fill, so
+    /// a pane can be both at once and still be read correctly, which is the state
+    /// the owner is in every time he answers an agent. That is why
+    /// ``Settings/resolvedAttentionStyle`` needs no rule for this case the way it
+    /// does for ``invert``.
+    ///
+    /// Against ``AttentionStyle/quiet`` both want the same two points of the top
+    /// edge, and the frame is drawn above the text, so the attention line is
+    /// pushed inside it instead: 2 pt of alert immediately within 2 pt of focus,
+    /// both readable. It has to be moved rather than left to be covered, because
+    /// `quiet` is a static line with no arrival pulse behind it, so a covered
+    /// line is an ask that is never announced at all.
+    ///
+    /// The frame is hidden while the window is not key, matching ``frame``. The
+    /// anchor name stays in the focus ink there, also matching ``frame``.
+    case barFrame
 }
 
 /// Which derivation the focus colour is resolved from.

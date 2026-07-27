@@ -69,7 +69,7 @@ final class TerminalPaneController: NSViewController {
         }
     }
 
-    var focusStyle: FocusStyle = .recede {
+    var focusStyle: FocusStyle = .barFrame {
         didSet {
             guard focusStyle != oldValue else { return }
             applyFocusPresentation()
@@ -113,6 +113,7 @@ final class TerminalPaneController: NSViewController {
 
     private func applyFocusPresentation() {
         statusBar.isFocused = isPaneFocused
+        statusBar.isWindowActive = isWindowActive
         statusBar.focusStyle = focusStyle
         statusBar.theme = theme
         scrim.colour = theme.background
