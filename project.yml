@@ -26,6 +26,8 @@ packages:
     path: Packages/PaneActivity
   BaiaSettings:
     path: Packages/BaiaSettings
+  PaneSearch:
+    path: Packages/PaneSearch
 
 targets:
   baia:
@@ -58,6 +60,7 @@ targets:
       - package: GitWorkspace
       - package: PaneActivity
       - package: BaiaSettings
+      - package: PaneSearch
 
     settings:
       base:
