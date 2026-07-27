@@ -336,13 +336,24 @@ final class PaneTreeController: NSViewController {
     /// new shell, losing the scrollback and whatever was running. Moving a live
     /// terminal view to a new parent is safe, because libghostty rebuilds a
     /// surface only when it has none, so the instance carries its pty with it.
-    /// Redraws the dividers after a theme change.
+    /// Repaints the dividers after a theme change.
     ///
-    /// A split takes its colour at construction, so the containers have to be
-    /// rebuilt for a new theme to reach them. The panes themselves are updated
-    /// directly by the configuration center and do not need this.
+    /// Pushed into the views that are already on screen, never through
+    /// `rebuild()`. `rebuild()`'s first statement returns unless the tree or the
+    /// zoom changed, and a theme change moves neither, so routing through it was
+    /// a no-op: a divider kept the old theme's colour until some unrelated split
+    /// happened to rebuild it. Forcing it past that guard is the worse half of the
+    /// trade, since it removes every child and reparents every live ghostty
+    /// surface, which is a `SIGWINCH` to whatever is running in each of them for a
+    /// colour.
+    ///
+    /// `super.drawDivider(in:)` re-reads `dividerColor` on every draw, so a stored
+    /// theme plus a `needsDisplay` is the entire repaint, with no teardown.
+    ///
+    /// The panes are deliberately not walked: ``ConfigurationCenter`` re-themes
+    /// each surface itself.
     func refreshTheme() {
-        rebuild()
+        for child in children { PaneSplitController.applyTheme(theme, to: child) }
     }
 
     private func rebuild() {
@@ -457,7 +468,24 @@ final class PaneSplitController: NSSplitViewController {
     static let minimumPaneThickness: CGFloat = 96
 
     private let axis: SplitAxis
-    private let theme: PaneTheme
+
+    /// The palette this split's divider is drawn from.
+    ///
+    /// A `var` because the config file's theme can change while the window is up,
+    /// and the only alternative to pushing the new value into the split that is
+    /// already on screen is rebuilding the hierarchy, which reparents every live
+    /// terminal. Always the terminal theme, never the system appearance: that is
+    /// the leak `PaneSplitView` exists to close.
+    var theme: PaneTheme {
+        didSet {
+            guard theme != oldValue else { return }
+            // Only once the view exists. Reading `splitView` before that makes
+            // `NSSplitViewController` build one, and `loadView()` reads the stored
+            // value on its own way through.
+            guard isViewLoaded else { return }
+            (splitView as? PaneSplitView)?.paneTheme = theme
+        }
+    }
 
     /// Where the divider sits, as the first child's fraction of this split.
     ///
@@ -508,6 +536,20 @@ final class PaneSplitController: NSSplitViewController {
     @available(*, unavailable)
     required init?(coder _: NSCoder) {
         fatalError("baia does not use nibs")
+    }
+
+    /// Pushes a theme into every split at or below `controller`.
+    ///
+    /// Static, and here rather than on the owner, so the walk sits inside the
+    /// region the pane-resize probes slice out of this file and can therefore be
+    /// proven headlessly. The owner keeps only the loop over its own children.
+    ///
+    /// Anything that is not a split ends the descent. A pane is re-themed by
+    /// ``ConfigurationCenter`` directly and has no divider to repaint.
+    static func applyTheme(_ theme: PaneTheme, to controller: NSViewController) {
+        guard let split = controller as? PaneSplitController else { return }
+        split.theme = theme
+        for child in split.children { applyTheme(theme, to: child) }
     }
 
     override func viewDidLoad() {
