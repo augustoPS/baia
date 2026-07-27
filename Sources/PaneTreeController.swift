@@ -257,6 +257,44 @@ final class PaneTreeController: NSViewController {
         focusPane(next)
     }
 
+    /// Grows the focused pane one keyboard step in that direction.
+    ///
+    /// Deliberately not through `rebuild()`, which is what every other command
+    /// here does. `rebuild()` removes every child view, which leaves the window
+    /// with no first responder until something re-focuses a pane, and
+    /// `AppTerminalView.performKeyEquivalent` opens by checking that it *is* the
+    /// first responder: a pane that lost it silently answers no ghostty binding
+    /// at all, with nothing on screen to say why. Under key repeat that would
+    /// happen many times a second, reparenting the live surface each time. This
+    /// takes the same push path a finished drag does instead.
+    func resizeFocusedPane(_ direction: FocusDirection) {
+        guard workspace.resizeFocusedPane(direction, by: PaneTree.keyboardResizeStep) else { return }
+        pushRatios()
+    }
+
+    /// Puts every divider in this window back to the middle.
+    func equalizePanes() {
+        guard workspace.equalizeFocusedTab() else { return }
+        pushRatios()
+    }
+
+    /// Moves the dividers that are already on screen to what the tree now says.
+    ///
+    /// The same three steps ``recordRatio(at:_:)`` takes, in the other order: a
+    /// drag has already moved the divider by the time the model hears about it,
+    /// while a key changes the model first and the divider has to follow.
+    ///
+    /// `renderedTree` is load-bearing here too. Leaving it behind the tree would
+    /// make the next rebuild, including the one a theme change runs, tear down and
+    /// rebuild every pane in the window.
+    private func pushRatios() {
+        renderedTree = tree
+        if let current = displayedTree, let root = children.first {
+            PaneSplitController.applyRatios(of: current, to: root)
+        }
+        onSessionChange?()
+    }
+
     func toggleZoom() {
         guard workspace.toggleZoomOnFocusedPane() else { return }
         rebuild()
@@ -550,6 +588,48 @@ final class PaneSplitController: NSSplitViewController {
         guard let split = controller as? PaneSplitController else { return }
         split.theme = theme
         for child in split.children { applyTheme(theme, to: child) }
+    }
+
+    /// Pushes every ratio in `tree` into the splits already on screen under
+    /// `controller`, which is how a keyboard resize moves a divider.
+    ///
+    /// The tree and the hierarchy are walked in lockstep rather than the split
+    /// being looked up by ``SplitPath``, because equalizing moves every divider at
+    /// once and a per-path lookup would walk the same spine once per split.
+    ///
+    /// Static, and here rather than on the owner, for the reason ``applyTheme(_:to:)``
+    /// is: it puts the whole push inside the region the pane-resize probes slice
+    /// out of this file, so a keyboard resize can be driven headlessly.
+    ///
+    /// Nothing is torn down. `rebuild()` would remove every child view and leave
+    /// the window with no first responder, which silently disables every ghostty
+    /// binding in the pane the user is typing in, and it would reparent each live
+    /// surface, which is a `SIGWINCH` per keystroke to whatever is running.
+    static func applyRatios(of tree: PaneTree, to controller: NSViewController) {
+        guard case let .split(_, ratio, first, second) = tree,
+              let node = controller as? PaneSplitController
+        else { return }
+        node.setRatio(ratio)
+        // A split always has exactly two items once `setChildren` has run, and
+        // before that there is nothing on screen to move.
+        guard node.splitViewItems.count == 2 else { return }
+        applyRatios(of: first, to: node.splitViewItems[0].viewController)
+        applyRatios(of: second, to: node.splitViewItems[1].viewController)
+    }
+
+    /// Moves this divider to a ratio the model has already accepted.
+    ///
+    /// The stored value is assigned even when the view is not loaded yet, since
+    /// that is what `viewDidLayout` reads on its first pass. `applyRatio()` is the
+    /// same enforcement a layout pass runs, so a keyboard resize cannot reach a
+    /// position a drag could not: it goes through ``reachablePosition(in:)``, which
+    /// is what keeps a split too small to seat both minimums from asking for a
+    /// position `NSSplitView` refuses on every pass until AppKit gives up and the
+    /// process dies.
+    func setRatio(_ ratio: Double) {
+        self.ratio = ratio
+        guard isViewLoaded else { return }
+        applyRatio()
     }
 
     override func viewDidLoad() {

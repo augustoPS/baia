@@ -173,6 +173,48 @@ public struct Workspace: Sendable, Equatable, Codable {
         }
     }
 
+    /// Grows the focused pane in that direction by one keyboard step.
+    ///
+    /// The divider that moves is the one touching the focused pane's edge that
+    /// way, which ``PaneTree/adjustingRatio(forPane:direction:by:)`` resolves.
+    /// False when there is no divider that way, when it is already against the
+    /// clamp, and when the tab is zoomed, all of which mean the caller writes no
+    /// session and pushes nothing into the views.
+    ///
+    /// Zoom refuses for the same reason ``setRatio(at:to:)`` does: a zoomed tab
+    /// shows one pane and no divider, so a key that moved one would change a
+    /// layout the user cannot see and spring it on them at the next unzoom.
+    ///
+    /// Focus is untouched. Resizing a pane is done from inside it, and moving the
+    /// cursor out of the pane the user is growing would be absurd.
+    public mutating func resizeFocusedPane(_ direction: FocusDirection, by delta: Double) -> Bool {
+        withFocusedTab { tab in
+            guard tab.zoomedPane == nil else { return false }
+            guard let moved = tab.tree.adjustingRatio(
+                forPane: tab.focusedPane,
+                direction: direction,
+                by: delta
+            ) else { return false }
+            tab.tree = moved
+            return true
+        }
+    }
+
+    /// Puts every divider in the focused tab back to the middle.
+    ///
+    /// False when the tab is already even, so the escape hatch from a layout that
+    /// got away from the user costs nothing when it was not needed. False when
+    /// zoomed, matching ``resizeFocusedPane(_:by:)``.
+    public mutating func equalizeFocusedTab() -> Bool {
+        withFocusedTab { tab in
+            guard tab.zoomedPane == nil else { return false }
+            let even = tab.tree.equalized
+            guard even != tab.tree else { return false }
+            tab.tree = even
+            return true
+        }
+    }
+
     /// Zooms the focused pane, or unzooms when it is already the zoomed one.
     ///
     /// A single-pane tab can be zoomed. The state renders as nothing, and making

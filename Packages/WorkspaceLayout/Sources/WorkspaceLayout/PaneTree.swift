@@ -158,6 +158,67 @@ public indirect enum PaneTree: Sendable, Equatable, Codable {
         replacingRatio(descending: path.indices[...], with: Self.clampedRatio(ratio))
     }
 
+    /// The tree with the divider a grow key touches moved by `delta`, or nil when
+    /// that key moves nothing.
+    ///
+    /// `delta` is a fraction of the governing split's own thickness, never points.
+    /// This type has no idea what a point is, and a step in points would move a
+    /// nested divider by a larger share of its split than the root one by the same
+    /// key, which reads as the key doing more work in a small pane than a large
+    /// one.
+    ///
+    /// Nil covers every case a caller treats the same way, since all of them mean
+    /// "persist nothing and push nothing": the pane is not in the tree, no split
+    /// on its path has a divider that way, and the divider is already against the
+    /// clamp. A refusal at the clamp deliberately does *not* fall back to a
+    /// shallower split. Moving an ancestor once the near divider has stopped would
+    /// resize two panes the user never pointed at, which is the same failure the
+    /// deepest-split rule exists to prevent.
+    public func adjustingRatio(
+        forPane id: PaneID,
+        direction: FocusDirection,
+        by delta: Double
+    ) -> PaneTree? {
+        guard let path = governingSplit(for: id, direction: direction),
+              let current = ratio(at: path)
+        else { return nil }
+        // `ratio(at:)` hands back the clamped value and `replacingRatio(at:with:)`
+        // clamps again on the way in, so every ratio a held key can ever write is
+        // one ``clampedRatio(_:)`` already admits. A keyboard resize therefore
+        // reaches no arrangement a mouse drag could not, which is what keeps it
+        // clear of the layout loop `PaneSplitController.reachablePosition(in:)`
+        // guards against.
+        return replacingRatio(at: path, with: current + direction.growth.sign * delta)
+    }
+
+    /// The same tree with every split back at a half.
+    ///
+    /// Axes and pane order are untouched: this is the "put it back" key, not a
+    /// reshuffle, and a user who presses it expects the panes to stay where they
+    /// are and only the dividers to move.
+    public var equalized: PaneTree {
+        guard case let .split(axis, _, first, second) = self else { return self }
+        return .split(axis: axis, ratio: 0.5, first: first.equalized, second: second.equalized)
+    }
+
+    /// How far one press of a grow key moves a divider, as a fraction of that
+    /// split's own thickness.
+    ///
+    /// Chosen against two failures at once. Too large and a single tap is
+    /// unusable: at 0.05 one press moves the root divider of a 1400 point window
+    /// 70 points, about eight terminal columns, and a held key crosses from the
+    /// centre to the stop in nine presses, well under a second at the default
+    /// repeat rate. Too small and the key is useless held down: one terminal cell
+    /// per press, which is what tmux does in points, would be about 0.006 here and
+    /// seventy-five presses to cross. At 0.025 one press is roughly four columns
+    /// of that same window and the full range is eighteen presses, a second and a
+    /// half of holding.
+    ///
+    /// It also divides ``clampedRatio(_:)``'s range from a half exactly, so a held
+    /// key lands *on* the stop rather than a step short of it with a remainder it
+    /// can never spend.
+    public static let keyboardResizeStep = 0.025
+
     /// Where every pane sits inside `rect`, in visual order.
     ///
     /// No divider thickness is subtracted. A divider is a view the AppKit layer
@@ -316,6 +377,51 @@ public indirect enum PaneTree: Sendable, Equatable, Codable {
         default:
             return nil
         }
+    }
+
+    /// The split a grow key on `id` moves: the deepest one on the path from here
+    /// to that pane whose axis matches the direction and that has its divider on
+    /// the side the pane is growing towards. Nil when the path holds no such
+    /// split, which is what the leftmost pane growing left is.
+    ///
+    /// Deepest, not first, and that is the whole rule. A pane can sit in `first`
+    /// of an inner split and in `second` of the root at the same axis, so both
+    /// qualify for opposite directions and the root qualifies for one of the ones
+    /// the inner split also does. The deepest match is the divider actually
+    /// touching the pane's edge; the root is a divider somewhere across the
+    /// window, and moving it resizes panes the user cannot even see from here.
+    ///
+    /// Deeper wins by recursing before this level is considered. Anything between
+    /// the pane and a matching split either has a different axis, which leaves the
+    /// pane spanning that sub-region and still touching this divider, or shares
+    /// the axis and is itself a match, in which case it is the deeper one.
+    private func governingSplit(
+        for id: PaneID,
+        direction: FocusDirection,
+        at path: SplitPath = SplitPath()
+    ) -> SplitPath? {
+        guard case let .split(axis, _, first, second) = self else { return nil }
+        let paneIsFirstChild: Bool
+        if first.contains(id) {
+            paneIsFirstChild = true
+        } else if second.contains(id) {
+            paneIsFirstChild = false
+        } else {
+            // Neither child holds the pane, so nothing below here can, and a
+            // grow key that arrived after its pane closed moves no divider at
+            // all rather than the nearest one.
+            return nil
+        }
+
+        let child = paneIsFirstChild ? first : second
+        let step = paneIsFirstChild ? 0 : 1
+        if let deeper = child.governingSplit(for: id, direction: direction, at: path.appending(step)) {
+            return deeper
+        }
+
+        let growth = direction.growth
+        guard axis == growth.axis, paneIsFirstChild == growth.paneIsFirstChild else { return nil }
+        return path
     }
 
     /// Rebuilds the spine down to `id`'s leaf, splitting it in two. Nil when no

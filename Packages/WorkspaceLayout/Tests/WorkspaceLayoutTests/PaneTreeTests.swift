@@ -264,9 +264,16 @@ import Testing
         #expect(storedRatio(panes.tree.replacingRatio(at: SplitPath(), with: -3)) == 0.05)
         #expect(storedRatio(panes.tree.replacingRatio(at: SplitPath(), with: 9)) == 0.95)
 
-        // And out of the JSON, since that is the copy that outlives the process.
+        // And through the JSON, since that is the copy that outlives the process.
+        //
+        // A round trip rather than a search for "-3" in the encoded text, which
+        // this used to be and which failed about one run in three for a reason
+        // that had nothing to do with ratios: a pane id encodes as a UUID string,
+        // and any UUID whose second, third, fourth or fifth group begins with a
+        // three carries "-3" in it.
         let encoded = try? JSONEncoder().encode(panes.tree.replacingRatio(at: SplitPath(), with: -3))
-        #expect(encoded.map { String(decoding: $0, as: UTF8.self).contains("-3") } == false)
+        let decoded = encoded.flatMap { try? JSONDecoder().decode(PaneTree.self, from: $0) }
+        #expect(storedRatio(decoded) == 0.05)
     }
 
     /// The ratio the root case actually carries, with no accessor in the way.

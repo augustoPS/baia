@@ -7,6 +7,24 @@ import Foundation
 public enum FocusDirection: Sendable, Equatable {
     case left, right, up, down
 
+    /// The split a grow key in this direction is looking for: the axis it has to
+    /// cut, which child the pane has to sit in for that split to have a divider
+    /// that way, and which way the *first* child's fraction moves.
+    ///
+    /// `first` is the left/top child, so a pane in `first` growing right pushes
+    /// the divider away from the origin and the fraction rises, while a pane in
+    /// `second` growing left pulls it back and the fraction falls. Reading the
+    /// pair backwards is silent: the divider moves, it moves the wrong way, and
+    /// the pane the user was in shrinks instead of growing.
+    var growth: (axis: SplitAxis, paneIsFirstChild: Bool, sign: Double) {
+        switch self {
+        case .left: (axis: .horizontal, paneIsFirstChild: false, sign: -1)
+        case .right: (axis: .horizontal, paneIsFirstChild: true, sign: 1)
+        case .up: (axis: .vertical, paneIsFirstChild: false, sign: -1)
+        case .down: (axis: .vertical, paneIsFirstChild: true, sign: 1)
+        }
+    }
+
     /// How far a candidate pane sits from `source` in this direction, or nil when
     /// the candidate is not in this direction at all.
     ///

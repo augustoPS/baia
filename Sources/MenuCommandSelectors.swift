@@ -45,8 +45,16 @@ enum MenuCommandSelectors {
         case .focusPaneRight: #selector(AppDelegate.focusPaneRight(_:))
         case .focusPaneUp: #selector(AppDelegate.focusPaneUp(_:))
         case .focusPaneDown: #selector(AppDelegate.focusPaneDown(_:))
-        case .growPaneLeft, .growPaneRight, .growPaneUp, .growPaneDown: nil
-        case .equalizePanes: nil
+        // Non-nil is what makes `MenuValidation` reachable for these at all: an
+        // item whose action is nil is disabled by AppKit before validation runs,
+        // and a disabled item still answers `performKeyEquivalent` with true, so
+        // ⌃⌘arrows and ⌃⌘= were swallowed rather than reaching the terminal while
+        // `MenuBarLayout` unbound them from ghostty. They were dead keys.
+        case .growPaneLeft: #selector(AppDelegate.growPaneLeft(_:))
+        case .growPaneRight: #selector(AppDelegate.growPaneRight(_:))
+        case .growPaneUp: #selector(AppDelegate.growPaneUp(_:))
+        case .growPaneDown: #selector(AppDelegate.growPaneDown(_:))
+        case .equalizePanes: #selector(AppDelegate.equalizePanes(_:))
 
         case .setProjectDirectory: #selector(AppDelegate.setProjectDirectory(_:))
         case .clearProjectDirectoryPin: #selector(AppDelegate.clearProjectDirectoryPin(_:))

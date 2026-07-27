@@ -333,6 +333,115 @@ import Testing
         #expect(workspace.tabs[0].tree == untouched)
     }
 
+    @Test func resizingTheFocusedPaneMovesTheDividerItTouches() {
+        let panes = NestedSplits()
+        var workspace = panes.workspace
+
+        // Focus is on `a`, the whole left column, so the only divider it can move
+        // is the root one, and growing right pushes it away from the origin.
+        let grew = workspace.resizeFocusedPane(.right, by: 0.1)
+
+        #expect(grew)
+        #expect(workspace.focusedTab?.tree.ratio(at: SplitPath()) == 0.6)
+        #expect(workspace.focusedTab?.tree.ratio(at: SplitPath([1])) == 0.5)
+    }
+
+    @Test func resizingWithNoDividerThatWayIsRefused() {
+        let panes = NestedSplits()
+        var workspace = panes.workspace
+        let before = workspace
+
+        // `a` is against the left edge of the window and spans its full height,
+        // so three of the four keys have nothing to move. Refusing rather than
+        // reaching for some other divider is the whole contract: a key that does
+        // nothing is readable, a key that resizes a pane across the window is not.
+        let left = workspace.resizeFocusedPane(.left, by: 0.1)
+        let up = workspace.resizeFocusedPane(.up, by: 0.1)
+        let down = workspace.resizeFocusedPane(.down, by: 0.1)
+
+        #expect(!left)
+        #expect(!up)
+        #expect(!down)
+        #expect(workspace == before)
+    }
+
+    @Test func resizingWhileZoomedIsRefused() {
+        let panes = NestedSplits()
+        var workspace = panes.workspace
+        _ = workspace.toggleZoomOnFocusedPane()
+        let before = workspace
+
+        let grew = workspace.resizeFocusedPane(.right, by: 0.1)
+
+        // A zoomed tab shows one pane and no divider, so the key would move
+        // something the user cannot see and spring it on them at the next unzoom.
+        #expect(!grew)
+        #expect(workspace == before)
+    }
+
+    @Test func resizingLeavesFocusWhereItWas() {
+        let panes = NestedSplits()
+        var workspace = panes.workspace
+
+        _ = workspace.resizeFocusedPane(.right, by: 0.1)
+
+        // Resizing is done from inside the pane being resized. Moving the cursor
+        // out of it, the way a split or a close does, would make the next
+        // keystroke land somewhere else.
+        #expect(workspace.focusedPane == panes.a)
+    }
+
+    @Test func equalizingPutsEveryDividerBackToTheMiddle() {
+        let panes = NestedSplits()
+        var workspace = panes.workspace
+        _ = workspace.setRatio(at: SplitPath(), to: 0.2)
+        _ = workspace.setRatio(at: SplitPath([1]), to: 0.9)
+
+        let evened = workspace.equalizeFocusedTab()
+
+        #expect(evened)
+        #expect(workspace.focusedTab?.tree == panes.workspace.focusedTab?.tree)
+    }
+
+    @Test func equalizingAnAlreadyEvenTabIsRefused() {
+        let panes = NestedSplits()
+        var workspace = panes.workspace
+        let before = workspace
+
+        let evened = workspace.equalizeFocusedTab()
+
+        // False so the caller skips the session write and the divider push. The
+        // key is the escape hatch from a layout that got away from the user, and
+        // it should cost nothing when it was not needed.
+        #expect(!evened)
+        #expect(workspace == before)
+    }
+
+    @Test func resizingLeavesEveryOtherTabAlone() {
+        let tabs = ThreeTabs()
+        var workspace = tabs.workspace
+        let other = PaneID()
+        workspace.tabs[0].tree = .split(
+            axis: .horizontal,
+            ratio: 0.5,
+            first: .leaf(tabs.first),
+            second: .leaf(other)
+        )
+        let untouched = workspace.tabs[0].tree
+        workspace.tabs[1].tree = .split(
+            axis: .horizontal,
+            ratio: 0.5,
+            first: .leaf(tabs.second),
+            second: .leaf(PaneID())
+        )
+
+        let grew = workspace.resizeFocusedPane(.right, by: 0.1)
+
+        #expect(grew)
+        #expect(workspace.tabs[1].tree.ratio(at: SplitPath()) == 0.6)
+        #expect(workspace.tabs[0].tree == untouched)
+    }
+
     @Test func zoomTogglesOnAndOffTheFocusedPane() {
         let panes = TwoPanes()
         var workspace = panes.workspace

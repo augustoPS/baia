@@ -48,6 +48,20 @@ import Testing
         #expect(!state(.splitRight, .empty).isEnabled)
     }
 
+    @Test func growingAndEqualizingNeedADividerToMove() {
+        // This rule was unreachable until the grow commands had selectors. AppKit
+        // disables an item whose action is nil before `validateMenuItem` runs, so
+        // every one of these read as disabled for a reason that had nothing to do
+        // with the pane count, and the pair below would have passed on its first
+        // half while the second was a lie.
+        for command in [
+            MenuCommand.growPaneLeft, .growPaneRight, .growPaneUp, .growPaneDown, .equalizePanes,
+        ] {
+            #expect(!state(command, MenuAvailability(paneCount: 1)).isEnabled)
+            #expect(state(command, MenuAvailability(paneCount: 2)).isEnabled)
+        }
+    }
+
     @Test func clearPinIsDisabledWhenNothingIsPinned() {
         // The rule that already exists in AppDelegate.validateMenuItem, moved here
         // so it is a pure function rather than a branch needing a window on screen.
