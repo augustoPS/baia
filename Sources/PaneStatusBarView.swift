@@ -114,6 +114,27 @@ final class PaneStatusBarView: NSView {
         }
     }
 
+    /// Which derivation the attention signal is drawn from, and what to do when it
+    /// lands on the focus colour. Pushed from the config beside ``attentionStyle``.
+    ///
+    /// Stored rather than resolved, and resolved rather than stored resolved: the
+    /// answer depends on ``theme`` as well as on these two, and a colour cached
+    /// here would survive a live theme edit that moved everything it was derived
+    /// from.
+    var attentionAccent: AttentionAccent = .alert {
+        didSet {
+            guard attentionAccent != oldValue else { return }
+            invalidate()
+        }
+    }
+
+    var alertBehavior: AlertBehavior = .stock {
+        didSet {
+            guard alertBehavior != oldValue else { return }
+            invalidate()
+        }
+    }
+
     /// Which of the window's bottom corners this bar sits in, pushed by the pane
     /// tree from the layout. Empty for every pane away from the window's edge,
     /// which is most of them.
@@ -353,14 +374,29 @@ final class PaneStatusBarView: NSView {
         WindowCorner.path(in: rect, corners: bottomCorners, inset: inset)
     }
 
-    /// The surface the text is judged against: the alert wash when there is one,
-    /// and the bar's own background otherwise.
+    /// The colour every attention mark on this bar is drawn in: the wash, the
+    /// quiet line, and the acknowledged square.
+    ///
+    /// One property feeding all three, and the pane frame is derived from the same
+    /// call in ``TerminalPaneController``. The three marks are one signal at three
+    /// volumes, so a value spelled per site is a footer whose quiet line and whose
+    /// fill can disagree about what attention looks like.
+    ///
+    /// `PaneTheme.alert` is deliberately still reached directly by the git
+    /// segments, through `PaneStatusSegments` and the `.alert` emphasis. Red means
+    /// conflict whatever this resolves to.
+    private var attentionColour: RGB {
+        theme.attentionColour(attentionAccent, behavior: alertBehavior)
+    }
+
+    /// The surface the text is judged against: the attention wash when there is
+    /// one, and the bar's own background otherwise.
     ///
     /// The wash is a layer above what ``draw(_:)`` paints, so that it can fade in
     /// without taking the text with it, which is why the two are named separately
     /// here rather than the fill simply being drawn.
     private var inkBackground: RGB {
-        fillsBarForAttention ? theme.alert : theme.barBackground
+        fillsBarForAttention ? attentionColour : theme.barBackground
     }
 
     // MARK: - Base drawing
@@ -379,9 +415,9 @@ final class PaneStatusBarView: NSView {
         NSGraphicsContext.restoreGraphicsState()
     }
 
-    /// The alert fill, on the same outline as the bar under it.
+    /// The attention fill, on the same outline as the bar under it.
     private func drawAttentionWash(in rect: NSRect) {
-        nsColor(theme.alert).setFill()
+        nsColor(attentionColour).setFill()
         cornerPath(in: rect).fill()
     }
 
@@ -408,7 +444,7 @@ final class PaneStatusBarView: NSView {
         // filled band. It spends an edge rather than the bar's background, which
         // is what keeps the footer legible while someone is working in the pane.
         if attention == .asking, !fillsBarForAttention {
-            nsColor(theme.alert).setFill()
+            nsColor(attentionColour).setFill()
             // Pushed inside the focus frame rather than under it. Both land on
             // the same two points of the top edge and the frame is drawn above
             // this view, so at y 0 the attention mark on a focused pane is not
@@ -422,7 +458,7 @@ final class PaneStatusBarView: NSView {
         // which is what lets it survive a glance across six panes without pulling
         // at the eye of someone working in the pane beside it.
         if attention == .acknowledged {
-            nsColor(theme.alert).setFill()
+            nsColor(attentionColour).setFill()
             NSRect(
                 x: PaneStatusBarMetrics.horizontalInset,
                 y: (rect.height - Self.markSize) / 2,
@@ -566,12 +602,12 @@ final class PaneStatusBarView: NSView {
         path.lineWidth = 1
         // Blended against the surface the chip is actually drawn on, not against
         // `barBackground`. When the bar is filled for attention the real backdrop
-        // is `theme.alert`, and judging the stroke against the unfilled colour
-        // dropped it to 1.85:1 on exactly the pane that most wanted reading.
-        // `plank` on an ordinary bar, because the chip's border and the icon's
-        // dividers are one derivation. On a filled bar it stays relative to the
-        // fill: judged against `barBackground` while the bar was actually
-        // `theme.alert`, this stroke dropped to 1.85:1.
+        // is ``attentionColour``, and judging the stroke against the unfilled
+        // colour dropped it to 1.85:1 on exactly the pane that most wanted
+        // reading. `plank` on an ordinary bar, because the chip's border and the
+        // icon's dividers are one derivation. Everything on a filled bar is
+        // relative to `inkBackground` for this reason, which is also what carries
+        // the chip through a fill the config moved.
         let stroke = fillsBarForAttention
             ? colour(for: .context).blended(with: inkBackground, fraction: 0.45)
             : theme.plank

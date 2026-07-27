@@ -80,6 +80,29 @@ final class TerminalPaneController: NSViewController {
         }
     }
 
+    /// Which derivation the attention signal is drawn from, and what to do when it
+    /// lands on the focus colour.
+    ///
+    /// Both reach the footer and the pane frame, which is why they are stored here
+    /// rather than passed straight to the bar the way ``bottomCorners`` is: the
+    /// frame around the whole pane is drawn in the same colour, and a setting that
+    /// moved one of the two would leave half of the loud treatment behind.
+    var attentionAccent: AttentionAccent = .alert {
+        didSet {
+            guard attentionAccent != oldValue else { return }
+            statusBar.attentionAccent = attentionAccent
+            applyPresentation()
+        }
+    }
+
+    var alertBehavior: AlertBehavior = .stock {
+        didSet {
+            guard alertBehavior != oldValue else { return }
+            statusBar.alertBehavior = alertBehavior
+            applyPresentation()
+        }
+    }
+
     /// Which of the window's bottom corners this pane's footer has to curve to.
     ///
     /// Straight through to the bar rather than stored here and pushed in
@@ -130,8 +153,10 @@ final class TerminalPaneController: NSViewController {
         scrim.amount = isWindowActive ? 0 : PaneTheme.inactiveScrim
         // The pane frame has one reason to appear and therefore one colour, but
         // the colour still has to be pushed on every pass: a live theme edit moves
-        // `alert` under a frame that is already on screen.
-        edgeFrame.colour = theme.alert
+        // what the attention colour resolves to under a frame that is already on
+        // screen. Resolved from the same call the footer's wash uses, so the frame
+        // around the pane and the fill inside it cannot end up two colours.
+        edgeFrame.colour = theme.attentionColour(attentionAccent, behavior: alertBehavior)
         edgeFrame.isVisible = drawsAttentionFrame
     }
 

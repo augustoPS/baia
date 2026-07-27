@@ -140,6 +140,12 @@ final class ConfigurationCenter {
     private func apply(to pane: TerminalPaneController) {
         pane.theme = paneTheme
         pane.attentionStyle = settings.attentionStyle
+        // Straight through, the way `attentionStyle` and `focusAccent` are. The
+        // resolution is `PaneTheme.attentionColour(_:behavior:)`, which has tests;
+        // a line here that decided anything about these two would not, and that is
+        // exactly how `focusAccent` came to be decoded, stored, and never read.
+        pane.attentionAccent = settings.attentionAccent
+        pane.alertBehavior = settings.alertBehavior
         pane.gitPollInterval = settings.gitPollSeconds
         pane.activityPollInterval = settings.activityPollSeconds
         // Both go through the controller rather than through the view.
