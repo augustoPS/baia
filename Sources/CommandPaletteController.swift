@@ -278,11 +278,20 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
             move(by: -1)
         case #selector(NSResponder.moveDown(_:)):
             move(by: 1)
+        // Return opens in a new tab, Shift-Return splits right, and the
+        // difference is read off the event rather than off the selector.
+        //
+        // Shift-Return arrives here as `insertNewline:`, not as
+        // `insertNewlineIgnoringFieldEditor:`. AppKit's
+        // `StandardKeyBinding.dict` binds `\r`, `\n` and `\x03` to
+        // `insertNewline:` and carries no `$\r` entry at all, so shift falls
+        // through to the plain binding; the selector below is `~\r`, which is
+        // Option-Return. Believing otherwise made this gesture silently open a
+        // tab, since that is what the case above does.
         case #selector(NSResponder.insertNewline(_:)):
-            open(at: listView.selection, action: .newTab)
-        // Shift-Return arrives as this rather than as `insertNewline:`, which is
-        // what makes a second Return action possible in a single-line field at
-        // all.
+            let splitting = NSApp.currentEvent?.modifierFlags.contains(.shift) == true
+            open(at: listView.selection, action: splitting ? .splitRight : .newTab)
+        // Option-Return, kept as an alias now that shift is handled above.
         case #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)):
             open(at: listView.selection, action: .splitRight)
         case #selector(NSResponder.cancelOperation(_:)):

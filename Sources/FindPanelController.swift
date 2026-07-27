@@ -279,18 +279,25 @@ final class FindPanelController: NSObject, NSTextFieldDelegate {
         // widened search instead when that search had no results, which was the
         // other half of excluding the widened scope from `controlTextDidChange`:
         // both are gone, and the list now always describes what the field says.
+        //
+        // Shift-Return widens instead, and the difference is read off the event
+        // rather than off the selector, because Shift-Return arrives here as
+        // `insertNewline:` too. AppKit's `StandardKeyBinding.dict` binds `\r`,
+        // `\n` and `\x03` to `insertNewline:` and carries no `$\r` entry at
+        // all, so shift falls through to the plain binding; the selector below
+        // is `~\r`, which is Option-Return. Believing otherwise cost the
+        // gesture entirely: it dispatched to `go(to:)`, which returns on an
+        // empty result set, so widening from a pane with no hits did nothing at
+        // all, which is exactly the case it exists for.
         case #selector(NSResponder.insertNewline(_:)):
-            go(to: listView.selection)
-        // Shift-Return widens the scope, which is the one gesture that has to
-        // work from an empty result set: the answer not being in this pane is
-        // exactly when the owner wants the rest of them. It arrives as this
-        // rather than as `insertNewline:`, which is what makes a second Return
-        // action possible in a single-line field at all.
+            if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
+                widen()
+            } else {
+                go(to: listView.selection)
+            }
+        // Option-Return, kept as an alias now that shift is handled above.
         case #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)):
-            scope = .workspace
-            collect()
-            refresh()
-            position()
+            widen()
         case #selector(NSResponder.cancelOperation(_:)):
             dismiss()
         default:
@@ -301,6 +308,16 @@ final class FindPanelController: NSObject, NSTextFieldDelegate {
 
     func control(_: NSControl, textView _: NSTextView, doCommandBy selector: Selector) -> Bool {
         handle(selector)
+    }
+
+    /// Widens to every pane in every tab, the one gesture that has to work from
+    /// an empty result set: the answer not being in this pane is exactly when
+    /// the owner wants the rest of them.
+    private func widen() {
+        scope = .workspace
+        collect()
+        refresh()
+        position()
     }
 
     /// Moves the selection, stopping at both ends rather than wrapping, for the
