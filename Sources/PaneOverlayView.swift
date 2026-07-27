@@ -120,14 +120,20 @@ final class PaneScrimView: PaneOverlayView {
     }
 }
 
-/// The `FocusStyle.frame` treatment: a stroked rectangle inside the pane's edge.
+/// A 2 pt stroked rectangle inside a pane's edge, drawn for two different
+/// reasons.
 ///
-/// Enclosure is the fastest shape the visual system resolves, and a stall with
-/// planks around it is the product's own metaphor. The cost, which is why it is
-/// not the default: 2 pt against a 511 pt pane is thin, and the top and bottom
-/// edges land beside the split dividers, so in a four-pane window it can read as
-/// one divider being a different colour before it reads as a box.
-final class PaneFocusFrameView: PaneOverlayView {
+/// Under `FocusStyle.frame` it marks the focused pane. Under an unacknowledged
+/// attention it marks the pane that is asking, in `alert`, which is the one
+/// place in the design a frame leaves the footer and takes the whole
+/// compartment: attention is the only signal worth drawing over a terminal
+/// surface, and it is temporary.
+///
+/// The two never draw at once. The owner decides which by setting `colour` and
+/// `isVisible` together; `TerminalPaneController.applyFocusPresentation` is the
+/// only caller and it ranks attention above focus, because a pane that is
+/// asking and focused is a pane you are already looking at.
+final class PaneEdgeFrameView: PaneOverlayView {
     var colour: RGB = PaneTheme.darkPastel.edgeFocus {
         didSet {
             guard colour != oldValue else { return }

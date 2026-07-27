@@ -54,9 +54,11 @@ public enum FocusStyle: String, Sendable, Equatable, CaseIterable {
     /// focus accent scores 2.08:1 there and would be a frame nobody can see.
     ///
     /// Against ``AttentionStyle/loud``, the default, the two compose by
-    /// construction: focus takes the bar's edges and attention takes its fill, so
-    /// a pane can be both at once and still be read correctly, which is the state
-    /// the owner is in every time he answers an agent. That is why
+    /// construction across three objects: focus takes the bar's edges, attention
+    /// takes the bar's fill, and attention also takes a 2 pt stroke around the
+    /// whole pane, which focus under this style never touches. So a pane can be
+    /// both at once and still be read correctly, which is the state the owner is
+    /// in every time he answers an agent. That is why
     /// ``Settings/resolvedAttentionStyle`` needs no rule for this case the way it
     /// does for ``invert``.
     ///
