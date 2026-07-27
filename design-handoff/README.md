@@ -52,8 +52,12 @@ Everything in the document except where noted, on 2026-07-25:
 Two things v1 leaves open that are now answered:
 
 - **`focusAccent` stays `accent`.** The document recommends `bone` and
-  deliberately defaults to `accent`; the default was kept, and all four
-  derivations exist behind the config key. v2 keeps the same recommendation.
+  deliberately defaults to `accent`; the default was kept. The claim once made
+  here, that all four derivations existed behind the config key, was wrong: the
+  key was decoded, stored and covered by four tests while nothing read it, and
+  `PaneTheme.focusedAccent` came from the theme's selection colour on every
+  path. `"focusAccent": "bone"` was a silent no-op for nine days. Fixed on
+  2026-07-26 as part of the v2 pass. v2 keeps the same recommendation.
 - **The dock badge is not the icon's fault.** The document names the placeholder
   icon as the leading suspect for `NSApp.dockTile.badgeLabel` doing nothing and
   says to re-test once a real icon ships. Tested: the Dock renders the new icon,
@@ -69,47 +73,66 @@ collect the real default branch today. The predicate is
 `TerminalPaneController.isConventionalDefaultBranch`, so replacing it is a change
 to one function.
 
-## Where v2 and the code diverge
+## What was implemented from v2
 
-Nothing below is implemented. Checked against `main` on 2026-07-26.
+On 2026-07-26, on branch `design-v2`. Six of the seven divergences found on the
+`main` check, plus a seventh the check missed.
 
-1. **§02 picks a focus treatment the code does not have.** v2 settles on a 2 pt
-   inset stroke around the **footer bar only**, in `ink.focus`, the same colour
-   as the anchor name, with the bar's fill identical in both states. The code
-   ships `FocusStyle` with three cases defaulting to `recede` (a scrim over
-   every *other* pane), and its `frame` case strokes the whole **pane** through
-   `PaneOverlayView`. v2's answer is neither. It also names two constants that
-   do not exist: `focusFrameWidth = 2`, and `frameCollapseWidth = 120`, below
-   which the frame drops its side edges and becomes a bracket.
-   `PaneStatusBarMetrics` currently documents the opposite rationale, that focus
-   is not drawn in the bar at all.
-2. **§08 deletes `focusStyle`.** With one treatment per problem, v2 leaves two
-   config keys: `focusAccent` and `attentionStyle`. The code has both, plus
-   `focusStyle` and `unfocusedScrim`, plus the cross-validation in
-   `Settings.resolvedAttentionStyle` that quietens attention under `invert`. v2
-   argues that rule is unnecessary once focus is an edge and attention is a fill,
-   because the two can never collide.
-3. **§01 adds a fifth accent, `midnight`.** `ansi[4].blended(ansi[5], 0.5)`,
-   resolving to `#C890FF` at 6.8:1. `FocusAccent` has four cases. The
-   recommendation is unchanged (`bone`, on the argument that four brights are
-   spent on state and focus is not a state), with `midnight` named the best of
-   the coloured options.
-4. **§07 moves the icon glyph to the upper third.** v2 specifies chevron
-   `471,287 → 559,375 → 471,463` with the ink baseline at 483 and the cursor at
-   `623,427`. `Icon/make-icon.swift` puts the vertex at y = 550 and the baseline
-   at 658, with chevron arms of 110 against v2's 88. The glyph sits about 175
-   units lower and larger than v2 asks for. Bay, plank (x = 306, w = 44), cursor
-   width 200 and gap 64 all match.
-5. **`plank` never became a theme role.** v2 §01 names it
-   `foreground.blended(background, 0.46)` = `#6E6E6E`, doing two jobs: the icon's
-   dividers and the PIN chip's border. The icon hardcodes the hex, and the chip
-   border is `context.blended(inkBackground, 0.45)` in `PaneStatusBarView`.
-   `PaneTheme` has no `plank`. Related: §06 wants the divider's drag colour to be
-   `ink.focus`, where `PaneTreeController` uses `edgeFocus`, the 0.55 blend v2
-   deletes.
+1. **§01 `plank` is a theme role.** `foreground.blended(background, 0.46)` =
+   `#6e6e6e` on `PaneTheme`, used for the PIN chip's border. The icon still
+   hardcodes the hex, because it is drawn by a standalone script that cannot
+   import `PaneChrome`; `plankIsOneDerivationDoingTwoJobs` is what keeps the two
+   in step. The chip keeps its fill-relative derivation on a *filled* bar: a flat
+   derivation off the theme scored 1.85:1 over `alert`, which is the bug that
+   blend was written to fix.
+2. **§01 `midnight`, and `focusAccent` reaching the screen at all.**
+   `ansi[4].blended(ansi[5], 0.5)` = `#aa55ff`, repaired to clear 4.5:1 on the
+   bar. The larger half was that the key was inert, described above. Resolution
+   now happens inside `PaneTheme+Palette.swift`'s initializer rather than in the
+   app target, so there is no assignment for a caller to forget, and
+   `theConfiguredFocusAccentReachesTheTheme` is the test that would have caught
+   the original bug.
+3. **§02 the footer is the frame**, as `FocusStyle.barFrame`, the new default. A
+   2 pt inset stroke around the footer bar in `inkFocus`, the bar's fill
+   identical in both states, collapsing to a top-and-bottom bracket below
+   `frameCollapseWidth = 120`. Faded over 160 ms. Gated on `isWindowActive`,
+   matching `FocusStyle.frame`. On a bar filled for attention the stroke is drawn
+   in `theme.ink(on:)`, the same colour the anchor name takes there, because
+   `inkFocus` is repaired against `barBackground` and scores 2.08:1 on `alert`.
+4. **§03 the attention frame takes the pane.** A 2 pt inset frame in `alert`
+   around the whole pane while an ask is unacknowledged and `attentionStyle` is
+   `loud`, ranked above focus. `AttentionStyle.loud`'s doc has described this
+   since v1; nothing drew it until now.
+5. **§06 the divider drags in `ink.focus`**, replacing `edgeFocus`, so the drag
+   reads as part of the focus signal rather than as a third colour.
+6. **§07 the icon glyph moves to the upper third.** Chevron
+   `471,287 → 559,375 → 471,463`, ink baseline 483, cursor at `623,427`, with the
+   heavy variant at stroke 72 and gap 48.
 
-Everything else in v2 matches: the foundations table, the two-level attention
-model with its 510 ms one-shot opacity pulse and reduce-motion skip, the
-window-title formats, the tab grammar and its width ladder, the four footer tiers
-on baseline 15, and the divider at 1 pt with a ±3.5 pt hit area through
-`additionalEffectiveRectOfDivider`.
+## Still open
+
+- **§08's deletion of `focusStyle`.** v2 leaves two config keys and deletes the
+  rest. `barFrame` is the default and `recede`, `invert` and `frame` are still
+  reachable, deliberately: the argument between a footer frame and the shipped
+  scrim cannot be settled from the document, only by looking at six panes at
+  1680 pt. When it is settled, the deletion takes `focusStyle`, `unfocusedScrim`,
+  `PaneScrimView`, `PaneTheme.edgeFocus` and `Settings.resolvedAttentionStyle`
+  with it.
+- **§07's badge instruction, deliberately not followed.** v2 says to re-test
+  `NSApp.dockTile.badgeLabel` once a real icon ships. That test was already run
+  on 2026-07-25 against the real icon, with an unconditional `badgeLabel = "9"`
+  set at launch, and no badge appeared. v2 repeats the v1 instruction unaware of
+  the result. See `Sources/AttentionNotifier.swift`.
+
+**One thing this pass established about the documents themselves:** the design
+prose runs ahead of the code. `AttentionStyle.loud` documented a whole-pane alert
+frame that did not exist for nine days, and the `focusAccent` claim above was
+wrong in the same direction. A statement in v1, v2, or a doc comment derived from
+them is a statement about the design, not evidence about the build.
+
+Everything else in v2 matched before this pass and still does: the foundations
+table, the two-level attention model with its 510 ms one-shot opacity pulse and
+reduce-motion skip, the window-title formats, the tab grammar and its width
+ladder, the four footer tiers on baseline 15, and the divider at 1 pt with a
+±3.5 pt hit area through `additionalEffectiveRectOfDivider`. The tab-grammar
+approximation noted above is unchanged.
