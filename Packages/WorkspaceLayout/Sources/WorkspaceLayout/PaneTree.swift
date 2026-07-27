@@ -264,6 +264,63 @@ public indirect enum PaneTree: Sendable, Equatable, Codable {
         }
     }
 
+    /// Which bottom corners of `rect` each pane sits in, for every pane.
+    ///
+    /// Read off ``layout(in:)`` rather than walked, for the same reason
+    /// ``neighbour(of:direction:in:)`` is: the tree and the picture disagree. A
+    /// walk would have to decide what "the last child on the bottom right" means
+    /// through a chain of splits on alternating axes, and in a window whose
+    /// columns are split at different heights it would name a pane the user can
+    /// see is not in the corner. The rects already say it in one comparison.
+    ///
+    /// Every pane is a key, including the ones that own nothing, so a caller
+    /// pushing a value per pane never has to decide what a missing key meant.
+    public func bottomCorners(in rect: LayoutRect = .unit) -> [PaneID: BottomCorners] {
+        // A fraction of the container rather than a fixed distance, because the
+        // rects are built by multiplying ratios and the error grows with the
+        // numbers, not with the units. Unit-rect callers and point-rect callers
+        // then get the same answer, which is what
+        // `theAnswerDoesNotDependOnTheSizeOfTheWindow` pins.
+        let horizontal = abs(rect.width) * Self.edgeTolerance
+        let vertical = abs(rect.height) * Self.edgeTolerance
+
+        var owned: [PaneID: BottomCorners] = [:]
+        for placed in layout(in: rect) {
+            var corners: BottomCorners = []
+            // The bottom edge first: a pane on a side but not the bottom row
+            // meets no corner, and neither does one on the bottom row but in the
+            // middle. Both halves have to hold.
+            if abs(placed.rect.maxY - rect.maxY) <= vertical {
+                if abs(placed.rect.x - rect.x) <= horizontal { corners.insert(.left) }
+                if abs(placed.rect.maxX - rect.maxX) <= horizontal { corners.insert(.right) }
+            }
+            owned[placed.pane] = corners
+        }
+        return owned
+    }
+
+    /// Which bottom corners of `rect` one pane sits in, or nothing when it is not
+    /// in the tree.
+    ///
+    /// Nothing rather than nil for an absent pane, because the two answers are
+    /// spent the same way: a stale id arriving after its pane closed rounds no
+    /// corner, which is what an id in the middle of the window gets too.
+    public func bottomCorners(of id: PaneID, in rect: LayoutRect = .unit) -> BottomCorners {
+        bottomCorners(in: rect)[id] ?? []
+    }
+
+    /// How far off an edge a pane may land and still be counted as touching it,
+    /// as a fraction of the container.
+    ///
+    /// A split at a third puts the far edge of the last pane a few units in the
+    /// last place away from the container's, and an `==` would take the corner
+    /// off the pane that visibly owns it. The value is nine orders of magnitude
+    /// above that drift and three below the smallest gap the layout can produce
+    /// (``ratioRange``'s 0.05 nested twice is 0.0025 of the window, three and a
+    /// half points of a 1400 pt one), so it cannot swallow a gap anyone could
+    /// see.
+    private static let edgeTolerance = 1e-9
+
     /// The pane an arrow key moves to, or nil when there is none that way.
     ///
     /// Resolved against the laid-out rects, not by walking the tree. The two
