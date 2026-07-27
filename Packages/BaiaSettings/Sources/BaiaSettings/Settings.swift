@@ -83,41 +83,16 @@ public struct Settings: Sendable, Equatable {
     /// Whether tabs, pane trees, and working directories come back on launch.
     public var restoreSession: Bool
 
-    /// How the focused pane is marked. See ``FocusStyle``.
-    public var focusStyle: FocusStyle
-
     /// Which derivation the focus colour comes from. See ``FocusAccent``.
+    ///
+    /// There is no companion key for the focus *treatment*. The focused pane
+    /// wears a 2 pt frame around its footer and every other pane is left alone,
+    /// which is one treatment for one problem, so there is nothing left to
+    /// choose between.
     public var focusAccent: FocusAccent
 
-    /// How hard an unacknowledged pane asks. Read through
-    /// ``resolvedAttentionStyle`` rather than directly, since ``focusStyle`` can
-    /// override it.
+    /// How hard an unacknowledged pane asks. See ``AttentionStyle``.
     public var attentionStyle: AttentionStyle
-
-    /// How far an unfocused pane is scrimmed towards its own background, under
-    /// ``FocusStyle/recede``.
-    ///
-    /// This is the one number in the design pass with a real cost attached, so
-    /// it is the one that is settable. The owner watches agents in the panes he
-    /// is not typing in, and the scrim is a deliberate tax on reading them: at
-    /// 0.28 the foreground lands around 4.5:1 on the surface, still legible.
-    /// ``Limits/scrim`` stops at 0.34 because past it the unfocused text is no
-    /// longer comfortably readable, and a focus treatment that hides the output
-    /// it is meant to help you scan has inverted its own purpose.
-    public var unfocusedScrim: Double
-
-    /// The attention treatment actually drawn, after ``focusStyle`` has had its
-    /// say.
-    ///
-    /// ``FocusStyle/invert`` and ``AttentionStyle/loud`` both fill the footer,
-    /// and a bar filled for two reasons carries neither. Resolved on read rather
-    /// than repaired in a decoder or an initializer, so the stored value survives
-    /// a round trip: someone who sets `loud`, tries `invert`, and goes back to
-    /// `recede` gets the `loud` he asked for rather than a `quiet` written into
-    /// his file behind his back.
-    public var resolvedAttentionStyle: AttentionStyle {
-        focusStyle == .invert ? .quiet : attentionStyle
-    }
 
     /// The owner's ghostty config, field for field, transcribed from
     /// `vault/projects/ghostty/config.ghostty`.
@@ -150,10 +125,8 @@ public struct Settings: Sendable, Equatable {
         gitPollSeconds: 2,
         activityPollSeconds: 1,
         restoreSession: true,
-        focusStyle: .barFrame,
         focusAccent: .accent,
-        attentionStyle: .loud,
-        unfocusedScrim: 0.28
+        attentionStyle: .loud
     )
 
     /// Expands a leading `~` the way a shell would.
@@ -194,13 +167,5 @@ public struct Settings: Sendable, Equatable {
         /// already indistinguishable from disabled, and a stray exponent would
         /// otherwise leave a feature reading as enabled while nothing fires.
         static let pollSeconds: ClosedRange<Double> = 0.25 ... 3600
-
-        /// The ceiling is the design's, not an arbitrary round number: past 0.34
-        /// an unfocused pane's foreground drops under the contrast the bar's own
-        /// text is held to, so the panes the owner is monitoring stop being
-        /// readable. Zero is allowed and means the scrim is off, which is how
-        /// someone who dislikes the treatment turns it off without having to
-        /// know that `focusStyle` exists.
-        static let scrim: ClosedRange<Double> = 0 ... 0.34
     }
 }

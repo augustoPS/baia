@@ -51,9 +51,9 @@ final class TerminalPaneController: NSViewController {
 
     let statusBar = PaneStatusBarView(frame: .zero)
 
-    /// Covers the terminal and the footer both, which is the point: focus is a
-    /// property of the pane rather than of its chrome, and a scrim that stopped
-    /// at the footer would leave every unfocused pane wearing a bright band.
+    /// Covers the terminal and the footer both, which is the point: a background
+    /// window recedes as one object, and a scrim that stopped at the footer would
+    /// leave every pane in it wearing a bright band.
     private let scrim = PaneScrimView(frame: .zero)
 
     private let edgeFrame = PaneEdgeFrameView(frame: .zero)
@@ -65,14 +65,7 @@ final class TerminalPaneController: NSViewController {
         didSet {
             guard theme != oldValue else { return }
             statusBar.theme = theme
-            applyFocusPresentation()
-        }
-    }
-
-    var focusStyle: FocusStyle = .barFrame {
-        didSet {
-            guard focusStyle != oldValue else { return }
-            applyFocusPresentation()
+            applyPresentation()
         }
     }
 
@@ -82,14 +75,7 @@ final class TerminalPaneController: NSViewController {
             statusBar.attentionStyle = attentionStyle
             // The frame is gated on `loud` too, so a live config edit that
             // quietens attention has to take the frame down with the fill.
-            applyFocusPresentation()
-        }
-    }
-
-    var unfocusedScrim: Double = PaneTheme.unfocusedScrim {
-        didSet {
-            guard unfocusedScrim != oldValue else { return }
-            applyFocusPresentation()
+            applyPresentation()
         }
     }
 
@@ -104,71 +90,50 @@ final class TerminalPaneController: NSViewController {
     var isWindowActive = true {
         didSet {
             guard isWindowActive != oldValue else { return }
-            applyFocusPresentation()
+            applyPresentation()
         }
     }
 
     func setPaneFocused(_ focused: Bool) {
         guard isPaneFocused != focused else { return }
         isPaneFocused = focused
-        applyFocusPresentation()
+        applyPresentation()
     }
 
-    private func applyFocusPresentation() {
+    /// Pushes focus, window activation, theme and attention into the three views
+    /// that draw them, in one pass.
+    ///
+    /// One method rather than one per input, because every input moves more than
+    /// one view: a theme change has to reach the scrim as well as the footer, and
+    /// an attention change has to reach the pane frame as well as the bar. Split
+    /// setters are how a pane ends up with a repainted footer over a stale scrim.
+    private func applyPresentation() {
         statusBar.isFocused = isPaneFocused
         statusBar.isWindowActive = isWindowActive
-        statusBar.focusStyle = focusStyle
         statusBar.theme = theme
         scrim.colour = theme.background
-        scrim.amount = scrimAmount
-        // Attention outranks focus. A pane that is both asking and focused is a
-        // pane already being looked at, and an accent frame there would say
-        // "here" over a signal that means "act now".
-        if drawsAttentionFrame {
-            edgeFrame.colour = theme.alert
-            edgeFrame.isVisible = true
-        } else {
-            edgeFrame.colour = theme.edgeFocus
-            edgeFrame.isVisible = isPaneFocused && focusStyle == .frame && isWindowActive
-        }
+        // See `isWindowActive` above for why an inactive window is the only thing
+        // that scrims a pane. An unfocused pane in the key window is left alone
+        // and the focused one is enclosed by its footer instead.
+        scrim.amount = isWindowActive ? 0 : PaneTheme.inactiveScrim
+        // The pane frame has one reason to appear and therefore one colour, but
+        // the colour still has to be pushed on every pass: a live theme edit moves
+        // `alert` under a frame that is already on screen.
+        edgeFrame.colour = theme.alert
+        edgeFrame.isVisible = drawsAttentionFrame
     }
 
     /// Whether this pane is asking loudly enough to wear a frame.
     ///
-    /// Not gated on `isWindowActive`. The focus frame is, because focus is a
-    /// statement about a window that has the keyboard; an unanswered agent in a
-    /// background window is exactly the thing worth finding.
+    /// Not gated on `isWindowActive`, unlike the footer's focus frame: focus is a
+    /// statement about a window that has the keyboard, while an unanswered agent
+    /// in a background window is exactly the thing worth finding.
     ///
-    /// The three terms are `PaneStatusBarView.fillsBarForAttention`'s three, so
-    /// the frame and the fill can only ever appear together. Splitting them would
-    /// leave half of level 2 on screen.
+    /// Both terms are `PaneStatusBarView.fillsBarForAttention`'s, so the frame and
+    /// the fill can only ever appear together. Splitting them would leave half of
+    /// level 2 on screen.
     private var drawsAttentionFrame: Bool {
-        lastAttention == .asking && attentionStyle == .loud && !invertsForFocus
-    }
-
-    /// The third term, written out here as it is in the footer rather than left
-    /// to `Settings.resolvedAttentionStyle`.
-    ///
-    /// That rule is applied where the config is read, and the app hands a pane
-    /// `attentionStyle` and `focusStyle` as two independent properties, so
-    /// nothing between here and there stops the pair `.loud` plus `.invert` from
-    /// arriving. An inverted focused pane has already spent its bar on focus and
-    /// refuses to fill for attention, and a whole-pane alert frame over a bar
-    /// that never filled would be an ask with no footer under it.
-    private var invertsForFocus: Bool {
-        isPaneFocused && focusStyle == .invert
-    }
-
-    /// How far this pane is covered right now.
-    ///
-    /// The inactive case wins outright rather than adding to the unfocused one.
-    /// Stacking them would make the unfocused panes of a background window nearly
-    /// unreadable, and a background window is exactly when the owner is scanning
-    /// them to decide which one to come back to.
-    private var scrimAmount: Double {
-        guard isWindowActive else { return PaneTheme.inactiveScrim }
-        guard focusStyle == .recede else { return 0 }
-        return isPaneFocused ? 0 : unfocusedScrim
+        lastAttention == .asking && attentionStyle == .loud
     }
 
     private let gitStatus = PaneGitStatus()
@@ -355,7 +320,7 @@ final class TerminalPaneController: NSViewController {
             ])
         }
 
-        applyFocusPresentation()
+        applyPresentation()
 
         anchorTracker.onChange = { [weak self] in
             guard let self else { return }
@@ -397,7 +362,7 @@ final class TerminalPaneController: NSViewController {
             // The frame follows the level, so it is repainted here rather than
             // from `refreshStatus`, which fires on every poll of a pane that is
             // merely compiling.
-            applyFocusPresentation()
+            applyPresentation()
             onAttentionChange?()
         }
     }

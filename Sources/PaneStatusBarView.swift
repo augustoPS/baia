@@ -92,9 +92,10 @@ final class PaneStatusBarView: NSView {
     ///
     /// Separate from ``isFocused`` rather than folded into it, because the two
     /// are owed different things. A background window recedes as one object, so
-    /// the focus frame goes; but the anchor name stays in the focus ink, exactly
-    /// as it does under ``FocusStyle/frame``, which hides its pane stroke and
-    /// dims no text. Folding this into `isFocused` would take the name with it.
+    /// the focus frame goes; but the anchor name keeps its focus ink, because the
+    /// whole pane is already behind the inactive scrim and taking the colour too
+    /// would say the same thing twice while losing which pane the keyboard comes
+    /// back to. Folding this into `isFocused` would take the name with it.
     var isWindowActive: Bool = true {
         didSet {
             guard isWindowActive != oldValue else { return }
@@ -102,22 +103,9 @@ final class PaneStatusBarView: NSView {
         }
     }
 
-    /// How the focused pane is marked. ``FocusStyle/invert`` and
-    /// ``FocusStyle/barFrame`` are both drawn here; ``FocusStyle/recede`` and
-    /// ``FocusStyle/frame`` are drawn over the whole pane by the pane
-    /// controller, which is the point of them.
-    var focusStyle: FocusStyle = .barFrame {
-        didSet {
-            guard focusStyle != oldValue else { return }
-            invalidate()
-        }
-    }
-
-    /// How loudly an unacknowledged pane asks. Set from
-    /// `Settings.resolvedAttentionStyle`, which owns the rule that an inverted
-    /// focus style forces this quiet. The same rule is applied again in
-    /// ``fillsBarForAttention`` so that setting the two properties directly, as
-    /// the app does today, cannot produce a bar filled for two reasons at once.
+    /// How loudly an unacknowledged pane asks. Read straight off the config: the
+    /// only thing that fills this bar is attention, so nothing else can claim the
+    /// fill first and force this quiet.
     var attentionStyle: AttentionStyle = .loud {
         didSet {
             guard attentionStyle != oldValue else { return }
@@ -230,24 +218,22 @@ final class PaneStatusBarView: NSView {
 
     private var attention: PaneStatus.Attention { status?.attention ?? .none }
 
-    /// True when the bar itself is filled with the alert colour.
+    /// True when the bar itself is filled with the alert colour, which is the
+    /// only reason a bar fills.
     ///
-    /// Both halves of the rule. Only the unacknowledged level fills anything, and
-    /// an inverted focused pane has already spent the bar's background on focus,
-    /// so a second meaning would leave it carrying neither.
+    /// Both terms matter: only the unacknowledged level fills anything, and only
+    /// at the loud volume. `quiet` spends an edge instead, so that an asking pane
+    /// can be read without the bar's background being spent on it.
     private var fillsBarForAttention: Bool {
-        attention == .asking && attentionStyle == .loud && !invertsForFocus
+        attention == .asking && attentionStyle == .loud
     }
 
-    private var invertsForFocus: Bool { isFocused && focusStyle == .invert }
-
-    /// Gated on ``isWindowActive`` as well, matching the pane frame under
-    /// ``FocusStyle/frame``. An accent stroke left on a background window would
-    /// leave one pane un-recessed in a window that is meant to read as one
-    /// recessed object. The anchor name deliberately stays in the focus ink,
-    /// because `frame` does not dim that either.
+    /// Gated on ``isWindowActive`` as well as focus. An accent stroke left on a
+    /// background window would leave one pane un-recessed in a window that is
+    /// meant to read as one recessed object. See ``isWindowActive`` for why the
+    /// anchor name does not go with it.
     private var framesForFocus: Bool {
-        isFocused && isWindowActive && focusStyle == .barFrame
+        isFocused && isWindowActive
     }
 
     /// Fades rather than cuts. Focus moves on every click, and a hard step
@@ -297,9 +283,8 @@ final class PaneStatusBarView: NSView {
     /// here may depend on `isFocused` for the same reason, which is why the ink
     /// below is spelled with `focused: true` baked in rather than routed through
     /// ``colour(for:)``: that helper answers `#bbbbbb` for an unfocused pane and
-    /// would flash the frame grey on its way out. ``barIsFilled`` is safe, since
-    /// its focus term belongs to ``FocusStyle/invert``, under which this layer is
-    /// never visible at all.
+    /// would flash the frame grey on its way out. ``fillsBarForAttention`` is
+    /// safe, since it reads the attention level and not the focus state.
     private func drawBarFrame(in rect: NSRect) {
         let width = PaneStatusBarMetrics.focusFrameWidth
         // Judged against the surface the frame is actually on, the way the chip
@@ -309,7 +294,7 @@ final class PaneStatusBarView: NSView {
         // answers an agent, would wear a frame nobody can see. `ink(on:)` is the
         // same colour the anchor name takes on that fill, at 5.86:1, so the two
         // stay one signal rather than two.
-        let ink = barIsFilled ? theme.ink(on: inkBackground) : theme.inkFocus
+        let ink = fillsBarForAttention ? theme.ink(on: inkBackground) : theme.inkFocus
         nsColor(ink).setStroke()
         nsColor(ink).setFill()
 
@@ -326,24 +311,20 @@ final class PaneStatusBarView: NSView {
         path.stroke()
     }
 
-    /// The colour under everything. Not the alert fill, which is a layer above
-    /// this one so that it can fade in without taking the text with it.
-    private var baseFill: RGB {
-        invertsForFocus ? theme.focusedAccent : theme.barBackground
-    }
-
-    /// The surface the text is judged against, which is the alert wash when there
-    /// is one and the base otherwise.
+    /// The surface the text is judged against: the alert wash when there is one,
+    /// and the bar's own background otherwise.
+    ///
+    /// The wash is a layer above what ``draw(_:)`` paints, so that it can fade in
+    /// without taking the text with it, which is why the two are named separately
+    /// here rather than the fill simply being drawn.
     private var inkBackground: RGB {
-        fillsBarForAttention ? theme.alert : baseFill
+        fillsBarForAttention ? theme.alert : theme.barBackground
     }
-
-    private var barIsFilled: Bool { fillsBarForAttention || invertsForFocus }
 
     // MARK: - Base drawing
 
     override func draw(_: NSRect) {
-        nsColor(baseFill).setFill()
+        nsColor(theme.barBackground).setFill()
         bounds.fill()
         drawHairline()
     }
@@ -368,8 +349,8 @@ final class PaneStatusBarView: NSView {
 
     private func drawContent(in rect: NSRect) {
         // The quiet attention treatment: a line along the top edge instead of a
-        // filled band. It is what lets an asking pane and an inverted focused
-        // pane coexist, since it spends an edge rather than the background.
+        // filled band. It spends an edge rather than the bar's background, which
+        // is what keeps the footer legible while someone is working in the pane.
         if attention == .asking, !fillsBarForAttention {
             nsColor(theme.alert).setFill()
             // Pushed inside the focus frame rather than under it. Both land on
@@ -481,7 +462,7 @@ final class PaneStatusBarView: NSView {
     /// the repair chain pushes in, and the tier colours are all derived from the
     /// foreground, which is the wrong end.
     private func colour(for emphasis: PaneStatusEmphasis) -> RGB {
-        guard barIsFilled else {
+        guard fillsBarForAttention else {
             return theme.color(for: emphasis, focused: isFocused, on: inkBackground)
         }
         switch emphasis {
@@ -535,7 +516,7 @@ final class PaneStatusBarView: NSView {
         // dividers are one derivation. On a filled bar it stays relative to the
         // fill: judged against `barBackground` while the bar was actually
         // `theme.alert`, this stroke dropped to 1.85:1.
-        let stroke = barIsFilled
+        let stroke = fillsBarForAttention
             ? colour(for: .context).blended(with: inkBackground, fraction: 0.45)
             : theme.plank
         nsColor(stroke).setStroke()

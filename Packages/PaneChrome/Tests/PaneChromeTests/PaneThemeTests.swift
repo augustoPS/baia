@@ -19,8 +19,8 @@ import Testing
         // function that scored the candidate on its own luminance, or always
         // against the theme's own background rather than the one it was handed,
         // would answer identically for both. It matters more now than it did:
-        // an inverted focused pane and an asking pane both fill the bar with a
-        // colour that is nothing like `barBackground`.
+        // an asking pane fills the bar with a colour that is nothing like
+        // `barBackground`.
         let theme = PaneTheme.darkPastel
         let dim = RGB.eightBit(0x3A, 0x3A, 0x3A)
         #expect(theme.readable(dim, on: RGB.eightBit(0xFF, 0xFF, 0xFF), minimumRatio: 4.5) == dim)
@@ -147,7 +147,7 @@ import Testing
                     >= PaneTheme.minimumTextContrast)
                 #expect(theme.mutedInk(on: fill).contrastRatio(against: fill)
                     >= PaneTheme.minimumTextContrast)
-                // The tier ordering has to survive the repair too, or an inverted
+                // The tier ordering has to survive the repair too, or a filled
                 // footer flattens tier 4 into tier 3 on exactly these fills.
                 #expect(theme.mutedInk(on: fill).contrastRatio(against: fill)
                     <= theme.ink(on: fill).contrastRatio(against: fill))
@@ -166,7 +166,7 @@ import Testing
     }
 
     @Test func theMutedInkOnAFilledBarIsQuieterThanTheInkBesideIt() {
-        // Tier 4 has to keep receding when the bar is filled, or an inverted
+        // Tier 4 has to keep receding when the bar is filled, or an asking
         // footer flattens every tier it worked to separate.
         let theme = PaneTheme.darkPastel
         let fill = theme.focusedAccent
@@ -175,11 +175,12 @@ import Testing
     }
 
     @Test func focusChangesTheProjectNameAndNothingElse() {
-        // Every other emphasis is focus-independent now. Unfocused panes recede
-        // behind a scrim over the whole pane rather than by fading their own
-        // text, which is what removed `unfocusedDim`: text faded into its own bar
-        // gets repaired straight back up the moment it drops under the minimum,
-        // so the old mechanism had a ceiling built into it and the scrim has none.
+        // Every other emphasis is focus-independent now. An unfocused pane is
+        // left alone entirely rather than having its own text faded, which is what
+        // removed `unfocusedDim`: text faded into its own bar gets repaired
+        // straight back up the moment it drops under the minimum, so that
+        // mechanism had a ceiling built into it and could never have carried the
+        // whole treatment.
         let theme = PaneTheme.darkPastel
         for emphasis in PaneStatusEmphasis.allCases where emphasis != .strong {
             #expect(theme.color(for: emphasis, focused: true)
@@ -278,7 +279,6 @@ import Testing
         #expect(theme.inkContext.hexString == "#9d9d9d")
         #expect(theme.inkFaint.hexString == "#898989")
         #expect(theme.warn.hexString == "#c4c445")
-        #expect(theme.edgeFocus.hexString == "#6d7e95")
         #expect(theme.boneAccent.hexString == "#e0e0e0")
         #expect(theme.alert.hexString == "#ff5555")
         #expect(theme.ok.hexString == "#55ff55")
@@ -319,13 +319,14 @@ import Testing
             >= PaneTheme.minimumTextContrast)
     }
 
-    @Test func theScrimIsHeavierThanTheInactiveOneAndBothStayReadable() {
-        // Two different statements. An unfocused pane inside the key window
-        // recedes further than every pane does when the window itself is not
-        // key, because the first is a comparison the eye makes inside one window
-        // and the second is one it makes between windows.
-        #expect(PaneTheme.unfocusedScrim > PaneTheme.inactiveScrim)
-        #expect(PaneTheme.unfocusedScrim <= 0.34)
+    @Test func theInactiveScrimStaysLightEnoughToReadThrough() {
+        // The one scrim left, and it covers the pane the owner is most likely to be
+        // reading rather than typing in: a background window is exactly when he is
+        // scanning panes to decide which one to come back to. Past about a third the
+        // foreground drops under the contrast the bar's own text is held to, so a
+        // heavier value would hide the output the signal exists to help him find.
+        #expect(PaneTheme.inactiveScrim > 0)
+        #expect(PaneTheme.inactiveScrim <= 0.34)
     }
 
     @Test func aThemeWithAShortAnsiPaletteFallsBackToTheForeground() {

@@ -113,9 +113,6 @@ probe_at() { shot probe >/dev/null || return 1; python3 design-captures/pixel.py
 # read on whether a theme applied: a themed shell prompt often uses truecolor
 # escapes and is immune to a palette change.
 term_fg()  { shot probe >/dev/null || return 1; python3 design-captures/pixel.py brightest "$OUT/probe.png" 0.01 0.11 0.30 0.13; }
-# Mean of the right-hand pane, for the scrim.
-pane_mean() { shot probe >/dev/null || return 1; python3 design-captures/pixel.py mean "$OUT/probe.png" "$1" 0.20 "$2" 0.90; }
-
 luma() { python3 -c "
 import sys
 h=sys.argv[1].lstrip('#')
@@ -142,7 +139,7 @@ start
 if [ -f "$CFG" ]; then ok "config.json created"; else bad "config.json missing"; fi
 [ "$(stat -f '%Sp' "$CFG" 2>/dev/null)" = "-rw-------" ] && ok "mode 600" || bad "mode is $(stat -f '%Sp' "$CFG" 2>/dev/null)"
 n=$(python3 -c "import json;print(len(json.load(open('$CFG'))))" 2>/dev/null)
-[ "$n" = "21" ] && ok "21 keys" || bad "$n keys, expected 21"
+[ "$n" = "19" ] && ok "19 keys" || bad "$n keys, expected 19"
 if [ "$(shells)" -ge 1 ]; then
     ok "a pane spawned a shell"
 else
@@ -199,38 +196,52 @@ fallback_fg=$(term_fg)
 write_cfg '{"themeName":"Dark Pastel"}'
 
 echo
-echo "Step 5: the scrim, which needs two panes to mean anything"
-key 'keystroke "d" using command down'      # split, so one pane is unfocused
+echo "Step 5: the inactive-window scrim, the only scrim left"
+key 'keystroke "d" using command down'      # split, so the rest of the run has two panes
 sleep 2
 if [ "$(shells)" -ge 2 ]; then
     ok "split to two panes"
-    write_cfg '{"unfocusedScrim":0}'
-    off=$(pane_mean 0.05 0.45); shot 04-scrim-off
-    write_cfg '{"unfocusedScrim":0.34}'
-    max=$(pane_mean 0.05 0.45); shot 05-scrim-max
-    lo=$(luma "$off"); hi=$(luma "$max")
-    echo "        unfocused pane luma $lo (scrim 0) -> $hi (scrim 0.34)"
-    python3 -c "import sys; sys.exit(0 if float('$hi') < float('$lo') - 0.5 else 1)" \
-        && ok "the unfocused pane darkened" \
-        || bad "the scrim did nothing: $lo -> $hi"
-    # Deliberately from a value 0.9 does NOT clamp onto. The report used to sit
-    # behind the settings-changed guard, so clamping 0.9 down onto a live 0.34
-    # produced no diagnostic at all.
-    write_cfg '{"unfocusedScrim":0.28}'
-    write_cfg '{"unfocusedScrim":0.9}'
-    grep -q "unfocusedScrim" "$LOG" && ok "0.9 was clamped and reported on stderr" \
-        || bad "0.9 was clamped silently"
-    write_cfg '{"unfocusedScrim":0.28}'
+    shot 04-window-key
+    lit=$(python3 design-captures/pixel.py mean "$OUT/04-window-key.png" 0.05 0.20 0.45 0.90)
+    # Captured without `shot`, which activates baia first and would hand the
+    # window its key state back before the shutter. The rect is read while baia is
+    # still frontmost and reused once Finder has taken over.
+    geom=$(osascript -e 'tell application "System Events" to tell process "baia" to get {position, size} of window 1' 2>/dev/null | tr -d ' ')
+    osascript -e 'tell application "Finder" to activate' >/dev/null 2>&1; sleep 1.5
+    rm -f "$OUT/05-window-inactive.png"
+    screencapture -x -o -R"$geom" "$OUT/05-window-inactive.png"
+    if [ -s "$OUT/05-window-inactive.png" ]; then
+        dim=$(python3 design-captures/pixel.py mean "$OUT/05-window-inactive.png" 0.05 0.20 0.45 0.90)
+        hi=$(luma "$lit"); lo=$(luma "$dim")
+        echo "        pane luma $hi (window key) -> $lo (window inactive)"
+        python3 -c "import sys; sys.exit(0 if float('$lo') < float('$hi') - 0.5 else 1)" \
+            && ok "every pane receded when the window stopped being key" \
+            || bad "the inactive scrim did nothing: $hi -> $lo"
+    else
+        bad "the inactive capture failed, so the scrim is untested"
+    fi
+    act
+    look "04 vs 05: both panes recede together, and neither is singled out while the window is key"
 else
     bad "the split did not take, so the scrim is untested"
 fi
 
 echo
-echo "Step 5b: focusStyle"
-write_cfg '{"focusStyle":"invert"}'; shot 06-invert
-look "06-invert.png: the focused footer is filled, and attention is quiet rather than also filled"
-write_cfg '{"focusStyle":"frame"}'; shot 07-frame
-write_cfg '{"focusStyle":"recede"}'
+echo "Step 5b: the retired focus keys are reported rather than swallowed"
+# The owner's own file carried both of these. They are gone, and a key that
+# stopped applying has to be visible: accepting one silently is exactly the
+# failure `focusAccent` spent nine days in.
+write_cfg '{"focusStyle":"recede","unfocusedScrim":0.28}'
+grep -q 'focusStyle` is not a setting' "$LOG" && ok "focusStyle was reported as unknown" \
+    || bad "focusStyle was swallowed"
+grep -q 'unfocusedScrim` is not a setting' "$LOG" && ok "unfocusedScrim was reported as unknown" \
+    || bad "unfocusedScrim was swallowed"
+python3 -c "
+import json
+d=json.load(open('$CFG'))
+for k in ('focusStyle','unfocusedScrim'): d.pop(k, None)
+open('$CFG.tmp','w').write(json.dumps(d,indent=2))
+"; mv "$CFG.tmp" "$CFG"; sleep 2
 
 echo "Step 6: a broken file leaves the last good values standing"
 cp "$CFG" "$OUT/.good.json"

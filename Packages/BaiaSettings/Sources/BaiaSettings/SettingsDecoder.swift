@@ -8,9 +8,10 @@ import Foundation
 /// value on screen, with nothing connecting the two.
 public struct SettingsDecodeResult: Sendable, Equatable {
     public var settings: Settings
-    /// Fields the file carries that this version of baia does not read. A rename
-    /// of a setting shows up here rather than as a value that quietly stopped
-    /// applying.
+    /// Fields the file carries that this version of baia does not read. A setting
+    /// renamed or removed between versions shows up here rather than as a value
+    /// that quietly stopped applying, which is why a retired key is left to land
+    /// here rather than being accepted and ignored for a release.
     public var unknownKeys: [String]
     /// Fields whose value was the wrong type, out of range, or unspellable. Every
     /// one of them fell back to its default or was clamped into range, and every
@@ -199,19 +200,17 @@ public enum SettingsDecoder {
             settings.restoreSession = restore
         }
 
-        // The four design keys. Each is read through `init(rawValue:)` and falls
+        // The two design keys. Each is read through `init(rawValue:)` and falls
         // back on its own, the way `cursorStyle` does above, so a typo in one of
-        // them leaves the other three applied and names itself in `invalidKeys`.
-        // None of these spellings reaches ghostty, so an unknown one costs a
-        // reported rejection rather than a silently dropped terminal config line.
-        if let style = reader.text("focusStyle") {
-            if let style = FocusStyle(rawValue: style) {
-                settings.focusStyle = style
-            } else {
-                reader.reject("focusStyle")
-            }
-        }
-
+        // them leaves the other applied and names itself in `invalidKeys`.
+        // Neither spelling reaches ghostty, so an unknown one costs a reported
+        // rejection rather than a silently dropped terminal config line.
+        //
+        // `focusStyle` and `unfocusedScrim` were two more of these until the
+        // focus treatment was settled at one. They are deliberately not accepted
+        // and ignored here: a key that stopped applying has to be visible, which
+        // is the whole reason `unknownKeys` exists, and quietly swallowing them
+        // is exactly how `focusAccent` sat dead for nine days.
         if let accent = reader.text("focusAccent") {
             if let accent = FocusAccent(rawValue: accent) {
                 settings.focusAccent = accent
@@ -226,15 +225,6 @@ public enum SettingsDecoder {
             } else {
                 reader.reject("attentionStyle")
             }
-        }
-
-        if let scrim = reader.number("unfocusedScrim") {
-            settings.unfocusedScrim = Self.clamped(
-                scrim,
-                to: Settings.Limits.scrim,
-                key: "unfocusedScrim",
-                reader: &reader
-            )
         }
 
         return SettingsDecodeResult(

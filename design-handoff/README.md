@@ -42,7 +42,8 @@ The six source captures both documents were built from live in
 
 Everything in the document except where noted, on 2026-07-25:
 
-- The focused-pane treatment, all three styles (`recede` is the default)
+- The focused-pane treatment, all three styles (`recede` is the default), since
+  collapsed to the one treatment by v2 §08
 - The two-level attention model, both volumes, with the arrival pulse
 - The tab grammar and the window-title formats
 - The four footer tiers, the coloured markers, the pin chip
@@ -76,7 +77,8 @@ to one function.
 ## What was implemented from v2
 
 On 2026-07-26, on branch `design-v2`. Six of the seven divergences found on the
-`main` check, plus a seventh the check missed.
+`main` check, plus a seventh the check missed. §08 landed last, once the live
+comparison it was waiting on had been made.
 
 1. **§01 `plank` is a theme role.** `foreground.blended(background, 0.46)` =
    `#6e6e6e` on `PaneTheme`, used for the PIN chip's border. The icon still
@@ -92,32 +94,47 @@ On 2026-07-26, on branch `design-v2`. Six of the seven divergences found on the
    app target, so there is no assignment for a caller to forget, and
    `theConfiguredFocusAccentReachesTheTheme` is the test that would have caught
    the original bug.
-3. **§02 the footer is the frame**, as `FocusStyle.barFrame`, the new default. A
-   2 pt inset stroke around the footer bar in `inkFocus`, the bar's fill
-   identical in both states, collapsing to a top-and-bottom bracket below
-   `frameCollapseWidth = 120`. Faded over 160 ms. Gated on `isWindowActive`,
-   matching `FocusStyle.frame`. On a bar filled for attention the stroke is drawn
-   in `theme.ink(on:)`, the same colour the anchor name takes there, because
-   `inkFocus` is repaired against `barBackground` and scores 2.08:1 on `alert`.
+3. **§02 the footer is the frame.** A 2 pt inset stroke around the focused
+   pane's footer bar in `inkFocus`, the bar's fill identical in both states,
+   collapsing to a top-and-bottom bracket below `frameCollapseWidth = 120`. Faded
+   over 160 ms. Gated on `isWindowActive`. On a bar filled for attention the
+   stroke is drawn in `theme.ink(on:)`, the same colour the anchor name takes
+   there, because `inkFocus` is repaired against `barBackground` and scores
+   2.08:1 on `alert`. It shipped first as a fourth `FocusStyle` case, so that it
+   could be compared against the scrim in the running app; see 7 below.
 4. **§03 the attention frame takes the pane.** A 2 pt inset frame in `alert`
    around the whole pane while an ask is unacknowledged and `attentionStyle` is
    `loud`, ranked above focus. `AttentionStyle.loud`'s doc has described this
    since v1; nothing drew it until now.
-5. **§06 the divider drags in `ink.focus`**, replacing `edgeFocus`, so the drag
-   reads as part of the focus signal rather than as a third colour.
+5. **§06 the divider drags in `ink.focus`**, replacing `PaneTheme.edgeFocus`,
+   which 7 below then deleted, so the drag reads as part of the focus signal
+   rather than as a third colour.
 6. **§07 the icon glyph moves to the upper third.** Chevron
    `471,287 → 559,375 → 471,463`, ink baseline 483, cursor at `623,427`, with the
    heavy variant at stroke 72 and gap 48.
+7. **§08 deletes `focusStyle`.** The footer frame was compared against the
+   shipped scrim on six panes at 1680 pt on 2026-07-26 and won, which is the one
+   way that argument could be settled, so the deletion landed the same day. Gone:
+   `FocusStyle` and all four cases, `focusStyle`, `unfocusedScrim`,
+   `Settings.Limits.scrim`, `Settings.resolvedAttentionStyle`,
+   `PaneTheme.unfocusedScrim` and `PaneTheme.edgeFocus`. The config file is 19
+   keys, `focusAccent` and `attentionStyle` being the two the design pass left.
+
+   `PaneScrimView` and `PaneTheme.inactiveScrim` survive, and are not what §08 is
+   about: every pane recedes by 0.15 while its *window* is not key, so an inactive
+   window reads as one recessed object. macOS offers no other honest signal there,
+   because the titlebar is transparent. `PaneEdgeFrameView` survives too and is
+   now attention-only, which is its whole reason to exist.
+
+   **A config file written before this needs two lines deleted by hand.**
+   `focusStyle` and `unfocusedScrim` are now reported as unknown keys on stderr
+   at every launch until they are removed. They are deliberately not accepted and
+   ignored: a key that stopped applying has to be visible, which is what
+   `unknownKeys` exists for, and swallowing one quietly is exactly how
+   `focusAccent` came to sit dead for nine days.
 
 ## Still open
 
-- **§08's deletion of `focusStyle`.** v2 leaves two config keys and deletes the
-  rest. `barFrame` is the default and `recede`, `invert` and `frame` are still
-  reachable, deliberately: the argument between a footer frame and the shipped
-  scrim cannot be settled from the document, only by looking at six panes at
-  1680 pt. When it is settled, the deletion takes `focusStyle`, `unfocusedScrim`,
-  `PaneScrimView`, `PaneTheme.edgeFocus` and `Settings.resolvedAttentionStyle`
-  with it.
 - **§07's badge instruction, deliberately not followed.** v2 says to re-test
   `NSApp.dockTile.badgeLabel` once a real icon ships. That test was already run
   on 2026-07-25 against the real icon, with an unconditional `badgeLabel = "9"`

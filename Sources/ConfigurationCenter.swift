@@ -139,12 +139,7 @@ final class ConfigurationCenter {
 
     private func apply(to pane: TerminalPaneController) {
         pane.theme = paneTheme
-        pane.focusStyle = settings.focusStyle
-        // Read through `resolvedAttentionStyle`, never the stored field. An
-        // inverted footer and a loud attention both fill the bar, and a bar
-        // filled for two reasons carries neither.
-        pane.attentionStyle = settings.resolvedAttentionStyle
-        pane.unfocusedScrim = settings.unfocusedScrim
+        pane.attentionStyle = settings.attentionStyle
         pane.gitPollInterval = settings.gitPollSeconds
         pane.activityPollInterval = settings.activityPollSeconds
         // Both go through the controller rather than through the view.
@@ -219,7 +214,7 @@ final class ConfigurationCenter {
         // point. What the decoder could not use is a fact about the file, not
         // about whether the file changed anything, and the two cases where it
         // matters most both decode to no change at all: a value that clamps back
-        // to what is already loaded (`unfocusedScrim: 0.9` under a live 0.34),
+        // to what is already loaded (`backgroundOpacity: 1.5` under a live 1),
         // and a document so malformed that nothing in it applied. Reporting
         // after the guard meant the owner edited the file, saw no effect, and was
         // told nothing. Found by the live pass, which read an empty log.
