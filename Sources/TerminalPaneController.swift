@@ -80,6 +80,17 @@ final class TerminalPaneController: NSViewController {
         }
     }
 
+    /// Which of the window's bottom corners this pane's footer has to curve to.
+    ///
+    /// Straight through to the bar rather than stored here and pushed in
+    /// ``applyPresentation()``, because unlike focus, theme and attention it moves
+    /// exactly one view and it moves for a different reason: the arrangement
+    /// changed, not this pane's state. ``PaneTreeController`` is the only writer.
+    var bottomCorners: BottomCorners {
+        get { statusBar.bottomCorners }
+        set { statusBar.bottomCorners = newValue }
+    }
+
     private(set) var isPaneFocused = false
 
     /// Whether this pane's window is the key window.

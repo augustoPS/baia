@@ -1,6 +1,7 @@
 import AppKit
 import BaiaSettings
 import PaneChrome
+import WorkspaceLayout
 
 /// A pane of the footer that draws through a closure its owner supplies.
 ///
@@ -113,6 +114,20 @@ final class PaneStatusBarView: NSView {
         }
     }
 
+    /// Which of the window's bottom corners this bar sits in, pushed by the pane
+    /// tree from the layout. Empty for every pane away from the window's edge,
+    /// which is most of them.
+    ///
+    /// Set rather than derived, because a view cannot see the arrangement it is
+    /// in: a footer at the bottom left of its own pane has no way to know whether
+    /// the pane is at the bottom left of the window or in the middle of a grid.
+    var bottomCorners: BottomCorners = [] {
+        didSet {
+            guard bottomCorners != oldValue else { return }
+            invalidate()
+        }
+    }
+
     private let attentionWash = PaneStatusContentView(frame: .zero)
     private let contentView = PaneStatusContentView(frame: .zero)
     /// Above the text rather than below it, so a filled bar cannot swallow the
@@ -136,6 +151,12 @@ final class PaneStatusBarView: NSView {
         // paint over the edge that says which pane the keyboard is in.
         attentionWash.wantsLayer = true
         attentionWash.layer?.opacity = 0
+        // Drawn rather than a layer background colour, so that it takes the same
+        // corner path everything else on the bar takes. A background colour fills
+        // the layer's rectangle, and a pane in the corner would have worn a square
+        // red block against a bar that curves away from it. The fade still happens
+        // on `opacity`, which is why this is a layer of its own.
+        attentionWash.render = { [weak self] bounds in self?.drawAttentionWash(in: bounds) }
         addSubview(attentionWash)
 
         contentView.render = { [weak self] bounds in self?.drawContent(in: bounds) }
@@ -190,9 +211,10 @@ final class PaneStatusBarView: NSView {
 
     override func layout() {
         super.layout()
-        for child in [attentionWash, contentView, barFrame] { child.frame = bounds }
-        contentView.needsDisplay = true
-        barFrame.needsDisplay = true
+        for child in [attentionWash, contentView, barFrame] {
+            child.frame = bounds
+            child.needsDisplay = true
+        }
     }
 
     override func viewDidChangeBackingProperties() {
@@ -202,13 +224,13 @@ final class PaneStatusBarView: NSView {
 
     private func invalidate() {
         needsDisplay = true
-        attentionWash.layer?.backgroundColor = nsColor(theme.alert).cgColor
         // Held at its target rather than re-animated when the pane is already
         // asking, so a redraw mid-wait does not restart the fade. A marker that
         // pulsed on every git poll would be one the eye learns to ignore.
         if attentionWash.layer?.animationKeys()?.isEmpty ?? true {
             attentionWash.layer?.opacity = fillsBarForAttention ? 1 : 0
         }
+        attentionWash.needsDisplay = true
         contentView.needsDisplay = true
         barFrame.needsDisplay = true
         applyBarFrameOpacity()
@@ -302,13 +324,33 @@ final class PaneStatusBarView: NSView {
         // `rect.height - width` is the edge against the window.
         guard PaneStatusBarMetrics.framesSides(atWidth: Double(rect.width)) else {
             NSRect(x: 0, y: 0, width: rect.width, height: width).fill()
+            // The bracket's lower bar lands on the curved edge, so it is cut to
+            // the same shape as the fill under it. A square bar there would put
+            // the one thing that says "this pane" outside the window's outline,
+            // where the system mask takes a bite out of it.
+            NSGraphicsContext.saveGraphicsState()
+            cornerPath(in: rect).addClip()
             NSRect(x: 0, y: rect.height - width, width: rect.width, height: width).fill()
+            NSGraphicsContext.restoreGraphicsState()
             return
         }
 
-        let path = NSBezierPath(rect: rect.insetBy(dx: width / 2, dy: width / 2))
+        // Inset by half the stroke width, and the radius comes down by the same
+        // amount, which is what keeps the frame concentric with the window rather
+        // than crossing it through the corner.
+        let path = cornerPath(in: rect, inset: width / 2)
         path.lineWidth = width
         path.stroke()
+    }
+
+    /// The one outline the bar is drawn to: its own rectangle, with any corner it
+    /// shares with the window curved to match.
+    ///
+    /// Every surface goes through this rather than each drawing its own shape.
+    /// The bug being fixed is two shapes disagreeing at the same corner, so a
+    /// second spelling of it anywhere is the bug coming back.
+    private func cornerPath(in rect: NSRect, inset: Double = 0) -> NSBezierPath {
+        WindowCorner.path(in: rect, corners: bottomCorners, inset: inset)
     }
 
     /// The surface the text is judged against: the alert wash when there is one,
@@ -324,9 +366,23 @@ final class PaneStatusBarView: NSView {
     // MARK: - Base drawing
 
     override func draw(_: NSRect) {
+        // Clipped rather than filled through the path, so the hairline below is
+        // cut by the same outline without having to be built as a second shape.
+        // The bar's fill already looked round, because the window's mask was
+        // cutting it; what this changes is that everything else on the bar now
+        // stops where the fill does.
+        NSGraphicsContext.saveGraphicsState()
+        cornerPath(in: bounds).addClip()
         nsColor(theme.barBackground).setFill()
         bounds.fill()
         drawHairline()
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    /// The alert fill, on the same outline as the bar under it.
+    private func drawAttentionWash(in rect: NSRect) {
+        nsColor(theme.alert).setFill()
+        cornerPath(in: rect).fill()
     }
 
     /// A one-point separator at the bottom edge rather than the top, so the

@@ -43,7 +43,7 @@ final class PaneTreeController: NSViewController {
     /// nonisolated deinit, and an observer token is not `Sendable`. Removing them
     /// as the window goes away is the symmetric half of registering them as it
     /// appears, and it happens while the controller is unambiguously alive.
-    private var activationObservers: [any NSObjectProtocol] = []
+    private var windowObservers: [any NSObjectProtocol] = []
 
     /// The hierarchy currently on screen. Compared against the tree before a
     /// rebuild so a focus change, which happens on every click, does not tear
@@ -170,35 +170,70 @@ final class PaneTreeController: NSViewController {
         rebuild()
     }
 
+    /// The first push of the corners that has a window to read.
+    ///
+    /// ``rebuild()`` runs from `viewDidLoad()`, where `view.window` is still nil
+    /// and every pane is therefore told it owns nothing. Corrected here rather
+    /// than in `viewDidAppear()` because this runs before the window's first
+    /// display: a pane in a bottom corner would otherwise open square for a frame
+    /// and curve on the next one.
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        pushBottomCorners()
+    }
+
     override func viewDidAppear() {
         super.viewDidAppear()
         focusedPane?.takeFocus()
-        observeWindowActivation()
+        observeWindow()
         syncPanePresentation()
     }
 
     override func viewWillDisappear() {
         super.viewWillDisappear()
-        for observer in activationObservers {
+        for observer in windowObservers {
             NotificationCenter.default.removeObserver(observer)
         }
-        activationObservers.removeAll()
+        windowObservers.removeAll()
     }
 
-    /// The whole window recedes when it stops being key.
+    /// The two things a pane has to hear about its window: whether it is key, and
+    /// whether it is in full screen.
     ///
-    /// Observed here rather than in the window controller because the scrim is a
-    /// property of each pane, and this is the only object that knows them all.
-    /// Both notifications are needed: `didResignKey` does not fire for a window
-    /// that was never key, so a window restored behind another one would open at
-    /// full contrast and only correct itself once clicked.
-    private func observeWindowActivation() {
-        guard let window = view.window, activationObservers.isEmpty else { return }
+    /// Observed here rather than in the window controller because both answers are
+    /// spent per pane, and this is the only object that knows them all.
+    ///
+    /// The whole window recedes when it stops being key. Both key notifications
+    /// are needed: `didResignKey` does not fire for a window that was never key,
+    /// so a window restored behind another one would open at full contrast and
+    /// only correct itself once clicked.
+    ///
+    /// Full screen matters because the system stops rounding the window there, and
+    /// nothing else moves on the transition: ``rebuild()`` is guarded on the tree
+    /// and the zoom, and a full-screen toggle changes neither, so without this the
+    /// bottom row keeps curving to a corner the window no longer has.
+    ///
+    /// `did` rather than `will`, which is measured and not a preference. At
+    /// `willEnterFullScreen` the style mask still reads windowed and the radius is
+    /// still 16, so a push there is a no-op; the mask flips exactly at
+    /// `didEnterFullScreen` and back exactly at `didExitFullScreen`.
+    /// `Diagnostics/footer-corners`'s `fullscreen` arm drives a real window through
+    /// both transitions and asserts that ordering, so an OS that moved the flip
+    /// earlier fails a check instead of leaving the wedge on screen.
+    private func observeWindow() {
+        guard let window = view.window, windowObservers.isEmpty else { return }
         let centre = NotificationCenter.default
         for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
-            activationObservers.append(
+            windowObservers.append(
                 centre.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
                     MainActor.assumeIsolated { self?.syncPanePresentation() }
+                }
+            )
+        }
+        for name in [NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification] {
+            windowObservers.append(
+                centre.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.pushBottomCorners() }
                 }
             )
         }
@@ -415,6 +450,14 @@ final class PaneTreeController: NSViewController {
             child.removeFromParent()
         }
 
+        // Not a teardown step, and not something a rebuild is run for: it is the
+        // plain assignment ``pushBottomCorners()`` describes, into whatever views
+        // exist. It sits here because this method's guard above is exactly the
+        // question "did the tree or the zoom move", which is the only way corner
+        // ownership can change. Calling it from each command instead would be four
+        // call sites and a fifth one forgotten.
+        pushBottomCorners()
+
         guard let displayed = displayedTree else { return }
         let content = makeViewController(for: displayed, at: SplitPath())
         addChild(content)
@@ -426,6 +469,32 @@ final class PaneTreeController: NSViewController {
             content.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             content.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
+    }
+
+    /// Tells each pane which of the window's bottom corners its footer sits in, so
+    /// the footer can curve to the shape the system is already clipping it to.
+    ///
+    /// Read off ``displayedTree`` rather than the tree, which is what makes zoom
+    /// work for free: a zoomed pane renders alone, so it owns both corners while
+    /// it is zoomed and gets its real pair back when it is not.
+    ///
+    /// Pushed into the views that are on screen, the way ``pushRatios()`` pushes a
+    /// keyboard resize, and never by forcing a `rebuild()`. That would remove
+    /// every child and reparent every live ghostty surface, which is a `SIGWINCH`
+    /// to whatever is running in each of them, for a corner.
+    ///
+    /// Every pane in the map is written, not only the ones in the displayed tree.
+    /// A pane hidden behind a zoom would otherwise keep the corners it had when it
+    /// went away and paint them for one frame on the way back.
+    ///
+    /// Two questions, and both have to say yes: the layout names the panes that sit
+    /// in a bottom corner, and the window says whether it rounds that corner at
+    /// all. It does not in full screen, where a footer still curving to 16 pt cuts
+    /// a wedge of bare window background out of itself.
+    private func pushBottomCorners() {
+        let rounded = WindowCorner.isRounded(view.window)
+        let owned = rounded ? (displayedTree?.bottomCorners() ?? [:]) : [:]
+        for (id, pane) in panes { pane.bottomCorners = owned[id] ?? [] }
     }
 
     /// A zoomed pane renders alone. Zoom is presentation only, so the tree keeps
