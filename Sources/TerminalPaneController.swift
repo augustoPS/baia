@@ -2,6 +2,7 @@ import AppKit
 import BaiaSettings
 import GhosttyTerminal
 import PaneChrome
+import PaneSearch
 import ProjectAnchor
 import WorkspaceLayout
 import WorkspaceMenu
@@ -154,6 +155,92 @@ final class TerminalPaneController: NSViewController {
     /// A keystroke reached this pane. Driven by the app's key monitor, since
     /// nothing in a pane may take first responder.
     func noteInput() { activityTracker.noteInput() }
+
+    /// The pane's current width in cells, from `terminalDidResize`.
+    ///
+    /// Zero until the surface exists and reports, which is the same window in
+    /// which `readScreenText` returns nil, so both are handled by the same
+    /// early return rather than by a special case.
+    private var gridColumns = 0
+
+    /// Every logical line the pane holds, scrollback included.
+    ///
+    /// Nil before the surface exists. A pane whose view is not yet in a window
+    /// contributes no matches rather than counting as an error, which is the
+    /// same rule every tracker's first poll follows.
+    ///
+    /// Logical lines, not screen rows: a line wider than the pane comes back
+    /// whole, so a match is never cut in half by a soft wrap. That is why
+    /// `row(ofLine:in:containing:)` exists at all, since the index of a line
+    /// here is not the row it starts on.
+    func readScreenLines() -> [String]? {
+        guard let text = terminalView.readScreenText() else { return nil }
+        return text.components(separatedBy: "\n")
+    }
+
+    /// The screen row a match is drawn on, for `scrollToRow`, or nil when no
+    /// read confirms one.
+    ///
+    /// Estimated, then confirmed. The estimate is `TerminalRows.row`, which
+    /// counts the cells a line occupies rather than its characters, because a
+    /// terminal wraps when the cells run out: counting characters lost a row for
+    /// every wide character above the match, and the error accumulated over the
+    /// whole scrollback rather than over a screenful. Measured against a
+    /// simulated terminal, 200 lines of 60 CJK characters in an 80 column pane
+    /// put the match 200 rows below where the old arithmetic pointed.
+    ///
+    /// The confirmation walks outward from the estimate until a row's text holds
+    /// the match, which is a per-row exact read and therefore a real screen row.
+    /// It is bounded at 64 rows either side, so the worst case is 129 reads
+    /// rather than a scan of the whole scrollback.
+    ///
+    /// Nil when the bound is exhausted, and never the unconfirmed estimate. The
+    /// pane's output can have moved since the search, and scrolling to a row
+    /// that does not hold the match sends the owner somewhere arbitrary with the
+    /// panel already dismissed and nothing on screen to say what happened.
+    func row(of match: LineMatch, in lines: [String]) -> UInt? {
+        guard gridColumns > 0 else { return nil }
+
+        let characters = Array(match.line)
+        guard match.range.lowerBound >= 0,
+              match.range.upperBound <= characters.count,
+              !match.range.isEmpty
+        else { return nil }
+
+        // The matched text itself rather than the query, so the confirmation
+        // looks for what is really on screen even when the query was
+        // case-insensitive.
+        let needle = String(characters[match.range])
+        let estimate = TerminalRows.row(
+            ofLine: match.lineIndex,
+            offset: match.range.lowerBound,
+            in: lines,
+            columns: gridColumns
+        )
+
+        for offset in 0 ... Self.rowSearchBound {
+            // Offset zero names one row, not two. Spelling it as the symmetric
+            // pair would read the estimate twice on the common case where the
+            // estimate is already right, which is one wasted surface read per
+            // match the owner visits.
+            let candidates = offset == 0 ? [estimate] : [estimate + offset, estimate - offset]
+            for candidate in candidates where candidate >= 0 {
+                let text = terminalView.readRow(UInt32(candidate), columns: UInt32(gridColumns))
+                if text?.contains(needle) == true { return UInt(candidate) }
+            }
+        }
+        return nil
+    }
+
+    /// Scrolls the pane so `row` sits in the middle of the viewport rather than
+    /// at its top, which is what keeps a match visible when the row was
+    /// estimated rather than confirmed.
+    func reveal(row: UInt, viewportRows: Int) {
+        let centred = Int(row) - viewportRows / 2
+        terminalView.scrollToRow(UInt(max(0, centred)))
+    }
+
+    private static let rowSearchBound = 64
 
     var gitPollInterval: TimeInterval {
         get { gitStatus.pollInterval }
@@ -578,7 +665,15 @@ extension TerminalPaneController:
         anchorTracker.reportWorkingDirectory(path)
     }
 
-    func terminalDidResize(columns _: Int, rows _: Int) {}
+    func terminalDidResize(columns: Int, rows _: Int) {
+        // Kept because both the row estimate and `readRow` need it. Taken from
+        // here and never from `TerminalSurfaceGridResizeDelegate`, which carries
+        // a richer `TerminalGridMetrics` and looks like the better source: the
+        // surface coordinator dispatches its delegate by `as?` casts and tests
+        // the grid variant first in an `else if`, so conforming to both would
+        // silence this method with no error at all.
+        gridColumns = columns
+    }
 
     /// The footer follows both directions, because the pane losing focus has to
     /// stop drawing its accent stripe. Only the gaining side is reported upward:
