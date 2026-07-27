@@ -29,11 +29,11 @@ final class PaneTreeController: NSViewController {
     private var panes: [PaneID: TerminalPaneController] = [:]
     private let workingDirectory: String
 
-    /// The palette every pane and every divider in this window derives from.
-    /// The palette the split dividers are drawn from, from the config file's
-    /// theme rather than fixed. Chrome matches the theme, never the reverse, so a
-    /// hardcoded Dark Pastel here would put a Dark Pastel line between two panes
-    /// of some other theme.
+    /// The palette every pane and every divider in this window derives from,
+    /// taken from the config file's theme rather than fixed.
+    ///
+    /// Chrome matches the theme and never the reverse, so a hardcoded Dark Pastel
+    /// here would put a Dark Pastel line between two panes of some other theme.
     var theme: PaneTheme { configuration.paneTheme }
 
     /// Held so they can be removed in ``viewWillDisappear()``.
@@ -51,10 +51,9 @@ final class PaneTreeController: NSViewController {
     private var renderedTree: PaneTree?
     private var renderedZoom: PaneID?
 
-    /// Raised when any pane starts or stops asking for attention, with the
-    /// projects that are asking. The window badges itself and notifies from this.
-    /// The full waiting list, plus the project and message of the pane whose
-    /// attention just changed.
+    /// Raised when any pane starts or stops asking for attention: the full
+    /// waiting list, plus the project and message of the pane whose attention
+    /// just changed. The window badges itself and notifies from this.
     ///
     /// The asking pane is carried rather than re-derived. Reading
     /// `waitingProjects.last` at the far end names whichever pane happens to sit
