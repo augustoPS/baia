@@ -32,6 +32,7 @@ public enum MenuCommand: String, Sendable, Equatable, CaseIterable {
     case paste
     case pasteSelection
     case selectAll
+    case findInPane
 
     case toggleStatusBars
     case zoomPane
@@ -101,6 +102,7 @@ public enum MenuCommand: String, Sendable, Equatable, CaseIterable {
         case .paste: 301
         case .pasteSelection: 302
         case .selectAll: 303
+        case .findInPane: 304
 
         case .toggleStatusBars: 400
         case .zoomPane: 401

@@ -124,6 +124,14 @@ public enum MenuBarLayout {
                     ),
                     separatorBefore: true
                 ),
+                // The one Edit item that does not defer. Ghostty binds `super+f`
+                // to `start_search`, whose search bar the host application is
+                // expected to draw; the trimmed libghostty-spm has no search
+                // anywhere in its Swift layer, so the key opens nothing and
+                // deferring to it would be deferring to an action that does not
+                // exist. Unbinding is what makes ⌘F reach the menu at all.
+                item(.findInPane, "Find…", .character("f"), .command, .unbind,
+                     separatorBefore: true),
             ]
         )
     }

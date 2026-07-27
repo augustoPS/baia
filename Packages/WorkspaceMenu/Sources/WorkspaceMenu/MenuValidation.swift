@@ -81,6 +81,16 @@ public enum MenuValidation {
                 isChecked: nil
             )
 
+        // Enabled whenever there is a pane to search. An empty result is a real
+        // answer and the panel says so, which is more useful than an item that
+        // greys out for reasons the owner cannot see. Deliberately not keyed on
+        // whether the pane has produced any output yet: that is a fact only a
+        // live surface knows, and asking for it here would make validation, which
+        // AppKit runs on every menu open and every key equivalent, read the
+        // scrollback.
+        case .findInPane:
+            MenuItemState(isEnabled: availability.paneCount > 0, isChecked: nil)
+
         // An empty palette reads as a workspace holding no projects, which is
         // worse than a disabled item that says the list is not loaded yet.
         case .commandPalette:

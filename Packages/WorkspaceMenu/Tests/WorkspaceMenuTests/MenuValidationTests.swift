@@ -106,6 +106,15 @@ import Testing
         #expect(state(.minimize, MenuAvailability(tabCount: 1)).isEnabled)
     }
 
+    @Test func findNeedsOnePaneAndNotTwo() {
+        // The pair is the point. Find sits next to Close Pane in the same menu
+        // bar and takes the opposite threshold: one pane is searchable while one
+        // pane is not closable, and folding Find into the two-pane group would
+        // grey out ⌘F in exactly the window shape baia opens with.
+        #expect(!state(.findInPane, .empty).isEnabled)
+        #expect(state(.findInPane, MenuAvailability(paneCount: 1)).isEnabled)
+    }
+
     @Test func thePaletteIsDisabledUntilTheProjectListIsLoaded() {
         // An empty palette reads as a workspace holding no projects, which is a
         // worse answer than a disabled item.

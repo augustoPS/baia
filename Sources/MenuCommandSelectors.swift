@@ -32,6 +32,11 @@ enum MenuCommandSelectors {
         case .paste: #selector(NSText.paste(_:))
         case .pasteSelection: nil
         case .selectAll: #selector(NSText.selectAll(_:))
+        // On the delegate rather than on the responder chain, because the panel
+        // is a window of the app's rather than a view of the pane's: nothing
+        // inside a pane may take first responder, so nothing inside a pane can
+        // be the thing that opens it.
+        case .findInPane: #selector(AppDelegate.findInPane(_:))
 
         case .toggleStatusBars: nil
         case .zoomPane: #selector(AppDelegate.zoomPane(_:))
