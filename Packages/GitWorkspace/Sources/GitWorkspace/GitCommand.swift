@@ -135,6 +135,29 @@ public struct GitCommand: Sendable {
         return status
     }
 
+    /// The branch a remote calls this repository's default, or nil when no remote
+    /// has ever said.
+    ///
+    /// One process, and never on a timer: ``DefaultBranchResolver`` is what callers
+    /// want, since it remembers the answer and this does not.
+    ///
+    /// `--no-optional-locks` for the same reason every other read here passes it.
+    /// `for-each-ref` takes no index lock of its own, but this runs from inside the
+    /// status poll's queue, and the flag costs nothing next to a `git commit` in the
+    /// pane failing on `index.lock`.
+    public func defaultBranch(ofRepositoryRoot root: URL) -> String? {
+        guard let output = output(
+            of: [
+                "--no-optional-locks",
+                "for-each-ref",
+                "--format=%(refname) %(symref)",
+                "refs/remotes/*/HEAD",
+            ],
+            in: root
+        ) else { return nil }
+        return DefaultBranchParser.parse(output)
+    }
+
     /// Every working tree of a repository, main first.
     ///
     /// This is the closure ``ProjectDiscovery/discover(worktrees:)`` wants, which

@@ -67,12 +67,14 @@ Two things v1 leaves open that are now answered:
   `Sources/AttentionNotifier.swift`. v2 §07 repeats the original instruction,
   unaware of the test.
 
-One approximation worth knowing about: the tab grammar shows `:branch` only when
-the branch is not the repository's default, and "default" is a name test for
-`main` or `master` rather than an answer from git. `GitWorkspace` does not
-collect the real default branch today. The predicate is
-`TerminalPaneController.isConventionalDefaultBranch`, so replacing it is a change
-to one function.
+The tab grammar shows `:branch` only when the branch is not the repository's
+default, and "default" is now an answer from git rather than a name test.
+`GitWorkspace.DefaultBranchResolver` reads `refs/remotes/*/HEAD` with one
+`for-each-ref` on the first poll of a repository and remembers it, so a poll
+still spawns exactly one git process. The `main`-or-`master` name test survives
+only as the fallback for a repository where no remote has ever said what its
+default is, which is every local-only one. The resolution order and what each
+step costs are in that type's doc comment.
 
 ## What was implemented from v2
 

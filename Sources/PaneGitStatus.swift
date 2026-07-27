@@ -16,7 +16,28 @@ final class PaneGitStatus {
 
     private(set) var git: PaneStatus.Git?
 
+    /// Whether the head reported in ``git`` is the repository's default branch.
+    ///
+    /// Kept beside the footer's value rather than inside it because nothing in the
+    /// footer draws it: it exists for the tab label, which says `project:branch`
+    /// only where the branch is worth saying. Updated before ``onChange`` fires, so
+    /// a reader of both sees one repository's answer rather than two.
+    ///
+    /// True while nothing is known, which is what makes an unresolved pane show a
+    /// bare project name instead of flashing a branch on for one poll.
+    private(set) var isOnDefaultBranch = true
+
     private let command = GitCommand()
+
+    /// Resolves the default branch once per repository and remembers it. The first
+    /// poll of a repository forks two git processes, one for the status and one for
+    /// the default branch; every poll after it forks the one it always did.
+    ///
+    /// One resolver per pane rather than one for the app. Two panes on the same
+    /// repository each pay one `for-each-ref`, once, which is cheaper than the
+    /// shared mutable state an app-wide instance would need to be reachable from
+    /// here.
+    private let defaultBranches = DefaultBranchResolver()
 
     /// Utility rather than default: a status read is never what the user is
     /// waiting on, and forking git at user-initiated priority on every poll
@@ -68,7 +89,10 @@ final class PaneGitStatus {
         isLinkedWorktree = next.map { GitDirectory.isLinkedWorktree(repositoryRoot: $0) } ?? false
         // Cleared rather than left stale. Showing the previous repository's
         // branch under a new anchor's name is worse than showing nothing, and it
-        // is exactly the wrong-repo confusion the footer exists to prevent.
+        // is exactly the wrong-repo confusion the footer exists to prevent. The
+        // default-branch answer goes with it: carrying the old repository's over
+        // would hide the new one's branch for the length of one read.
+        isOnDefaultBranch = true
         apply(nil)
         refresh()
     }
@@ -115,18 +139,29 @@ final class PaneGitStatus {
         isReading = true
 
         let command = self.command
+        let defaultBranches = self.defaultBranches
         let requested = root
         queue.async { [weak self] in
             let status = command.status(ofRepositoryRoot: requested)
+            // Resolved on this thread, beside the status read, and never on the
+            // main one. The first read of a repository forks git; every read after
+            // it is a dictionary lookup.
+            let isDefault = status.map {
+                defaultBranches.isDefaultBranch($0.head, ofRepositoryRoot: requested)
+            } ?? true
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    self?.finish(status, from: requested)
+                    self?.finish(status, isOnDefaultBranch: isDefault, from: requested)
                 }
             }
         }
     }
 
-    private func finish(_ status: RepositoryStatus?, from requested: URL) {
+    private func finish(
+        _ status: RepositoryStatus?,
+        isOnDefaultBranch isDefault: Bool,
+        from requested: URL
+    ) {
         isReading = false
         // The anchor may have moved while git was running. Applying this answer
         // would label the new repository with the old one's branch, so it is
@@ -135,6 +170,11 @@ final class PaneGitStatus {
             if isStale { isStale = false; refresh() }
             return
         }
+        // Set before `apply`, which is what calls `onChange`: the handler rebuilds
+        // the footer and relabels the tab from both values at once, and assigning
+        // this afterwards would label one poll's branch with the previous poll's
+        // answer.
+        isOnDefaultBranch = isDefault
         apply(status.map(paneGit))
         if isStale {
             isStale = false

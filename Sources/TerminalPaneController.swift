@@ -650,7 +650,11 @@ final class TerminalPaneController: NSViewController {
         return TabTitle.tab(
             project: project,
             branch: git?.head,
-            isDefaultBranch: Self.isConventionalDefaultBranch(git?.head),
+            // From the resolver rather than from the name of the branch. A
+            // repository whose default is `develop` showed `:develop` on every tab
+            // forever, and one defaulting to `main` said nothing at all on a branch
+            // called `master`, which is the state worth shouting about.
+            isDefaultBranch: gitStatus.isOnDefaultBranch,
             markers: markers,
             attention: status?.attention ?? .none,
             isBusy: status?.agent?.isBusy ?? false,
@@ -658,21 +662,6 @@ final class TerminalPaneController: NSViewController {
         )
     }
 
-    /// Whether a branch is probably the repository's default.
-    ///
-    /// A name test rather than an answer from git, which is an approximation and
-    /// is the one place in this design that is. Resolving it properly means
-    /// reading `refs/remotes/origin/HEAD`, which `GitWorkspace` does not collect
-    /// today, and the cost of being wrong here is small and symmetric: a branch
-    /// genuinely called `main` in a repository whose default is something else
-    /// goes unnamed in the tab, and its own footer still says `main`.
-    ///
-    /// Kept as one predicate so that adding the real lookup later is a change to
-    /// this function and to nothing else.
-    private static func isConventionalDefaultBranch(_ branch: String?) -> Bool {
-        guard let branch else { return true }
-        return branch == "main" || branch == "master"
-    }
 }
 
 // MARK: - Surface callbacks
