@@ -183,6 +183,35 @@ public struct PaneRecord: Sendable, Equatable, Codable {
         self.channels = channels
         self.peers = peers
     }
+
+    /// Drops the display ids this record carries that name panes the caller is
+    /// not allowed to see.
+    ///
+    /// Two fields reach outside the subject they describe, and both were leaking
+    /// before this existed. `peers` on a **descendant's** record names that
+    /// descendant's peers, which the caller has no edge to and no scope over.
+    /// `createdBy` on the **caller's own** record names the caller's parent, and
+    /// a pane's scope is itself, its descendants and its peers, so a parent is
+    /// never in it: a pane learns who it created, never who created it.
+    ///
+    /// Nothing dropped here is a capability, which is why this is a scope rule
+    /// rather than a credential rule. It still matters, because rule 3 says reads
+    /// are scoped exactly like writes, and an id is the reconnaissance an
+    /// injected pane needs before it looks for anything else.
+    ///
+    /// Redaction is omission, matching every other optional on this type: a
+    /// redacted `createdBy` prints no line rather than a line saying it was
+    /// withheld, which would itself confirm a parent exists.
+    ///
+    /// Lives here rather than in the server for the reason ``ParkedRecvs`` and
+    /// ``ConnectionBackpressure`` do: it is decidable from two sets, so it is
+    /// decided where `make test` can reach it. The app target has no test bundle.
+    public func redacted(toVisible visible: Set<String>) -> PaneRecord {
+        var copy = self
+        if let by = copy.createdBy, !visible.contains(by) { copy.createdBy = nil }
+        copy.peers = copy.peers.filter(visible.contains)
+        return copy
+    }
 }
 
 /// One message out of a mailbox.

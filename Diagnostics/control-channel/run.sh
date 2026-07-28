@@ -75,7 +75,14 @@ if pgrep -f "baia.app/Contents/MacOS/baia" > /dev/null; then
 fi
 
 rm -rf "$OUT"
+# 077 for the whole run, because `$TOKENS` holds live `$BAIA_TOKEN` values read
+# out of the panes' own shells. Mode is the weaker half of the answer and the
+# teardown is the stronger one: a same-uid process is the adversary this channel
+# is designed against, so 0700 excludes nobody who matters. What keeps the window
+# short is that the file dies with the run.
+umask 077
 mkdir -p "$TOKENS" "$ZDOT" "$BACKUP"
+chmod 700 "$OUT" "$TOKENS"
 cd "$ROOT"
 
 # The probe is worth nothing against a build that is not the source in the tree.
@@ -112,6 +119,14 @@ teardown() {
   # it. baia unlinks a socket nobody answers on when it next binds, but leaving a
   # dead one behind is one more thing for the next reader to wonder about.
   rm -f "$SOCKET"
+  # Last, and after the restores above have read their copies out of `$BACKUP`.
+  # `$TOKENS` holds live pane capabilities, and a probe that leaves capabilities
+  # in a file is the test harness breaking the rule it was written to enforce.
+  # They are already worthless by now, since the app they belong to was killed at
+  # the top of this function and every secret is minted per run, but "worthless
+  # because of something that happened three lines ago" is not a property to
+  # leave a reader to reconstruct.
+  rm -rf "$OUT"
   return $status
 }
 trap teardown EXIT

@@ -505,13 +505,23 @@ final class ControlServer {
                 return
             }
 
-            var records: [PaneRecord] = []
-            for subject in subjects(actor) {
+            // Two passes, and the first one is the scope rule. A record carries
+            // ids that reach outside the pane it describes, so which panes the
+            // caller may see has to be settled before any record is built:
+            // filtering as we went would leave the first record redacted against
+            // a set that had not finished growing.
+            let permitted = subjects(actor).filter { subject in
                 guard case .allowed = graph.authorize(
                     token: request.token,
                     verb: .list,
                     target: subject
-                ) else { continue }
+                ) else { return false }
+                return true
+            }
+            let visible = Set(permitted.map(\.description))
+
+            var records: [PaneRecord] = []
+            for subject in permitted {
                 guard var record = bridge.record(for: subject) else { continue }
                 // The graph owns the channel names and the peer edges; the
                 // workspace owns everything else about a pane. Folded in here
@@ -521,7 +531,7 @@ final class ControlServer {
                 record.peers = graph.peers(of: subject)
                     .map(\.description)
                     .sorted()
-                records.append(record)
+                records.append(record.redacted(toVisible: visible))
             }
             respond(.success(ControlResult(panes: records)), to: id)
         }

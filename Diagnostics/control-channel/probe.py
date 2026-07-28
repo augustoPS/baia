@@ -215,6 +215,31 @@ class Probe:
             time.sleep(0.1)
         return last
 
+    def park(self, token, seconds):
+        """Sends `recv --wait` and returns the connection still holding it open.
+
+        The caller closes it. Nothing is read here on purpose: a parked `recv` is
+        a connection the app is deliberately not answering yet, and the point of
+        holding one is to ask what the rest of the channel does meanwhile.
+        """
+        connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        connection.settimeout(CONNECT_TIMEOUT)
+        connection.connect(self.socket_path)
+        frame = json.dumps({
+            "v": 1,
+            "token": token,
+            "verb": "recv",
+            "args": {"wait": seconds},
+        }) + "\n"
+        connection.sendall(frame.encode())
+        return connection
+
+    def timed(self, token, verb):
+        """A request, and how long the answer took to arrive."""
+        started = time.time()
+        response = self.request(token, verb)
+        return response, time.time() - started
+
     # MARK: reporting
 
     def check(self, name, got, want):
@@ -406,6 +431,54 @@ def main():
         "disallowing run again puts its code back",
         probe.await_code(live[alpha], "run", "disabled"),
         "disabled",
+    )
+
+    print()
+    print("-- a parked recv holds one connection and nothing else")
+    # Two of the spec's six live-verification items turned out not to need a
+    # keyboard after all, so they are here rather than on the owner's list. This
+    # one is "recv --wait leaves the UI responsive and every other pane's channel
+    # served". The UI half still needs eyes; the channel half is measurable, and
+    # it is the half that regresses silently. A server that answered a parked
+    # recv on the main thread would make the request below wait out the whole
+    # park, so the assertion is the elapsed time and not the code.
+    parked = probe.park(live[alpha], 20)
+    try:
+        served, elapsed = probe.timed(live[bravo], "whoami")
+        probe.check(
+            "another pane is served while a recv is parked",
+            probe.code(served),
+            "ok",
+        )
+        probe.check(
+            "and it is served immediately rather than after the park",
+            "under 2s" if elapsed < 2.0 else "%.1fs, which is the park" % elapsed,
+            "under 2s",
+        )
+    finally:
+        parked.close()
+
+    print()
+    print("-- close answers before the shell it kills")
+    # The other item that turned out scriptable: "the response arrives before the
+    # shell dies on baia close". The spec has the server flush the answer before
+    # scheduling the close on the next main-loop turn, and a client that sees EOF
+    # instead must treat it as success, so an implementation that stopped
+    # flushing would still look fine from the CLI. It does not look fine here: an
+    # answer that never arrived reads as `unparseable` against an empty line.
+    #
+    # Charlie is spent deliberately and goes last, because after this it has no
+    # pane. Everything above needs three panes; nothing below needs any.
+    charlie = registered[2]
+    probe.check(
+        "a pane closing itself is answered rather than cut off",
+        probe.code(probe.request(live[charlie], "close")),
+        "ok",
+    )
+    probe.check(
+        "and its capability stops working once the pane is gone",
+        probe.await_code(live[charlie], "whoami", "badToken"),
+        "badToken",
     )
 
     print()
