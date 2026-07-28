@@ -349,4 +349,29 @@ import Testing
         #expect(ControlWire.decodeResponse(Data(unknownCode.utf8)) == nil)
         #expect(ControlWire.decodeResponse(Data(repeating: 0x7B, count: ControlWire.maxFrameBytes + 1)) == nil)
     }
+
+    /// A response from another build is nil, not a v1 response with a `v` nobody
+    /// looked at.
+    ///
+    /// This frame is well-formed in every other respect and decodes into
+    /// ``ControlResponse`` without complaint, because `v` is an `Int` the
+    /// synthesized decoder is happy to accept. Only the separate version pass
+    /// catches it. The request direction has answered `badVersion` for the
+    /// mirror image of this frame since it was written, and for a while this
+    /// direction claimed the same check in a doc comment without performing it.
+    @Test func aResponseFromAnotherVersionDecodesToNil() {
+        for received in [0, 2, 99] {
+            let ok = #"{"v": \#(received), "ok": true, "result": {"pane": "\#(Self.paneID)"}}"#
+            #expect(ControlWire.decodeResponse(Data(ok.utf8)) == nil)
+
+            let failed = #"{"v": \#(received), "ok": false, "error": {"code": "refused", "message": "x"}}"#
+            #expect(ControlWire.decodeResponse(Data(failed.utf8)) == nil)
+        }
+
+        // The same frame at this build's version still reads, so the guard
+        // rejects the version and not the shape.
+        let current = #"{"v": \#(ControlWire.version), "ok": true, "result": {"pane": "\#(Self.paneID)"}}"#
+        #expect(ControlWire.decodeResponse(Data(current.utf8))
+            == .success(ControlResult(pane: Self.paneID)))
+    }
 }

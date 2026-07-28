@@ -179,10 +179,25 @@ public enum ControlWire {
     /// Nil rather than a coded failure because the only reader is the CLI, which
     /// has exactly one thing to say about a response it cannot parse: the app it
     /// is talking to is not the build it shipped with.
+    ///
+    /// The version is checked on its own pass, the same way and for the same
+    /// reason as in ``decodeRequest(_:)``. A response from another build decodes
+    /// perfectly well into this shape, since `v` is just an `Int` the synthesized
+    /// decoder accepts, so without this guard a v2 answer would be read as
+    /// though it were a v1 answer, with whichever fields happened to survive.
+    /// The request direction answers `badVersion` for the mirror image of that
+    /// frame, and a wire where only one direction notices a version skew is a
+    /// wire whose version field is decoration.
     public static func decodeResponse(_ line: Data) -> ControlResponse? {
         let payload = stripTrailingNewline(line)
         guard fitsFrame(payload) else { return nil }
-        return try? JSONDecoder().decode(ControlResponse.self, from: payload)
+
+        let decoder = JSONDecoder()
+        guard let probe = try? decoder.decode(VersionProbe.self, from: payload),
+              probe.v == version
+        else { return nil }
+
+        return try? decoder.decode(ControlResponse.self, from: payload)
     }
 
     private static let newline = UInt8(0x0A)

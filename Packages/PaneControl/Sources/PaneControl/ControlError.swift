@@ -75,6 +75,35 @@ public struct ControlError: Sendable, Hashable, Codable {
         ControlError(code: .badFrame, message: detail)
     }
 
+    /// The token is not a live pane capability.
+    ///
+    /// One value rather than a factory taking the token, because the token must
+    /// not be echoed: an unknown token is attacker-supplied and a message
+    /// carrying it writes an attacker's bytes into somebody's terminal, while a
+    /// *valid* token echoed into a log is the leak the whole design is about.
+    ///
+    /// The message names the two environment variables because the mistake this
+    /// answers is nearly always the same one, a script reaching for `$BAIA_PANE`,
+    /// and a reader who is told which variable to use fixes it in one step.
+    static let badToken = ControlError(
+        code: .badToken,
+        message: "that token is not a live pane capability. $BAIA_TOKEN carries the capability "
+            + "and $BAIA_PANE does not: the pane id is a public display identifier and is never "
+            + "accepted as a credential."
+    )
+
+    /// The target is outside the caller's scope.
+    ///
+    /// One value, and the same value, for a pane that is out of scope and for a
+    /// pane that does not exist at all. Two messages here would be an oracle: a
+    /// caller could walk id space and learn which panes are live without being
+    /// able to see any of them.
+    static let unauthorized = ControlError(
+        code: .unauthorized,
+        message: "that pane is outside the calling pane's scope. A pane reaches itself, the panes "
+            + "it created, and the panes it has peered with."
+    )
+
     /// Echoes the verb back, clamped.
     ///
     /// Clamped because the verb is attacker-controlled up to the whole frame
