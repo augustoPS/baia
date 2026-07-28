@@ -200,6 +200,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) -> WorkspaceWindowController {
         let controller = WorkspaceWindowController(tree: tree, sidebar: sidebar(for: tree))
         controller.window.tabbingMode = tabbing
+        // Coalesced by the same timer every other session change goes through, so a
+        // drag writes the file once when it settles rather than on every frame.
+        controller.sidebar.onGeometryChange = { [weak self] in self?.scheduleSave() }
         windows.append(controller)
         controller.onClose = { [weak self, weak controller] in
             guard let self, let controller else { return }
@@ -641,7 +644,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return SessionSnapshot(
             workspace: Workspace(tabs: tabs, focusedTabIndex: focusedIndex),
             panes: panes,
-            windowFrame: focused?.frame
+            windowFrame: focused?.frame,
+            // The focused window's, for the reason its frame is the one recorded:
+            // the snapshot carries one of each, and the window being looked at is
+            // the one whose size the owner just settled.
+            sidebar: focused?.sidebar.geometry
         )
     }
 
@@ -689,6 +696,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             previous = controller.window
         }
         restoreFrame(reconciled.windowFrame, on: first)
+
+        // Applied to every window, not only the first. Each tab has its own sidebar
+        // and the file records one size, so restoring it to one of them would leave
+        // the rest at the default and read as a drag that half took.
+        if let geometry = reconciled.sidebar {
+            for controller in windows { controller.sidebar.geometry = geometry }
+        }
 
         // Focused last, because joining a tab group brings the new tab forward.
         let index = reconciled.workspace.focusedTabIndex

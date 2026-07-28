@@ -146,3 +146,41 @@ import Testing
         #expect(path.hasSuffix("/Library/Application Support/baia/session.json"))
     }
 }
+
+/// The sidebar's geometry, which was added to the snapshot without a schema bump.
+@Suite struct SidebarGeometryPersistenceTests {
+    private func snapshot(sidebar: SidebarGeometry?) -> SessionSnapshot {
+        SessionSnapshot(
+            workspace: Workspace(tabs: [], focusedTabIndex: 0),
+            panes: [],
+            windowFrame: nil,
+            sidebar: sidebar
+        )
+    }
+
+    @Test func aGeometryRoundTripsThroughTheFile() throws {
+        let written = snapshot(sidebar: SidebarGeometry(width: 312, splitHeight: 140))
+        let data = try JSONEncoder().encode(written)
+        let read = try JSONDecoder().decode(SessionSnapshot.self, from: data)
+        #expect(read.sidebar?.width == 312)
+        #expect(read.sidebar?.splitHeight == 140)
+    }
+
+    /// The reason no schema bump was needed. A file written before this field
+    /// existed must still load, and nil is what "the previous version did not record
+    /// this" means, which the defaults then answer.
+    @Test func aFileWrittenBeforeTheFieldExistedStillLoads() throws {
+        let json = """
+        {"schemaVersion":1,"workspace":{"tabs":[],"focusedTabIndex":0},"panes":[]}
+        """
+        let read = try JSONDecoder().decode(SessionSnapshot.self, from: Data(json.utf8))
+        #expect(read.sidebar == nil)
+        #expect(read.schemaVersion == SessionSnapshot.currentSchemaVersion)
+    }
+
+    @Test func aSessionThatNeverOpenedASidebarWritesNothingForIt() throws {
+        let data = try JSONEncoder().encode(snapshot(sidebar: nil))
+        let read = try JSONDecoder().decode(SessionSnapshot.self, from: data)
+        #expect(read.sidebar == nil)
+    }
+}

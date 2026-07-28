@@ -39,10 +39,30 @@ final class SidebarHost: NSViewController {
     /// Points taken from the panes.
     ///
     /// 260 because that is the width the reflow was measured at, so what the owner
-    /// judges is what was tested.
+    /// judges is what was tested. Replaced by the session file once one has been
+    /// written.
     var width: Double = 260 {
         didSet {
             guard width != oldValue else { return }
+            view.needsLayout = true
+            onGeometryChange?()
+        }
+    }
+
+    /// Raised when a drag settles the column's size, so the session file records it.
+    ///
+    /// Raised on every step of a drag rather than at its end, because the saver
+    /// coalesces: `AppDelegate.scheduleSave` already exists to keep a `cd` in every
+    /// pane from rewriting the file several times a second, and a drag is the same
+    /// shape of event.
+    var onGeometryChange: (() -> Void)?
+
+    /// What the session file carries, and what it restores.
+    var geometry: SidebarGeometry {
+        get { SidebarGeometry(width: width, splitHeight: firstSectionHeight) }
+        set {
+            width = newValue.width
+            firstSectionHeight = newValue.splitHeight
             view.needsLayout = true
         }
     }
@@ -75,7 +95,10 @@ final class SidebarHost: NSViewController {
     /// surfaces are not symmetrical: a changes list is a handful of rows and a file
     /// tree is a whole repository, so an even split leaves half the column holding
     /// three lines. Dragging replaces the guess with the owner's answer.
-    private var firstSectionHeight: Double = 220
+    /// Read by ``geometry`` and written by a drag. Not private for that reason
+    /// alone: the clamp that keeps it usable lives in layout, where the column's
+    /// height is known.
+    private(set) var firstSectionHeight: Double = 220
 
     init(tree: PaneTreeController, surfaces: [any WorkspaceSurface], theme: PaneTheme) {
         self.tree = tree
@@ -245,6 +268,7 @@ final class SidebarHost: NSViewController {
     private func dragSplit(by delta: Double) {
         firstSectionHeight -= delta
         view.needsLayout = true
+        onGeometryChange?()
     }
 
     private func nsColor(_ rgb: RGB) -> NSColor {

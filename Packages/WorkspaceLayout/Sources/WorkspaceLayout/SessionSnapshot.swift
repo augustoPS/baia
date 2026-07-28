@@ -30,15 +30,25 @@ public struct SessionSnapshot: Sendable, Equatable, Codable {
     /// AppKit picks a default frame.
     public var windowFrame: WindowFrame?
 
+    /// How the sidebar was sized, or nil for a session that never opened one.
+    ///
+    /// Added without bumping ``currentSchemaVersion``, which is what the note there
+    /// describes: a file written before this field decodes it as nil, and nil is
+    /// exactly "the previous version did not record this". The default width and
+    /// split are what a nil restores to.
+    public var sidebar: SidebarGeometry?
+
     public init(
         schemaVersion: Int = SessionSnapshot.currentSchemaVersion,
         workspace: Workspace,
         panes: [PaneState],
-        windowFrame: WindowFrame?
+        windowFrame: WindowFrame?,
+        sidebar: SidebarGeometry? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.workspace = workspace
         self.panes = panes
         self.windowFrame = windowFrame
+        self.sidebar = sidebar
     }
 }
