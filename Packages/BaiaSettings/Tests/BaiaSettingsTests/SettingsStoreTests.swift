@@ -79,6 +79,13 @@ import Testing
         // the round trip above cannot see the omission. Reading the file back as JSON
         // is what pins "fully populated", which is the whole point of writing it:
         // the file is where the owner learns the key spellings.
+        //
+        // Compared against `SettingsDecoder.knownKeys` and not against a literal
+        // written here. A literal names the keys this test's author remembered, so a
+        // key missing from both it and the file kept this green while claiming the
+        // opposite, which is how `sidebar` came to be read by the decoder, consumed
+        // by `AppDelegate`, and absent from the file for the owner's whole first
+        // launch.
         let url = fixture.root.appending(path: "config.json")
         #expect(SettingsStore(fileURL: url).writeDefaultIfAbsent())
 
@@ -87,29 +94,7 @@ import Testing
         if case let .object(fields)? = JSONValue.parse(data) {
             keys = Set(fields.keys)
         }
-        #expect(keys == [
-            "fontFamily",
-            "fontSize",
-            "themeName",
-            "backgroundHex",
-            "backgroundOpacity",
-            "backgroundBlur",
-            "windowPadding",
-            "windowPaddingBalance",
-            "transparentTitlebar",
-            "optionAsAlt",
-            "cursorStyle",
-            "projectRoots",
-            "discoveryMaxDepth",
-            "notificationsEnabled",
-            "gitPollSeconds",
-            "activityPollSeconds",
-            "restoreSession",
-            "focusAccent",
-            "attentionStyle",
-            "attentionAccent",
-            "alertBehavior",
-        ])
+        #expect(keys == SettingsDecoder.knownKeys)
     }
 
     @Test func theWrittenDefaultFileKeepsTheTildeItWasWrittenWith() throws {

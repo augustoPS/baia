@@ -25,6 +25,46 @@ public struct SettingsDecodeResult: Sendable, Equatable {
 }
 
 public enum SettingsDecoder {
+    /// Every key ``decode(_:)`` reads, named once so the rest of the project has
+    /// something to check itself against.
+    ///
+    /// Load-bearing rather than documentation. ``Reader`` serves a field only when
+    /// it is named here and reports every field that is not as unknown, so a key
+    /// read without being declared does nothing at all and fails the first test
+    /// written for it. The alternative, deriving the unknown list from whichever
+    /// keys the reader happened to ask for, leaves this list free to be a comment
+    /// that drifts, and a list nothing depends on is what lets `sidebar` be read
+    /// here, consumed in `AppDelegate`, and named nowhere in the file baia writes
+    /// on first launch. The test that claims to catch exactly that compared the
+    /// written file against a literal of its own, so a key missing from both stayed
+    /// green; it compares against this now.
+    static let knownKeys: Set<String> = [
+        "fontFamily",
+        "fontSize",
+        "themeName",
+        "backgroundHex",
+        "backgroundOpacity",
+        "backgroundBlur",
+        "windowPadding",
+        "windowPaddingBalance",
+        "transparentTitlebar",
+        "optionAsAlt",
+        "cursorStyle",
+        "projectRoots",
+        "discoveryMaxDepth",
+        "notificationsEnabled",
+        "gitPollSeconds",
+        "activityPollSeconds",
+        "restoreSession",
+        "focusAccent",
+        "attentionStyle",
+        "attentionAccent",
+        "alertBehavior",
+        "sidebar",
+        "controlChannelEnabled",
+        "controlAllowRun",
+    ]
+
     /// One bad or unknown field must never discard the whole file. Every field
     /// falls back to its default independently and is reported in `invalidKeys`.
     public static func decode(_ data: Data) -> SettingsDecodeResult {
@@ -258,6 +298,27 @@ public enum SettingsDecoder {
             }
         }
 
+        // The two control channel keys, read as plain flags the way
+        // `restoreSession` is, so a wrong type in one leaves the other applied
+        // and names itself in `invalidKeys`. Neither falls back to the other's
+        // value and neither implies the other: turning the channel off says
+        // nothing about whether `run` was wanted, and a file that carries both
+        // must be able to be wrong about exactly one of them.
+        //
+        // Both keys are inert as of this commit. Decoding one proves the
+        // spelling reaches `Settings` and nothing beyond that, which is the
+        // whole `focusAccent` lesson: it decoded, clamped, defaulted, had four
+        // tests, was written to the first-launch file, and was read by nothing
+        // for nine days. What settles these two is the control channel
+        // diagnostic flipping each key against the live socket.
+        if let enabled = reader.flag("controlChannelEnabled") {
+            settings.controlChannelEnabled = enabled
+        }
+
+        if let allowRun = reader.flag("controlAllowRun") {
+            settings.controlAllowRun = allowRun
+        }
+
         return SettingsDecodeResult(
             settings: settings,
             // Both lists are sorted, and a `Dictionary`'s key order is not stable
@@ -305,23 +366,24 @@ public enum SettingsDecoder {
         return digits.allSatisfy { $0.isASCII && $0.isHexDigit }
     }
 
-    /// Reads one field at a time and remembers which ones it touched.
+    /// Reads one field at a time, and only the fields ``knownKeys`` names.
     ///
-    /// The unknown-key list is the set of fields this reader never asked for,
-    /// rather than a hand-maintained list of known names. So a key added to
-    /// ``Settings`` and forgotten here shows up as unknown in the full-config
-    /// test, which is what keeps the two from drifting apart.
+    /// Both directions of drift land in a test rather than in silence. A key added
+    /// to ``Settings`` and read here under a spelling that is not declared reads as
+    /// nothing and is reported unknown, so the full-config test fails on the value
+    /// it did not apply. A key declared and no longer read keeps its default
+    /// against the same document, which asserts its own key set against
+    /// ``knownKeys`` so that it cannot quietly stop covering one.
     private struct Reader {
         let fields: [String: JSONValue]
         private(set) var invalidKeys: [String] = []
-        private var readKeys: Set<String> = []
 
         init(fields: [String: JSONValue]) {
             self.fields = fields
         }
 
         var unknownKeys: [String] {
-            fields.keys.filter { !readKeys.contains($0) }
+            fields.keys.filter { !SettingsDecoder.knownKeys.contains($0) }
         }
 
         mutating func reject(_ key: String) {
@@ -386,11 +448,13 @@ public enum SettingsDecoder {
             return texts
         }
 
-        /// The value for `key`, or nil when the field is absent or null. Records
-        /// the key in both of those cases, so a null does not read as unknown.
-        private mutating func value(_ key: String) -> JSONValue? {
-            guard let value = fields[key] else { return nil }
-            readKeys.insert(key)
+        /// The value for `key`, or nil when the field is undeclared, absent, or
+        /// null. An undeclared key is refused here rather than read and reported,
+        /// so a read that ``SettingsDecoder/knownKeys`` does not name cannot half
+        /// work: the setting stays at its default and the owner is told the key is
+        /// unknown, which is the pair of symptoms that makes the omission obvious.
+        private func value(_ key: String) -> JSONValue? {
+            guard SettingsDecoder.knownKeys.contains(key), let value = fields[key] else { return nil }
             // `null` is how the written default file spells "leave this alone" for
             // `fontFamily`, whose default is ghostty's own font choice. Reading it
             // as a bad value would make the file baia writes itself report an

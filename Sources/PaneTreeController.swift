@@ -73,13 +73,33 @@ final class PaneTreeController: NSViewController {
     /// and is corrected a frame later flickers through libghostty's defaults.
     private let configuration: ConfigurationCenter
 
-    init(workingDirectory: String, configuration: ConfigurationCenter) {
+    /// The control channel every pane in this window registers with.
+    ///
+    /// Passed in for the reason ``configuration`` is: both initializers build
+    /// panes before the caller could assign a property, and a pane built before
+    /// the channel is known would spawn its shell with no `$BAIA_SOCK` and no
+    /// capability, then never get one, because the environment is fixed when the
+    /// surface comes up.
+    ///
+    /// Optional so a window can exist without one. That is not a convenience: an
+    /// instance that found the socket already owned runs with no channel at all,
+    /// and its windows are ordinary windows whose panes are told nothing.
+    private let channel: (any PaneControlChannel)?
+
+    init(
+        workingDirectory: String,
+        configuration: ConfigurationCenter,
+        channel: (any PaneControlChannel)? = nil
+    ) {
         let first = PaneID()
         workspace = Workspace(pane: first)
         self.workingDirectory = workingDirectory
         self.configuration = configuration
+        self.channel = channel
         super.init(nibName: nil, bundle: nil)
-        panes[first] = makePane(id: first, workingDirectory: workingDirectory)
+        // The window's first pane is one the owner opened, so it created nothing
+        // and nothing created it.
+        panes[first] = makePane(id: first, workingDirectory: workingDirectory, createdBy: nil)
     }
 
     /// Rebuilds a window from a snapshot.
@@ -92,11 +112,13 @@ final class PaneTreeController: NSViewController {
     init(
         restoring snapshot: SessionSnapshot,
         defaultWorkingDirectory: String,
-        configuration: ConfigurationCenter
+        configuration: ConfigurationCenter,
+        channel: (any PaneControlChannel)? = nil
     ) {
         workspace = snapshot.workspace
         workingDirectory = defaultWorkingDirectory
         self.configuration = configuration
+        self.channel = channel
         super.init(nibName: nil, bundle: nil)
 
         let records = Dictionary(
@@ -110,7 +132,15 @@ final class PaneTreeController: NSViewController {
                 workingDirectory: record?.workingDirectory ?? defaultWorkingDirectory,
                 pinnedDirectory: record?.pinnedDirectory.map {
                     URL(filePath: $0, directoryHint: .isDirectory)
-                }
+                },
+                // Carried back in rather than dropped, which is what makes the
+                // persisted edge worth persisting: `baia list` answers "where did
+                // this pane come from" across a relaunch and not only within one
+                // run. `SessionStore.reconciled` has already dropped any edge
+                // naming a pane that did not come back, so this never names a
+                // ghost. The pane's *secret* is not restored and cannot be: it is
+                // per run, and `makePane` mints a fresh one below.
+                createdBy: record?.createdBy
             )
         }
     }
@@ -272,7 +302,9 @@ final class PaneTreeController: NSViewController {
             ?? focusedPane?.anchorTracker.workingDirectory?.path(percentEncoded: false)
             ?? workingDirectory
         guard workspace.splitFocusedPane(axis: axis, newPane: new, ratio: 0.5) else { return }
-        panes[new] = makePane(id: new, workingDirectory: directory)
+        // Nil: the owner pressed a key. Attributability records who a pane came
+        // from, and "the person at the keyboard" is what nil means.
+        panes[new] = makePane(id: new, workingDirectory: directory, createdBy: nil)
         rebuild()
         focusPane(new)
         onSessionChange?()
@@ -289,10 +321,34 @@ final class PaneTreeController: NSViewController {
         }
         // Dropped before the rebuild so the controller, and therefore the pty,
         // is released rather than lingering until the next mutation.
-        panes[closing] = nil
+        drop(closing)
         rebuild()
         if let next = focusedPaneID { focusPane(next) }
         onSessionChange?()
+    }
+
+    /// Releases a pane and takes its capability with it.
+    ///
+    /// One place rather than an assignment at each close site, because a pane
+    /// whose registration outlived its shell is a token that still works against a
+    /// pane nobody can see, and that is the kind of cleanup that gets remembered
+    /// on three paths out of four.
+    private func drop(_ id: PaneID) {
+        channel?.forgetPane(id.control)
+        panes[id] = nil
+    }
+
+    /// Forgets every pane in this window, for a window that is going away whole.
+    ///
+    /// Called by the owner as the window closes rather than from a `deinit`, for
+    /// the reason the window observers are removed in `viewWillDisappear`: Swift 6
+    /// forbids touching non-`Sendable` state from a nonisolated deinit, and by the
+    /// time this controller deallocates there is nothing left that knows which
+    /// panes went with it.
+    func forgetEveryPane() {
+        for id in panes.keys {
+            channel?.forgetPane(id.control)
+        }
     }
 
     func moveFocus(_ direction: FocusDirection) {
@@ -358,18 +414,185 @@ final class PaneTreeController: NSViewController {
         onSessionChange?()
     }
 
+    // MARK: - The control channel
+
+    /// The controller for a pane in this window, or nil when it is somewhere else.
+    ///
+    /// The channel's caller can be in any window, so `ControlAdapter` asks every
+    /// tree this question to find the one that owns a pane.
+    func pane(_ id: PaneID) -> TerminalPaneController? { panes[id] }
+
+    /// Whether `pane` holds this window's keyboard focus in the model.
+    ///
+    /// The model rather than the responder chain, because a pane in a background
+    /// window is its tab's focused pane while no pane anywhere is first responder,
+    /// and `baia zoom`'s refusal is about the former.
+    func isFocused(_ id: PaneID) -> Bool { focusedPaneID == id }
+
+    /// Splits `pane` and records `createdBy` on whatever comes out.
+    ///
+    /// Returns the new pane's id, or nil when the workspace refused: `pane` is not
+    /// in this window, or some *other* pane has this tab zoomed, which is a refusal
+    /// rather than a silent unzoom because the new pane would be invisible until a
+    /// zoom the caller does not own was cleared.
+    ///
+    /// **Focus moves only if the workspace moved it**, which
+    /// ``Workspace/split(pane:axis:newPane:ratio:)`` does exactly when the caller
+    /// already held focus. A background pane splitting itself leaves the cursor
+    /// where the owner left it and hands the new id back for the caller to use.
+    /// This is why the method does not reuse ``splitFocusedPane(axis:workingDirectory:)``,
+    /// which focuses unconditionally because ⌘D always should.
+    func split(
+        pane: PaneID,
+        axis: SplitAxis,
+        workingDirectory requested: String?,
+        createdBy: PaneID
+    ) -> PaneID? {
+        let new = PaneID()
+        // The new pane opens where the *calling* pane is rather than where the
+        // focused one is, for `splitFocusedPane`'s reason applied to a caller that
+        // may not be focused: a split is how a second view of the same work is
+        // opened, and starting at the window's default would defeat that.
+        let directory = requested
+            ?? panes[pane]?.anchorTracker.workingDirectory?.path(percentEncoded: false)
+            ?? workingDirectory
+        guard workspace.split(pane: pane, axis: axis, newPane: new, ratio: 0.5) else { return nil }
+        panes[new] = makePane(id: new, workingDirectory: directory, createdBy: createdBy)
+        rebuild()
+        if focusedPaneID == new { focusPane(new) }
+        onSessionChange?()
+        return new
+    }
+
+    /// Whether ``close(pane:)`` would do anything, asked without doing it.
+    ///
+    /// A copy of the workspace answers it, so the rule is
+    /// ``Workspace/close(pane:)``'s own rather than a second one written here that
+    /// could disagree with it. `Workspace` is a value type, which is what makes
+    /// asking free.
+    ///
+    /// The channel needs the answer *before* it acts, because `baia close` kills
+    /// the shell that is waiting on the response: the refusal has to be decided
+    /// while there is still somebody to tell.
+    func canClose(pane: PaneID) -> Bool {
+        var probe = workspace
+        return probe.close(pane: pane)
+    }
+
+    /// Closes `pane` wherever it sits in this window.
+    ///
+    /// False for the last pane of the window, and the window is **not** closed.
+    /// ⌘W closes it, because the owner asking to close the last pane means closing
+    /// the window; a channel that did the same would let one compromised pane take
+    /// a window down, and at the last window take the app with it. `refused` is
+    /// what the caller sees, and it is alive to see it, because nothing died.
+    ///
+    /// The heir rule runs only when the closed pane held focus, which
+    /// ``Workspace/close(pane:)`` decides: closing a background pane leaves the
+    /// cursor where it is.
+    @discardableResult
+    func close(pane: PaneID) -> Bool {
+        guard workspace.close(pane: pane) else { return false }
+        drop(pane)
+        rebuild()
+        if let next = focusedPaneID, next != pane { focusPane(next) }
+        onSessionChange?()
+        return true
+    }
+
+    /// Focuses `pane` in this window's model and puts the keyboard in it.
+    ///
+    /// `takeFocus()` is `makeFirstResponder`, which does not raise a window, so
+    /// this is safe for a pane in a window nobody is looking at. Whether it is
+    /// *allowed* for one is `ControlAdapter`'s question and not this one's.
+    ///
+    /// True whenever the pane is here, including when it was already focused: the
+    /// caller asked for a state and it holds, which is not a failure.
+    func focus(pane: PaneID) -> Bool {
+        guard panes[pane] != nil else { return false }
+        if workspace.focusPane(pane) {
+            // The tab may have been zoomed on another pane, and focusing clears
+            // that, exactly as clicking the pane would. `Workspace`'s invariant is
+            // that a zoomed pane is its tab's focused pane, so there is no state
+            // where another pane is both zoomed and not focused to preserve.
+            rebuild()
+        }
+        focusPane(pane)
+        return true
+    }
+
+    /// Zooms or unzooms the tab around `pane`, and answers the state it ended in.
+    ///
+    /// Nil when `pane` is not this window's focused pane, which is the refusal
+    /// `baia zoom` reports. `Workspace`'s invariant is that `zoomedPane` is nil or
+    /// equals the tab's focused pane, so a caller-relative zoom that left focus
+    /// alone is not expressible, and the alternative, focusing the caller first the
+    /// way `split` does, lets a background agent seize the owner's whole window.
+    ///
+    /// `requested` nil toggles, true and false ask for a state, so `baia zoom --on`
+    /// is idempotent in a script.
+    func zoom(pane: PaneID, to requested: Bool?) -> Bool? {
+        guard focusedPaneID == pane else { return nil }
+        let isZoomed = zoomedPane == pane
+        guard requested != isZoomed else { return isZoomed }
+        toggleZoom()
+        return zoomedPane == pane
+    }
+
+    /// Grows `pane` in that direction, wherever it sits in this window.
+    ///
+    /// Through ``pushRatios()`` and never ``rebuild()``, for the reason
+    /// ``resizeFocusedPane(_:)`` records: a rebuild removes every child view and
+    /// leaves the window with no first responder, which silently disables every
+    /// ghostty binding in the pane somebody is typing in.
+    func resize(pane: PaneID, direction: FocusDirection, by delta: Double) -> Bool {
+        guard workspace.resize(pane: pane, direction: direction, by: delta) else { return false }
+        pushRatios()
+        return true
+    }
+
+    /// Puts every divider in `pane`'s tab back to the middle.
+    func equalize(tabContaining pane: PaneID) -> Bool {
+        guard workspace.equalize(tabContaining: pane) else { return false }
+        pushRatios()
+        return true
+    }
+
     // MARK: - Rendering
 
+    /// Builds a pane and gives it its capability.
+    ///
+    /// **Every pane registers, however it was opened.** A pane the owner made with
+    /// ⌘D, a pane restored from the session file, and a pane the channel split all
+    /// come through here and all get a secret, because every pane needs a working
+    /// `baia`. What differs is `createdBy`, which is the caller's id for a
+    /// channel-made pane and nil for one the owner opened, and that is the only
+    /// thing the parentage graph is built out of.
+    ///
+    /// Registering here rather than in `ControlAdapter` is deliberate: an adapter
+    /// that registered the panes it created would leave the other two paths
+    /// unregistered, and the failure would read as "the channel works until you
+    /// relaunch".
     private func makePane(
         id: PaneID,
         workingDirectory: String,
-        pinnedDirectory: URL? = nil
+        pinnedDirectory: URL? = nil,
+        createdBy: PaneID?
     ) -> TerminalPaneController {
         let pane = TerminalPaneController(
             paneID: id,
             workingDirectory: workingDirectory,
-            pinnedDirectory: pinnedDirectory
+            pinnedDirectory: pinnedDirectory,
+            createdBy: createdBy,
+            controlSocketPath: channel?.boundSocketPath
         )
+        // Before the surface exists, so a shell that runs `baia` on its first line
+        // finds its own secret already in the registry. The secret goes one way:
+        // nothing here or in the channel turns it back into a pane except
+        // `PaneGraph.authorize`.
+        if let channel, let secret = pane.controlSecret {
+            channel.registerPane(id.control, createdBy: createdBy?.control, secret: secret)
+        }
         // Configured before anything else touches it, and before the view loads,
         // so the surface is built already themed rather than coming up in
         // libghostty's defaults and changing under the owner a frame later. This

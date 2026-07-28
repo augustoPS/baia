@@ -52,19 +52,13 @@ public struct Workspace: Sendable, Equatable, Codable {
     /// else; leaving focus behind would make every split a two-key action. False
     /// when the tree has no such pane, which is a decoded session with a focused
     /// pane that is not in its own tree.
+    ///
+    /// A wrapper over ``split(pane:axis:newPane:ratio:)``, which is where the
+    /// behaviour lives. The menu path and the control channel's path have to be one
+    /// implementation: two of them is what lets one of them be wrong.
     public mutating func splitFocusedPane(axis: SplitAxis, newPane: PaneID, ratio: Double) -> Bool {
-        withFocusedTab { tab in
-            guard let split = tab.tree.splitting(
-                tab.focusedPane,
-                axis: axis,
-                newPane: newPane,
-                ratio: ratio
-            ) else { return false }
-            tab.tree = split
-            tab.focusedPane = newPane
-            tab.zoomedPane = nil
-            return true
-        }
+        guard let pane = focusedPane else { return false }
+        return split(pane: pane, axis: axis, newPane: newPane, ratio: ratio)
     }
 
     /// Closes the focused pane, or the whole tab when it was that tab's last pane.
@@ -77,26 +71,11 @@ public struct Workspace: Sendable, Equatable, Codable {
     /// sibling's first pane in visual order when the sibling is itself a split.
     /// That is the pane now under the cursor's old position, so the cursor appears
     /// to stay where it was rather than jumping to the corner of the window.
+    ///
+    /// A wrapper over ``close(pane:)``, which is where the behaviour lives.
     public mutating func closeFocusedPane() -> Bool {
-        guard let tab = focusedTab, tab.tree.contains(tab.focusedPane) else { return false }
-
-        guard let remaining = tab.tree.closing(tab.focusedPane) else {
-            // The pane was the tab's only one, so closing it is closing the tab.
-            // closeFocusedTab is what refuses the last tab, so the last pane of
-            // the last tab is refused here without a second count of anything.
-            return closeFocusedTab()
-        }
-
-        // A tree that gave back a non-nil `closing` had a split above the closed
-        // leaf, so the sibling is always there and always holds a pane. The guard
-        // is here because the alternative is two force unwraps on a path that
-        // runs on every cmd+w.
-        guard let heir = tab.tree.sibling(of: tab.focusedPane)?.paneIDs.first else { return false }
-
-        tabs[focusedTabIndex].tree = remaining
-        tabs[focusedTabIndex].focusedPane = heir
-        tabs[focusedTabIndex].zoomedPane = nil
-        return true
+        guard let pane = focusedPane else { return false }
+        return close(pane: pane)
     }
 
     /// Moves focus to the pane in that direction, if there is one.
@@ -187,11 +166,139 @@ public struct Workspace: Sendable, Equatable, Codable {
     ///
     /// Focus is untouched. Resizing a pane is done from inside it, and moving the
     /// cursor out of the pane the user is growing would be absurd.
+    ///
+    /// A wrapper over ``resize(pane:direction:by:)``, which is where the behaviour
+    /// lives.
     public mutating func resizeFocusedPane(_ direction: FocusDirection, by delta: Double) -> Bool {
-        withFocusedTab { tab in
+        guard let pane = focusedPane else { return false }
+        return resize(pane: pane, direction: direction, by: delta)
+    }
+
+    /// Puts every divider in the focused tab back to the middle.
+    ///
+    /// False when the tab is already even, so the escape hatch from a layout that
+    /// got away from the user costs nothing when it was not needed. False when
+    /// zoomed, matching ``resizeFocusedPane(_:by:)``.
+    ///
+    /// A wrapper over the same body ``equalize(tabContaining:)`` runs.
+    public mutating func equalizeFocusedTab() -> Bool {
+        equalize(tabAt: focusedTabIndex)
+    }
+
+    /// The index of the tab whose tree holds `pane`, or nil when no tab does.
+    ///
+    /// The focused-pane mutators never needed this: whatever they touched was in
+    /// the tab the user was looking at. The control channel's caller can be in any
+    /// tab of any window, so every target-taking mutator starts here.
+    ///
+    /// The focused tab is checked first. Pane ids are unique across the workspace,
+    /// so the search order changes no answer the app can produce, but a decoded
+    /// session that carried one id into two trees resolves the way the focused-pane
+    /// methods already would rather than to whichever tab was written first.
+    public func tabIndex(containing pane: PaneID) -> Int? {
+        if let tab = focusedTab, tab.tree.contains(pane) { return focusedTabIndex }
+        return tabs.firstIndex { $0.tree.contains(pane) }
+    }
+
+    /// Splits `pane` wherever it lives, and moves focus into the new pane only when
+    /// `pane` already held its tab's focus.
+    ///
+    /// Focus follows the new pane for the reason
+    /// ``splitFocusedPane(axis:newPane:ratio:)`` states, a split exists to start
+    /// typing somewhere else, and it follows it *only* for the pane that was already
+    /// being typed in. A background pane splitting itself leaves the cursor where
+    /// the owner left it and hands the new id back for the caller to use. Nothing
+    /// here touches ``focusedTabIndex``, so a mutation in another tab or another
+    /// window applies there and pulls nothing forward.
+    ///
+    /// False when no tab holds `pane`, when that tab already holds `newPane`, and
+    /// when some *other* pane has that tab zoomed. The last one is a refusal rather
+    /// than an unzoom: a zoomed tab shows one pane, so the split would be invisible
+    /// until the zoom it does not own is cleared, and the caller turns that false
+    /// into a refusal the requester can read.
+    public mutating func split(
+        pane: PaneID,
+        axis: SplitAxis,
+        newPane: PaneID,
+        ratio: Double
+    ) -> Bool {
+        guard let index = tabIndex(containing: pane) else { return false }
+        return withTab(at: index) { tab in
+            guard tab.zoomedPane == nil || tab.zoomedPane == pane else { return false }
+            guard let split = tab.tree.splitting(
+                pane,
+                axis: axis,
+                newPane: newPane,
+                ratio: ratio
+            ) else { return false }
+            tab.tree = split
+            if tab.focusedPane == pane { tab.focusedPane = newPane }
+            // Only ever the caller's own zoom, and it has to go: the new pane is the
+            // focused one now, and zoom follows focus.
+            if tab.zoomedPane == pane { tab.zoomedPane = nil }
+            return true
+        }
+    }
+
+    /// Closes `pane` wherever it lives, or its whole tab when it was that tab's last
+    /// pane.
+    ///
+    /// ``closeFocusedPane()``'s heir rule runs only when the closed pane held its
+    /// tab's focus, because the heir exists to put the cursor where the cursor
+    /// already was. Closing a background pane moves nobody's focus and leaves a zoom
+    /// that belongs to another pane exactly where it is.
+    ///
+    /// False, and no change at all, when no tab holds `pane` and when it was the
+    /// last pane of the last tab.
+    public mutating func close(pane: PaneID) -> Bool {
+        guard let index = tabIndex(containing: pane) else { return false }
+
+        guard let remaining = tabs[index].tree.closing(pane) else {
+            // The pane was that tab's only one, so closing it is closing the tab.
+            // closeTab(at:) is what refuses the last tab, so the last pane of the
+            // last tab is refused here without a second count of anything.
+            return closeTab(at: index)
+        }
+
+        // A tree that gave back a non-nil `closing` had a split above the closed
+        // leaf, so the sibling is always there and always holds a pane. The guard is
+        // here because the alternative is two force unwraps on a path that runs on
+        // every cmd+w.
+        guard let heir = tabs[index].tree.sibling(of: pane)?.paneIDs.first else { return false }
+
+        return withTab(at: index) { tab in
+            let wasFocused = tab.focusedPane == pane
+            tab.tree = remaining
+            if wasFocused {
+                tab.focusedPane = heir
+                // Zoom follows focus, and the invariant says any zoom on this tab was
+                // this pane's, so this clears nothing belonging to anyone else.
+                tab.zoomedPane = nil
+            } else if tab.zoomedPane == pane {
+                // Only reachable from a decoded session that broke the invariant by
+                // zooming a pane that did not hold focus. The zoomed pane is being
+                // closed, so the flag goes with it either way.
+                tab.zoomedPane = nil
+            }
+            return true
+        }
+    }
+
+    /// Grows `pane` in that direction by one keyboard step, wherever it lives.
+    ///
+    /// Focus is untouched for both of ``resizeFocusedPane(_:by:)``'s reasons and one
+    /// more: the caller can be in a tab nobody is looking at, and a resize is never a
+    /// reason to move a cursor that is somewhere else entirely.
+    ///
+    /// False when the tab is zoomed by anyone, the caller included, matching
+    /// ``resizeFocusedPane(_:by:)``: a zoomed tab shows one pane and no divider, so
+    /// there is no divider to move.
+    public mutating func resize(pane: PaneID, direction: FocusDirection, by delta: Double) -> Bool {
+        guard let index = tabIndex(containing: pane) else { return false }
+        return withTab(at: index) { tab in
             guard tab.zoomedPane == nil else { return false }
             guard let moved = tab.tree.adjustingRatio(
-                forPane: tab.focusedPane,
+                forPane: pane,
                 direction: direction,
                 by: delta
             ) else { return false }
@@ -200,19 +307,14 @@ public struct Workspace: Sendable, Equatable, Codable {
         }
     }
 
-    /// Puts every divider in the focused tab back to the middle.
+    /// Puts every divider in `pane`'s tab back to the middle, wherever that tab is.
     ///
-    /// False when the tab is already even, so the escape hatch from a layout that
-    /// got away from the user costs nothing when it was not needed. False when
-    /// zoomed, matching ``resizeFocusedPane(_:by:)``.
-    public mutating func equalizeFocusedTab() -> Bool {
-        withFocusedTab { tab in
-            guard tab.zoomedPane == nil else { return false }
-            let even = tab.tree.equalized
-            guard even != tab.tree else { return false }
-            tab.tree = even
-            return true
-        }
+    /// Takes a pane rather than a tab index because the control channel's caller
+    /// knows which pane it is and nothing else. False when no tab holds `pane`, and
+    /// otherwise exactly ``equalizeFocusedTab()``'s answer for that tab.
+    public mutating func equalize(tabContaining pane: PaneID) -> Bool {
+        guard let index = tabIndex(containing: pane) else { return false }
+        return equalize(tabAt: index)
     }
 
     /// Zooms the focused pane, or unzooms when it is already the zoomed one.
@@ -243,11 +345,12 @@ public struct Workspace: Sendable, Equatable, Codable {
     /// new last tab when the closed one was at the end. Clamping rather than always
     /// stepping left keeps the tab under the same slot in the tab bar, which is
     /// where the eye already is.
+    ///
+    /// A wrapper over ``closeTab(at:)``, which ``close(pane:)`` also reaches when it
+    /// takes the last pane of a tab. Two implementations of closing a tab is what
+    /// would let one of them forget to keep the user where they were.
     public mutating func closeFocusedTab() -> Bool {
-        guard tabs.count > 1, tabs.indices.contains(focusedTabIndex) else { return false }
-        tabs.remove(at: focusedTabIndex)
-        focusedTabIndex = min(focusedTabIndex, tabs.count - 1)
-        return true
+        closeTab(at: focusedTabIndex)
     }
 
     /// Focuses the tab at `index`. False for an index no tab has, which is what
@@ -276,6 +379,44 @@ public struct Workspace: Sendable, Equatable, Codable {
         focusedTabIndex = (current + tabs.count - 1) % tabs.count
     }
 
+    /// The body of both ``equalize(tabContaining:)`` and ``equalizeFocusedTab()``.
+    ///
+    /// Indexed rather than pane-relative because `equalizeFocusedTab` has no pane to
+    /// name: it evens a tab whose focused pane may not be in its own tree, which a
+    /// decoded session can produce and which is not a reason to refuse.
+    private mutating func equalize(tabAt index: Int) -> Bool {
+        withTab(at: index) { tab in
+            guard tab.zoomedPane == nil else { return false }
+            let even = tab.tree.equalized
+            guard even != tab.tree else { return false }
+            tab.tree = even
+            return true
+        }
+    }
+
+    /// Closes the tab at `index`, taking every pane in it, and leaves the user in
+    /// the tab they were in.
+    ///
+    /// False for the last tab, for the same reason ``close(pane:)`` refuses the last
+    /// pane: the window keeps showing something.
+    private mutating func closeTab(at index: Int) -> Bool {
+        guard tabs.count > 1, tabs.indices.contains(index) else { return false }
+        tabs.remove(at: index)
+        if index < focusedTabIndex {
+            // Every tab past the closed one slid one slot left, so the same index
+            // now names the tab to the right of the one the user was in. A pane
+            // closing its own tab in the background must not move them.
+            focusedTabIndex -= 1
+        } else if index == focusedTabIndex {
+            // Focus goes to whichever tab slid into the closed one's position, and to
+            // the new last tab when the closed one was at the end. Clamping rather
+            // than always stepping left keeps the tab under the same slot in the tab
+            // bar, which is where the eye already is.
+            focusedTabIndex = min(focusedTabIndex, tabs.count - 1)
+        }
+        return true
+    }
+
     /// Runs `change` against the focused tab in place, and reports false without
     /// calling it when there is no focused tab.
     ///
@@ -283,7 +424,13 @@ public struct Workspace: Sendable, Equatable, Codable {
     /// inout access is what keeps a mutator from copying a tab, editing the copy,
     /// and writing it back over a tab something else changed in between.
     private mutating func withFocusedTab(_ change: (inout Tab) -> Bool) -> Bool {
-        guard tabs.indices.contains(focusedTabIndex) else { return false }
-        return change(&tabs[focusedTabIndex])
+        withTab(at: focusedTabIndex, change)
+    }
+
+    /// The same, against any tab. The target-taking mutators reach tabs the user is
+    /// not looking at, and they get the inout access for the same reason.
+    private mutating func withTab(at index: Int, _ change: (inout Tab) -> Bool) -> Bool {
+        guard tabs.indices.contains(index) else { return false }
+        return change(&tabs[index])
     }
 }

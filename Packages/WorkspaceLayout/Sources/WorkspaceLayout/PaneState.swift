@@ -23,9 +23,32 @@ public struct PaneState: Sendable, Equatable, Codable {
     /// UserDefaults key.
     public var pinnedDirectory: String?
 
-    public init(id: PaneID, workingDirectory: String? = nil, pinnedDirectory: String? = nil) {
+    /// The display id of the pane that opened this one through the control channel,
+    /// and nil for a pane the owner opened by hand.
+    ///
+    /// An identifier and never a credential, which is what makes it safe to persist
+    /// and safe for a read verb to return. Nothing authenticates on a `PaneID`.
+    ///
+    /// Persisted so an owner asking where a pane came from has an answer after a
+    /// relaunch. ``SessionStore/reconciled(_:directoryExists:)`` drops an edge whose
+    /// parent did not come back, so this never names a pane that is not in the same
+    /// session.
+    public var createdBy: PaneID?
+
+    /// `createdBy` has no default, deliberately, and for the reason
+    /// ``SessionSnapshot`` records: a defaulted parameter lets the sole write site
+    /// compile unchanged and record nil forever, which is how the sidebar was
+    /// dropped in `reconciled` while the file on disk was correct the whole time.
+    /// Without a default the compiler names every site that has to decide.
+    public init(
+        id: PaneID,
+        workingDirectory: String? = nil,
+        pinnedDirectory: String? = nil,
+        createdBy: PaneID?
+    ) {
         self.id = id
         self.workingDirectory = workingDirectory
         self.pinnedDirectory = pinnedDirectory
+        self.createdBy = createdBy
     }
 }

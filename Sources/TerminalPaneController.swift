@@ -2,6 +2,7 @@ import AppKit
 import BaiaSettings
 import GhosttyTerminal
 import PaneChrome
+import PaneControl
 import PaneSearch
 import ProjectAnchor
 import WorkspaceLayout
@@ -24,6 +25,45 @@ final class TerminalPaneController: NSViewController {
     /// file would name a pane that no longer exists, so `BAIA_PANE` would change
     /// meaning on every launch.
     let paneID: PaneID
+
+    /// The display id of the pane that opened this one through the control
+    /// channel, and nil for a pane the owner opened by hand.
+    ///
+    /// A stored property rather than a value the snapshot computes, because the
+    /// fact is only known at the moment the pane is made: by the time
+    /// ``paneState`` is read, the request that caused the split is long gone and
+    /// there is nothing left to ask. It is carried back in on restore so the edge
+    /// survives a relaunch, which is what makes `baia list`'s answer to "where did
+    /// this pane come from" true across launches rather than only within one.
+    ///
+    /// An identifier and never a credential. Nothing authenticates on a `PaneID`,
+    /// which is exactly what makes this safe to persist and safe for a read verb
+    /// to return.
+    let createdBy: PaneID?
+
+    /// This pane's per-run capability, the value its shell reads as `$BAIA_TOKEN`.
+    ///
+    /// Minted here, once, per pane per run, and never written to disk. Nil when
+    /// the system refused entropy, and nil is honest rather than fatal: a pane
+    /// with no capability is a pane whose `baia` says it has none, which is a
+    /// working terminal with a broken channel rather than a launch failure.
+    ///
+    /// It sits in this object because the pane's own shell already holds it in
+    /// its environment, so storing it here adds no exposure that spawning the
+    /// shell did not already create. It goes to the graph once, through
+    /// ``PaneControlChannel/registerPane(_:createdBy:secret:)``, and is read back
+    /// by nothing: `PaneSecret.description` redacts, so it cannot reach a log
+    /// line by being interpolated into one.
+    let controlSecret: PaneSecret?
+
+    /// Where this pane's shell is told the channel is listening, or nil when the
+    /// instance runs without one.
+    ///
+    /// Passed in rather than reached for, because the answer is a launch-time
+    /// decision made before the first pane exists and a pane that learned it a
+    /// moment later would already have spawned its shell with the wrong
+    /// environment.
+    private let controlSocketPath: String?
 
     /// Raised when this pane takes keyboard focus, so the tree controller can
     /// move the workspace's focus without polling the responder chain.
@@ -354,10 +394,22 @@ final class TerminalPaneController: NSViewController {
         }
     }
 
-    init(paneID: PaneID, workingDirectory: String, pinnedDirectory: URL? = nil) {
+    init(
+        paneID: PaneID,
+        workingDirectory: String,
+        pinnedDirectory: URL? = nil,
+        createdBy: PaneID?,
+        controlSocketPath: String?
+    ) {
         self.paneID = paneID
         self.workingDirectory = workingDirectory
         restoredPin = pinnedDirectory
+        self.createdBy = createdBy
+        self.controlSocketPath = controlSocketPath
+        // Minted before the surface exists, because the environment the shell is
+        // spawned with is assembled in `viewDidLoad` and a token that arrived
+        // after that would belong to a shell that had already started without it.
+        controlSecret = ControlSecrets.mint().map(PaneSecret.init)
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -368,19 +420,113 @@ final class TerminalPaneController: NSViewController {
     /// back to the opening directory because the tracker reads nil until the
     /// surface exists, and a pane snapshotted in that window would otherwise
     /// restore with no directory at all.
+    ///
+    /// `createdBy` comes off the stored property rather than being computed, and
+    /// the no-default `PaneState.init` exists to make this line impossible to
+    /// forget: Wave D wrote `nil` here to make the app target compile, which was
+    /// true while no pane could arrive through the channel and would have been
+    /// silently false the moment one could. A compiling `nil` is exactly how
+    /// attributability ends up nil for every pane forever with nothing failing.
     var paneState: PaneState {
         PaneState(
             id: paneID,
             workingDirectory: anchorTracker.workingDirectory?.path(percentEncoded: false)
                 ?? workingDirectory,
-            pinnedDirectory: anchorTracker.pinnedDirectory?.path(percentEncoded: false)
+            pinnedDirectory: anchorTracker.pinnedDirectory?.path(percentEncoded: false),
+            createdBy: createdBy
         )
     }
+
+    /// What the pane header says is running here, for the channel's read verbs.
+    ///
+    /// Read off the tracker rather than off `statusBar.status`, which is nil until
+    /// the anchor first resolves: a pane whose `baia whoami` ran in that window
+    /// would otherwise report no activity for a pane that had some.
+    var activityLabel: String? { activityTracker.agent?.label }
+
+    /// How hard this pane is asking, in the chrome's own vocabulary.
+    ///
+    /// ``lastAttention`` rather than a second derivation, for the reason
+    /// `PaneStatus.Attention.init(_:)` exists: two copies of "is this pane asking"
+    /// is one copy that can disagree with the footer the owner is looking at.
+    var attentionState: PaneStatus.Attention { lastAttention }
 
     @available(*, unavailable)
     required init?(coder _: NSCoder) {
         fatalError("baia does not use nibs")
     }
+
+    /// Everything this pane's shell is told, and the only channel macOS does not
+    /// let another process read.
+    ///
+    /// Four entries, and each is a decision.
+    ///
+    /// `BAIA_PANE` keeps the value and the meaning it has always had: the pane's
+    /// **public display id**, the persisted `PaneID`, which sits in `session.json`
+    /// where any same-uid process can read it. It is not a credential and nothing
+    /// authenticates on it.
+    ///
+    /// `BAIA_TOKEN` is the credential, and it is a different value for exactly
+    /// that reason. 32 bytes from `SecRandomCopyBytes`, base64url, per pane per
+    /// run, never persisted, and refused by the graph if it ever parsed as a pane
+    /// id.
+    ///
+    /// `BAIA_SOCK` is where to talk, and it deliberately does not arrive through
+    /// the terminal stream: rule 1 keeps every byte of this protocol off the PTY,
+    /// so there is no escape sequence that could tell a pane where the channel is.
+    ///
+    /// `PATH` gains the bundle's `Contents/Helpers`, which is where the `baia`
+    /// tool lives. That is what makes the tool exist exactly where the capability
+    /// does: a shell outside baia has neither.
+    ///
+    /// **The socket and the token go in together or not at all.** An instance
+    /// running without a channel injects neither, so its panes never reach the
+    /// other instance's socket where their secrets are unknown. A pane whose mint
+    /// failed injects neither for the mirror-image reason: a socket path with no
+    /// token would send the reader looking at the registry when the truth is that
+    /// this pane never got a capability.
+    private var shellEnvironment: [String: String] {
+        var environment = ["BAIA_PANE": paneID.rawValue.uuidString]
+
+        if let helpers = Self.helperDirectory {
+            // Prepended to the app's own PATH rather than replacing it. The shell
+            // ghostty spawns is a login shell, so `/etc/zprofile` runs
+            // `path_helper`, which rebuilds PATH from `/etc/paths` and appends
+            // whatever was already there behind it. Survival is what matters,
+            // since nothing in `/usr/bin` is named `baia`.
+            let inherited = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"
+            environment["PATH"] = "\(helpers):\(inherited)"
+        }
+
+        if let controlSocketPath, let controlSecret {
+            environment["BAIA_SOCK"] = controlSocketPath
+            environment["BAIA_TOKEN"] = controlSecret.rawValue
+        }
+
+        return environment
+    }
+
+    /// `baia.app/Contents/Helpers`, or nil when there is no such directory.
+    ///
+    /// Checked rather than assumed. The copy phase that puts the tool there is a
+    /// build setting, and a PATH entry naming a directory that does not exist
+    /// would leave `command -v baia` empty with nothing on screen to say the
+    /// embedding is what broke.
+    private static let helperDirectory: String? = {
+        let url = Bundle.main.bundleURL.appending(path: "Contents/Helpers", directoryHint: .isDirectory)
+        var isDirectory: ObjCBool = false
+        let path = url.path(percentEncoded: false)
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory),
+              isDirectory.boolValue
+        else { return nil }
+        // Trailing slash dropped before this reaches PATH. `directoryHint:
+        // .isDirectory` is right for the existence check and puts a `/` on the
+        // end of the path string, which is the same URL trap `Anchor` already
+        // canonicalizes for. It survives into `PATH`, so `command -v baia`
+        // answers `…/Contents/Helpers//baia`, which resolves and reads as a bug
+        // in the first place anybody looks.
+        return path.hasSuffix("/") ? String(path.dropLast()) : path
+    }()
 
     override func loadView() {
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 1024, height: 680))
@@ -395,7 +541,7 @@ final class TerminalPaneController: NSViewController {
         terminalView.configuration = TerminalSurfaceOptions(
             backend: .exec,
             workingDirectory: workingDirectory,
-            envVars: ["BAIA_PANE": paneID.rawValue.uuidString]
+            envVars: shellEnvironment
         )
         terminalView.controller = controller
         terminalView.translatesAutoresizingMaskIntoConstraints = false
@@ -505,7 +651,9 @@ final class TerminalPaneController: NSViewController {
         }
     }
 
-    private var lastAttention: PaneStatus.Attention = .none
+    /// Readable so the channel's read verbs report the same level the footer
+    /// draws, and settable only here.
+    private(set) var lastAttention: PaneStatus.Attention = .none
 
     /// Rebuilds the footer's value from the anchor. Git and agent state are left
     /// nil until their subsystems are wired, and `PaneStatusSegments` already

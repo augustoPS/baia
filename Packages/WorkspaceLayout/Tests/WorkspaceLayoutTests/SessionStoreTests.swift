@@ -32,8 +32,18 @@ import Testing
                 focusedTabIndex: 0
             ),
             panes: [
-                PaneState(id: first, workingDirectory: "/Users/x/Projects", pinnedDirectory: nil),
-                PaneState(id: second, workingDirectory: nil, pinnedDirectory: "/Users/x/Projects/baia"),
+                PaneState(
+                    id: first,
+                    workingDirectory: "/Users/x/Projects",
+                    pinnedDirectory: nil,
+                    createdBy: nil
+                ),
+                PaneState(
+                    id: second,
+                    workingDirectory: nil,
+                    pinnedDirectory: "/Users/x/Projects/baia",
+                    createdBy: nil
+                ),
             ],
             windowFrame: WindowFrame(x: 8, y: 8, width: 1200, height: 800),
             sidebar: nil
@@ -46,6 +56,83 @@ import Testing
 
         #expect(store.save(snapshot))
         #expect(store.load() == snapshot)
+    }
+
+    @Test func aPaneOpenedByAnotherPaneRemembersWhichOneAcrossASave() {
+        var snapshot = sampleSnapshot()
+        let parent = snapshot.panes[0].id
+        snapshot.panes[1].createdBy = parent
+        let store = store()
+
+        #expect(store.save(snapshot))
+        // Parentage is the one part of the control channel's graph that persists.
+        // Tokens are minted per run and never written; this is an identifier, and
+        // an owner asking where a pane came from needs it to survive a relaunch.
+        #expect(store.load()?.panes[1].createdBy == parent)
+    }
+
+    /// The whole restore path a window walks, because the two halves that were
+    /// already tested do not meet anywhere a test could see them.
+    ///
+    /// ``aPaneOpenedByAnotherPaneRemembersWhichOneAcrossASave()`` proves the field
+    /// survives the file, and the reconciliation suite proves a valid edge is left
+    /// alone. Neither walks the sequence a relaunch actually performs: save, load,
+    /// reconcile, then look the record up **by the id the tree names**, which is
+    /// what `PaneTreeController.init(restoring:)` does to decide what to hand each
+    /// pane it rebuilds. That lookup is the step that can silently drop the edge,
+    /// because it is a dictionary miss rather than a nil field, and a pane rebuilt
+    /// without its parent reports `createdBy` nil forever with nothing failing.
+    @Test func aPaneTheChannelOpenedIsRebuiltStillNamingItsParent() throws {
+        var snapshot = sampleSnapshot()
+        let parent = snapshot.panes[0].id
+        let child = snapshot.panes[1].id
+        snapshot.panes[1].createdBy = parent
+        let store = store()
+
+        #expect(store.save(snapshot))
+        let loaded = try #require(store.load())
+        let (reconciled, _) = SessionStore.reconciled(loaded) { _ in true }
+
+        let records = Dictionary(
+            reconciled.panes.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let rebuilt = reconciled.workspace.tabs
+            .flatMap { $0.tree.paneIDs }
+            .map { records[$0]?.createdBy }
+
+        // Positional, so the parent's own nil is asserted too: a bug that wrote
+        // the same edge onto every pane would otherwise pass.
+        #expect(reconciled.workspace.tabs.flatMap { $0.tree.paneIDs } == [parent, child])
+        #expect(rebuilt == [nil, parent])
+    }
+
+    /// The guarantee ``SessionSnapshot/currentSchemaVersion`` claims in its own doc
+    /// comment, and the one thing a round trip cannot show.
+    ///
+    /// Written as a literal rather than encoded from a value, because every
+    /// ``PaneState`` this build can construct already carries `createdBy`. Encoding
+    /// one and decoding it back proves the field survives its own writer and says
+    /// nothing about the file already sitting on the owner's disk, which is the file
+    /// that decides whether the first launch after an upgrade restores his session
+    /// or opens an empty window. Loaded through ``SessionStore`` rather than through
+    /// a bare `JSONDecoder`, so the version gate is part of what is being asserted:
+    /// adding an optional field must not need a bump, and a bump would send every
+    /// pre-upgrade file to nil here.
+    @Test func aSessionWrittenBeforeParentageExistedStillLoads() throws {
+        let json = """
+        {"schemaVersion":1,"workspace":{"tabs":[],"focusedTabIndex":0},\
+        "panes":[{"id":{"rawValue":"3B1E9F6A-4C2D-4E8B-9A1F-7D5C0E2B8A64"},\
+        "workingDirectory":"/Users/x/Projects"}]}
+        """
+        try fixture.file("state/session.json", contents: json)
+
+        let loaded = store().load()
+        #expect(loaded?.panes.count == 1)
+        // Nil is exactly what "the version that wrote this file did not record a
+        // parent" means, and it is also what a pane the owner opened by hand says.
+        #expect(loaded?.panes.first?.createdBy == nil)
+        #expect(loaded?.panes.first?.workingDirectory == "/Users/x/Projects")
     }
 
     @Test func loadFindsNothingWhenNoSessionWasEverWritten() {
@@ -194,7 +281,7 @@ import Testing
         let pane = PaneID()
         return SessionSnapshot(
             workspace: Workspace(pane: pane),
-            panes: [PaneState(id: pane, workingDirectory: "/tmp")],
+            panes: [PaneState(id: pane, workingDirectory: "/tmp", createdBy: nil)],
             windowFrame: WindowFrame(x: 1, y: 2, width: 3, height: 4),
             sidebar: SidebarGeometry(width: 462, splitHeight: 516)
         )

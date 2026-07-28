@@ -25,6 +25,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let notifier = AttentionNotifier()
 
+    /// The control channel's socket, its pool, and its graph.
+    ///
+    /// Held whether or not it bound: an instance that found the socket already
+    /// owned still answers `boundSocketPath` with nil, which is what tells a pane
+    /// to inject no `BAIA_SOCK` rather than hand its shell the *first* instance's
+    /// live socket.
+    let control = ControlServer()
+
+    /// The workspace end of the channel, held here because the server's reference
+    /// to it is weak: the server is reached from the adapter's own windows, and two
+    /// strong references would be a cycle that outlives every window.
+    ///
+    /// Built with closures over this delegate's own state rather than a reference
+    /// to it, so the adapter can be read without knowing what an `AppDelegate` is
+    /// and cannot reach anything but the window list and the key window.
+    private lazy var controlAdapter = ControlAdapter(
+        windows: { [weak self] in self?.windows ?? [] }
+    )
+
     private lazy var palette: CommandPaletteController = {
         let palette = CommandPaletteController()
         palette.theme = configuration.paneTheme
@@ -89,6 +108,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // prompt. Only `notify` is gated.
         notifier.requestAuthorizationIfNeeded()
         notifier.isEnabled = configuration.settings.notificationsEnabled
+        // Before the first pane exists, because a pane opened by the restore
+        // below has to be told where to talk while it is being built.
+        startControlChannel()
 
         restoreSession()
         NSApp.activate(ignoringOtherApps: true)
@@ -97,6 +119,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Warmed here so the first ⌘K of a session opens on a full list rather
         // than on an empty one that fills in a moment later.
         discoverProjects()
+    }
+
+    /// Binds the control socket, and says on stderr what happened either way.
+    ///
+    /// A failure here is not a launch failure. baia is a terminal first, and an
+    /// instance with no channel is a working workspace whose panes are told there
+    /// is nothing to talk to, which the CLI reports in one sentence.
+    private func startControlChannel() {
+        control.isChannelEnabled = configuration.settings.controlChannelEnabled
+        control.isRunAllowed = configuration.settings.controlAllowRun
+        // Attached before the socket is bound, so the first request cannot arrive
+        // at a server with no workspace to apply it to.
+        control.bridge = controlAdapter
+
+        switch control.start() {
+        case .bound:
+            break
+        case let .ownedByAnotherInstance(path):
+            report("another baia already owns \(path), so this one runs without a control channel")
+        case let .failed(reason):
+            report("the control channel did not start: \(reason)")
+        }
+    }
+
+    private func report(_ message: String) {
+        FileHandle.standardError.write(Data("baia: \(message)\n".utf8))
     }
 
     /// Routes each keystroke to the pane that received it.
@@ -126,6 +174,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         saveTimer = nil
         save()
         isTerminating = true
+        // After the save, and last of all: every parked `recv` is answered with
+        // an empty drain here, and a client that got a bare EOF instead would
+        // report the app as broken on the one exit that is not.
+        control.stop()
     }
 
     // MARK: - Windows and tabs
@@ -206,6 +258,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         windows.append(controller)
         controller.onClose = { [weak self, weak controller] in
             guard let self, let controller else { return }
+            // Before the reference goes, because the tree is the only thing that
+            // knows which panes went with the window. A registration that outlived
+            // its shell is a token that still works against a pane nobody can see.
+            controller.tree.forgetEveryPane()
             windows.removeAll { $0 === controller }
             // Dropped before the save so a closed tab is gone from the next
             // snapshot rather than restored on the following launch.
@@ -242,7 +298,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let directory = tree?.focusedPane?.anchorTracker.workingDirectory?
             .path(percentEncoded: false) ?? Self.defaultWorkingDirectory
         openWindow(
-            tree: PaneTreeController(workingDirectory: directory, configuration: configuration),
+            tree: PaneTreeController(
+                workingDirectory: directory,
+                configuration: configuration,
+                channel: control
+            ),
             joining: focused?.window
         )
     }
@@ -253,7 +313,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         openWindow(
             tree: PaneTreeController(
                 workingDirectory: Self.defaultWorkingDirectory,
-                configuration: configuration
+                configuration: configuration,
+                channel: control
             ),
             joining: nil,
             tabbing: .disallowed
@@ -452,7 +513,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch action {
         case .newTab:
             openWindow(
-                tree: PaneTreeController(workingDirectory: directory, configuration: configuration),
+                tree: PaneTreeController(
+                    workingDirectory: directory,
+                    configuration: configuration,
+                    channel: control
+                ),
                 joining: focused?.window
             )
         case .splitRight:
@@ -583,6 +648,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The panes themselves are updated by the configuration center directly.
     private func settingsDidChange() {
         notifier.isEnabled = configuration.settings.notificationsEnabled
+        control.settingsChanged(
+            channelEnabled: configuration.settings.controlChannelEnabled,
+            allowRun: configuration.settings.controlAllowRun
+        )
         // Dropped so the next palette walks the roots the file now names. The
         // walk is not started here: it would fire on every keystroke of an
         // editor holding the file open.
@@ -703,7 +772,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 tree: PaneTreeController(
                     restoring: piece,
                     defaultWorkingDirectory: Self.defaultWorkingDirectory,
-                    configuration: configuration
+                    configuration: configuration,
+                    channel: control
                 ),
                 joining: previous
             )
@@ -732,7 +802,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         openWindow(
             tree: PaneTreeController(
                 workingDirectory: Self.defaultWorkingDirectory,
-                configuration: configuration
+                configuration: configuration,
+                channel: control
             ),
             joining: nil
         )
