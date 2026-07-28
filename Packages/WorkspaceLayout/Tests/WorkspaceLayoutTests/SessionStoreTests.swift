@@ -71,6 +71,42 @@ import Testing
         #expect(store.load()?.panes[1].createdBy == parent)
     }
 
+    /// The whole restore path a window walks, because the two halves that were
+    /// already tested do not meet anywhere a test could see them.
+    ///
+    /// ``aPaneOpenedByAnotherPaneRemembersWhichOneAcrossASave()`` proves the field
+    /// survives the file, and the reconciliation suite proves a valid edge is left
+    /// alone. Neither walks the sequence a relaunch actually performs: save, load,
+    /// reconcile, then look the record up **by the id the tree names**, which is
+    /// what `PaneTreeController.init(restoring:)` does to decide what to hand each
+    /// pane it rebuilds. That lookup is the step that can silently drop the edge,
+    /// because it is a dictionary miss rather than a nil field, and a pane rebuilt
+    /// without its parent reports `createdBy` nil forever with nothing failing.
+    @Test func aPaneTheChannelOpenedIsRebuiltStillNamingItsParent() throws {
+        var snapshot = sampleSnapshot()
+        let parent = snapshot.panes[0].id
+        let child = snapshot.panes[1].id
+        snapshot.panes[1].createdBy = parent
+        let store = store()
+
+        #expect(store.save(snapshot))
+        let loaded = try #require(store.load())
+        let (reconciled, _) = SessionStore.reconciled(loaded) { _ in true }
+
+        let records = Dictionary(
+            reconciled.panes.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let rebuilt = reconciled.workspace.tabs
+            .flatMap { $0.tree.paneIDs }
+            .map { records[$0]?.createdBy }
+
+        // Positional, so the parent's own nil is asserted too: a bug that wrote
+        // the same edge onto every pane would otherwise pass.
+        #expect(reconciled.workspace.tabs.flatMap { $0.tree.paneIDs } == [parent, child])
+        #expect(rebuilt == [nil, parent])
+    }
+
     /// The guarantee ``SessionSnapshot/currentSchemaVersion`` claims in its own doc
     /// comment, and the one thing a round trip cannot show.
     ///

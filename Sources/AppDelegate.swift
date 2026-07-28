@@ -33,6 +33,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// live socket.
     let control = ControlServer()
 
+    /// The workspace end of the channel, held here because the server's reference
+    /// to it is weak: the server is reached from the adapter's own windows, and two
+    /// strong references would be a cycle that outlives every window.
+    ///
+    /// Built with closures over this delegate's own state rather than a reference
+    /// to it, so the adapter can be read without knowing what an `AppDelegate` is
+    /// and cannot reach anything but the window list and the key window.
+    private lazy var controlAdapter = ControlAdapter(
+        windows: { [weak self] in self?.windows ?? [] }
+    )
+
     private lazy var palette: CommandPaletteController = {
         let palette = CommandPaletteController()
         palette.theme = configuration.paneTheme
@@ -118,6 +129,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func startControlChannel() {
         control.isChannelEnabled = configuration.settings.controlChannelEnabled
         control.isRunAllowed = configuration.settings.controlAllowRun
+        // Attached before the socket is bound, so the first request cannot arrive
+        // at a server with no workspace to apply it to.
+        control.bridge = controlAdapter
 
         switch control.start() {
         case .bound:
@@ -244,6 +258,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         windows.append(controller)
         controller.onClose = { [weak self, weak controller] in
             guard let self, let controller else { return }
+            // Before the reference goes, because the tree is the only thing that
+            // knows which panes went with the window. A registration that outlived
+            // its shell is a token that still works against a pane nobody can see.
+            controller.tree.forgetEveryPane()
             windows.removeAll { $0 === controller }
             // Dropped before the save so a closed tab is gone from the next
             // snapshot rather than restored on the following launch.
@@ -280,7 +298,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let directory = tree?.focusedPane?.anchorTracker.workingDirectory?
             .path(percentEncoded: false) ?? Self.defaultWorkingDirectory
         openWindow(
-            tree: PaneTreeController(workingDirectory: directory, configuration: configuration),
+            tree: PaneTreeController(
+                workingDirectory: directory,
+                configuration: configuration,
+                channel: control
+            ),
             joining: focused?.window
         )
     }
@@ -291,7 +313,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         openWindow(
             tree: PaneTreeController(
                 workingDirectory: Self.defaultWorkingDirectory,
-                configuration: configuration
+                configuration: configuration,
+                channel: control
             ),
             joining: nil,
             tabbing: .disallowed
@@ -490,7 +513,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch action {
         case .newTab:
             openWindow(
-                tree: PaneTreeController(workingDirectory: directory, configuration: configuration),
+                tree: PaneTreeController(
+                    workingDirectory: directory,
+                    configuration: configuration,
+                    channel: control
+                ),
                 joining: focused?.window
             )
         case .splitRight:
@@ -745,7 +772,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 tree: PaneTreeController(
                     restoring: piece,
                     defaultWorkingDirectory: Self.defaultWorkingDirectory,
-                    configuration: configuration
+                    configuration: configuration,
+                    channel: control
                 ),
                 joining: previous
             )
@@ -774,7 +802,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         openWindow(
             tree: PaneTreeController(
                 workingDirectory: Self.defaultWorkingDirectory,
-                configuration: configuration
+                configuration: configuration,
+                channel: control
             ),
             joining: nil
         )
