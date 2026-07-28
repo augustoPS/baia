@@ -40,6 +40,8 @@ packages:
     path: Packages/BaiaSettings
   PaneSearch:
     path: Packages/PaneSearch
+  PaneControl:
+    path: Packages/PaneControl
 
 targets:
   baia:
@@ -73,6 +75,33 @@ targets:
       - package: PaneActivity
       - package: BaiaSettings
       - package: PaneSearch
+      - package: PaneControl
+
+      # The CLI, copied into the bundle it talks to.
+      #
+      # `destination: wrapper` with `subpath: Contents/Helpers` lands the product
+      # at `baia.app/Contents/Helpers/baia`. Measured, not assumed, and the
+      # obvious spelling is the wrong one: XcodeGen's `wrapper` is the copy-files
+      # destination Xcode calls Wrapper, and for a macOS application that is the
+      # `.app` **root**, not `Contents`. `subpath: Helpers` therefore writes
+      # `baia.app/Helpers/baia`, and the build then fails at the app's own
+      # signing step with "unsealed contents present in the bundle root", which
+      # names neither this target nor this phase.
+      #
+      # `Contents/Helpers` rather than somewhere invented: it is one of the
+      # directories codesign recognises as holding nested code, so the helper is
+      # sealed as code inside the app rather than as a stray resource.
+      #
+      # `codeSign: true` puts the "Code Sign On Copy" flag on the build file, so
+      # the helper is re-signed as it is embedded and the ad-hoc signature
+      # survives into the bundle. Without it the app signs around a helper whose
+      # own signature was made before the copy.
+      - target: baia-cli
+        embed: true
+        codeSign: true
+        copy:
+          destination: wrapper
+          subpath: Contents/Helpers
 
     settings:
       base:
@@ -99,4 +128,62 @@ targets:
 
         ALWAYS_SEARCH_USER_PATHS: NO
         CLANG_ENABLE_MODULES: YES
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+
+  # The `baia` command every pane gets on its PATH.
+  #
+  # A separate target rather than a mode of the app, because the CLI is a process
+  # a shell runs and the app is a process that owns a socket, and they share only
+  # `PaneControl`. Sharing the package is the point: client and server cannot
+  # disagree about the wire, because there is one definition of it and both are
+  # built from the same commit.
+  #
+  # Sources live in `CLI/` rather than under `Sources/`, which the app target
+  # takes whole. A subdirectory there plus an `excludes:` entry would compile a
+  # second `main` into the app the day the exclude was dropped, and that is the
+  # same failure the `Icon/` comment above exists to prevent.
+  baia-cli:
+    type: tool
+    platform: macOS
+
+    sources:
+      - path: CLI
+
+    dependencies:
+      - package: PaneControl
+
+    settings:
+      base:
+        # The product is `baia`, so what a pane types is `baia` and not
+        # `baia-cli`. The target keeps the longer name because two targets named
+        # `baia` cannot coexist, and the app's own product is `baia.app`, so
+        # nothing collides in the products directory.
+        PRODUCT_NAME: baia
+        PRODUCT_BUNDLE_IDENTIFIER: gutons.baia.cli
+
+        # The Swift module name, which otherwise follows PRODUCT_NAME and would
+        # be `baia` for both targets. Two targets emitting `baia.swiftmodule`
+        # into one products directory is four `Multiple commands produce` errors
+        # from the build system, and the message names swiftdoc and abi.json
+        # rather than the product name they both came from. The executable a
+        # pane types is still `baia`; only the module is renamed.
+        PRODUCT_MODULE_NAME: baia_cli
+
+        SWIFT_VERSION: "6.0"
+        SWIFT_APPROACHABLE_CONCURRENCY: YES
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+
+        # Matching the app: it runs under hardened runtime with an ad-hoc
+        # signature, and an embedded helper signed any other way is a helper
+        # macOS declines to execute out of that bundle.
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "-"
+
+        # Nothing installs this. It ships inside the bundle, which is what makes
+        # the tool exist exactly where the capability does: a shell outside baia
+        # has no `baia` on PATH and no secret to use it with.
+        SKIP_INSTALL: YES
+
+        ALWAYS_SEARCH_USER_PATHS: NO
         ENABLE_USER_SCRIPT_SANDBOXING: NO
