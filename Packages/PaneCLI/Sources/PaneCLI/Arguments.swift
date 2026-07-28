@@ -2,13 +2,17 @@ import Foundation
 import PaneControl
 
 /// One invocation, understood, before anything has been read or sent.
-struct Invocation {
-    var verb: ControlVerb
-    var args: ControlArgs
+///
+/// Public in the three members the tool target touches and no further. `json`
+/// and `tree` are read by ``Rendering`` inside this package, so widening them
+/// would publish a decision the caller has no business re-making.
+public struct Invocation {
+    public var verb: ControlVerb
+    public var args: ControlArgs
 
     /// What this invocation takes off stdin, filled in after the environment
     /// has been checked rather than during parsing.
-    var stdin: StdinUse
+    public var stdin: StdinUse
 
     /// `--json`: print the result object exactly as it came off the wire.
     var json: Bool
@@ -22,7 +26,7 @@ struct Invocation {
 /// Named rather than done inline so parsing stays free of I/O. The environment
 /// is checked before a pipe is drained, so a ticket is not swallowed by an
 /// invocation that was never going to reach a socket.
-enum StdinUse {
+public enum StdinUse {
     case unused
 
     /// `connect`: the rendezvous ticket. **The only way in.** A ticket passed as
@@ -35,7 +39,7 @@ enum StdinUse {
     case messageBody
 }
 
-enum ParseOutcome {
+public enum ParseOutcome {
     case invoke(Invocation)
     case help
     case version
@@ -50,8 +54,8 @@ enum ParseOutcome {
 /// one local package, so its whole third-party surface is empty, and a terminal
 /// workspace that cannot be sandboxed treats its dependency list as a security
 /// boundary.
-enum Arguments {
-    static func parse(_ argv: [String]) -> ParseOutcome {
+public enum Arguments {
+    public static func parse(_ argv: [String]) -> ParseOutcome {
         guard let head = argv.first else {
             return .usage("no command. Run baia --help.")
         }

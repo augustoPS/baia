@@ -12,21 +12,21 @@ import PaneControl
 /// The four local statuses sit below ten and the wire codes start at ten, which
 /// keeps "the CLI could not even ask" distinguishable from "baia answered no"
 /// without a second stream to consult.
-enum ExitStatus {
+public enum ExitStatus {
     /// The request was answered `ok`.
-    static let ok: Int32 = 0
+    public static let ok: Int32 = 0
 
     /// The arguments did not name a command this build has, or named one with
     /// arguments it cannot take. Nothing was sent.
-    static let usage: Int32 = 1
+    public static let usage: Int32 = 1
 
     /// This shell is not a baia pane, or is a pane of an instance running
     /// without a channel. Nothing was sent.
-    static let environment: Int32 = 2
+    public static let environment: Int32 = 2
 
     /// The socket refused, died mid-exchange, or answered something this build
     /// cannot read.
-    static let transport: Int32 = 3
+    public static let transport: Int32 = 3
 
     /// The status for one wire error code.
     ///
@@ -35,7 +35,7 @@ enum ExitStatus {
     /// mechanism `ControlVerb.scope` uses. A fallthrough would silently give a
     /// new failure the number of an old one, and every script branching on it
     /// would be wrong in a way no test looks at.
-    static func status(for code: ControlErrorCode) -> Int32 {
+    public static func status(for code: ControlErrorCode) -> Int32 {
         switch code {
         case .badVersion:
             10
@@ -62,8 +62,8 @@ enum ExitStatus {
     ///
     /// Generated from ``ControlErrorCode/allCases`` and ``status(for:)`` rather
     /// than written out, so the documented mapping cannot drift from the one the
-    /// process exits with. A hand-maintained table in the help text is a claim
-    /// nothing checks, and this CLI has no test target to check it with.
+    /// process exits with. A hand-maintained table in the help text would be a
+    /// second copy of the switch above, and the copy is the one that goes stale.
     static var documentedMapping: [(status: Int32, name: String, blurb: String)] {
         ControlErrorCode.allCases.map { code in
             (status(for: code), code.rawValue, blurb(for: code))

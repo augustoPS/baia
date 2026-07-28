@@ -1,4 +1,5 @@
 import Foundation
+import PaneCLI
 import PaneControl
 
 /// The whole flow, in the order the order matters.
@@ -119,7 +120,7 @@ enum Run {
                 StandardStreams.err(failure.message)
                 exit(ExitStatus.status(for: failure.code))
             }
-            Rendering.render(response.result ?? ControlResult(), for: call)
+            StandardStreams.write(Rendering.render(response.result ?? ControlResult(), for: call))
             exit(ExitStatus.ok)
 
         case .closedWithoutAnswer:

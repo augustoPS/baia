@@ -1,16 +1,45 @@
 import Foundation
 import PaneControl
 
+/// One line, and which stream it belongs on.
+///
+/// A value rather than a write, because the stream rule below is the thing worth
+/// asserting and a renderer that writes as it goes can only be checked by
+/// capturing file descriptors. The tool target replays these in order, so the
+/// relative order of a note and the result it annotates is still decided here.
+public struct RenderedLine: Equatable {
+    public enum Stream: Equatable {
+        /// A result line. The only thing a pipe downstream should ever see.
+        case out
+
+        /// A note, a warning, or a failure. Never parsed by anything: the exit
+        /// status is what a script branches on.
+        case err
+    }
+
+    public var stream: Stream
+    public var text: String
+
+    init(_ stream: Stream, _ text: String) {
+        self.stream = stream
+        self.text = text
+    }
+}
+
 /// Turns a successful result into what the pane sees.
 ///
 /// Results go to stdout and notes go to stderr, without exception, so
 /// `baia publish | pbcopy` carries a ticket and nothing else and
 /// `baia recv > log` carries message bodies and not a drop counter.
-enum Rendering {
-    static func render(_ result: ControlResult, for call: Invocation) {
+public enum Rendering {
+    public static func render(_ result: ControlResult, for call: Invocation) -> [RenderedLine] {
+        var lines: [RenderedLine] = []
+        func out(_ text: String) { lines.append(RenderedLine(.out, text)) }
+        func err(_ text: String) { lines.append(RenderedLine(.err, text)) }
+
         if call.json {
-            StandardStreams.out(json(result))
-            return
+            out(json(result))
+            return lines
         }
 
         // No `default:`. A new verb has to decide what it prints before the CLI
@@ -19,32 +48,31 @@ enum Rendering {
         switch call.verb {
         case .split:
             if let pane = result.pane {
-                StandardStreams.out(pane)
+                out(pane)
             }
 
         case .close, .focus, .resize, .equalize, .send, .revoke, .run:
             break
 
         case .zoom:
-            StandardStreams.out((result.zoomed ?? false) ? "on" : "off")
+            out((result.zoomed ?? false) ? "on" : "off")
 
         case .whoami:
             for line in blocks(result.panes ?? []) {
-                StandardStreams.out(line)
+                out(line)
             }
 
         case .list:
             let records = result.panes ?? []
-            let lines = call.tree ? tree(records) : blocks(records)
-            for line in lines {
-                StandardStreams.out(line)
+            for line in call.tree ? tree(records) : blocks(records) {
+                out(line)
             }
             if records.count == 1 {
                 // This reads as broken the first time and is correct: a pane the
                 // owner opened by hand created nothing and has no peers, so it
                 // is the whole of its own scope. Saying so costs one line and
                 // saves the reader looking for the bug.
-                StandardStreams.err(
+                err(
                     "only this pane is in scope. baia list shows the calling pane, the panes it "
                         + "created through the channel, and its peers."
                 )
@@ -52,8 +80,8 @@ enum Rendering {
 
         case .publish:
             if let ticket = result.rendezvous {
-                StandardStreams.out(ticket)
-                StandardStreams.err(
+                out(ticket)
+                err(
                     "hand this to the panes you want as peers. It admits them to a "
                         + "communication edge and confers no control over this pane."
                 )
@@ -62,39 +90,41 @@ enum Rendering {
         case .connect:
             let peer = result.pane ?? ""
             if let name = result.name, !name.isEmpty {
-                StandardStreams.out("\(peer) \(name)")
+                out("\(peer) \(name)")
             } else if !peer.isEmpty {
-                StandardStreams.out(peer)
+                out(peer)
             }
 
         case .peers:
             let records = result.panes ?? []
             if records.isEmpty {
-                StandardStreams.err("no peers. baia publish mints a ticket for one to connect with.")
+                err("no peers. baia publish mints a ticket for one to connect with.")
             }
             for line in blocks(records) {
-                StandardStreams.out(line)
+                out(line)
             }
 
         case .recv:
             for message in result.messages ?? [] {
-                StandardStreams.out("from \(message.from)")
-                StandardStreams.out(message.text)
-                StandardStreams.out("")
+                out("from \(message.from)")
+                out(message.text)
+                out("")
             }
             if let dropped = result.dropped, dropped > 0 {
                 // Reported once and then reset by the server. A silent drop is
                 // worse than a lost message, because the reader concludes
                 // nothing was sent.
-                StandardStreams.err(
+                err(
                     "\(dropped) message\(dropped == 1 ? " was" : "s were") dropped from a full "
                         + "mailbox since the last recv"
                 )
             }
             if result.more == true {
-                StandardStreams.err("the mailbox still holds messages. Run baia recv again.")
+                err("the mailbox still holds messages. Run baia recv again.")
             }
         }
+
+        return lines
     }
 
     /// The result object exactly as it came off the wire.

@@ -1,4 +1,5 @@
 import Foundation
+import PaneCLI
 
 /// stdout, stderr, and the one read of stdin the protocol allows.
 ///
@@ -16,6 +17,22 @@ enum StandardStreams {
     /// status is what a script branches on.
     static func err(_ line: String) {
         write(line + "\n", to: FileHandle.standardError)
+    }
+
+    /// A rendered result, replayed in the order ``Rendering`` decided.
+    ///
+    /// In order rather than stdout first, because a note explains the line it
+    /// sits next to: `publish` prints the ticket and then says what it admits,
+    /// and `peers` says there are none before printing none.
+    static func write(_ lines: [RenderedLine]) {
+        for line in lines {
+            switch line.stream {
+            case .out:
+                out(line.text)
+            case .err:
+                err(line.text)
+            }
+        }
     }
 
     /// Everything on stdin, as bytes.

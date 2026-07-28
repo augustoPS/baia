@@ -42,6 +42,8 @@ packages:
     path: Packages/PaneSearch
   PaneControl:
     path: Packages/PaneControl
+  PaneCLI:
+    path: Packages/PaneCLI
 
 targets:
   baia:
@@ -151,6 +153,12 @@ targets:
 
     dependencies:
       - package: PaneControl
+      # Parsing, exit statuses, help text and rendering. They live in a package
+      # rather than in `CLI/` for one reason: `make test` iterates `Packages/*`,
+      # so a decidable thing left in this target is a thing no test can reach.
+      # What stays here is what needs a socket, an environment, or a file
+      # descriptor.
+      - package: PaneCLI
 
     settings:
       base:

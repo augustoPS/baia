@@ -5,10 +5,10 @@ import PaneControl
 ///
 /// The exit-status table is generated from ``ExitStatus`` rather than written
 /// out, so what the help promises and what the process exits with cannot drift.
-/// This CLI has no test target, which makes a hand-maintained table here a claim
-/// nothing checks.
-enum Help {
-    static var text: String {
+/// A hand-maintained table here would be a second copy of the switch in
+/// ``ExitStatus/status(for:)``, and the copy is the one that goes stale.
+public enum Help {
+    public static var text: String {
         var lines: [String] = []
 
         lines.append("baia: talk to the baia window this pane is in.")
@@ -64,7 +64,7 @@ enum Help {
         return lines.joined(separator: "\n")
     }
 
-    static var version: String {
+    public static var version: String {
         "baia, control protocol v\(ControlWire.version). Built with the app it talks to."
     }
 
