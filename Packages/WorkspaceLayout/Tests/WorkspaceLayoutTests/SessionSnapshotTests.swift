@@ -49,7 +49,12 @@ import Testing
                 ],
                 focusedTabIndex: 1
             ),
-            panes: [PaneState(id: ids[0], workingDirectory: "/Users/x/Projects", pinnedDirectory: "/Users/x")],
+            panes: [PaneState(
+                id: ids[0],
+                workingDirectory: "/Users/x/Projects",
+                pinnedDirectory: "/Users/x",
+                createdBy: nil
+            )],
             windowFrame: WindowFrame(x: -12.5, y: 33, width: 1680, height: 1050),
             sidebar: nil
         )

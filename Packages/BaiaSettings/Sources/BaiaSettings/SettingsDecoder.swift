@@ -258,6 +258,27 @@ public enum SettingsDecoder {
             }
         }
 
+        // The two control channel keys, read as plain flags the way
+        // `restoreSession` is, so a wrong type in one leaves the other applied
+        // and names itself in `invalidKeys`. Neither falls back to the other's
+        // value and neither implies the other: turning the channel off says
+        // nothing about whether `run` was wanted, and a file that carries both
+        // must be able to be wrong about exactly one of them.
+        //
+        // Both keys are inert as of this commit. Decoding one proves the
+        // spelling reaches `Settings` and nothing beyond that, which is the
+        // whole `focusAccent` lesson: it decoded, clamped, defaulted, had four
+        // tests, was written to the first-launch file, and was read by nothing
+        // for nine days. What settles these two is the control channel
+        // diagnostic flipping each key against the live socket.
+        if let enabled = reader.flag("controlChannelEnabled") {
+            settings.controlChannelEnabled = enabled
+        }
+
+        if let allowRun = reader.flag("controlAllowRun") {
+            settings.controlAllowRun = allowRun
+        }
+
         return SettingsDecodeResult(
             settings: settings,
             // Both lists are sorted, and a `Dictionary`'s key order is not stable

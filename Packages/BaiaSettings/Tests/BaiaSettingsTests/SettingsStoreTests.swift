@@ -109,6 +109,8 @@ import Testing
             "attentionStyle",
             "attentionAccent",
             "alertBehavior",
+            "controlChannelEnabled",
+            "controlAllowRun",
         ])
     }
 

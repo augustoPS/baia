@@ -148,11 +148,25 @@ public struct SessionStore: Sendable {
             : min(max(snapshot.workspace.focusedTabIndex, 0), tabs.count - 1)
 
         let live = Set(tabs.flatMap { $0.tree.paneIDs })
+
+        // A `createdBy` naming a pane that did not come back is dropped, and the
+        // child becomes a root. Not re-parented to the grandparent, which would
+        // silently widen whoever's scope inherited it, and not left pointing at a
+        // ghost, which would make `list` name a pane that does not exist. The parent
+        // can be gone because its directory vanished above, because the file named a
+        // pane no tree held, or because it was closed before the session was written.
+        let restorable = panes.filter { live.contains($0.id) }.map { pane -> PaneState in
+            guard let parent = pane.createdBy, !live.contains(parent) else { return pane }
+            var rerooted = pane
+            rerooted.createdBy = nil
+            return rerooted
+        }
+
         return (
             snapshot: SessionSnapshot(
                 schemaVersion: snapshot.schemaVersion,
                 workspace: Workspace(tabs: tabs, focusedTabIndex: index),
-                panes: panes.filter { live.contains($0.id) },
+                panes: restorable,
                 windowFrame: snapshot.windowFrame,
                 // Carried across by hand like every other field here, and the one
                 // that was not: a sidebar dragged wide came back at its default

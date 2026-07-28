@@ -115,6 +115,42 @@ public struct Settings: Sendable, Equatable {
     /// ahead-behind and the footer was to go quiet.
     public var sidebar: SidebarContent
 
+    /// Whether the in-pane control channel answers a pane's requests.
+    ///
+    /// Default true. A pane reaches nothing outside itself and its own
+    /// descendants, and peering needs a token a pane can only be handed by
+    /// something that already trusts it, so an off-by-default channel would ship
+    /// a feature nobody ever sees.
+    ///
+    /// False is a refusal and not an unbinding: the socket stays bound and every
+    /// request is answered `disabled`. Unbinding was the first draft and it is
+    /// wrong, because an unbound socket is indistinguishable from a dead app, so
+    /// every pane's `baia` would report a launch failure that did not happen and
+    /// the key would be unobservable from the diagnostic that has to prove it
+    /// works.
+    ///
+    /// Nothing reads this yet. The server that does arrives with the control
+    /// channel itself, and the criterion for calling this key finished is the
+    /// diagnostic flipping it live and asserting the wire answer changes, not a
+    /// test showing the value survives a decode.
+    public var controlChannelEnabled: Bool
+
+    /// Whether the control channel's `run` verb is offered.
+    ///
+    /// Default false. Running a command in another pane is the one verb that
+    /// turns a reach into an execution, so it stays off until someone asks for
+    /// it by name in the file.
+    ///
+    /// False is not the same as the verb being absent, and the difference is the
+    /// point. `run` is a declared verb at both settings, answering `disabled`
+    /// when this is false and `refused` when it is true, since `run` itself
+    /// lands in v2. Were the verb simply missing, both values would answer
+    /// `unknownVerb`, a test flipping the key would pass, and the key would
+    /// still reach nothing.
+    ///
+    /// Nothing reads this yet either. Same criterion as above.
+    public var controlAllowRun: Bool
+
     /// The owner's ghostty config, field for field, transcribed from
     /// `vault/projects/ghostty/config.ghostty`.
     ///
@@ -150,7 +186,9 @@ public struct Settings: Sendable, Equatable {
         attentionStyle: .loud,
         attentionAccent: .alert,
         alertBehavior: .stock,
-        sidebar: .off
+        sidebar: .off,
+        controlChannelEnabled: true,
+        controlAllowRun: false
     )
 
     /// Expands a leading `~` the way a shell would.

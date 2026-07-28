@@ -61,7 +61,9 @@ import Testing
           "attentionStyle": "quiet",
           "attentionAccent": "accent",
           "alertBehavior": "derive",
-          "sidebar": "files"
+          "sidebar": "files",
+          "controlChannelEnabled": false,
+          "controlAllowRun": true
         }
         """#)
         #expect(result.settings == Settings(
@@ -86,7 +88,9 @@ import Testing
             attentionStyle: .quiet,
             attentionAccent: .accent,
             alertBehavior: .derive,
-            sidebar: .files
+            sidebar: .files,
+            controlChannelEnabled: false,
+            controlAllowRun: true
         ))
         #expect(result.unknownKeys.isEmpty)
         #expect(result.invalidKeys.isEmpty)
@@ -158,6 +162,8 @@ import Testing
             "gitPollSeconds": "false",
             "activityPollSeconds": "[1]",
             "restoreSession": "1",
+            "controlChannelEnabled": #""off""#,
+            "controlAllowRun": "0",
         ]
         for (key, value) in wrongValues {
             let result = decode("{\"\(key)\": \(value)}")
@@ -463,5 +469,42 @@ import Testing
         #expect(result.settings.attentionStyle == .quiet)
         #expect(result.invalidKeys.isEmpty)
         #expect(!result.documentIsUnreadable)
+    }
+
+    @Test func eitherControlChannelKeyDegradesWithoutTakingTheOtherWithIt() {
+        // The two keys mean different things and a file is allowed to be wrong
+        // about exactly one of them. A shared read, or one key falling back to
+        // the other's value, would let a typo in the channel switch quietly turn
+        // `run` back off, which is the sort of coupling nothing on screen would
+        // ever explain.
+        let badChannel = decode(#"{"controlChannelEnabled": "no", "controlAllowRun": true}"#)
+        #expect(badChannel.settings.controlChannelEnabled)
+        #expect(badChannel.settings.controlAllowRun)
+        #expect(badChannel.invalidKeys == ["controlChannelEnabled"])
+
+        let badRun = decode(#"{"controlChannelEnabled": false, "controlAllowRun": 1}"#)
+        #expect(!badRun.settings.controlChannelEnabled)
+        #expect(!badRun.settings.controlAllowRun)
+        #expect(badRun.invalidKeys == ["controlAllowRun"])
+    }
+
+    @Test func theControlChannelKeysAreReadUnderExactlyTheseSpellings() {
+        // The spellings are what the owner types, and a key read under a name one
+        // character off would be reported as unknown while the setting he wrote
+        // did nothing. The near misses are the ones a reasonable person reaches
+        // for: the CLI is `baia`, so `baiaControlChannel` is a plausible guess,
+        // and `controlRunAllowed` is the other word order.
+        let result = decode(#"""
+        {
+          "baiaControlChannel": true,
+          "controlRunAllowed": true,
+          "controlChannelEnabled": false,
+          "controlAllowRun": true
+        }
+        """#)
+        #expect(result.unknownKeys == ["baiaControlChannel", "controlRunAllowed"])
+        #expect(!result.settings.controlChannelEnabled)
+        #expect(result.settings.controlAllowRun)
+        #expect(result.invalidKeys.isEmpty)
     }
 }

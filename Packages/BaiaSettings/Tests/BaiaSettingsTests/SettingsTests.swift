@@ -51,6 +51,15 @@ import Testing
         #expect(Settings.Limits.padding.contains(Settings.defaultSettings.windowPadding))
     }
 
+    @Test func theControlChannelIsOnByDefaultAndRunIsNot() {
+        // Two different arguments, not one. The channel grants a pane no reach
+        // outside itself and its own descendants, so off by default would ship a
+        // feature nobody ever sees. `run` is the verb that turns a reach into an
+        // execution, so it waits to be asked for by name.
+        #expect(Settings.defaultSettings.controlChannelEnabled)
+        #expect(!Settings.defaultSettings.controlAllowRun)
+    }
+
     @Test func expandsALeadingTildeAndLeavesAnAbsolutePathAlone() {
         #expect(Settings.expandingTilde("~/Projects/baia") == NSHomeDirectory() + "/Projects/baia")
         #expect(Settings.expandingTilde("/opt/homebrew") == "/opt/homebrew")

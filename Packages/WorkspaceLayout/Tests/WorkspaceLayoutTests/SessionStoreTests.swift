@@ -32,8 +32,18 @@ import Testing
                 focusedTabIndex: 0
             ),
             panes: [
-                PaneState(id: first, workingDirectory: "/Users/x/Projects", pinnedDirectory: nil),
-                PaneState(id: second, workingDirectory: nil, pinnedDirectory: "/Users/x/Projects/baia"),
+                PaneState(
+                    id: first,
+                    workingDirectory: "/Users/x/Projects",
+                    pinnedDirectory: nil,
+                    createdBy: nil
+                ),
+                PaneState(
+                    id: second,
+                    workingDirectory: nil,
+                    pinnedDirectory: "/Users/x/Projects/baia",
+                    createdBy: nil
+                ),
             ],
             windowFrame: WindowFrame(x: 8, y: 8, width: 1200, height: 800),
             sidebar: nil
@@ -46,6 +56,19 @@ import Testing
 
         #expect(store.save(snapshot))
         #expect(store.load() == snapshot)
+    }
+
+    @Test func aPaneOpenedByAnotherPaneRemembersWhichOneAcrossASave() {
+        var snapshot = sampleSnapshot()
+        let parent = snapshot.panes[0].id
+        snapshot.panes[1].createdBy = parent
+        let store = store()
+
+        #expect(store.save(snapshot))
+        // Parentage is the one part of the control channel's graph that persists.
+        // Tokens are minted per run and never written; this is an identifier, and
+        // an owner asking where a pane came from needs it to survive a relaunch.
+        #expect(store.load()?.panes[1].createdBy == parent)
     }
 
     @Test func loadFindsNothingWhenNoSessionWasEverWritten() {
@@ -194,7 +217,7 @@ import Testing
         let pane = PaneID()
         return SessionSnapshot(
             workspace: Workspace(pane: pane),
-            panes: [PaneState(id: pane, workingDirectory: "/tmp")],
+            panes: [PaneState(id: pane, workingDirectory: "/tmp", createdBy: nil)],
             windowFrame: WindowFrame(x: 1, y: 2, width: 3, height: 4),
             sidebar: SidebarGeometry(width: 462, splitHeight: 516)
         )

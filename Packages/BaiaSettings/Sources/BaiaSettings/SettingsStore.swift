@@ -141,7 +141,9 @@ public struct SettingsStore: Sendable {
       "focusAccent": "accent",
       "attentionStyle": "loud",
       "attentionAccent": "alert",
-      "alertBehavior": "stock"
+      "alertBehavior": "stock",
+      "controlChannelEnabled": true,
+      "controlAllowRun": false
     }
 
     """

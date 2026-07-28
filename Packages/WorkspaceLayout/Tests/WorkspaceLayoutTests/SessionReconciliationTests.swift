@@ -29,8 +29,8 @@ import Testing
                 focusedTabIndex: 0
             ),
             panes: [
-                PaneState(id: first, workingDirectory: firstDirectory, pinnedDirectory: nil),
-                PaneState(id: second, workingDirectory: secondDirectory, pinnedDirectory: nil),
+                PaneState(id: first, workingDirectory: firstDirectory, pinnedDirectory: nil, createdBy: nil),
+                PaneState(id: second, workingDirectory: secondDirectory, pinnedDirectory: nil, createdBy: nil),
             ],
             windowFrame: nil,
             sidebar: nil
@@ -83,7 +83,7 @@ import Testing
         let never = PaneID()
         let snapshot = SessionSnapshot(
             workspace: Workspace(pane: never),
-            panes: [PaneState(id: never, workingDirectory: nil, pinnedDirectory: nil)],
+            panes: [PaneState(id: never, workingDirectory: nil, pinnedDirectory: nil, createdBy: nil)],
             windowFrame: nil,
             sidebar: nil
         )
@@ -101,7 +101,7 @@ import Testing
         let pane = PaneID()
         let snapshot = SessionSnapshot(
             workspace: Workspace(pane: pane),
-            panes: [PaneState(id: pane, workingDirectory: "/here", pinnedDirectory: "/gone")],
+            panes: [PaneState(id: pane, workingDirectory: "/here", pinnedDirectory: "/gone", createdBy: nil)],
             windowFrame: nil,
             sidebar: nil
         )
@@ -111,7 +111,9 @@ import Testing
         // A pin is a preference about a pane, not its reason to exist, and
         // `AnchorResolver` already treats a stale pin as data to repair.
         #expect(result.droppedPanes.isEmpty)
-        #expect(result.snapshot.panes == [PaneState(id: pane, workingDirectory: "/here", pinnedDirectory: nil)])
+        #expect(result.snapshot.panes == [
+            PaneState(id: pane, workingDirectory: "/here", pinnedDirectory: nil, createdBy: nil),
+        ])
     }
 
     @Test func aTabWhoseEveryPaneVanishedIsRemoved() {
@@ -123,8 +125,8 @@ import Testing
                 focusedTabIndex: 0
             ),
             panes: [
-                PaneState(id: firstTabPane, workingDirectory: "/gone", pinnedDirectory: nil),
-                PaneState(id: survivor, workingDirectory: "/here", pinnedDirectory: nil),
+                PaneState(id: firstTabPane, workingDirectory: "/gone", pinnedDirectory: nil, createdBy: nil),
+                PaneState(id: survivor, workingDirectory: "/here", pinnedDirectory: nil, createdBy: nil),
             ],
             windowFrame: nil,
             sidebar: nil
@@ -229,8 +231,8 @@ import Testing
         let snapshot = SessionSnapshot(
             workspace: Workspace(pane: shown),
             panes: [
-                PaneState(id: shown, workingDirectory: "/here", pinnedDirectory: nil),
-                PaneState(id: leftover, workingDirectory: "/gone", pinnedDirectory: nil),
+                PaneState(id: shown, workingDirectory: "/here", pinnedDirectory: nil, createdBy: nil),
+                PaneState(id: leftover, workingDirectory: "/gone", pinnedDirectory: nil, createdBy: nil),
             ],
             windowFrame: nil,
             sidebar: nil
@@ -285,5 +287,44 @@ import Testing
 
         #expect(result.droppedPanes == [gone])
         #expect(result.snapshot.workspace.tabs[0].tree == .leaf(kept))
+    }
+
+    @Test func aCreatedByNamingAPaneThatDidNotComeBackIsDropped() {
+        let parent = PaneID()
+        let child = PaneID()
+        var snapshot = twoPaneSnapshot(
+            first: parent,
+            second: child,
+            firstDirectory: "/gone",
+            secondDirectory: "/here"
+        )
+        snapshot.panes[1].createdBy = parent
+
+        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/here"))
+
+        // The child becomes a root. It is not re-parented to the grandparent, which
+        // would silently widen whatever scope inherited it, and the edge is not left
+        // pointing at a ghost, which would make `list` name a pane nobody can see.
+        #expect(result.snapshot.panes.map(\.id) == [child])
+        #expect(result.snapshot.panes[0].createdBy == nil)
+    }
+
+    @Test func aCreatedByNamingAPaneThatCameBackSurvives() {
+        let parent = PaneID()
+        let child = PaneID()
+        var snapshot = twoPaneSnapshot(
+            first: parent,
+            second: child,
+            firstDirectory: "/here",
+            secondDirectory: "/here"
+        )
+        snapshot.panes[1].createdBy = parent
+
+        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/here"))
+
+        // The other half of the rule, and the one that fails if the drop is written as
+        // an unconditional clear: an owner asking where a pane came from still has an
+        // answer after a relaunch.
+        #expect(result.snapshot.panes[1].createdBy == parent)
     }
 }

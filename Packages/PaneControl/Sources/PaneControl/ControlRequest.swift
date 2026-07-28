@@ -1,0 +1,146 @@
+import Foundation
+
+/// One line off the socket, once it has been understood.
+///
+/// The server never sees a partially built one of these: ``ControlWire`` answers
+/// a whole request or an error, so there is no half-decoded state a handler could
+/// act on.
+public struct ControlRequest: Sendable, Equatable, Codable {
+    /// The protocol version the sender speaks. Always
+    /// ``ControlWire/version`` from this build; anything else is refused at
+    /// decode with `badVersion`.
+    public var v: Int
+
+    /// The calling pane's per-run secret, straight from `$BAIA_TOKEN`.
+    ///
+    /// A secret and never a pane id. `$BAIA_PANE` is a public display id that
+    /// sits in `session.json`, which any same-uid process can read, so a design
+    /// that authenticated on it would let any leaf act as any pane in any
+    /// window. The registry rejects a token that parses as a pane id rather than
+    /// merely failing to find it.
+    public var token: String
+
+    public var verb: ControlVerb
+
+    /// Everything the verb needs beyond the verb itself. Empty for the verbs
+    /// that need nothing, and encoded as `{}` rather than omitted, so a frame
+    /// read by hand has the same shape whatever the verb.
+    public var args: ControlArgs
+
+    public init(
+        v: Int = ControlWire.version,
+        token: String,
+        verb: ControlVerb,
+        args: ControlArgs = ControlArgs()
+    ) {
+        self.v = v
+        self.token = token
+        self.verb = verb
+        self.args = args
+    }
+}
+
+/// The union of every verb's arguments, one flat optional per argument.
+///
+/// One struct rather than an enum with a case per verb. An enum would encode as
+/// a nested discriminated object, which is worse to read with `nc` and worse to
+/// write by hand in the diagnostic, and the type safety it would buy is bought
+/// anyway by ``ControlVerb`` being closed: an argument that makes no sense for a
+/// verb is ignored by that verb's handler, in a package where the handler cannot
+/// be reached without passing authorization first.
+///
+/// Every field is optional and nil fields are omitted from the encoded frame,
+/// which is what the synthesized encoder does for optionals.
+public struct ControlArgs: Sendable, Equatable, Codable {
+    /// `split`: which way the divider cuts.
+    public var axis: ControlAxis?
+
+    /// `split`: where the new pane's shell starts. Nil means wherever a new pane
+    /// would have started anyway.
+    public var cwd: String?
+
+    /// `resize`: which way the caller wants to grow.
+    public var direction: ControlDirection?
+
+    /// `resize`: how far, as a fraction of the split it moves.
+    public var by: Double?
+
+    /// `zoom`: the state asked for. Nil is a toggle, true is `--on`, false is
+    /// `--off`, which is what makes `baia zoom --on` idempotent in a script.
+    public var on: Bool?
+
+    /// `publish`, `connect`: the channel name a pane publishes under.
+    public var name: String?
+
+    /// `publish --rotate`: mint a fresh rendezvous token, keeping established
+    /// edges and admitting nobody new on the old one.
+    public var rotate: Bool?
+
+    /// `connect`: the rendezvous token, read from stdin by the CLI and never
+    /// from argv, because `ps -ww` shows any same-uid process's full argv.
+    public var rendezvous: String?
+
+    /// `send`, `revoke`: the peer's display pane id.
+    public var peer: String?
+
+    /// `send`: the message body, capped at
+    /// ``ControlWire/maxMessagePayloadBytes``.
+    public var text: String?
+
+    /// `recv --wait`: how long to park, capped at ``ControlWire/maxWaitSeconds``
+    /// by the server rather than trusted from the client.
+    public var wait: Int?
+
+    public init(
+        axis: ControlAxis? = nil,
+        cwd: String? = nil,
+        direction: ControlDirection? = nil,
+        by: Double? = nil,
+        on: Bool? = nil,
+        name: String? = nil,
+        rotate: Bool? = nil,
+        rendezvous: String? = nil,
+        peer: String? = nil,
+        text: String? = nil,
+        wait: Int? = nil
+    ) {
+        self.axis = axis
+        self.cwd = cwd
+        self.direction = direction
+        self.by = by
+        self.on = on
+        self.name = name
+        self.rotate = rotate
+        self.rendezvous = rendezvous
+        self.peer = peer
+        self.text = text
+        self.wait = wait
+    }
+}
+
+/// Which way a split cuts, spelled the way `WorkspaceLayout.SplitAxis` spells it.
+///
+/// A separate type because this package imports Foundation and nothing else, and
+/// a wire type that is also a layout type would drag the layout package into the
+/// CLI. The app maps one onto the other in one place.
+///
+/// Named after how the children sit, not after how the divider runs, matching
+/// `SplitAxis`: `horizontal` is side by side, which is what `baia split --right`
+/// asks for.
+public enum ControlAxis: String, Sendable, Hashable, Codable, CaseIterable {
+    case horizontal
+    case vertical
+}
+
+/// Which way a resize travels, one per arrow key, mapping onto
+/// `WorkspaceLayout.FocusDirection`.
+///
+/// `FocusDirection` is deliberately not `Codable` over there, because a
+/// direction is a keystroke and never session state. This is the wire's own
+/// spelling and the app translates it.
+public enum ControlDirection: String, Sendable, Hashable, Codable, CaseIterable {
+    case left
+    case right
+    case up
+    case down
+}
