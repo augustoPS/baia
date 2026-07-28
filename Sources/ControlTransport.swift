@@ -236,7 +236,12 @@ nonisolated final class ControlTransport: @unchecked Sendable {
 
             let source = DispatchSource.makeReadSource(fileDescriptor: descriptor, queue: queue)
             source.setEventHandler { [weak self] in self?.readPending(connection) }
-            source.setCancelHandler { Darwin.close(descriptor) }
+            // Held before the source can be cancelled, released by the cancel
+            // handler, and the close belongs to whichever hold is the last to go.
+            // See ``DescriptorHandle``.
+            let handle = connection.handle
+            handle.hold()
+            source.setCancelHandler { handle.release() }
             connection.reader = source
             source.resume()
 
@@ -371,6 +376,9 @@ nonisolated final class ControlTransport: @unchecked Sendable {
             queue: queue
         )
         source.setEventHandler { [weak self] in self?.flush(connection) }
+        let handle = connection.handle
+        handle.hold()
+        source.setCancelHandler { handle.release() }
         connection.writer = source
         source.resume()
     }
@@ -385,14 +393,24 @@ nonisolated final class ControlTransport: @unchecked Sendable {
 
     // MARK: Teardown
 
+    /// Drops one connection's sources and lets the descriptor go with the last of
+    /// them.
+    ///
+    /// **Neither source owns the close, because two of them share one
+    /// descriptor.** GCD's contract is that a descriptor stays open until the
+    /// cancellation handler of every source registered on it has run, and the
+    /// write source is armed and disarmed on its own schedule, so cancelling it
+    /// here and then closing from the read source's handler would meet the
+    /// contract only by the accident that both handlers happen to target one
+    /// serial queue. A closed-then-recycled descriptor is how that shape delivers
+    /// an event on somebody else's file. ``DescriptorHandle`` counts instead: the
+    /// last handler out closes, in whatever order they run.
     private func tearDown(_ connection: Connection, notify: Bool) {
         guard connection.isTornDown == false else { return }
         connection.isTornDown = true
         connections[connection.id] = nil
 
         disarm(connection)
-        // The reader owns the descriptor's lifetime, so it is cancelled last and
-        // its cancel handler is the only `close`.
         connection.reader?.cancel()
         connection.reader = nil
 
@@ -430,7 +448,7 @@ nonisolated final class ControlTransport: @unchecked Sendable {
     /// see the same buffers the read loop is filling.
     private final class Connection {
         let id: Int
-        let descriptor: Int32
+        let handle: DescriptorHandle
         var reader: DispatchSourceRead?
         var writer: DispatchSourceWrite?
         var inbound: [UInt8] = []
@@ -438,9 +456,52 @@ nonisolated final class ControlTransport: @unchecked Sendable {
         var closeAfterFlush = false
         var isTornDown = false
 
+        var descriptor: Int32 { handle.descriptor }
+
         init(id: Int, descriptor: Int32) {
             self.id = id
+            handle = DescriptorHandle(descriptor)
+        }
+    }
+
+    /// One descriptor's lifetime, shared by every `DispatchSource` registered on
+    /// it.
+    ///
+    /// **The close belongs to the last cancellation handler out, and to no
+    /// particular source.** GCD requires the descriptor to stay open until every
+    /// source on it has had its cancellation handler invoked, and a connection
+    /// here carries two: a read source for its whole life and a write source that
+    /// exists only while bytes are waiting. Naming one of them the owner meets the
+    /// requirement only while the other happens to be cancelled first on the same
+    /// queue, which is a scheduling accident and not a construction. So each
+    /// source takes a hold before it is resumed and drops it from its own cancel
+    /// handler, and the count decides.
+    ///
+    /// A separate object rather than a counter on ``Connection`` so the cancel
+    /// handlers capture this and not the connection, which would put a retain
+    /// cycle through the source the connection is holding.
+    ///
+    /// Confined to the channel queue like everything else: holds are taken there,
+    /// and cancellation handlers are submitted there because that is every
+    /// source's target queue.
+    private final class DescriptorHandle {
+        let descriptor: Int32
+        private var holds = 0
+        private var isClosed = false
+
+        init(_ descriptor: Int32) {
             self.descriptor = descriptor
+        }
+
+        func hold() {
+            holds += 1
+        }
+
+        func release() {
+            holds -= 1
+            guard holds <= 0, isClosed == false else { return }
+            isClosed = true
+            Darwin.close(descriptor)
         }
     }
 

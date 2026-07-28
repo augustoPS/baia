@@ -78,7 +78,11 @@ final class ControlServer {
     private var graph = PaneGraph()
 
     private var connections: [Int: ConnectionState] = [:]
-    private var waiters: [Int: ParkedRecv] = [:]
+
+    /// One parked `recv` per connection, and the rule that a second one is
+    /// answered rather than swallowed. The table is in the pure package because
+    /// the rule is decidable without a descriptor, so `make test` decides it.
+    private var waiters = ParkedRecvs<DispatchWorkItem>()
 
     /// Sweeps the idle cap. Alive only while there are connections, because a
     /// timer that ticks for the life of the app to look at an empty dictionary is
@@ -134,9 +138,9 @@ final class ControlServer {
     /// through the same serial queue those responses were queued on, so the write
     /// is attempted before the descriptor goes.
     func stop() {
-        // A copy of the keys, because resolving a waiter removes it. Every loop
-        // over `waiters` here does the same, for the same reason.
-        for id in Array(waiters.keys) {
+        // `ids` is an array, not a live key view, because resolving a waiter
+        // removes it. Every loop over `waiters` here relies on that.
+        for id in waiters.ids {
             resolve(id, with: .empty)
         }
         sweep?.invalidate()
@@ -170,7 +174,7 @@ final class ControlServer {
     /// be answered `badToken`, which tells a script that its own token went bad
     /// rather than that its pane closed.
     func forgetPane(_ pane: ControlPaneID) {
-        for id in waiters.filter({ $0.value.pane == pane }).keys {
+        for id in waiters.ids(of: pane) {
             resolve(id, with: .empty)
         }
         graph.close(pane: pane)
@@ -186,7 +190,7 @@ final class ControlServer {
         guard channelEnabled != isChannelEnabled else { return }
         isChannelEnabled = channelEnabled
         guard channelEnabled == false else { return }
-        for id in Array(waiters.keys) {
+        for id in waiters.ids {
             resolve(id, with: .empty)
         }
     }
@@ -226,7 +230,7 @@ final class ControlServer {
             // nothing, so it is the evictable one, and it is resolved with an
             // empty drain rather than dropped: a long-poll client already handles
             // a timeout and a re-poll.
-            guard let victim = oldestWaiter(of: nil) else {
+            guard let victim = waiters.oldest(of: nil) else {
                 // One frame, then closed. A connection silently dropped at a full
                 // pool is indistinguishable from an app that died, and the two
                 // want opposite things from the person reading the error.
@@ -268,7 +272,7 @@ final class ControlServer {
 
         let held = connections.filter { $0.key != id && $0.value.pane == actor }.count
         if held >= ControlWire.maxConnectionsPerPane {
-            if let victim = oldestWaiter(of: actor) {
+            if let victim = waiters.oldest(of: actor) {
                 resolve(victim, with: .empty)
             } else {
                 respond(
@@ -291,7 +295,7 @@ final class ControlServer {
     private func forget(_ id: Int) {
         // No response and no resolution: the client is already gone, so the
         // waiter is dropped rather than answered.
-        waiters.removeValue(forKey: id)?.deadline.cancel()
+        waiters.remove(id)?.deadline.cancel()
         connections[id] = nil
         if connections.isEmpty {
             sweep?.invalidate()
@@ -643,19 +647,9 @@ final class ControlServer {
 
     // MARK: The long poll
 
-    /// A `recv` that found nothing and asked to wait.
-    ///
-    /// The token is held for the length of the wait, and holding it is the lesser
-    /// of two evils. The alternative is a public drain that takes a pane instead
-    /// of a token, which is a door into a mailbox that skips `authorize`, and
-    /// `PaneGraph` refuses to have one for exactly this reason. The token sits in
-    /// the same process as the registry that already holds it, is never encoded,
-    /// never logged, and goes when the waiter resolves.
-    private struct ParkedRecv {
-        let pane: ControlPaneID
-        let token: String
-        let deadline: DispatchWorkItem
-    }
+    /// A `recv` that found nothing and asked to wait, carrying the cancellable
+    /// that answers it at its deadline.
+    private typealias ParkedRecv = ParkedRecvs<DispatchWorkItem>.Waiter
 
     private func recv(_ request: ControlRequest, actor: ControlPaneID, on id: Int) {
         let wait = min(max(request.args.wait ?? 0, 0), ControlWire.maxWaitSeconds)
@@ -673,6 +667,21 @@ final class ControlServer {
         }
     }
 
+    /// Parks a `recv` that found nothing, or refuses it because this connection is
+    /// already waiting on one.
+    ///
+    /// **A second `--wait` pipelined on one connection is answered, not
+    /// swallowed.** NDJSON is a pipelinable wire and the spec keeps it
+    /// `nc`-drivable on purpose, so two `recv --wait` frames can arrive before
+    /// either has been answered. Overwriting the first waiter left its request
+    /// with no response at all and its deadline still armed, to fire later and
+    /// resolve the *second* waiter early. Rule 5 allows one request with no
+    /// response, the over-cap line, and it is spent.
+    ///
+    /// Refusing the newcomer rather than resolving the incumbent, because
+    /// resolving an incumbent closes its connection, and its connection is the
+    /// newcomer's connection too: the newcomer would then have nowhere to be
+    /// answered on, which is the same defect wearing a different hat.
     private func park(_ id: Int, pane: ControlPaneID, token: String, seconds: Int) {
         guard connections[id] != nil else { return }
 
@@ -681,15 +690,32 @@ final class ControlServer {
                 self?.resolveByDraining(id)
             }
         }
-        waiters[id] = ParkedRecv(pane: pane, token: token, deadline: deadline)
-        // Capped at sixty by `wait` above, and the cap is applied here rather
-        // than trusted from the client: an uncapped long poll is a pool slot
-        // held forever by whoever asks for it.
-        DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(seconds), execute: deadline)
+
+        switch waiters.park(id, ParkedRecv(pane: pane, token: token, deadline: deadline)) {
+        case .alreadyParked:
+            // Never submitted, so cancelling is bookkeeping rather than a race:
+            // it says out loud that this deadline will not be resolving anybody.
+            deadline.cancel()
+            respond(
+                .failure(
+                    .refused,
+                    "this connection is already waiting on a recv. One long poll per connection: "
+                        + "let this one answer, or send the next on its own connection."
+                ),
+                to: id
+            )
+            return
+
+        case .parked:
+            // Capped at sixty by `wait` above, and the cap is applied here rather
+            // than trusted from the client: an uncapped long poll is a pool slot
+            // held forever by whoever asks for it.
+            DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(seconds), execute: deadline)
+        }
     }
 
     private func wake(_ pane: ControlPaneID) {
-        for id in waiters.filter({ $0.value.pane == pane }).keys {
+        for id in waiters.ids(of: pane) {
             resolveByDraining(id)
         }
     }
@@ -700,8 +726,17 @@ final class ControlServer {
     /// exactly as it was on the way in. A pane that lost its capability while
     /// parked gets the honest answer rather than a drain nobody checked.
     private func resolveByDraining(_ id: Int) {
-        guard let waiter = waiters.removeValue(forKey: id) else { return }
+        guard let waiter = waiters.remove(id) else { return }
         waiter.deadline.cancel()
+
+        // **The idle clock restarts when the long poll is answered, not when it
+        // was parked.** `received` stamped it when the `recv` frame arrived, and
+        // the waiter was exempt from the sweep only while it was in `waiters`, so
+        // a `recv --wait 60` answered at t=60 would look sixty seconds stale to
+        // the very next five second tick and be sent an unsolicited `refused` and
+        // closed within five seconds of a successful answer. This connection did
+        // not sit thirty seconds without completing a request; it completed one.
+        connections[id]?.lastRequest = Date()
 
         switch graph.recv(token: waiter.token) {
         case let .denied(error):
@@ -724,26 +759,18 @@ final class ControlServer {
     /// so the connection is dropped from the pool here rather than when the
     /// client notices, which is a hop later and one connection over the cap.
     private func resolve(_ id: Int, with drain: Drain) {
-        guard let waiter = waiters.removeValue(forKey: id) else { return }
+        guard let waiter = waiters.remove(id) else { return }
         waiter.deadline.cancel()
+        // No idle stamp on the way out, unlike ``resolveByDraining(_:)``: the
+        // connection leaves the pool on the next line, so there is no clock left
+        // for the sweep to read and writing one would be a value deleted by the
+        // statement under it.
         connections[id] = nil
         respond(answer(for: drain), to: id, thenClose: true)
     }
 
     private func answer(for drain: Drain) -> ControlResponse {
         .success(ControlResult(messages: drain.messages, more: drain.more, dropped: drain.dropped))
-    }
-
-    /// The oldest parked waiter, optionally restricted to one pane.
-    ///
-    /// Oldest by connection id, which is minted in accept order and never reused
-    /// within a run, so it orders arrivals without a second timestamp to keep
-    /// truthful.
-    private func oldestWaiter(of pane: ControlPaneID?) -> Int? {
-        waiters
-            .filter { pane == nil || $0.value.pane == pane }
-            .keys
-            .min()
     }
 
     // MARK: Writing back
