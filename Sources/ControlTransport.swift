@@ -229,6 +229,19 @@ nonisolated final class ControlTransport: @unchecked Sendable {
                 continue
             }
 
+            // Refused here rather than only on the main actor, and refused
+            // before a descriptor is held, a source is armed, or a hop is made.
+            // The pool cap is the server's and so is its eviction policy, but a
+            // cap enforced only a layer up is one an unauthenticated peer walks
+            // straight past: accept is synchronous and the hop that consults the
+            // pool is not, so a connect loop holds descriptors faster than the
+            // main thread can refuse them, until the app runs out and Ghostty
+            // cannot spawn a shell.
+            guard connections.count < Self.acceptCeiling else {
+                Self.writeAndClose(descriptor, Self.ceilingRefusal)
+                continue
+            }
+
             let id = nextID
             nextID += 1
             let connection = Connection(id: id, descriptor: descriptor)
@@ -247,6 +260,48 @@ nonisolated final class ControlTransport: @unchecked Sendable {
 
             handlers.accepted(id)
         }
+    }
+
+    /// The pool cap, plus the one arrival the pool cap is decided about.
+    ///
+    /// ``ControlServer`` owns the pool, and its answer to a full one is a
+    /// main-actor decision this queue cannot make: a full pool gives up a parked
+    /// `recv` when it has one and refuses when it does not, and only the server
+    /// knows which. So an arriving connection is held long enough for that hop to
+    /// happen, and this is the sixteen already in hand plus that one. Everything
+    /// past it is refused on this queue, where refusing costs no descriptor.
+    private static let acceptCeiling = ControlWire.maxConnections + 1
+
+    private static let ceilingRefusal = ControlWire.refusal(
+        "baia is holding \(ControlWire.maxConnections) control connections and cannot take another "
+            + "until one of them finishes. Try again."
+    )
+
+    /// Writes one line to a descriptor nothing is listening on yet, then closes
+    /// it.
+    ///
+    /// For the refusal above, which happens before there is a connection to own
+    /// the descriptor or a source to close it, so the close is unambiguous here
+    /// and needs no ``DescriptorHandle``. Best effort by construction: the socket
+    /// is non-blocking, this is the first thing ever written to it, and a peer
+    /// whose receive buffer cannot take two hundred bytes is a peer that is not
+    /// reading. Arming a write source for it would be arming a source on a
+    /// descriptor whose whole purpose is to be gone.
+    private static func writeAndClose(_ descriptor: Int32, _ line: Data) {
+        line.withUnsafeBytes { buffer in
+            guard let base = buffer.baseAddress else { return }
+            var sent = 0
+            while sent < buffer.count {
+                let written = Darwin.write(descriptor, base + sent, buffer.count - sent)
+                if written > 0 {
+                    sent += written
+                    continue
+                }
+                if written < 0, errno == EINTR { continue }
+                break
+            }
+        }
+        Darwin.close(descriptor)
     }
 
     /// Whether the process on the other end runs as this user.
@@ -299,7 +354,22 @@ nonisolated final class ControlTransport: @unchecked Sendable {
                     tearDown(connection, notify: true)
                     return
                 }
-                handlers.line(connection.id, Data(line))
+
+                // Counted before the hop and not after, because the allocation
+                // being bounded is the hop's own: one `Data` and one block on the
+                // main queue per line, made by a peer that need not have
+                // authenticated to make them.
+                switch connection.pressure.dispatch() {
+                case .accepted:
+                    handlers.line(connection.id, Data(line))
+                case .refused, .dropped:
+                    // `dropped` is unreachable, since refusing cancels this
+                    // source on the way past, and it goes the same way anyway: a
+                    // read source left armed on bytes nobody will consume is a
+                    // handler that fires forever.
+                    refuse(connection)
+                    return
+                }
             }
 
             guard connection.inbound.count <= ControlWire.maxFrameBytes else {
@@ -321,9 +391,27 @@ nonisolated final class ControlTransport: @unchecked Sendable {
     func send(_ line: Data, to id: Int, thenClose: Bool = false) {
         queue.async { [weak self] in
             guard let self, let connection = connections[id] else { return }
-            connection.outbound.append(contentsOf: line)
-            if thenClose { connection.closeAfterFlush = true }
-            flush(connection)
+
+            switch connection.pressure.queue(line) {
+            case .accepted:
+                if thenClose { connection.closeAfterFlush = true }
+                flush(connection)
+            case .refused:
+                // The response this was is gone with the rest of the backlog, and
+                // the refusal is in its place. A peer that is this far behind is
+                // not reading the answer it asked for either.
+                refuse(connection)
+            case .dropped:
+                // Already refusing and already closing, so the answers still on
+                // their way from the main actor stop here. `thenClose` does not:
+                // a peer that trips a budget and then stops reading altogether
+                // leaves its refusal unwritable and its descriptor held, and the
+                // one thing that reclaims it is the server deciding it has waited
+                // long enough. That decision arrives as this flag, from the idle
+                // sweep, and dropping it would let such a peer hold a slot until
+                // the app quit.
+                if thenClose { tearDown(connection, notify: true) }
+            }
         }
     }
 
@@ -340,16 +428,20 @@ nonisolated final class ControlTransport: @unchecked Sendable {
     /// queue serves every pane's channel: a client that stopped reading mid-
     /// response would otherwise stall `baia` in every other pane for as long as
     /// it felt like it, which is the workspace-wide denial of service the budget
-    /// table exists to stop, arriving through the one direction the caps do not
-    /// cover.
+    /// table exists to stop.
+    ///
+    /// Not waiting turns time into memory, which is why the write side carries
+    /// budgets of its own. ``ConnectionBackpressure`` holds them, and the peer
+    /// they bound need not have authenticated: the token is read out of a frame
+    /// that has already arrived here.
     private func flush(_ connection: Connection) {
-        while connection.outbound.isEmpty == false {
-            let written = connection.outbound.withUnsafeBufferPointer { buffer in
+        while connection.pressure.isEmpty == false {
+            let written = connection.pressure.pending.withUnsafeBufferPointer { buffer in
                 Darwin.write(connection.descriptor, buffer.baseAddress, buffer.count)
             }
 
             if written > 0 {
-                connection.outbound.removeFirst(written)
+                connection.pressure.wrote(written)
                 continue
             }
 
@@ -357,6 +449,7 @@ nonisolated final class ControlTransport: @unchecked Sendable {
             if written < 0, code == EINTR { continue }
             if written < 0, code == EAGAIN || code == EWOULDBLOCK {
                 arm(connection)
+                if connection.closeAfterFlush { armCloseDeadline(connection) }
                 return
             }
             tearDown(connection, notify: true)
@@ -365,6 +458,38 @@ nonisolated final class ControlTransport: @unchecked Sendable {
 
         disarm(connection)
         if connection.closeAfterFlush {
+            tearDown(connection, notify: true)
+        }
+    }
+
+    /// Gives a connection that has been told to close the idle budget to take its
+    /// last frame, and then takes the descriptor back whether it did or not.
+    ///
+    /// **Without this the accept ceiling would be a way to lock the channel
+    /// shut.** A peer that opens connections and reads nothing leaves every
+    /// closing frame unwritable, so the descriptor waits on a peer that has no
+    /// intention of reading, and the ceiling that bounds descriptors would then
+    /// bound them at seventeen held forever. Two of the closing frames are not
+    /// even the server's to time out: the pool refuses an arrival it never
+    /// admitted, so no idle sweep will ever look at it, and a connection this
+    /// queue refused for backpressure is closing on a decision the server has not
+    /// been told about yet.
+    ///
+    /// ``ControlWire/idleTimeoutSeconds`` rather than a number of its own,
+    /// because this is the same judgement the sweep makes: a connection that has
+    /// held a slot for thirty seconds without making progress has had it.
+    private func armCloseDeadline(_ connection: Connection) {
+        guard connection.hasCloseDeadline == false else { return }
+        connection.hasCloseDeadline = true
+        // The id and not the connection, the way ``send(_:to:thenClose:)`` takes
+        // one: a `Connection` is confined to this queue and is not `Sendable`, and
+        // an id is an `Int` that names the same connection for the life of the
+        // run because ids are never reused. A connection that has already gone is
+        // simply not found.
+        let id = connection.id
+        queue.asyncAfter(deadline: .now() + .seconds(ControlWire.idleTimeoutSeconds)) {
+            [weak self] in
+            guard let self, let connection = connections[id] else { return }
             tearDown(connection, notify: true)
         }
     }
@@ -381,6 +506,27 @@ nonisolated final class ControlTransport: @unchecked Sendable {
         source.setCancelHandler { handle.release() }
         connection.writer = source
         source.resume()
+    }
+
+    /// Stops reading a connection that passed a budget, and writes it the one
+    /// frame it has left.
+    ///
+    /// ``ConnectionBackpressure`` has already put the refusal where the backlog
+    /// was; this stops the other direction. The read source is cancelled rather
+    /// than left armed, because it is level triggered on bytes this connection
+    /// will now never consume, and a handler that returns without reading them
+    /// is a handler that fires again immediately, forever.
+    ///
+    /// Cancelling releases the read source's hold on the descriptor, and the
+    /// descriptor survives the ``flush(_:)`` below regardless: a cancellation
+    /// handler is submitted to this queue rather than run inline, so it cannot
+    /// overtake the block it was submitted from.
+    private func refuse(_ connection: Connection) {
+        connection.reader?.cancel()
+        connection.reader = nil
+        connection.inbound.removeAll()
+        connection.closeAfterFlush = true
+        flush(connection)
     }
 
     /// Cancels rather than suspends. A suspended `DispatchSource` that is then
@@ -452,8 +598,18 @@ nonisolated final class ControlTransport: @unchecked Sendable {
         var reader: DispatchSourceRead?
         var writer: DispatchSourceWrite?
         var inbound: [UInt8] = []
-        var outbound: [UInt8] = []
+
+        /// The write side's two bounds and the bytes they bound. A value type in
+        /// the pure package, because what it decides is decidable without a
+        /// descriptor and `make test` decides it there.
+        var pressure = ConnectionBackpressure()
+
         var closeAfterFlush = false
+
+        /// Whether the close already has a deadline, so a flush that stalls twice
+        /// arms one and not two.
+        var hasCloseDeadline = false
+
         var isTornDown = false
 
         var descriptor: Int32 { handle.descriptor }

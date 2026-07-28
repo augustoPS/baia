@@ -175,6 +175,29 @@ public struct ControlError: Sendable, Hashable, Codable {
         message: "baia could not mint a rendezvous ticket for that channel. Nothing was published."
     )
 
+    /// The connection is owed more bytes than it has read.
+    ///
+    /// `refused` rather than `internal`: nothing on baia's side went wrong, the
+    /// peer stopped reading, and `refused` is already this wire's word for "baia
+    /// will not serve this". Written as the last frame on the connection and on
+    /// the understanding that a peer which stopped reading may never see it.
+    static let outboundQueueFull = ControlError(
+        code: .refused,
+        message: "this connection is owed more than \(ControlWire.maxOutboundBytes) bytes it has "
+            + "not read. baia does not hold a response for a client that stopped reading, because "
+            + "the queue is memory in the app every other pane shares. Read each answer before "
+            + "asking for the next."
+    )
+
+    /// The connection is pipelining faster than the app answers.
+    static let tooManyRequestsInFlight = ControlError(
+        code: .refused,
+        message: "this connection has \(ControlWire.maxInFlightRequests) requests with baia and "
+            + "none of them answered, which is the cap. The channel is pipelinable so a request "
+            + "may be written before the last one is answered, not so a client may write without "
+            + "reading at all."
+    )
+
     /// Echoes the verb back, clamped.
     ///
     /// Clamped because the verb is attacker-controlled up to the whole frame

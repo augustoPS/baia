@@ -76,6 +76,39 @@ public enum ControlWire {
     /// it, one pane fills the pool and every other pane's `baia` stops working.
     public static let maxConnectionsPerPane = 4
 
+    /// Response bytes queued for one connection that has not read them.
+    ///
+    /// **The write side had no cap at all, and the write side is reachable
+    /// before authentication.** The token is checked on a frame that has already
+    /// been read, so anything that can open the socket can make the app allocate
+    /// here, with the peer uid check and mode 0600 the only things in front of
+    /// it. The socket is non-blocking and the flush never waits, on purpose, so
+    /// a peer that connects and then stops reading leaves every byte it is owed
+    /// in the app's memory rather than stalling the queue every other pane's
+    /// `baia` shares. Without a bound that is the same workspace-wide denial of
+    /// service ``maxFrameBytes`` stops in the other direction.
+    ///
+    /// Four frames, which is ``maxInFlightRequests`` times ``maxFrameBytes``, so
+    /// a connection that pipelines to its in-flight cap and reads nothing until
+    /// the last answer is never refused for answers it asked for.
+    public static let maxOutboundBytes = 4 * maxFrameBytes
+
+    /// Requests one connection may have with the app at once.
+    ///
+    /// The other half of the same hole. Every line the read loop cuts becomes a
+    /// `Data` and a block on the main queue, and nothing waited for the app to
+    /// answer before cutting the next one, so a peer writing faster than the
+    /// main thread answers grew both without bound while holding the main thread
+    /// down. Counting what is out and refusing past four bounds the main queue's
+    /// backlog and, with ``maxOutboundBytes``, the memory one connection can
+    /// reach.
+    ///
+    /// Four is above what the CLI and a hand-driven `nc` produce, since both
+    /// read an answer before writing the next line, and far below a flood. The
+    /// cost is that a script pipelining five frames without reading any answer
+    /// is refused on the fifth, which is the trade the budget table records.
+    public static let maxInFlightRequests = 4
+
     /// Bytes in a published channel name.
     ///
     /// Not in the spec's budget table and here for the same reason every row of
@@ -171,6 +204,25 @@ public enum ControlWire {
     /// ``encodeRequest(_:)``.
     public static func encodeResponse(_ response: ControlResponse) -> Data? {
         line(from: response)
+    }
+
+    /// One `refused` line, ready to write, and never nil.
+    ///
+    /// The callers are the two places that have already decided to close the
+    /// connection: the byte layer refusing a peer that passed a budget, and the
+    /// accept loop refusing one that arrived past the pool. Neither has anything
+    /// to fall back to, and neither may trap, so the hand-spelled literal stands
+    /// in for the encode that cannot fail here anyway: the only encodable
+    /// failure in this package is a non-finite `Double` in ``ControlArgs/by``,
+    /// and a failure response carries none.
+    ///
+    /// The fallback's message is fixed rather than interpolated, because a
+    /// message spliced into hand-written JSON would need escaping and the point
+    /// of this path is that nothing on it can go wrong.
+    public static func refusal(_ message: String) -> Data {
+        let spelledByHand = "{\"v\":\(version),\"ok\":false,\"error\":{\"code\":\"refused\","
+            + "\"message\":\"baia refused this connection.\"}}\n"
+        return encodeResponse(.failure(.refused, message)) ?? Data(spelledByHand.utf8)
     }
 
     private static func line(from value: some Encodable) -> Data? {
