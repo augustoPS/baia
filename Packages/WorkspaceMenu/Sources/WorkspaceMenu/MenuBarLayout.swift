@@ -155,6 +155,7 @@ public enum MenuBarLayout {
                 // free single-letter command key is spoken for, and a housing
                 // being compared does not earn a contested one.
                 item(.toggleSurfacePanels, "Switch Sidebar", .noConflict),
+                item(.resetSidebarSize, "Reset Sidebar Size", .noConflict),
                 item(.zoomPane, "Zoom Pane", .returnKey, [.command, .shift], .unbind),
                 item(
                     .enterFullScreen, "Enter Full Screen", .character("f"), [.command, .control],

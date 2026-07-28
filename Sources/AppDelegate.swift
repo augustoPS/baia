@@ -296,6 +296,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Does nothing when the window has no sidebar, which is the honest behaviour
     /// for a menu item that stays enabled: the alternative needs a new availability
     /// field carrying a setting that cannot change while the app runs.
+    /// Returns the sidebar to the size it ships with.
+    ///
+    /// Every window, unlike Switch Sidebar, because the geometry is session-level: a
+    /// reset that left the other tabs at a dragged width would put the file and the
+    /// screen into two different states, and the next save would pick one of them
+    /// arbitrarily.
+    @objc func resetSidebarSize(_: Any?) {
+        for controller in windows { controller.sidebar.geometry = .default }
+        scheduleSave()
+    }
+
     @objc func toggleSurfacePanels(_: Any?) {
         guard let window = focused ?? windows.first else { return }
         let titles = window.sidebar.sections.map(\.surface.title)
@@ -682,7 +693,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let piece = SessionSnapshot(
                 workspace: Workspace(tabs: [tab], focusedTabIndex: 0),
                 panes: reconciled.panes,
-                windowFrame: nil
+                windowFrame: nil,
+                // Nil for the same reason the frame is: this piece builds one tab's
+                // panes, and the window-level geometry is applied to every window
+                // once they all exist.
+                sidebar: nil
             )
             let controller = openWindow(
                 tree: PaneTreeController(

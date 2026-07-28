@@ -40,6 +40,7 @@ enum MenuCommandSelectors {
 
         case .toggleStatusBars: nil
         case .toggleSurfacePanels: #selector(AppDelegate.toggleSurfacePanels(_:))
+        case .resetSidebarSize: #selector(AppDelegate.resetSidebarSize(_:))
         case .zoomPane: #selector(AppDelegate.zoomPane(_:))
         case .enterFullScreen: #selector(NSWindow.toggleFullScreen(_:))
 

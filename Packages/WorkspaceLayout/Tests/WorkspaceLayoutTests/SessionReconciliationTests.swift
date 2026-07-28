@@ -32,7 +32,8 @@ import Testing
                 PaneState(id: first, workingDirectory: firstDirectory, pinnedDirectory: nil),
                 PaneState(id: second, workingDirectory: secondDirectory, pinnedDirectory: nil),
             ],
-            windowFrame: nil
+            windowFrame: nil,
+            sidebar: nil
         )
     }
 
@@ -83,7 +84,8 @@ import Testing
         let snapshot = SessionSnapshot(
             workspace: Workspace(pane: never),
             panes: [PaneState(id: never, workingDirectory: nil, pinnedDirectory: nil)],
-            windowFrame: nil
+            windowFrame: nil,
+            sidebar: nil
         )
 
         // Nil means the pane's surface had not come up when the session was written,
@@ -100,7 +102,8 @@ import Testing
         let snapshot = SessionSnapshot(
             workspace: Workspace(pane: pane),
             panes: [PaneState(id: pane, workingDirectory: "/here", pinnedDirectory: "/gone")],
-            windowFrame: nil
+            windowFrame: nil,
+            sidebar: nil
         )
 
         let result = SessionStore.reconciled(snapshot, directoryExists: existing("/here"))
@@ -123,7 +126,8 @@ import Testing
                 PaneState(id: firstTabPane, workingDirectory: "/gone", pinnedDirectory: nil),
                 PaneState(id: survivor, workingDirectory: "/here", pinnedDirectory: nil),
             ],
-            windowFrame: nil
+            windowFrame: nil,
+            sidebar: nil
         )
 
         let result = SessionStore.reconciled(snapshot, directoryExists: existing("/here"))
@@ -156,7 +160,8 @@ import Testing
         let snapshot = SessionSnapshot(
             workspace: Workspace(tabs: [Tab(pane: PaneID()), Tab(pane: PaneID())], focusedTabIndex: 9),
             panes: [],
-            windowFrame: nil
+            windowFrame: nil,
+            sidebar: nil
         )
 
         let result = SessionStore.reconciled(snapshot, directoryExists: { _ in true })
@@ -171,7 +176,8 @@ import Testing
         let snapshot = SessionSnapshot(
             workspace: Workspace(tabs: [Tab(pane: PaneID())], focusedTabIndex: -3),
             panes: [],
-            windowFrame: nil
+            windowFrame: nil,
+            sidebar: nil
         )
 
         let result = SessionStore.reconciled(snapshot, directoryExists: { _ in true })
@@ -226,7 +232,8 @@ import Testing
                 PaneState(id: shown, workingDirectory: "/here", pinnedDirectory: nil),
                 PaneState(id: leftover, workingDirectory: "/gone", pinnedDirectory: nil),
             ],
-            windowFrame: nil
+            windowFrame: nil,
+            sidebar: nil
         )
 
         let result = SessionStore.reconciled(snapshot, directoryExists: existing("/here"))

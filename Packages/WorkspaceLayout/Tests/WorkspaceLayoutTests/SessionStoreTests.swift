@@ -35,7 +35,8 @@ import Testing
                 PaneState(id: first, workingDirectory: "/Users/x/Projects", pinnedDirectory: nil),
                 PaneState(id: second, workingDirectory: nil, pinnedDirectory: "/Users/x/Projects/baia"),
             ],
-            windowFrame: WindowFrame(x: 8, y: 8, width: 1200, height: 800)
+            windowFrame: WindowFrame(x: 8, y: 8, width: 1200, height: 800),
+            sidebar: nil
         )
     }
 
@@ -117,7 +118,8 @@ import Testing
         let small = SessionSnapshot(
             workspace: Workspace(pane: PaneID()),
             panes: [],
-            windowFrame: nil
+            windowFrame: nil,
+            sidebar: nil
         )
 
         #expect(store.save(large))
@@ -182,5 +184,41 @@ import Testing
         let data = try JSONEncoder().encode(snapshot(sidebar: nil))
         let read = try JSONDecoder().decode(SessionSnapshot.self, from: data)
         #expect(read.sidebar == nil)
+    }
+}
+
+/// Reconciliation rebuilds the snapshot field by field, so every field has to be
+/// carried across by hand. This is the test for the one that was not.
+@Suite struct ReconcileCarriesEveryFieldTests {
+    private func snapshot() -> SessionSnapshot {
+        let pane = PaneID()
+        return SessionSnapshot(
+            workspace: Workspace(pane: pane),
+            panes: [PaneState(id: pane, workingDirectory: "/tmp")],
+            windowFrame: WindowFrame(x: 1, y: 2, width: 3, height: 4),
+            sidebar: SidebarGeometry(width: 462, splitHeight: 516)
+        )
+    }
+
+    /// The bug this suite exists for: a sidebar dragged wide, quit, and relaunched
+    /// into the default, because reconciliation dropped the field on the way through
+    /// while the file on disk was perfectly correct.
+    @Test func theSidebarGeometrySurvivesReconciliation() {
+        let (reconciled, _) = SessionStore.reconciled(snapshot()) { _ in true }
+        #expect(reconciled.sidebar?.width == 462)
+        #expect(reconciled.sidebar?.splitHeight == 516)
+    }
+
+    @Test func theWindowFrameSurvivesReconciliation() {
+        let (reconciled, _) = SessionStore.reconciled(snapshot()) { _ in true }
+        #expect(reconciled.windowFrame?.width == 3)
+    }
+
+    /// Dropping every pane must not take the geometry with it. The window is gone
+    /// and the column's size is still the owner's answer for the next one.
+    @Test func theGeometrySurvivesEvenWhenEveryPaneIsDropped() {
+        let (reconciled, dropped) = SessionStore.reconciled(snapshot()) { _ in false }
+        #expect(!dropped.isEmpty)
+        #expect(reconciled.sidebar?.width == 462)
     }
 }

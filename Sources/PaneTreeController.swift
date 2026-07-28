@@ -125,7 +125,11 @@ final class PaneTreeController: NSViewController {
             panes: workspace.tabs
                 .flatMap { $0.tree.paneIDs }
                 .compactMap { panes[$0]?.paneState },
-            windowFrame: windowFrame
+            windowFrame: windowFrame,
+            // One tree's snapshot, which is not the session's. The sidebar belongs
+            // to the window and is written once by the delegate, so a per-tree
+            // snapshot carrying a guess at it would fight the real one.
+            sidebar: nil
         )
     }
 

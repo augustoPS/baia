@@ -38,12 +38,17 @@ public struct SessionSnapshot: Sendable, Equatable, Codable {
     /// split are what a nil restores to.
     public var sidebar: SidebarGeometry?
 
+    /// No defaulted parameters, deliberately, which is the rule ``Settings`` states
+    /// and this type learned the hard way. `sidebar` shipped with a default of nil
+    /// and `SessionStore.reconciled` kept compiling while silently dropping it, so a
+    /// dragged sidebar was written to disk correctly and restored to its default.
+    /// Without a default the compiler names every site that has to decide.
     public init(
         schemaVersion: Int = SessionSnapshot.currentSchemaVersion,
         workspace: Workspace,
         panes: [PaneState],
         windowFrame: WindowFrame?,
-        sidebar: SidebarGeometry? = nil
+        sidebar: SidebarGeometry?
     ) {
         self.schemaVersion = schemaVersion
         self.workspace = workspace

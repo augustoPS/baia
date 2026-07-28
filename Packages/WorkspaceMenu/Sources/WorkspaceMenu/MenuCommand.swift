@@ -36,6 +36,7 @@ public enum MenuCommand: String, Sendable, Equatable, CaseIterable {
 
     case toggleStatusBars
     case toggleSurfacePanels
+    case resetSidebarSize
     case zoomPane
     case enterFullScreen
 
@@ -107,6 +108,7 @@ public enum MenuCommand: String, Sendable, Equatable, CaseIterable {
 
         case .toggleStatusBars: 400
         case .toggleSurfacePanels: 403
+        case .resetSidebarSize: 404
         case .zoomPane: 401
         case .enterFullScreen: 402
 

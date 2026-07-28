@@ -30,4 +30,15 @@ public struct SidebarGeometry: Sendable, Equatable, Codable {
         self.width = width
         self.splitHeight = splitHeight
     }
+
+    /// What a first launch opens with, and what Reset Sidebar Size returns to.
+    ///
+    /// Here rather than in the view so the two cannot drift. A reset that restored
+    /// numbers the first launch never used would be a third state nobody asked for.
+    ///
+    /// 260 because that is the width the reflow was measured at, so what ships is
+    /// what was tested. 220 for the split because the sections are not symmetrical:
+    /// a changes list is a handful of rows and a file tree is a whole repository, so
+    /// an even split leaves half the column holding three lines.
+    public static let `default` = SidebarGeometry(width: 260, splitHeight: 220)
 }

@@ -153,7 +153,12 @@ public struct SessionStore: Sendable {
                 schemaVersion: snapshot.schemaVersion,
                 workspace: Workspace(tabs: tabs, focusedTabIndex: index),
                 panes: panes.filter { live.contains($0.id) },
-                windowFrame: snapshot.windowFrame
+                windowFrame: snapshot.windowFrame,
+                // Carried across by hand like every other field here, and the one
+                // that was not: a sidebar dragged wide came back at its default
+                // because this rebuilt the snapshot without it while the file on
+                // disk was correct the whole time.
+                sidebar: snapshot.sidebar
             ),
             droppedPanes: dropped
         )

@@ -96,7 +96,7 @@ public enum MenuValidation {
         // carrying a setting that cannot change while the app runs, and an item
         // that does nothing is a clearer answer than one that is disabled for a
         // reason the owner would have to open the config file to discover.
-        case .toggleSurfacePanels:
+        case .toggleSurfacePanels, .resetSidebarSize:
             MenuItemState(isEnabled: true, isChecked: nil)
 
         // An empty palette reads as a workspace holding no projects, which is

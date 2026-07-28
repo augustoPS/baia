@@ -41,7 +41,7 @@ final class SidebarHost: NSViewController {
     /// 260 because that is the width the reflow was measured at, so what the owner
     /// judges is what was tested. Replaced by the session file once one has been
     /// written.
-    var width: Double = 260 {
+    var width: Double = SidebarGeometry.default.width {
         didSet {
             guard width != oldValue else { return }
             view.needsLayout = true
@@ -85,8 +85,19 @@ final class SidebarHost: NSViewController {
     /// heights inside a column whose width never moves, so it resizes no ghostty grid
     /// and signals no process: the only thing a sidebar does that costs a reflow is
     /// taking width from the panes in the first place.
-    private lazy var sectionDivider = SectionDividerView { [weak self] delta in
+    private lazy var sectionDivider = DividerGrabView(axis: .vertical) { [weak self] delta in
         self?.dragSplit(by: delta)
+    }
+
+    /// The grab area over the sidebar's own edge.
+    ///
+    /// The one drag that costs something. Widening takes room from the panes, which
+    /// resizes every ghostty grid and signals everything running, once per frame of
+    /// the drag. That was measured rather than feared and the output survives it, but
+    /// it is the reason this is a deliberate drag on a visible edge rather than
+    /// anything that can happen by accident.
+    private lazy var widthDivider = DividerGrabView(axis: .horizontal) { [weak self] delta in
+        self?.dragWidth(by: delta)
     }
 
     /// How tall the first section is when two are stacked.
@@ -98,7 +109,7 @@ final class SidebarHost: NSViewController {
     /// Read by ``geometry`` and written by a drag. Not private for that reason
     /// alone: the clamp that keeps it usable lives in layout, where the column's
     /// height is known.
-    private(set) var firstSectionHeight: Double = 220
+    private(set) var firstSectionHeight: Double = SidebarGeometry.default.splitHeight
 
     init(tree: PaneTreeController, surfaces: [any WorkspaceSurface], theme: PaneTheme) {
         self.tree = tree
@@ -150,6 +161,9 @@ final class SidebarHost: NSViewController {
         sectionDivider.wantsLayer = true
         view.addSubview(sectionDivider)
 
+        widthDivider.wantsLayer = true
+        view.addSubview(widthDivider)
+
         install()
     }
 
@@ -189,6 +203,17 @@ final class SidebarHost: NSViewController {
         ))
 
         let gutter = sidebarWidth > 0 ? Self.dividerWidth : 0
+        // Centred on the hairline rather than beside it, so the pointer finds the
+        // edge it can see. Hidden with the sidebar: there is no edge to drag when
+        // the column is closed, and an invisible grab strip over the leftmost pane
+        // would swallow clicks meant for the terminal.
+        widthDivider.isHidden = sidebarWidth == 0
+        widthDivider.frame = NSRect(
+            x: bounds.minX + sidebarWidth - Self.grabHeight / 2,
+            y: bounds.minY,
+            width: Self.grabHeight,
+            height: bounds.height
+        )
         divider.frame = NSRect(
             x: bounds.minX + sidebarWidth,
             y: bounds.minY,
@@ -265,6 +290,15 @@ final class SidebarHost: NSViewController {
 
     /// Down is negative in this coordinate space, and dragging down should make the
     /// top section taller, so the delta is subtracted rather than added.
+    /// Right is positive, and dragging right widens, so the delta is added.
+    ///
+    /// Clamped at both ends by the layout that follows: the sidebar never takes the
+    /// panes below `minimumPaneWidth`, and it never goes below a width that can show
+    /// a path.
+    private func dragWidth(by delta: Double) {
+        width = max(Self.minimumWidth, width + delta)
+    }
+
     private func dragSplit(by delta: Double) {
         firstSectionHeight -= delta
         view.needsLayout = true
@@ -291,21 +325,40 @@ final class SidebarHost: NSViewController {
     /// How little a stacked section may be dragged to.
     private static let minimumSectionHeight: Double = 48
 
+    /// How narrow the column may be dragged.
+    ///
+    /// Below this a path is all ellipsis and the column says nothing, which is worse
+    /// than a closed sidebar because it still costs the panes their width.
+    private static let minimumWidth: Double = 120
+
     /// How tall the invisible grab area over the split is. Wider than the hairline
     /// it sits on, because a 1 pt target is one nobody can hit.
     private static let grabHeight: Double = 7
 }
 
-/// The grab area over the split between two stacked sections.
+/// The grab area over a divider.
 ///
-/// Transparent and slightly taller than the hairline beneath it, because a 1 pt
-/// drag target is one nobody can hit. Refuses first responder like everything else
-/// in this window: a drag must not cost the panes their ghostty bindings.
+/// Transparent and wider than the hairline beneath it, because a 1 pt drag target is
+/// one nobody can hit. Refuses first responder like everything else in this window:
+/// a drag must not cost the panes their ghostty bindings.
 @MainActor
-final class SectionDividerView: NSView {
+final class DividerGrabView: NSView {
+    enum Axis {
+        /// The split between two stacked sections. Costs nothing: it moves inside a
+        /// column whose width does not change.
+        case vertical
+        /// The sidebar's own edge. This one takes width from the panes, so every
+        /// frame of the drag resizes every ghostty grid and signals every process
+        /// running in them. Measured on 2026-07-27 at about thirty signals a second
+        /// while the mouse moves, with a coding agent redrawing whole each time.
+        case horizontal
+    }
+
+    private let axis: Axis
     private let onDrag: (Double) -> Void
 
-    init(onDrag: @escaping (Double) -> Void) {
+    init(axis: Axis, onDrag: @escaping (Double) -> Void) {
+        self.axis = axis
         self.onDrag = onDrag
         super.init(frame: .zero)
     }
@@ -316,7 +369,7 @@ final class SectionDividerView: NSView {
     override var acceptsFirstResponder: Bool { false }
 
     override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .resizeUpDown)
+        addCursorRect(bounds, cursor: axis == .vertical ? .resizeUpDown : .resizeLeftRight)
     }
 
     /// Tracked here rather than through `mouseDragged`, so the drag keeps following
@@ -325,7 +378,10 @@ final class SectionDividerView: NSView {
         var last = event.locationInWindow
         while let next = window?.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
             if next.type == .leftMouseUp { break }
-            onDrag(next.locationInWindow.y - last.y)
+            let delta = axis == .vertical
+                ? next.locationInWindow.y - last.y
+                : next.locationInWindow.x - last.x
+            onDrag(delta)
             last = next.locationInWindow
         }
     }

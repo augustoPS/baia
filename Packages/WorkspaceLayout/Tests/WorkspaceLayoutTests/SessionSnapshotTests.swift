@@ -50,7 +50,8 @@ import Testing
                 focusedTabIndex: 1
             ),
             panes: [PaneState(id: ids[0], workingDirectory: "/Users/x/Projects", pinnedDirectory: "/Users/x")],
-            windowFrame: WindowFrame(x: -12.5, y: 33, width: 1680, height: 1050)
+            windowFrame: WindowFrame(x: -12.5, y: 33, width: 1680, height: 1050),
+            sidebar: nil
         )
 
         let data = try JSONEncoder().encode(snapshot)
@@ -66,7 +67,8 @@ import Testing
         let snapshot = SessionSnapshot(
             workspace: Workspace(pane: PaneID()),
             panes: [],
-            windowFrame: nil
+            windowFrame: nil,
+            sidebar: nil
         )
 
         let data = try JSONEncoder().encode(snapshot)
@@ -93,7 +95,7 @@ import Testing
     }
 
     @Test func theSchemaVersionIsWrittenIntoTheFile() throws {
-        let snapshot = SessionSnapshot(workspace: Workspace(pane: PaneID()), panes: [], windowFrame: nil)
+        let snapshot = SessionSnapshot(workspace: Workspace(pane: PaneID()), panes: [], windowFrame: nil, sidebar: nil)
 
         let json = String(decoding: try JSONEncoder().encode(snapshot), as: UTF8.self)
 
@@ -124,7 +126,7 @@ import Testing
         let dragged = workspace.setRatio(at: SplitPath([1]), to: 0.32)
         #expect(dragged)
 
-        let snapshot = SessionSnapshot(workspace: workspace, panes: [], windowFrame: nil)
+        let snapshot = SessionSnapshot(workspace: workspace, panes: [], windowFrame: nil, sidebar: nil)
         let decoded = try JSONDecoder().decode(SessionSnapshot.self, from: JSONEncoder().encode(snapshot))
 
         // The whole point of writing a drag into the model rather than leaving it in
