@@ -29,3 +29,7 @@ verify-out/
 # Recreated by `make upstream` from the revision and patch beside it. A path pin
 # is machine-local, so the checkout is derived rather than tracked.
 upstream/libghostty-spm/
+
+# Python bytecode from the diagnostics probes
+__pycache__/
+*.pyc
