@@ -152,6 +152,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var tree: PaneTreeController? { focused?.tree }
 
+    /// The sidebar this window opens with, or none.
+    ///
+    /// Read once per window rather than watched, because a window that gains or
+    /// loses its sidebar changes what its content view *is*, and swapping that under
+    /// a live tree would reparent every ghostty surface. That is the reparenting the
+    /// theme refresh was rewritten to avoid: it resizes every grid and signals every
+    /// process, for a setting change. Switching between contents afterwards is a
+    /// different thing and costs nothing, which is what ``SidebarHost/show(_:)`` is.
+    private func sidebar(for tree: PaneTreeController) -> SidebarHost {
+        let content = configuration.settings.sidebar
+        return SidebarHost(
+            tree: tree,
+            surfaces: surfaces(for: content),
+            theme: configuration.paneTheme
+        )
+    }
+
+    /// The surfaces for a content, built fresh.
+    ///
+    /// The tree goes last under ``SidebarContent/both``, because the last section is
+    /// the one given whatever height is left and the tree is the one that wants it.
+    private func surfaces(for content: SidebarContent) -> [any WorkspaceSurface] {
+        let changes = ChangesSurface()
+        let files = FilesSurface()
+        switch content {
+        case .changes: return [changes]
+        case .files: return [files]
+        case .both: return [changes, files]
+        // Off is an empty column rather than a missing one. The host stays the
+        // window's content view either way, so nothing is ever reparented.
+        case .off: return []
+        }
+    }
+
     /// The one place a workspace window is built and wired.
     ///
     /// `tabbing` exists so New Window can be this function too. It used to have
@@ -164,7 +198,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         joining sibling: NSWindow?,
         tabbing: NSWindow.TabbingMode = .preferred
     ) -> WorkspaceWindowController {
-        let controller = WorkspaceWindowController(tree: tree)
+        let controller = WorkspaceWindowController(tree: tree, sidebar: sidebar(for: tree))
         controller.window.tabbingMode = tabbing
         windows.append(controller)
         controller.onClose = { [weak self, weak controller] in
@@ -179,7 +213,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             updateWindowTitles()
         }
         controller.onSessionChange = { [weak self] in self?.scheduleSave() }
-        controller.onFocusedPaneChange = { [weak self] in self?.updateWindowTitles() }
+        controller.onFocusedPaneChange = { [weak self] in
+            self?.updateWindowTitles()
+            self?.refreshSidebar(of: controller)
+        }
         // `weak controller` is not decoration. The controller stores this
         // closure, so a strong capture is a cycle that outlives the close:
         // `isReleasedWhenClosed` is false and `onClose` only drops *our*
@@ -245,6 +282,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func findInPane(_: Any?) {
         find.toggle(over: focused?.window)
+    }
+
+    /// Switches the sidebar between its two contents.
+    ///
+    /// This window's and not every window's: the region describes the focused pane's
+    /// repository, so switching a background tab's from the front one would change a
+    /// surface nobody is looking at.
+    ///
+    /// Does nothing when the window has no sidebar, which is the honest behaviour
+    /// for a menu item that stays enabled: the alternative needs a new availability
+    /// field carrying a setting that cannot change while the app runs.
+    @objc func toggleSurfacePanels(_: Any?) {
+        guard let window = focused ?? windows.first else { return }
+        let titles = window.sidebar.sections.map(\.surface.title)
+        let next: SidebarContent = switch titles {
+        case []: .changes
+        case ["Changes"]: .files
+        case ["Files"]: .both
+        default: .off
+        }
+        window.sidebar.show(surfaces(for: next))
     }
 
     /// The panes a search covers, already read.
@@ -398,6 +456,73 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Retitles every window, because the waiting count is a property of the
     /// workspace rather than of one tab: a tab in the background that starts
     /// asking has to be visible from whichever tab is in front.
+    /// Re-points the sidebar at the focused pane and redraws from what that pane
+    /// already holds.
+    ///
+    /// **Zero `git` invocations, by construction.** `PaneGitStatus` polls per pane
+    /// and keeps its last answer, so this reads a value that is already in memory.
+    /// Starting a read here instead would fork git on every click and every
+    /// ⌥⌘arrow, which is several times a second while someone arrows across a grid.
+    ///
+    /// A pane with no repository is told so rather than shown an empty list, because
+    /// "nothing changed" and "not a repository" are different answers.
+    private func refreshSidebar(of controller: WorkspaceWindowController) {
+        let pane = controller.tree.focusedPane
+        let anchor = pane?.anchorTracker.anchor
+        let root = anchor?.kind == .repository ? anchor?.url : nil
+
+        for section in controller.sidebar.sections {
+            if let changes = section.surface as? ChangesSurface {
+                changes.hasRepository = pane?.gitStatus.git != nil
+                changes.changes = pane?.gitStatus.changes ?? []
+            }
+            if let files = section.surface as? FilesSurface {
+                files.hasRepository = root != nil
+                files.tree = root.flatMap { fileTrees.tree(for: $0) } ?? []
+                if let root { readFileTree(at: root) }
+            }
+        }
+    }
+
+    /// Every repository's file tree, once read.
+    ///
+    /// The rule lives in `GitWorkspace` rather than here, because it is the rule the
+    /// sidebar's cost rests on and it is testable there without a window: reading a
+    /// tree is a `git ls-files` over the whole repository, and focus moves several
+    /// times a second while someone arrows across a grid. See ``FileTreeCache``.
+    private var fileTrees = FileTreeCache()
+
+    /// Reads a repository's tree once and pushes it into whatever is showing it.
+    ///
+    /// Deliberately not on the git poll. The status read is on a two second timer per
+    /// pane and this is not: a tree is re-read when the sidebar first needs it and
+    /// then left alone, because paying `ls-files` every two seconds per pane is a
+    /// cost with no question behind it.
+    private func readFileTree(at root: URL) {
+        // Claiming is what starts the read, so two focus changes in one turn cannot
+        // both be told yes. The check and the claim are one call for that reason.
+        guard fileTrees.claimRead(of: root) else { return }
+        let command = GitCommand()
+        DispatchQueue.global(qos: .userInitiated).async {
+            let tree = command.files(ofRepositoryRoot: root)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    if tree.isEmpty {
+                        // Nothing to store, and the root is released rather than
+                        // recorded as empty: a repository mid-clone resolves itself,
+                        // and a cache that never retried would need a relaunch.
+                        self.fileTrees.forget(root)
+                    } else {
+                        self.fileTrees.store(tree, for: root)
+                    }
+                    // Pushed into every window, because the same repository can be
+                    // open in more than one and each of them is waiting on this.
+                    for controller in self.windows { self.refreshSidebar(of: controller) }
+                }
+            }
+        }
+    }
+
     private func updateWindowTitles() {
         // Named rather than counted. A count answers "how many", which nobody
         // asked; a name answers "which", which is the entire reason the marker

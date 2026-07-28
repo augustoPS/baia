@@ -247,6 +247,17 @@ public enum SettingsDecoder {
             }
         }
 
+        // A rejected value leaves the sidebar off rather than guessing at a
+        // content, because opening the region resizes every pane and a typo must
+        // not be what does that.
+        if let content = reader.text("sidebar") {
+            if let content = SidebarContent(rawValue: content) {
+                settings.sidebar = content
+            } else {
+                reader.reject("sidebar")
+            }
+        }
+
         return SettingsDecodeResult(
             settings: settings,
             // Both lists are sorted, and a `Dictionary`'s key order is not stable

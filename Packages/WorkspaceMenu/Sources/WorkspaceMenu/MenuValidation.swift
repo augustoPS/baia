@@ -91,6 +91,14 @@ public enum MenuValidation {
         case .findInPane:
             MenuItemState(isEnabled: availability.paneCount > 0, isChecked: nil)
 
+        // Always enabled, including when the config asked for no panel-housed
+        // surface at all. Greying it out would need a new availability field
+        // carrying a setting that cannot change while the app runs, and an item
+        // that does nothing is a clearer answer than one that is disabled for a
+        // reason the owner would have to open the config file to discover.
+        case .toggleSurfacePanels:
+            MenuItemState(isEnabled: true, isChecked: nil)
+
         // An empty palette reads as a workspace holding no projects, which is
         // worse than a disabled item that says the list is not loaded yet.
         case .commandPalette:

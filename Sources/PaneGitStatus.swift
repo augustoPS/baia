@@ -16,6 +16,16 @@ final class PaneGitStatus {
 
     private(set) var git: PaneStatus.Git?
 
+    /// The changed paths behind the footer's counts, from the same read.
+    ///
+    /// Held here rather than fetched by whatever draws them, so the sidebar costs no
+    /// `git` invocation of its own: this poller already runs one per interval per
+    /// pane, and a surface that started its own would double that for every pane in
+    /// every window. Empty for a pane that is not in a repository, which is the same
+    /// answer as a repository with nothing changed, and the footer already says which
+    /// of those it is.
+    private(set) var changes: [RepositoryFileChange] = []
+
     /// Whether the head reported in ``git`` is the repository's default branch.
     ///
     /// Kept beside the footer's value rather than inside it because nothing in the
@@ -142,7 +152,7 @@ final class PaneGitStatus {
         let defaultBranches = self.defaultBranches
         let requested = root
         queue.async { [weak self] in
-            let status = command.status(ofRepositoryRoot: requested)
+            let (status, changes) = command.read(ofRepositoryRoot: requested)
             // Resolved on this thread, beside the status read, and never on the
             // main one. The first read of a repository forks git; every read after
             // it is a dictionary lookup.
@@ -151,7 +161,12 @@ final class PaneGitStatus {
             } ?? true
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    self?.finish(status, isOnDefaultBranch: isDefault, from: requested)
+                    self?.finish(
+                        status,
+                        changes: changes,
+                        isOnDefaultBranch: isDefault,
+                        from: requested
+                    )
                 }
             }
         }
@@ -159,10 +174,12 @@ final class PaneGitStatus {
 
     private func finish(
         _ status: RepositoryStatus?,
+        changes: [RepositoryFileChange],
         isOnDefaultBranch isDefault: Bool,
         from requested: URL
     ) {
         isReading = false
+        self.changes = changes
         // The anchor may have moved while git was running. Applying this answer
         // would label the new repository with the old one's branch, so it is
         // dropped and the newer read stands on its own.

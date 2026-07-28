@@ -173,7 +173,18 @@ final class TerminalPaneController: NSViewController {
         lastAttention == .asking && attentionStyle == .loud
     }
 
-    private let gitStatus = PaneGitStatus()
+    /// Raised when this pane's git read produced something new.
+    ///
+    /// The sidebar draws the same answer the footer does, so it has to hear about a
+    /// poll landing on the pane already in focus. Without this it would only refresh
+    /// when focus moved, which is the case where nothing changed.
+    var onGitChange: (() -> Void)?
+
+    /// Readable from outside so a surface can re-point at the focused pane's last
+    /// answer instead of starting a read of its own. Read-only on purpose: the
+    /// poller's interval and anchor are still set through this controller, so
+    /// nothing outside can start, stop or retarget a pane's git reads.
+    private(set) var gitStatus = PaneGitStatus()
 
     private lazy var activityTracker = PaneActivityTracker(
         foregroundPid: { [weak self] in self?.terminalView.foregroundPid }
@@ -456,7 +467,11 @@ final class TerminalPaneController: NSViewController {
         }
 
         gitStatus.onChange = { [weak self] _ in
-            self?.refreshStatus()
+            guard let self else { return }
+            refreshStatus()
+            // Raised after the footer is rebuilt, so anything drawing the same read
+            // elsewhere is redrawing from a poller that has already settled.
+            onGitChange?()
         }
 
         // Weak, so the footer cannot keep the pane alive. `PaneTreeController`

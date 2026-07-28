@@ -104,6 +104,17 @@ public struct Settings: Sendable, Equatable {
     /// same thing. See ``AlertBehavior``.
     public var alertBehavior: AlertBehavior
 
+    /// What the sidebar opens showing, or that there is none. See
+    /// ``SidebarContent``.
+    ///
+    /// One key rather than one per surface, because there is one region. It shows
+    /// what the footer cannot: the footer says `*3 ?1` on a line that must not
+    /// wrap, and the sidebar names which three files are dirty and which one is
+    /// untracked. The footer therefore stands nothing down when this is set, unlike
+    /// the first draft of the design where the panel was to own branch and
+    /// ahead-behind and the footer was to go quiet.
+    public var sidebar: SidebarContent
+
     /// The owner's ghostty config, field for field, transcribed from
     /// `vault/projects/ghostty/config.ghostty`.
     ///
@@ -138,7 +149,8 @@ public struct Settings: Sendable, Equatable {
         focusAccent: .accent,
         attentionStyle: .loud,
         attentionAccent: .alert,
-        alertBehavior: .stock
+        alertBehavior: .stock,
+        sidebar: .off
     )
 
     /// Expands a leading `~` the way a shell would.

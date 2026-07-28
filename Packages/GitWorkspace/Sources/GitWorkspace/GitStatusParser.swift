@@ -130,6 +130,95 @@ public enum GitStatusParser {
         )
     }
 
+    /// The same output read as a list of paths rather than as counts.
+    ///
+    /// A second pass over the same string rather than a second return value from
+    /// ``parse(_:)``, and rather than paths added to ``RepositoryStatus``. The
+    /// status feeds a one-line footer and says so on its own doc comment; widening
+    /// it to carry paths would put them in reach of the caller that must not render
+    /// them. The cost of the extra pass is a walk over one repository's status
+    /// output, which is already in memory because the status read fetched it.
+    ///
+    /// An empty array for a clean repository *and* for a directory that is not a
+    /// repository, unlike ``parse(_:)``, which separates those with nil. The
+    /// distinction is not this function's to make: a caller reaching for a file
+    /// list has already asked for the status and learned which it has.
+    ///
+    /// Order is git's own, which is by path within each record type.
+    public static func changes(_ output: String) -> [RepositoryFileChange] {
+        var changes: [RepositoryFileChange] = []
+
+        for record in output.split(whereSeparator: \.isNewline) {
+            guard let marker = record.first else { continue }
+
+            switch marker {
+            case "1":
+                guard let entry = fields(record, count: 9) else { continue }
+                let (index, worktree) = states(entry[1])
+                changes.append(RepositoryFileChange(
+                    path: String(entry[8]),
+                    index: index,
+                    worktree: worktree,
+                    kind: .ordinary
+                ))
+            case "2":
+                guard let entry = fields(record, count: 10) else { continue }
+                let (index, worktree) = states(entry[1])
+                // The last field is `<path>TAB<origPath>`. The tab survived
+                // `fields` because that split uses a literal space, which is the
+                // same reason the counting pass sees ten fields here rather than
+                // eleven.
+                let paths = entry[9].split(separator: "\t", maxSplits: 1)
+                guard let path = paths.first else { continue }
+                changes.append(RepositoryFileChange(
+                    path: String(path),
+                    originalPath: paths.count == 2 ? String(paths[1]) : nil,
+                    index: index,
+                    worktree: worktree,
+                    kind: .renamedOrCopied
+                ))
+            case "u":
+                guard let entry = fields(record, count: 11) else { continue }
+                let (index, worktree) = states(entry[1])
+                changes.append(RepositoryFileChange(
+                    path: String(entry[10]),
+                    index: index,
+                    worktree: worktree,
+                    kind: .unmerged
+                ))
+            case "?":
+                guard let entry = fields(record, count: 2) else { continue }
+                changes.append(RepositoryFileChange(path: String(entry[1]), kind: .untracked))
+            default:
+                // Headers and `!` ignored records both land here. An ignored path
+                // is not a change, for the reason the counting pass gives: it
+                // appears only under `--ignored`, and treating it as untracked
+                // would put every build directory in the list.
+                continue
+            }
+        }
+
+        return changes
+    }
+
+    /// `XY` as two optional states, where `.` becomes nil.
+    ///
+    /// Nil rather than a case, because an unmodified column is the absence of a
+    /// change and a named value for it is a value someone will draw.
+    private static func states(
+        _ columns: Substring
+    ) -> (index: RepositoryFileChange.State?, worktree: RepositoryFileChange.State?) {
+        guard columns.count == 2 else { return (nil, nil) }
+        var characters = columns.makeIterator()
+        guard let index = characters.next(), let worktree = characters.next() else {
+            return (nil, nil)
+        }
+        return (
+            RepositoryFileChange.State(rawValue: index),
+            RepositoryFileChange.State(rawValue: worktree)
+        )
+    }
+
     /// `XY` is two status characters: `X` is the index column, `Y` the worktree
     /// column, and `.` means unmodified in that column.
     ///

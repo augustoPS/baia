@@ -173,6 +173,48 @@ import Testing
         #expect(!GitDirectory.isLinkedWorktree(repositoryRoot: root))
     }
 
+    /// The test that justifies asking git rather than walking the directory
+    /// ourselves. `build/` is ignored by a `.gitignore`, `secret.env` by
+    /// `.git/info/exclude`, and `keep.log` is un-ignored by a negation, which is the
+    /// rule a hand-written walk gets wrong first. All three answers come from git.
+    @Test func theFileTreeHonoursEveryIgnoreSourceAtOnce() throws {
+        let root = try repository("proj")
+        try fixture.file("proj/.gitignore", contents: "build/\n*.log\n!keep.log\n")
+        try fixture.file("proj/build/artifact.o", contents: "")
+        try fixture.file("proj/noise.log", contents: "")
+        try fixture.file("proj/keep.log", contents: "")
+        try fixture.file("proj/secret.env", contents: "")
+        try fixture.file("proj/.git/info/exclude", contents: "secret.env\n")
+        try fixture.file("proj/Sources/app.swift", contents: "")
+
+        let names = git.files(ofRepositoryRoot: root).map(\.name)
+
+        // Directories first, then files, each sorted without regard to case.
+        #expect(names == ["Sources", ".gitignore", "c.txt", "keep.log"])
+        #expect(names.contains("build") == false)
+        #expect(names.contains("noise.log") == false)
+        #expect(names.contains("secret.env") == false)
+    }
+
+    @Test func theFileTreeNestsWhatGitLists() throws {
+        let root = try repository("proj")
+        try fixture.file("proj/Sources/App/main.swift", contents: "")
+
+        let tree = git.files(ofRepositoryRoot: root)
+        let sources = try #require(tree.first { $0.name == "Sources" })
+        #expect(sources.isDirectory)
+        #expect(sources.children.map(\.name) == ["App"])
+        #expect(sources.children[0].children.map(\.path) == ["Sources/App/main.swift"])
+    }
+
+    @Test func theFileTreeIsEmptyForADirectoryThatIsNotARepository() throws {
+        // An empty tree rather than nil, for the reason the worktree list gives
+        // below: a caller can render it without a branch. A pane anchored to a
+        // plain directory is an ordinary case, not an error.
+        let plain = try fixture.directory("notes")
+        #expect(git.files(ofRepositoryRoot: plain).isEmpty)
+    }
+
     @Test func returnsNoWorktreesForADirectoryThatIsNotARepository() throws {
         // An empty array rather than nil, so a caller can hand this straight to
         // `ProjectDiscovery.discover(worktrees:)` without a branch.

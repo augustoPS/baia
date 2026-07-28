@@ -39,6 +39,7 @@ enum MenuCommandSelectors {
         case .findInPane: #selector(AppDelegate.findInPane(_:))
 
         case .toggleStatusBars: nil
+        case .toggleSurfacePanels: #selector(AppDelegate.toggleSurfacePanels(_:))
         case .zoomPane: #selector(AppDelegate.zoomPane(_:))
         case .enterFullScreen: #selector(NSWindow.toggleFullScreen(_:))
 

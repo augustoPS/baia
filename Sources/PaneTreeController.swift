@@ -390,6 +390,13 @@ final class PaneTreeController: NSViewController {
             guard focusedPaneID == id else { return }
             onFocusedPaneChange?()
         }
+        pane.onGitChange = { [weak self] in
+            // Only the focused pane, because only the focused pane's repository is
+            // on screen in the sidebar. A background pane's poll landing must not
+            // redraw a surface describing a different repository.
+            guard let self, focusedPaneID == id else { return }
+            onFocusedPaneChange?()
+        }
         pane.onAttentionChange = { [weak self, weak pane] in
             guard let self else { return }
             // Reported for every pane, not only the focused one. A pane asking
@@ -493,7 +500,29 @@ final class PaneTreeController: NSViewController {
     private func pushBottomCorners() {
         let rounded = WindowCorner.isRounded(view.window)
         let owned = rounded ? (displayedTree?.bottomCorners() ?? [:]) : [:]
-        for (id, pane) in panes { pane.bottomCorners = owned[id] ?? [] }
+        for (id, pane) in panes {
+            pane.bottomCorners = (owned[id] ?? []).subtracting(edgesCoveredByHost)
+        }
+    }
+
+    /// Window edges the tree does not actually touch, because a host put something
+    /// there.
+    ///
+    /// `PaneTree.bottomCorners()` answers about the *tree*, and until a sidebar
+    /// existed the tree filled the window, so the two questions had one answer. A
+    /// sidebar on the left makes them different: the bottom-left pane is still the
+    /// tree's bottom-left, and it is no longer in the window's corner, so a footer
+    /// curving there would round against a straight edge with the sidebar's own
+    /// square corner beside it.
+    ///
+    /// Spelled as ``BottomCorners`` rather than as an edge set of its own, because
+    /// the only edges a host can take here are the two the corners already name,
+    /// and a second vocabulary for left and right is a second thing to map between.
+    var edgesCoveredByHost: BottomCorners = [] {
+        didSet {
+            guard edgesCoveredByHost != oldValue else { return }
+            pushBottomCorners()
+        }
     }
 
     /// A zoomed pane renders alone. Zoom is presentation only, so the tree keeps

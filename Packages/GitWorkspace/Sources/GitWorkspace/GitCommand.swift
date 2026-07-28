@@ -16,6 +16,51 @@ import Foundation
 public struct GitCommand: Sendable {
     public init() {}
 
+    /// How many times this command has spawned `git`.
+    ///
+    /// Not instrumentation added for a test. The claims this type makes are about
+    /// *how often* it runs, not about what it returns: the status read is on a timer
+    /// per pane, the file tree is cached per repository, and the sidebar is supposed
+    /// to cost nothing when focus moves. Every one of those failures is invisible,
+    /// since a doubled read returns the same answer and shows up only as heat, so the
+    /// count is the only thing that can contradict them.
+    ///
+    /// Per command rather than per process, and shared across copies of one command
+    /// because the box is a reference: the app hands a `GitCommand` into background
+    /// closures by value, and a count that reset on every copy would answer zero
+    /// forever. Process-wide was the first shape and it is untestable, since suites
+    /// running in parallel spawn git into each other's baseline.
+    public var spawnCount: Int { counter.value }
+
+    public func resetSpawnCount() { counter.reset() }
+
+    /// A lock rather than an actor: this is touched from whatever queue a caller is
+    /// on, immediately before a `Process` launch that costs orders of magnitude more.
+    private let counter = SpawnCounter()
+
+    final class SpawnCounter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var count = 0
+
+        var value: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return count
+        }
+
+        func increment() {
+            lock.lock()
+            count += 1
+            lock.unlock()
+        }
+
+        func reset() {
+            lock.lock()
+            count = 0
+            lock.unlock()
+        }
+    }
+
     /// Standard output of `git <arguments>` run against `directory`, or nil for a
     /// non-zero exit, a terminating signal, a missing binary, or a directory that
     /// is not there.
@@ -27,6 +72,11 @@ public struct GitCommand: Sendable {
     /// on every call for exactly this reason, and a status bar polling four panes
     /// is a far better chance of collision than a shell prompt.
     public func output(of arguments: [String], in directory: URL) -> String? {
+        counter.increment()
+        return spawn(arguments, in: directory)
+    }
+
+    private func spawn(_ arguments: [String], in directory: URL) -> String? {
         guard let executable = Self.executablePath() else { return nil }
 
         var descriptors: [Int32] = [-1, -1]
@@ -124,15 +174,31 @@ public struct GitCommand: Sendable {
     /// half-finished rebase, so a caller wiring the parser up itself would ship a
     /// status bar where that field is permanently nil.
     public func status(ofRepositoryRoot root: URL) -> RepositoryStatus? {
+        read(ofRepositoryRoot: root).status
+    }
+
+    /// The status and the changed paths, from **one** invocation.
+    ///
+    /// The pane poller wants both and they come out of the same bytes, so this
+    /// exists to stop the second reader from forking a second `git`. That matters
+    /// more than it looks: the read is per pane and on a timer, so a second spawn is
+    /// a second process every couple of seconds for every pane in every window.
+    ///
+    /// Two parses over one string rather than one parse producing both, because the
+    /// two answers are shaped for different surfaces and neither type should grow
+    /// the other's fields. See ``GitStatusParser/changes(_:)``.
+    public func read(
+        ofRepositoryRoot root: URL
+    ) -> (status: RepositoryStatus?, changes: [RepositoryFileChange]) {
         guard let output = output(
             of: ["--no-optional-locks", "status", "--porcelain=v2", "--branch", "--untracked-files=all"],
             in: root
-        ) else { return nil }
-        guard var status = GitStatusParser.parse(output) else { return nil }
+        ) else { return (nil, []) }
+        guard var status = GitStatusParser.parse(output) else { return (nil, []) }
         if let gitDirectory = GitDirectory.url(forRepositoryRoot: root) {
             status.inProgress = InProgressProbe.detect(gitDirectory: gitDirectory)
         }
-        return status
+        return (status, GitStatusParser.changes(output))
     }
 
     /// The branch a remote calls this repository's default, or nil when no remote
@@ -156,6 +222,33 @@ public struct GitCommand: Sendable {
             in: root
         ) else { return nil }
         return DefaultBranchParser.parse(output)
+    }
+
+    /// Every file the repository holds, as a tree.
+    ///
+    /// `--cached --others --exclude-standard` is the whole decision: tracked files
+    /// plus untracked ones, minus everything the ignore rules exclude, computed by
+    /// git rather than by us. `--exclude-standard` is what pulls in `.gitignore` at
+    /// every level, `.git/info/exclude` and the `core.excludesFile` global together,
+    /// which is the set no hand-written walk gets right for long.
+    ///
+    /// `-z` because git quotes any path with a space, a quote or a non-ASCII byte
+    /// otherwise, and a tree is exactly the surface where a name nobody typed would
+    /// be believed.
+    ///
+    /// `--no-optional-locks` for the reason every read here passes it: this runs
+    /// while a `git commit` may be running in the pane, and a read that takes
+    /// `index.lock` fails that commit.
+    ///
+    /// An empty tree for a directory that is not a repository, which is the same
+    /// answer as a repository holding nothing. A caller that needs to tell those
+    /// apart has already asked for the status.
+    public func files(ofRepositoryRoot root: URL) -> [FileTreeNode] {
+        guard let output = output(
+            of: ["--no-optional-locks", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+            in: root
+        ) else { return [] }
+        return FileTree.build(paths: FileTree.paths(fromNulSeparated: output))
     }
 
     /// Every working tree of a repository, main first.

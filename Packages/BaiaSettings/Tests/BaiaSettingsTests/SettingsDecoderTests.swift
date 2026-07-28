@@ -60,7 +60,8 @@ import Testing
           "focusAccent": "bone",
           "attentionStyle": "quiet",
           "attentionAccent": "accent",
-          "alertBehavior": "derive"
+          "alertBehavior": "derive",
+          "sidebar": "files"
         }
         """#)
         #expect(result.settings == Settings(
@@ -84,7 +85,8 @@ import Testing
             focusAccent: .bone,
             attentionStyle: .quiet,
             attentionAccent: .accent,
-            alertBehavior: .derive
+            alertBehavior: .derive,
+            sidebar: .files
         ))
         #expect(result.unknownKeys.isEmpty)
         #expect(result.invalidKeys.isEmpty)

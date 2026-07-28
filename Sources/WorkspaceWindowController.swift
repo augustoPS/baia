@@ -30,8 +30,14 @@ final class WorkspaceWindowController: NSObject {
     /// banner names the pane that asked rather than the last one in the list.
     var onAttentionChange: ((String, String?) -> Void)?
 
-    init(tree: PaneTreeController) {
+    /// The sidebar. Always present and always the window's content view, even when
+    /// it is showing nothing: a host that came and went would have to swap
+    /// `contentViewController`, and that reparents every live ghostty surface.
+    let sidebar: SidebarHost
+
+    init(tree: PaneTreeController, sidebar: SidebarHost) {
         self.tree = tree
+        self.sidebar = sidebar
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1024, height: 680),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -40,7 +46,10 @@ final class WorkspaceWindowController: NSObject {
         )
         super.init()
 
-        window.contentViewController = tree
+        // The sidebar is the content and adopts the tree as a child, so the tree
+        // still owns every pane and the window still has one content controller.
+        // Showing nothing is a column of zero width, not a different content view.
+        window.contentViewController = sidebar
         window.title = "baia"
 
         // Assigning a contentViewController makes the window adopt the content's

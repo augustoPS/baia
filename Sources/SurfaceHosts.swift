@@ -1,0 +1,308 @@
+import AppKit
+import PaneChrome
+import WorkspaceLayout
+
+/// One or more surfaces in the window, beside the panes.
+///
+/// Becomes the window's `contentViewController`, with the pane tree as a child, so
+/// the tree keeps owning every pane and this owns only the arithmetic of where the
+/// tree ends and the sidebar begins. Nothing here reaches into a pane.
+///
+/// **What it costs, measured rather than assumed.** Taking width from the tree
+/// resizes every ghostty grid and sends `SIGWINCH` to everything running. On
+/// 2026-07-27 that was watched with a coding agent in a pane, across three widths
+/// down to roughly 300 pt: the agent redrew whole every time and the shell's
+/// scrollback re-wrapped and rejoined cleanly. The cost is churn, not damage.
+///
+/// Only *width* costs that. Everything this does afterwards, swapping the contents
+/// or stacking two of them, changes heights inside a column whose width never moves,
+/// so no grid is resized and nothing running is signalled. The one reflow a sidebar
+/// costs is its first appearance.
+@MainActor
+final class SidebarHost: NSViewController {
+    let tree: PaneTreeController
+
+    /// The stacked sections, top to bottom.
+    ///
+    /// A list rather than one surface, because the changes and the tree are worth
+    /// seeing together: the changes list is short and glanceable and the tree is long
+    /// and browsable, so a short list above a scrolling tree is a column's natural
+    /// shape rather than a compromise between two claims on it.
+    private(set) var sections: [Section] = []
+
+    /// A surface with the heading the host draws for it.
+    struct Section {
+        let surface: any WorkspaceSurface
+        let heading = SurfaceTitleView()
+    }
+
+    /// Points taken from the panes.
+    ///
+    /// 260 because that is the width the reflow was measured at, so what the owner
+    /// judges is what was tested.
+    var width: Double = 260 {
+        didSet {
+            guard width != oldValue else { return }
+            view.needsLayout = true
+        }
+    }
+
+    var theme: PaneTheme {
+        didSet {
+            for section in sections {
+                section.surface.theme = theme
+                section.heading.theme = theme
+            }
+            divider.layer?.backgroundColor = nsColor(theme.hairline).cgColor
+        }
+    }
+
+    private let divider = NSView()
+
+    /// The draggable split between two stacked sections.
+    ///
+    /// Only meaningful with two of them, and hidden otherwise. Dragging it changes
+    /// heights inside a column whose width never moves, so it resizes no ghostty grid
+    /// and signals no process: the only thing a sidebar does that costs a reflow is
+    /// taking width from the panes in the first place.
+    private lazy var sectionDivider = SectionDividerView { [weak self] delta in
+        self?.dragSplit(by: delta)
+    }
+
+    /// How tall the first section is when two are stacked.
+    ///
+    /// Starts at a value rather than at a share of the column, because the two
+    /// surfaces are not symmetrical: a changes list is a handful of rows and a file
+    /// tree is a whole repository, so an even split leaves half the column holding
+    /// three lines. Dragging replaces the guess with the owner's answer.
+    private var firstSectionHeight: Double = 220
+
+    init(tree: PaneTreeController, surfaces: [any WorkspaceSurface], theme: PaneTheme) {
+        self.tree = tree
+        self.theme = theme
+        super.init(nibName: nil, bundle: nil)
+        sections = surfaces.map(Section.init(surface:))
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not from a nib") }
+
+    /// Replaces what the column is showing. An empty list closes it.
+    ///
+    /// The whole stack at once rather than one section at a time, because the states
+    /// worth being in are named sets rather than a pile of independent toggles, and
+    /// swapping the set is what the config key already says.
+    ///
+    /// Closing is a width of zero rather than a host that goes away. A host that came
+    /// and went would have to swap the window's `contentViewController`, and that
+    /// reparents every ghostty surface, which resizes every grid and signals every
+    /// process. At zero width nothing is reparented and the cost is the ordinary
+    /// reflow a width change already carries, which was measured clean.
+    func show(_ surfaces: [any WorkspaceSurface]) {
+        for section in sections {
+            section.surface.view.removeFromSuperview()
+            section.heading.removeFromSuperview()
+        }
+        sections = surfaces.map(Section.init(surface:))
+        install()
+        view.needsLayout = true
+    }
+
+    override func loadView() {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 1024, height: 680))
+        container.wantsLayer = true
+        view = container
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        addChild(tree)
+        view.addSubview(tree.view)
+
+        divider.wantsLayer = true
+        divider.layer?.backgroundColor = nsColor(theme.hairline).cgColor
+        view.addSubview(divider)
+
+        sectionDivider.wantsLayer = true
+        view.addSubview(sectionDivider)
+
+        install()
+    }
+
+    private func install() {
+        for section in sections {
+            section.surface.theme = theme
+            section.heading.title = section.surface.title
+            section.heading.theme = theme
+            view.addSubview(section.surface.view)
+            view.addSubview(section.heading)
+        }
+    }
+
+    /// Laid out by hand rather than with constraints, the way the panel's three
+    /// bands are: a column of stacked rects recomputed on resize is the case
+    /// autolayout costs more than it saves.
+    override func viewDidLayout() {
+        super.viewDidLayout()
+
+        let bounds = view.bounds
+        let sidebarWidth = sections.isEmpty
+            ? 0
+            : min(width, max(0, bounds.width - Self.minimumPaneWidth))
+
+        // Read from the width that was actually used, not from the sidebar's
+        // existence. A window too narrow to give the sidebar any width leaves the
+        // tree touching the left edge, and a tree told otherwise would keep its
+        // leftmost footers square against a corner the window really does have.
+        tree.edgesCoveredByHost = sidebarWidth > 0 ? [.left] : []
+        divider.isHidden = sidebarWidth == 0
+
+        layoutSections(in: NSRect(
+            x: bounds.minX,
+            y: bounds.minY,
+            width: sidebarWidth,
+            height: bounds.height
+        ))
+
+        let gutter = sidebarWidth > 0 ? Self.dividerWidth : 0
+        divider.frame = NSRect(
+            x: bounds.minX + sidebarWidth,
+            y: bounds.minY,
+            width: gutter,
+            height: bounds.height
+        )
+        tree.view.frame = NSRect(
+            x: bounds.minX + sidebarWidth + gutter,
+            y: bounds.minY,
+            width: max(0, bounds.width - sidebarWidth - gutter),
+            height: bounds.height
+        )
+    }
+
+    /// Stacks the sections from the top down.
+    ///
+    /// Every section but the last is capped rather than given an equal share. The
+    /// two surfaces are not symmetrical: a changes list is a handful of rows and a
+    /// file tree is a whole repository, so splitting the column evenly would leave
+    /// half of it holding three lines and the tree scrolling in the rest. The last
+    /// section takes whatever is left, which is why the tree goes last.
+    private func layoutSections(in column: NSRect) {
+        sectionDivider.isHidden = sections.count < 2
+        guard !sections.isEmpty else { return }
+
+        firstSectionHeight = clampedSplit(firstSectionHeight, in: column)
+        var top = column.maxY
+
+        for (index, section) in sections.enumerated() {
+            let isLast = index == sections.count - 1
+            let available = top - column.minY
+            let bodyHeight: Double = if isLast {
+                max(0, available - SurfaceTitleView.height)
+            } else {
+                min(firstSectionHeight, max(0, available - SurfaceTitleView.height))
+            }
+
+            section.heading.frame = NSRect(
+                x: column.minX,
+                y: top - SurfaceTitleView.height,
+                width: column.width,
+                height: SurfaceTitleView.height
+            )
+            section.surface.view.frame = NSRect(
+                x: column.minX,
+                y: top - SurfaceTitleView.height - bodyHeight,
+                width: column.width,
+                height: bodyHeight
+            )
+            top -= SurfaceTitleView.height + bodyHeight
+
+            if !isLast {
+                sectionDivider.frame = NSRect(
+                    x: column.minX,
+                    y: top - Self.grabHeight / 2,
+                    width: column.width,
+                    height: Self.grabHeight
+                )
+            }
+        }
+    }
+
+    /// Keeps both sections usable however far the drag went.
+    ///
+    /// A split that let either side reach zero would leave a heading with nothing
+    /// under it, which reads as a surface that broke rather than one that was
+    /// dragged shut.
+    private func clampedSplit(_ height: Double, in column: NSRect) -> Double {
+        guard sections.count > 1 else { return height }
+        let chrome = SurfaceTitleView.height * Double(sections.count)
+        let usable = max(0, column.height - chrome)
+        return min(max(Self.minimumSectionHeight, height), max(Self.minimumSectionHeight, usable - Self.minimumSectionHeight))
+    }
+
+    /// Down is negative in this coordinate space, and dragging down should make the
+    /// top section taller, so the delta is subtracted rather than added.
+    private func dragSplit(by delta: Double) {
+        firstSectionHeight -= delta
+        view.needsLayout = true
+    }
+
+    private func nsColor(_ rgb: RGB) -> NSColor {
+        NSColor(
+            srgbRed: CGFloat(rgb.red),
+            green: CGFloat(rgb.green),
+            blue: CGFloat(rgb.blue),
+            alpha: 1
+        )
+    }
+
+    /// The sidebar yields rather than squeezing the panes to nothing. A window
+    /// narrower than this plus the sidebar would otherwise leave a cell grid with
+    /// no columns, which ghostty renders as an empty pane with no error.
+    private static let minimumPaneWidth: Double = 320
+
+    /// A hairline, the same one the tree draws between panes.
+    private static let dividerWidth: Double = 1
+
+    /// How little a stacked section may be dragged to.
+    private static let minimumSectionHeight: Double = 48
+
+    /// How tall the invisible grab area over the split is. Wider than the hairline
+    /// it sits on, because a 1 pt target is one nobody can hit.
+    private static let grabHeight: Double = 7
+}
+
+/// The grab area over the split between two stacked sections.
+///
+/// Transparent and slightly taller than the hairline beneath it, because a 1 pt
+/// drag target is one nobody can hit. Refuses first responder like everything else
+/// in this window: a drag must not cost the panes their ghostty bindings.
+@MainActor
+final class SectionDividerView: NSView {
+    private let onDrag: (Double) -> Void
+
+    init(onDrag: @escaping (Double) -> Void) {
+        self.onDrag = onDrag
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not from a nib") }
+
+    override var acceptsFirstResponder: Bool { false }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .resizeUpDown)
+    }
+
+    /// Tracked here rather than through `mouseDragged`, so the drag keeps following
+    /// the pointer when it leaves this seven point strip, which it does immediately.
+    override func mouseDown(with event: NSEvent) {
+        var last = event.locationInWindow
+        while let next = window?.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
+            if next.type == .leftMouseUp { break }
+            onDrag(next.locationInWindow.y - last.y)
+            last = next.locationInWindow
+        }
+    }
+}

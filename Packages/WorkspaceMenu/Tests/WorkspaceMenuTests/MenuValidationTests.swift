@@ -23,7 +23,7 @@ import Testing
             .about, .hide, .hideOthers, .showAll, .quit,
             .newWindow, .newTab, .openConfiguration,
             .toggleStatusBars, .reloadProjectList, .mergeAllWindows, .bringAllToFront,
-            .copyDiagnostics,
+            .copyDiagnostics, .toggleSurfacePanels,
         ])
     }
 

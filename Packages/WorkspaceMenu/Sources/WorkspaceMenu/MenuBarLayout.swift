@@ -151,6 +151,10 @@ public enum MenuBarLayout {
             role: .standard,
             items: [
                 item(.toggleStatusBars, "Status Bars", .noConflict),
+                // No key equivalent, for the reason Status Bars has none: every
+                // free single-letter command key is spoken for, and a housing
+                // being compared does not earn a contested one.
+                item(.toggleSurfacePanels, "Switch Sidebar", .noConflict),
                 item(.zoomPane, "Zoom Pane", .returnKey, [.command, .shift], .unbind),
                 item(
                     .enterFullScreen, "Enter Full Screen", .character("f"), [.command, .control],
