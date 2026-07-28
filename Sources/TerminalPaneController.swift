@@ -368,12 +368,18 @@ final class TerminalPaneController: NSViewController {
     /// back to the opening directory because the tracker reads nil until the
     /// surface exists, and a pane snapshotted in that window would otherwise
     /// restore with no directory at all.
+    /// `createdBy` is nil because nothing has created a pane yet: the control
+    /// server holds the socket and the graph, and the adapter that turns a
+    /// `split` into a window is not attached, so every pane on screen is one the
+    /// owner opened. Nil is what that means, and it is the value the record has
+    /// to carry until a pane can arrive any other way.
     var paneState: PaneState {
         PaneState(
             id: paneID,
             workingDirectory: anchorTracker.workingDirectory?.path(percentEncoded: false)
                 ?? workingDirectory,
-            pinnedDirectory: anchorTracker.pinnedDirectory?.path(percentEncoded: false)
+            pinnedDirectory: anchorTracker.pinnedDirectory?.path(percentEncoded: false),
+            createdBy: nil
         )
     }
 

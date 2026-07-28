@@ -25,6 +25,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let notifier = AttentionNotifier()
 
+    /// The control channel's socket, its pool, and its graph.
+    ///
+    /// Held whether or not it bound: an instance that found the socket already
+    /// owned still answers `boundSocketPath` with nil, which is what tells a pane
+    /// to inject no `BAIA_SOCK` rather than hand its shell the *first* instance's
+    /// live socket.
+    let control = ControlServer()
+
     private lazy var palette: CommandPaletteController = {
         let palette = CommandPaletteController()
         palette.theme = configuration.paneTheme
@@ -89,6 +97,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // prompt. Only `notify` is gated.
         notifier.requestAuthorizationIfNeeded()
         notifier.isEnabled = configuration.settings.notificationsEnabled
+        // Before the first pane exists, because a pane opened by the restore
+        // below has to be told where to talk while it is being built.
+        startControlChannel()
 
         restoreSession()
         NSApp.activate(ignoringOtherApps: true)
@@ -97,6 +108,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Warmed here so the first ⌘K of a session opens on a full list rather
         // than on an empty one that fills in a moment later.
         discoverProjects()
+    }
+
+    /// Binds the control socket, and says on stderr what happened either way.
+    ///
+    /// A failure here is not a launch failure. baia is a terminal first, and an
+    /// instance with no channel is a working workspace whose panes are told there
+    /// is nothing to talk to, which the CLI reports in one sentence.
+    private func startControlChannel() {
+        control.isChannelEnabled = configuration.settings.controlChannelEnabled
+        control.isRunAllowed = configuration.settings.controlAllowRun
+
+        switch control.start() {
+        case .bound:
+            break
+        case let .ownedByAnotherInstance(path):
+            report("another baia already owns \(path), so this one runs without a control channel")
+        case let .failed(reason):
+            report("the control channel did not start: \(reason)")
+        }
+    }
+
+    private func report(_ message: String) {
+        FileHandle.standardError.write(Data("baia: \(message)\n".utf8))
     }
 
     /// Routes each keystroke to the pane that received it.
@@ -126,6 +160,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         saveTimer = nil
         save()
         isTerminating = true
+        // After the save, and last of all: every parked `recv` is answered with
+        // an empty drain here, and a client that got a bare EOF instead would
+        // report the app as broken on the one exit that is not.
+        control.stop()
     }
 
     // MARK: - Windows and tabs
@@ -583,6 +621,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The panes themselves are updated by the configuration center directly.
     private func settingsDidChange() {
         notifier.isEnabled = configuration.settings.notificationsEnabled
+        control.settingsChanged(
+            channelEnabled: configuration.settings.controlChannelEnabled,
+            allowRun: configuration.settings.controlAllowRun
+        )
         // Dropped so the next palette walks the roots the file now names. The
         // walk is not started here: it would fire on every keystroke of an
         // editor holding the file open.
