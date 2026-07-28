@@ -42,6 +42,16 @@ public struct ControlPaneID: Hashable, Sendable, CustomStringConvertible {
     public var description: String { rawValue.uuidString }
 }
 
+extension String {
+    /// Whether this string is a pane's public display id wearing another name.
+    ///
+    /// One implementation and three enforcement points: the pane registry, the
+    /// authorization resolver, and the rendezvous ticket. Written once so the
+    /// rule cannot drift apart into three that all look correct, and asked in
+    /// three places so no single table has to be clean for the answer to hold.
+    var parsesAsPaneID: Bool { ControlPaneID(uuidString: self) != nil }
+}
+
 /// A pane's per-run capability, the value `$BAIA_TOKEN` carries.
 ///
 /// 32 bytes from `SecRandomCopyBytes`, base64url-encoded, minted when the pane
@@ -74,7 +84,7 @@ public struct PaneSecret: Hashable, Sendable, CustomStringConvertible, CustomDeb
     /// ``PaneGraph/authorize(token:verb:target:)`` refuses one before it looks
     /// anything up. Two enforcement points rather than one, so the answer does
     /// not depend on the registry being clean.
-    var parsesAsPaneID: Bool { ControlPaneID(uuidString: rawValue) != nil }
+    var parsesAsPaneID: Bool { rawValue.parsesAsPaneID }
 
     public var description: String { "PaneSecret(redacted)" }
     public var debugDescription: String { description }

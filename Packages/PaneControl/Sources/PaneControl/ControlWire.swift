@@ -76,6 +76,29 @@ public enum ControlWire {
     /// it, one pane fills the pool and every other pane's `baia` stops working.
     public static let maxConnectionsPerPane = 4
 
+    /// Bytes in a published channel name.
+    ///
+    /// Not in the spec's budget table and here for the same reason every row of
+    /// it is: a name is echoed into the record `whoami` and `list` return, and a
+    /// peer's `list` carries this pane's record, so an unbounded name is one pane
+    /// making another pane's response unframeable. Cross-pane effect is the only
+    /// privilege the channel grants, and this is a way to have one.
+    public static let maxChannelNameBytes = 64
+
+    /// Channels one pane may hold open at once.
+    ///
+    /// Same reasoning one level up: `publish` is idempotent per name, so a pane
+    /// that keeps inventing names keeps adding table entries in the app process
+    /// forever. Rotating or reusing a name is what a publisher actually wants.
+    public static let maxPublishedChannelsPerPane = 16
+
+    /// The channel `baia publish` and `baia connect` mean when no `--as` is
+    /// given.
+    ///
+    /// Here rather than in the CLI so that the client and the server cannot
+    /// disagree about which channel a bare `publish` created.
+    public static let defaultChannelName = "default"
+
     /// Whether a framed line fits the cap.
     ///
     /// Exists so the `recv` drain can frame a candidate response and ask, which
@@ -83,6 +106,48 @@ public enum ControlWire {
     /// into a response that fits" checkable rather than aspirational.
     public static func fitsFrame(_ line: Data) -> Bool {
         line.count <= maxFrameBytes
+    }
+
+    /// The size of the line a `recv` carrying exactly these messages would write.
+    ///
+    /// The whole response and not the messages alone, because the cap applies to
+    /// the line: the envelope, the drop count, and the escaping are all part of
+    /// what has to fit. `more` is spelled `false`, which is one byte longer than
+    /// `true`, so a batch measured here is never larger when it is finally
+    /// written.
+    ///
+    /// `Int.max` when the value cannot be encoded at all, which no response
+    /// built from these types can be, so that an unencodable message is refused
+    /// rather than accepted by a failure that reads as zero bytes.
+    public static func drainFrameSize(messages: [ControlMessage], dropped: Int) -> Int {
+        let response = ControlResponse.success(ControlResult(
+            messages: messages,
+            more: false,
+            dropped: dropped
+        ))
+        guard let line = encodeResponse(response) else { return .max }
+        return line.count
+    }
+
+    /// Whether any `recv` could ever hand this message back.
+    ///
+    /// The check `send` enforces, and it is on the framed size rather than the
+    /// payload size. The first draft of the spec's budget table claimed 48 KiB
+    /// was chosen so that a maximal payload survived the worst case of JSON
+    /// escaping. It does not: escaping spends six bytes on a control byte, and
+    /// 48 KiB of U+0001 was measured at 295,037 bytes framed, well over the
+    /// 256 KiB cap.
+    ///
+    /// The consequence is not cosmetic. A message leaves a mailbox only once it
+    /// has been framed into a response that fits, so a payload accepted here that
+    /// no response can carry would sit in a mailbox undrainable forever, blocking
+    /// every message behind it.
+    ///
+    /// Measured against the worst drain that could carry it: this message alone,
+    /// with a maximal drop count. Anything this accepts therefore fits as the
+    /// first message of any drain, which is what keeps a mailbox making progress.
+    public static func canBeDrained(_ message: ControlMessage) -> Bool {
+        drainFrameSize(messages: [message], dropped: maxMailboxMessages) <= maxFrameBytes
     }
 
     // MARK: Encoding

@@ -207,10 +207,12 @@ import Testing
     @Test func noResponseFieldIsTypedAsACapability() {
         let (fields, _) = Self.surface()
         for field in fields {
-            #expect(
-                field.type.contains("PaneSecret") == false,
-                "\(field.path) carries a PaneSecret"
-            )
+            for capability in ["PaneSecret", "RendezvousToken", "EdgeSecret"] {
+                #expect(
+                    field.type.contains(capability) == false,
+                    "\(field.path) carries a \(capability)"
+                )
+            }
         }
     }
 
@@ -221,19 +223,35 @@ import Testing
     /// Stated as an assertion anyway so that adding the conformance has to be
     /// somebody's deliberate act with a red test in front of them, rather than an
     /// autocompleted `Codable` on a declaration line.
+    ///
+    /// All three of them. The pane capability is the one rule 2 is written about;
+    /// the rendezvous ticket reaches the wire as a plain `String` in the one
+    /// bounded exception and must not acquire a second, quieter route; and the
+    /// per-edge secret is never returned by any verb at all.
     @Test func aCapabilityIsNotEncodableInTheFirstPlace() {
-        #expect((PaneSecret.self as Any.Type) is Encodable.Type == false)
-        #expect((PaneSecret.self as Any.Type) is Decodable.Type == false)
+        for capability in [PaneSecret.self as Any.Type, RendezvousToken.self, EdgeSecret.self] {
+            #expect(capability is Encodable.Type == false)
+            #expect(capability is Decodable.Type == false)
+        }
     }
 
     /// A capability that reached a log line would be as leaked as one that
     /// reached a response body, and the only difference is that nobody would be
     /// looking for it there. So it redacts itself in both string conversions.
     @Test func aCapabilityRedactsItselfWhenPrinted() {
-        let value = PaneSecret("a-live-capability")
-        #expect("\(value)".contains("a-live-capability") == false)
-        #expect(String(reflecting: value).contains("a-live-capability") == false)
-        #expect(value.rawValue == "a-live-capability")
+        let live = "a-live-capability"
+        let values: [(any CustomStringConvertible, String)] = [
+            (PaneSecret(live), live),
+            (RendezvousToken(live), live),
+            (EdgeSecret(live), live),
+        ]
+        for (value, raw) in values {
+            #expect("\(value)".contains(raw) == false)
+            #expect(String(reflecting: value).contains(raw) == false)
+        }
+        #expect(PaneSecret(live).rawValue == live)
+        #expect(RendezvousToken(live).rawValue == live)
+        #expect(EdgeSecret(live).rawValue == live)
     }
 
     // MARK: The wire, as opposed to the declarations

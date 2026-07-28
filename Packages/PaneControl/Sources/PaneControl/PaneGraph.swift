@@ -50,6 +50,21 @@ public struct PaneGraph: Sendable, Equatable {
     /// in.
     var peerEdges: [ControlPaneID: Set<ControlPaneID>] = [:]
 
+    /// Published channels, keyed by owner and name together.
+    ///
+    /// The ticket that admits to each one lives in here and nowhere else: it is
+    /// never persisted, never logged, and never returned by any verb except the
+    /// `publish` of the pane that owns it.
+    var channels: [ChannelKey: PublishedChannel] = [:]
+
+    /// One bounded FIFO per pane that has been messaged.
+    ///
+    /// Created on the first delivery and dropped once drained, so a pane that
+    /// nobody talks to owns nothing here. Mailboxes die with the app: they are a
+    /// runtime rendezvous between live processes, and restoring one would hand a
+    /// fresh shell a stranger's backlog.
+    var mailboxes: [ControlPaneID: Mailbox] = [:]
+
     public init() {}
 
     // MARK: Lifetime
@@ -93,10 +108,17 @@ public struct PaneGraph: Sendable, Equatable {
     /// Forgets a pane and everything that pointed at it.
     ///
     /// Its registration goes, so its secret stops working; its peer edges go in
-    /// both directions; and its children become roots rather than being
-    /// reparented to its parent. Reparenting would silently widen the
-    /// grandparent's scope to panes it never created, which is the same reasoning
-    /// `SessionStore.reconciled` records for a dangling `createdBy` on restore.
+    /// both directions; its published channels and their tickets go, along with
+    /// every admission and denial naming it; its mailbox goes; and its children
+    /// become roots rather than being reparented to its parent. Reparenting would
+    /// silently widen the grandparent's scope to panes it never created, which is
+    /// the same reasoning `SessionStore.reconciled` records for a dangling
+    /// `createdBy` on restore.
+    ///
+    /// Everything at once and in one function, because a pane whose channels
+    /// outlived it would leave a ticket admitting callers to an edge with nobody
+    /// on the other end, and a cleanup the app has to remember to perform is a
+    /// cleanup that will be forgotten on one path.
     @discardableResult
     public mutating func close(pane: ControlPaneID) -> Bool {
         var changed = false
@@ -120,6 +142,9 @@ public struct PaneGraph: Sendable, Equatable {
                 if peerEdges[peer]?.isEmpty == true { peerEdges[peer] = nil }
             }
         }
+
+        if retirePeering(of: pane) { changed = true }
+        if mailboxes.removeValue(forKey: pane) != nil { changed = true }
 
         return changed
     }

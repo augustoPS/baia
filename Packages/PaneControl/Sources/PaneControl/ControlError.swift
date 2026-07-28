@@ -104,6 +104,77 @@ public struct ControlError: Sendable, Hashable, Codable {
             + "it created, and the panes it has peered with."
     )
 
+    /// The ticket admits nobody.
+    ///
+    /// One value covering an invented ticket, a ticket rotated away, a ticket
+    /// belonging to a pane that has closed, and a bearer the publisher revoked.
+    /// Four sentences here would be four oracles: a pane holding a stale ticket
+    /// could learn that the channel still exists, and a revoked pane could learn
+    /// that it was revoked rather than that the publisher rotated, which is a
+    /// distinction the publisher never agreed to share.
+    ///
+    /// The ticket is not echoed, for the reason ``badToken`` does not echo a
+    /// token: it is attacker-supplied on the way in and a live capability on the
+    /// way out, and neither belongs in a message written to a terminal.
+    static let unknownTicket = ControlError(
+        code: .unauthorized,
+        message: "that rendezvous ticket admits nobody. Tickets are minted per run and are not "
+            + "persisted, so one from an earlier run, one that has been rotated, or one whose "
+            + "pane has closed all read the same: ask the publisher for a current one."
+    )
+
+    /// A pane redeemed its own ticket.
+    ///
+    /// `refused` rather than `unauthorized` because nothing was hidden from the
+    /// caller: it is holding a ticket it minted, and peering with itself is not a
+    /// thing the edge can express.
+    static let selfPeering = ControlError(
+        code: .refused,
+        message: "that is this pane's own rendezvous ticket. A peer edge runs between two panes; "
+            + "hand the ticket to the pane you want on the other end."
+    )
+
+    /// The message cannot be framed into a response, whatever its payload size
+    /// says.
+    ///
+    /// The number is the framed size and the caller's own message is not quoted
+    /// back: the text is attacker-controlled up to the frame cap, and a message
+    /// that echoed it would write those bytes into somebody's terminal.
+    static func messageTooLarge(framed: Int) -> ControlError {
+        ControlError(
+            code: .refused,
+            message: "that message is \(framed) bytes once framed into a response and the cap is "
+                + "\(ControlWire.maxFrameBytes). JSON escaping spends six bytes on a control "
+                + "character, so a payload inside the text budget can still exceed the frame. A "
+                + "message baia cannot frame is a message no recv could ever drain."
+        )
+    }
+
+    /// The payload is over the documented text budget.
+    static func messagePayloadTooLarge(bytes: Int) -> ControlError {
+        ControlError(
+            code: .refused,
+            message: "that message is \(bytes) bytes of text and the cap is "
+                + "\(ControlWire.maxMessagePayloadBytes). Send a path or a handle rather than a "
+                + "file: the mailbox is for coordination between panes."
+        )
+    }
+
+    /// The channel name is one the graph will not record.
+    static func channelNameRefused(_ detail: String) -> ControlError {
+        ControlError(code: .refused, message: detail)
+    }
+
+    /// The app minted a ticket the graph cannot record.
+    ///
+    /// Unreachable for 32 bytes out of `SecRandomCopyBytes`, and answered rather
+    /// than ignored: the alternative to refusing a colliding ticket is recording
+    /// a channel whose ticket admits callers to somebody else's edge.
+    static let mintCollision = ControlError(
+        code: .internal,
+        message: "baia could not mint a rendezvous ticket for that channel. Nothing was published."
+    )
+
     /// Echoes the verb back, clamped.
     ///
     /// Clamped because the verb is attacker-controlled up to the whole frame
