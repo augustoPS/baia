@@ -38,7 +38,12 @@ import Testing
         // built from the keys the decoder never asked for, a field read under a
         // misspelled name fails on `unknownKeys` instead. Between them, this is the
         // test that keeps the key spellings honest.
-        let result = decode(#"""
+        //
+        // The document's own key set is asserted against `knownKeys` at the bottom,
+        // because the value comparison is only a check on a key the document
+        // actually carries: a key declared and no longer read would keep its default
+        // here and be invisible if this file had quietly stopped naming it.
+        let text = #"""
         {
           "fontFamily": "SF Mono",
           "fontSize": 13,
@@ -65,7 +70,8 @@ import Testing
           "controlChannelEnabled": false,
           "controlAllowRun": true
         }
-        """#)
+        """#
+        let result = decode(text)
         #expect(result.settings == Settings(
             fontFamily: "SF Mono",
             fontSize: 13,
@@ -95,6 +101,12 @@ import Testing
         #expect(result.unknownKeys.isEmpty)
         #expect(result.invalidKeys.isEmpty)
         #expect(!result.documentIsUnreadable)
+
+        var documentKeys: Set<String> = []
+        if case let .object(fields)? = JSONValue.parse(Data(text.utf8)) {
+            documentKeys = Set(fields.keys)
+        }
+        #expect(documentKeys == SettingsDecoder.knownKeys)
     }
 
     @Test func oneBadFieldLeavesEveryOtherFieldApplied() {

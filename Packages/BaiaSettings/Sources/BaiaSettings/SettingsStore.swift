@@ -114,8 +114,8 @@ public struct SettingsStore: Sendable {
     /// serializer would have to be written and tested for the one document it will
     /// ever produce. The two cannot drift: `SettingsStoreTests` decodes this file
     /// back and expects the defaults with nothing reported, and it also expects the
-    /// file to name every key the decoder reads, which a round trip alone cannot
-    /// see.
+    /// key set here to equal `SettingsDecoder.knownKeys`, which a round trip alone
+    /// cannot see because an omitted key decodes to its default like an absent one.
     ///
     /// `projectRoots` keeps the tilde rather than the expanded path. The file is
     /// meant to be copied between machines, and the decoder expands it on read.
@@ -142,6 +142,7 @@ public struct SettingsStore: Sendable {
       "attentionStyle": "loud",
       "attentionAccent": "alert",
       "alertBehavior": "stock",
+      "sidebar": "off",
       "controlChannelEnabled": true,
       "controlAllowRun": false
     }

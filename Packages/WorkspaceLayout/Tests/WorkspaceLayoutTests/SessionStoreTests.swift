@@ -71,6 +71,34 @@ import Testing
         #expect(store.load()?.panes[1].createdBy == parent)
     }
 
+    /// The guarantee ``SessionSnapshot/currentSchemaVersion`` claims in its own doc
+    /// comment, and the one thing a round trip cannot show.
+    ///
+    /// Written as a literal rather than encoded from a value, because every
+    /// ``PaneState`` this build can construct already carries `createdBy`. Encoding
+    /// one and decoding it back proves the field survives its own writer and says
+    /// nothing about the file already sitting on the owner's disk, which is the file
+    /// that decides whether the first launch after an upgrade restores his session
+    /// or opens an empty window. Loaded through ``SessionStore`` rather than through
+    /// a bare `JSONDecoder`, so the version gate is part of what is being asserted:
+    /// adding an optional field must not need a bump, and a bump would send every
+    /// pre-upgrade file to nil here.
+    @Test func aSessionWrittenBeforeParentageExistedStillLoads() throws {
+        let json = """
+        {"schemaVersion":1,"workspace":{"tabs":[],"focusedTabIndex":0},\
+        "panes":[{"id":{"rawValue":"3B1E9F6A-4C2D-4E8B-9A1F-7D5C0E2B8A64"},\
+        "workingDirectory":"/Users/x/Projects"}]}
+        """
+        try fixture.file("state/session.json", contents: json)
+
+        let loaded = store().load()
+        #expect(loaded?.panes.count == 1)
+        // Nil is exactly what "the version that wrote this file did not record a
+        // parent" means, and it is also what a pane the owner opened by hand says.
+        #expect(loaded?.panes.first?.createdBy == nil)
+        #expect(loaded?.panes.first?.workingDirectory == "/Users/x/Projects")
+    }
+
     @Test func loadFindsNothingWhenNoSessionWasEverWritten() {
         // A first launch, which is not an error: `contents(atPath:)` answering nil is
         // the whole reason this API is not `throws`.
