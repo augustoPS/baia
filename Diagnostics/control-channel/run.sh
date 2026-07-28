@@ -55,6 +55,7 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
 OUT=${TMPDIR:-/tmp}/baia-control-channel-probe
 TOKENS="$OUT/tokens"
+SHELLS="$OUT/shells"
 ZDOT="$OUT/zdot"
 BACKUP="$OUT/backup"
 
@@ -81,8 +82,8 @@ rm -rf "$OUT"
 # is designed against, so 0700 excludes nobody who matters. What keeps the window
 # short is that the file dies with the run.
 umask 077
-mkdir -p "$TOKENS" "$ZDOT" "$BACKUP"
-chmod 700 "$OUT" "$TOKENS"
+mkdir -p "$TOKENS" "$SHELLS" "$ZDOT" "$BACKUP"
+chmod 700 "$OUT" "$TOKENS" "$SHELLS"
 cd "$ROOT"
 
 # The probe is worth nothing against a build that is not the source in the tree.
@@ -199,6 +200,25 @@ printf 'pane=%s\ntoken=%s\nsock=%s\n' "\$BAIA_PANE" "\$BAIA_TOKEN" "\$BAIA_SOCK"
   > "$TOKENS/pane-\$\$.env"
 EOF
 
+# The second plant, and it has to be `.zshrc` rather than `.zshenv`. zsh reads
+# `.zshenv` before `/etc/zprofile`, which is where `path_helper` runs, so the
+# readout above sees a PATH that nothing has rebuilt yet. `.zshrc` is read after
+# zprofile for a login shell, which is the only place the real question can be
+# asked: does the injected `Contents/Helpers` survive `login -flp` plus
+# `path_helper` plus whatever the owner's own startup files do.
+#
+# It does not stop at looking. It RUNS the helper, so the same check also proves
+# the embedded tool executes under hardened runtime with an ad-hoc signature,
+# from inside a real pane, through the whole spawn chain. Both were on the
+# by-hand list until it turned out a plant could answer them.
+cat > "$ZDOT/.zshrc" <<EOF
+{
+  printf 'pane=%s\n' "\$BAIA_PANE"
+  printf 'which=%s\n' "\$(command -v baia 2> /dev/null || echo NOT-ON-PATH)"
+  printf 'whoami_exit=%s\n' "\$(baia whoami > /dev/null 2>&1; echo \$?)"
+} > "$SHELLS/pane-\$\$.env" 2>&1
+EOF
+
 # The binary rather than "open", which would hand the app LaunchServices'
 # environment and lose the ZDOTDIR the readout depends on.
 ZDOTDIR="$ZDOT" "$BINARY" > "$OUT/app.log" 2>&1 &
@@ -230,4 +250,4 @@ if [ "$(ls "$TOKENS" | wc -l | tr -d ' ')" -lt 3 ]; then
 fi
 
 echo
-/usr/bin/python3 "$HERE/probe.py" "$SOCKET" "$TOKENS" "$CONFIG" "$SESSION"
+/usr/bin/python3 "$HERE/probe.py" "$SOCKET" "$TOKENS" "$CONFIG" "$SESSION" "$SHELLS"

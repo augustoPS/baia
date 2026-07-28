@@ -42,13 +42,32 @@ VERBS = [
 
 
 class Probe:
-    def __init__(self, socket_path, token_dir, config_path, session_path):
+    def __init__(self, socket_path, token_dir, config_path, session_path, shells_dir):
         self.socket_path = socket_path
         self.token_dir = token_dir
         self.config_path = config_path
         self.session_path = session_path
+        self.shells_dir = shells_dir
         self.failures = []
         self.checks = 0
+
+    def shell_reports(self):
+        """What each pane's own `.zshrc` found, keyed by pane id.
+
+        Written after `/etc/zprofile` has run `path_helper`, which is the only
+        point where the PATH question can honestly be asked.
+        """
+        reports = {}
+        for name in sorted(os.listdir(self.shells_dir)):
+            fields = {}
+            with open(os.path.join(self.shells_dir, name), encoding="utf-8") as handle:
+                for line in handle:
+                    key, _, value = line.strip().partition("=")
+                    if key:
+                        fields[key] = value
+            if fields.get("pane"):
+                reports[fields["pane"]] = fields
+        return reports
 
     # MARK: the wire
 
@@ -259,11 +278,11 @@ class Probe:
 
 
 def main():
-    if len(sys.argv) != 5:
-        print("usage: probe.py <socket> <token-dir> <config> <session>")
+    if len(sys.argv) != 6:
+        print("usage: probe.py <socket> <token-dir> <config> <session> <shells-dir>")
         return 2
 
-    probe = Probe(*sys.argv[1:5])
+    probe = Probe(*sys.argv[1:6])
     live = probe.tokens()
     if len(live) < 3:
         probe.abort(
@@ -432,6 +451,45 @@ def main():
         probe.await_code(live[alpha], "run", "disabled"),
         "disabled",
     )
+
+    print()
+    print("-- the helper reaches a pane's PATH, and runs when it gets there")
+    # Both of these were on the by-hand list until a `.zshrc` plant turned out to
+    # answer them. PATH is the riskiest assumption in the whole design: ghostty
+    # spawns `login -flp`, so the pane's zsh is a login shell, `/etc/zprofile`
+    # runs `path_helper`, and `path_helper` REBUILDS PATH from `/etc/paths` and
+    # appends whatever was already there behind it. Survival is the claim, not
+    # position; nothing in `/usr/bin` is named `baia`.
+    shells = probe.shell_reports()
+    probe.check(
+        "every pane's shell reported what it found on PATH",
+        len(shells) >= 3,
+        True,
+    )
+    for pane, fields in sorted(shells.items()):
+        found = fields.get("which", "")
+        probe.check(
+            "baia is on PATH in pane %s after path_helper has rebuilt it" % pane[-12:],
+            found.endswith("/Contents/Helpers/baia"),
+            True,
+        )
+        # A trailing slash on the injected directory reaches PATH and surfaces as
+        # `…/Contents/Helpers//baia` the first time anybody runs `command -v`. It
+        # resolves, so nothing breaks, and it reads as a bug in the one place a
+        # reader looks to confirm the embedding worked.
+        probe.check(
+            "and the PATH entry has no doubled separator in pane %s" % pane[-12:],
+            "//" not in found,
+            True,
+        )
+        # Running it, not just finding it: this is the embedded tool executing
+        # under hardened runtime with an ad-hoc signature, from inside a real
+        # pane, through the whole login/bash/zsh spawn chain.
+        probe.check(
+            "and `baia whoami` runs from that pane and exits 0",
+            fields.get("whoami_exit"),
+            "0",
+        )
 
     print()
     print("-- a parked recv holds one connection and nothing else")

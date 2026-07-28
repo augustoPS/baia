@@ -519,7 +519,13 @@ final class TerminalPaneController: NSViewController {
         guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory),
               isDirectory.boolValue
         else { return nil }
-        return path
+        // Trailing slash dropped before this reaches PATH. `directoryHint:
+        // .isDirectory` is right for the existence check and puts a `/` on the
+        // end of the path string, which is the same URL trap `Anchor` already
+        // canonicalizes for. It survives into `PATH`, so `command -v baia`
+        // answers `…/Contents/Helpers//baia`, which resolves and reads as a bug
+        // in the first place anybody looks.
+        return path.hasSuffix("/") ? String(path.dropLast()) : path
     }()
 
     override func loadView() {
