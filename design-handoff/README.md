@@ -20,7 +20,7 @@ Most of v2 ratifies what shipped from v1; the five places it does not are listed
 below.
 
 v3 is a different subject, the sidebar that shipped 2026-07-27. It answers the
-brief in `vault/projects/baia/2026-07-29-design-v3-prompt.md`, and none of it is
+brief in `vault/projects/baia/2026-07-29-design-v3-prompt.md`, and all of it is
 implemented. Where the two subjects touch, the footer's tier-1 treatment, the
 accent, the hairline vocabulary, v3 follows v2. Its markdown twin is vendored
 alongside it because the values in it are meant to be typed into Swift, and a
@@ -151,8 +151,8 @@ comparison it was waiting on had been made.
 
 ## What v3 asks for, and what it found
 
-Its own suggested order is at the end of `Baia Sidebar Design Pass.md`, and step 1
-of it shipped the day it arrived; see below. The eight decisions are the material
+Its own suggested order is at the end of `Baia Sidebar Design Pass.md`, and all
+eight steps of it shipped the day it arrived; see below. The eight decisions are the material
 of the column (the terminal's own, not the panel's), per-column `XY` colour, a
 truncation ladder that elides the directory, a heading carrying a count and the
 anchor name, indent guides and trailing per-file status in the tree, five row
@@ -164,42 +164,87 @@ cycle and the brief's claim holds.
 
 ## What was implemented from v3
 
-Step 1 of its suggested order, on 2026-07-29. Three of the five §8 corrections,
-which are the whole of what that step covers.
+**All eight steps of its suggested order, on 2026-07-29, on branch `sidebar-v3`.**
+Seven commits, one per step except the two corrections that travelled with the
+step that retired their cause.
 
-1. **§3 and §8/01, the path ladder.** `PaneChrome.RowPath` fits a path to a
+1. **§3 the path ladder, and §8/01.** `PaneChrome.RowPath` fits a path to a
    character budget by eliding the directory and never the name: the whole path,
    then the first directory with `…` and as many trailing ones as fit, then `…/`
    alone, then the name, and at the floor the stem tail-elided with its extension
-   kept. Twelve tests, including one that walks every budget from 0 to 60 across
-   seven paths and asserts nothing ever exceeds what it was given. The row draws
-   with `draw(at:)`, so there is no rect left to wrap in.
+   kept. Twelve tests. The row draws with `draw(at:)`, so there is no rect left to
+   wrap in. The tree's names run the same ladder.
+2. **§9 the tokens.** `PaneTheme.staged`, and `divider` and `hairline` blended
+   towards the accent rather than the foreground.
+3. **§1 the material, and §8/03.** The column fills the terminal's own background
+   at the window's `backgroundOpacity`, once, by the scroll view. Sampled off a
+   capture the body lands on `#151515` against a pane's `#161616`.
+   `panelBackground` keeps the palette and the find panel, which float. Both
+   surfaces read one inset.
+4. **§2.1 the marker, and §8/02.** `X` and `Y` carry their own ink, so `MM` says
+   that committing now leaves the second `M` behind. An absent column is a space.
+   An unmerged row draws the letters git gave it rather than a hardcoded `UU`.
+   Both strings in a row draw from one baseline.
+5. **§4.1 and §4.2 the heading.** All caps with tracking, in regular; a count on
+   Changes alone; the anchor name trailing in the accent while the window is key,
+   on the first heading only.
+6. **§2.3 the five row states.** Hover, pressed, landed and refused, every one a
+   fill and an ink and never a geometry. `onSelect` became `((String) -> Bool)?`.
+   **The refusal had no visual at all before this**, which is the item the path
+   picker shipped owing.
+7. **§5 the tree.** Indent guides at every ancestor level, per-file status
+   trailing with a directory carrying the strongest mark beneath it
+   (`GitWorkspace.FileChangeMarks`, eight tests), the hovered directory's own
+   guide lit across its descendants, trailing slashes, chevron column to 12.
+8. **§4.3 and §6.** The split answers on approach and while dragged, drawn by the
+   heading inside its fixed 28 pt. `not a repository` is centred with its
+   tilde-abbreviated path beneath it, against `no changes` staying the list's own
+   first line.
 
-   The wrap itself was found independently the same day and first fixed with
-   `.byTruncatingHead`, which §3 rejects for spending the width on the directory
-   and the name together. That fix is gone; the ladder replaces it.
+1135 tests across eleven packages, and all thirteen captures regenerated.
 
-2. **§8/02, one baseline.** Both strings in a changes row now draw from
-   `rowBaseline - font.ascender`, the idiom `PaneStatusBarView` already uses with
-   `PaneStatusBarMetrics.baselineFromTop`. The marker used to draw at `y + 3` and
-   the path at `y + 1`, both top-origin in a flipped view, so it sat 2 pt below
-   the path it labelled.
+### Two corrections back to the document, both from measuring
 
-3. **§8/03, one inset.** `FileTreeRowsView` read 10 against everything else's 12
-   and placed its text by its own constant. It now reads `ChangesRowsView`'s
-   metrics, so a row in either surface sits at the same inset on the same
-   baseline when the two are stacked.
+- **The advance is 6.7998, not 6.62.** Every width budget v3 quotes is derived
+  from 6.62 for `monospacedSystemFont(ofSize: 11, weight: .regular)`, so its
+  character counts run about 3 percent optimistic: the real budget at 260 pt is 30
+  characters rather than 31, and `Sources/Workspace/Divider.swift` at 31 elides
+  where the table says it fits. `RowPath`'s caller measures rather than hardcodes.
+- **The line fractions hold for one accent only.** §1 gives 0.14 and 0.20 for
+  `divider` and `hairline` under a rule it states plainly, that the line changes
+  hue and never weight. They hold for `midnight`, which that document was written
+  against. A fixed fraction carries as far as the accent is light, so the same
+  0.14 lands 31 percent brighter under the default accent and 42 percent under
+  `bone` — and `bone` is hueless, where the document promises the greys come back
+  untouched. `PaneTheme.tinted(matching:)` solves for the fraction that matches
+  the neutral's luminance, so both claims hold under all five accents. Midnight
+  still resolves within a unit of the quoted `#2d2535` and `#382d43`.
 
-**One correction to the document, from measuring rather than reading.** Every
-width budget in v3 is derived from a 6.62 pt advance for
-`monospacedSystemFont(ofSize: 11, weight: .regular)`. The font reports 6.7998 pt
-on macOS 27, so the real budget at 260 pt is 30 characters rather than 31, and
-`Sources/Workspace/Divider.swift` at 31 elides where the document's table says it
-fits. `RowPath`'s caller measures the advance instead of hardcoding it, so the
-budget follows the font, but v3's character counts run about 3 percent
-optimistic wherever they are quoted.
+### Three AppKit facts the row states cost
 
-Steps 2 through 8 are not started.
+Written down because none of them is discoverable from the design and each cost a
+trace to find.
+
+- **`.mouseMoved` on a tracking area never arrives in this app.** One area over
+  the whole view gave faithful entered and exited and not one move, with
+  `acceptsMouseMovedEvents` true on the window and a local `.mouseMoved` monitor
+  beside it seeing nothing either. Hover resolution comes from one area per row,
+  bounded by the clip view.
+- **Those areas have to be rebuilt when the rows change.** `resize()` marks a
+  layout pass only when the frame actually moves, and a list growing inside a
+  document view already as tall as its clip does not move it, so the areas stayed
+  as first built: zero, against an empty list, for the life of the surface. **This
+  is the third bug of this exact shape in these two views**, after the 1 pt-wide
+  document view and the zero-width tree, and it is worth a probe rather than a
+  fourth discovery.
+- An exit is honoured only for the row that was hovered, since adjacent areas
+  deliver the next row's enter before the last row's exit.
+
+### One gap the material change surfaced
+
+The live config reload repainted every pane and never reached the sidebar, so a
+theme or an opacity edited under a running app left the column wearing whatever
+the window was built with until it was closed.
 
 ## Still open
 

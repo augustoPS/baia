@@ -28,11 +28,11 @@ were built to show. 07 to 13 are the sidebar, for v3.
 | `05-four-tab-bar.png` | Four tabs. Every tab reads `baia — <project>`, so the repeated prefix eats the width |
 | `06-activity-labels.png` | A pane running `sleep 400` labelled `sleep`, trailing-aligned, beside an idle pane |
 | `07-changes-surface.png` | Changes alone, with every marker state at once: `UU` conflict, `A` staged, `MM` staged and since modified, `M` unstaged, `??` untracked, and two paths too long for the column |
-| `08-files-tree.png` | The tree in this repository, `Packages/BaiaSettings` expanded, so indentation runs three levels deep in a 260 pt column |
-| `09-both-sections.png` | Both sections stacked. Two headings, two scroll regions, the invisible split between them, and a short list above a long one |
+| `08-files-tree.png` | The tree in this repository, `Packages/BaiaSettings` expanded, so the indent guides run three levels deep in a 260 pt column |
+| `09-both-sections.png` | Both sections stacked. Two headings, two scroll regions, the split between them, and a short list above a long one |
 | `10-path-picker.png` | What a click does: `Sources/Workspace/Pane.swift` sitting on the focused pane's prompt, unrun |
 | `11-no-changes.png` | The empty state of a clean repository, above a tree that is not empty |
-| `12-not-a-repository.png` | Both sections reading `not a repository` for a pane anchored to a plain directory. A different fact from "nothing changed", and currently the same sentence twice |
+| `12-not-a-repository.png` | Both sections answering for a pane anchored to a plain directory: `not a repository` centred with the anchor path beneath it, which is deliberately not how `no changes` is drawn |
 | `13-sidebar-and-panes.png` | The sidebar beside three panes. The footer and the sidebar describing one repository with nothing connecting them, and the window's leading corners belonging to the column |
 
 **The elided rows in 07 and 09 are new, and they replace a bug.** Until 2026-07-29
