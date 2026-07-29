@@ -187,11 +187,26 @@ public struct GitCommand: Sendable {
     /// Two parses over one string rather than one parse producing both, because the
     /// two answers are shaped for different surfaces and neither type should grow
     /// the other's fields. See ``GitStatusParser/changes(_:)``.
+    ///
+    /// `-z` for the reason ``files(ofRepositoryRoot:)`` passes it, and the changes
+    /// list is the same kind of surface as the tree: without it git C-quotes any
+    /// path holding a non-ASCII byte, a double quote, a backslash or a control
+    /// byte, so the panel drew `café.txt` as `"caf\303\251.txt"` and handed that
+    /// rendering to anything downstream. The flag came late, on 2026-07-29, after
+    /// the path picker design made the changed paths into something the owner
+    /// clicks rather than only reads.
     public func read(
         ofRepositoryRoot root: URL
     ) -> (status: RepositoryStatus?, changes: [RepositoryFileChange]) {
         guard let output = output(
-            of: ["--no-optional-locks", "status", "--porcelain=v2", "--branch", "--untracked-files=all"],
+            of: [
+                "--no-optional-locks",
+                "status",
+                "--porcelain=v2",
+                "--branch",
+                "--untracked-files=all",
+                "-z",
+            ],
             in: root
         ) else { return (nil, []) }
         guard var status = GitStatusParser.parse(output) else { return (nil, []) }

@@ -3,37 +3,45 @@ import Testing
 
 @testable import GitWorkspace
 
-/// The per-file half of `git status --porcelain=v2`.
+/// The per-file half of `git status --porcelain=v2 -z`.
 ///
 /// Every fixture here was captured from git 2.50.1 on a repository built to
 /// produce each record type, not written from the documentation, which is the same
-/// standard `GitStatusParserTests` holds itself to. The rename record carries a
-/// real tab and a real space in the original path, because those are the two
-/// characters this grammar is easiest to get wrong on.
+/// standard `GitStatusParserTests` holds itself to. `PorcelainFixture.zeroed`
+/// turns the readable listing back into the NUL separated bytes git printed.
+///
+/// Three of the names are hostile on purpose: a non-ASCII one, one carrying a
+/// tab, and one carrying a double quote. Without `-z` git renders all three
+/// C-quoted, so the panel drew `"caf\303\251.txt"` and any consumer of these
+/// paths was handed a name no filesystem holds.
 @Suite struct GitStatusChangesTests {
     /// One repository holding every ordinary shape at once: a file staged and then
     /// edited again, a staged delete, a rename out of a path with a space, a
-    /// staged-only change, a worktree-only change, and two untracked files one of
-    /// which is nested.
-    private let everyShape = """
-    # branch.oid 0d897c553a72e6eb993a44dcd926806831909bda
+    /// staged-only change, a worktree-only change, three hostile untracked names
+    /// and two ordinary ones, one of them nested.
+    private let everyShape = PorcelainFixture.zeroed("""
+    # branch.oid 362d6fae33462c0809e46d9d4514979cb13fe847
     # branch.head main
-    1 MM N... 100644 100644 100644 61780798228d17af2d34fce4cfbdf35556832472 5ae8f0041f029cd7686c98cc966d98385c25050e both.txt
-    1 D. N... 100644 000000 000000 d905d9da82c97264ab6f4920e20242e088850ce9 0000000000000000000000000000000000000000 gone.txt
-    2 R. N... 100644 100644 100644 4bcfe98e640c8284511312660fb8709b0afa888e 4bcfe98e640c8284511312660fb8709b0afa888e R100 new name.txt\told name.txt
-    1 M. N... 100644 100644 100644 78981922613b2afb6025042ff6bd878ac1994e85 aa00f2f88ff89db044b6fc48a329fcbf59632cf5 staged.txt
-    1 .M N... 100644 100644 100644 f2ad6c76f0115a6ba5b00456a849810e7ec0af20 f2ad6c76f0115a6ba5b00456a849810e7ec0af20 unstaged.txt
+    1 MM N... 100644 100644 100644 49f33a8c6e8bb31f5d7c68f9c298cac55ec7cd85 61780798228d17af2d34fce4cfbdf35556832472 both.txt
+    1 D. N... 100644 000000 000000 286c5f5776916d7d7d5849988ca9d83e722cf9c2 0000000000000000000000000000000000000000 gone.txt
+    2 R. N... 100644 100644 100644 5dc887d0128750b3996ab29578a483e4139b8eaa 5dc887d0128750b3996ab29578a483e4139b8eaa R100 new name.txt
+    old name.txt
+    1 M. N... 100644 100644 100644 19d9cc8584ac2c7dcf57d2680375e80f099dc481 61780798228d17af2d34fce4cfbdf35556832472 staged.txt
+    1 .M N... 100644 100644 100644 b8d041e39da713592693a6e2d6af4a02a9c7a265 b8d041e39da713592693a6e2d6af4a02a9c7a265 unstaged.txt
+    ? café.txt
+    ? ctrl\tname.txt
+    ? quo"te.txt
     ? sub/nested.txt
     ? untracked.txt
 
-    """
+    """)
 
-    private let conflicted = """
+    private let conflicted = PorcelainFixture.zeroed("""
     # branch.oid 572d474a01c1fba4cbc3bc4e84a005527ed0322e
     # branch.head main
     u UU N... 100644 100644 100644 100644 df967b96a579e45a18b8251732d16804b2e56a55 b19a1e93bec1317dc6097229e12afaffbfa74dc2 950b81b7eee953d050aa05a641f8e056c85dd1bd conflicted.txt
 
-    """
+    """)
 
     @Test func emptyOutputHasNoChanges() {
         #expect(GitStatusParser.changes("").isEmpty)
@@ -44,13 +52,13 @@ import Testing
     /// the honest answer for a repository with nothing to show, and the caller
     /// already learned whether it is a repository at all from the status.
     @Test func aCleanRepositoryHasNoChanges() {
-        let output = """
+        let output = PorcelainFixture.zeroed("""
         # branch.oid 0d897c553a72e6eb993a44dcd926806831909bda
         # branch.head main
         # branch.upstream origin/main
         # branch.ab +0 -0
 
-        """
+        """)
         #expect(GitStatusParser.changes(output).isEmpty)
     }
 
@@ -62,9 +70,37 @@ import Testing
             "new name.txt",
             "staged.txt",
             "unstaged.txt",
+            "café.txt",
+            "ctrl\tname.txt",
+            "quo\"te.txt",
             "sub/nested.txt",
             "untracked.txt",
         ])
+    }
+
+    /// The reason `-z` is passed at all. Without it git C-quotes any path holding
+    /// a non-ASCII byte, a double quote, a backslash or a control byte, and the
+    /// panel drew that rendering verbatim: `café.txt` reached the surface as the
+    /// fifteen ASCII characters `"caf\303\251.txt"`.
+    @Test func aHostileNameArrivesAsItsOwnBytes() {
+        let paths = GitStatusParser.changes(everyShape).map(\.path)
+        #expect(paths.contains("café.txt"))
+        #expect(paths.contains("ctrl\tname.txt"))
+        #expect(paths.contains("quo\"te.txt"))
+        #expect(paths.contains { $0.contains("\\303") } == false)
+    }
+
+    /// A newline is legal in a filename on macOS, and under `-z` it arrives inside
+    /// the record. A parser still splitting records on newlines reads this as an
+    /// untracked file called `two` followed by a junk line, so the surface shows a
+    /// path that does not exist and drops the one that does.
+    @Test func aNewlineInsideAPathStaysInsideThePath() {
+        // Written out rather than through `PorcelainFixture.zeroed`, because this
+        // is the one fixture whose path contains the character that helper treats
+        // as a line break.
+        let output = "# branch.oid 4fd88ea\0# branch.head main\0? two\nlines.txt\0"
+        let changes = GitStatusParser.changes(output)
+        #expect(changes.map(\.path) == ["two\nlines.txt"])
     }
 
     /// `MM` is one file in two states: staged, then edited again. The panel has to
@@ -94,10 +130,10 @@ import Testing
         #expect(change?.worktree == nil)
     }
 
-    /// The record this grammar is easiest to get wrong on: the two paths are
-    /// separated by a tab, and the original path contains a space. Splitting the
-    /// record on whitespace, or forgetting the tab, loses the rename entirely.
-    @Test func aRenameKeepsBothPathsAcrossTheTab() {
+    /// The record this grammar is easiest to get wrong on. Under `-z` the original
+    /// path is not a trailing field after a tab but a NUL terminated entry of its
+    /// own, so a parser reading entries one at a time sees it as a record.
+    @Test func aRenameKeepsBothPathsAcrossTheSeparator() {
         let change = GitStatusParser.changes(everyShape).first { $0.path == "new name.txt" }
         #expect(change?.originalPath == "old name.txt")
         #expect(change?.kind == .renamedOrCopied)
@@ -108,6 +144,24 @@ import Testing
     @Test func onlyARenameCarriesAnOriginalPath() {
         let changes = GitStatusParser.changes(everyShape)
         #expect(changes.filter { $0.originalPath != nil }.map(\.path) == ["new name.txt"])
+    }
+
+    /// A rename out of a path that is itself shaped like a record. Captured from
+    /// git after `git mv '? evil.txt' renamed.txt`: the entry following the rename
+    /// is the literal text `? evil.txt`, so a parser that reads every entry as a
+    /// record invents an untracked file called `evil.txt` that nothing on disk
+    /// matches. The original path has to be consumed by the record that owns it.
+    @Test func anOriginalPathShapedLikeARecordIsNotReadAsOne() {
+        let output = PorcelainFixture.zeroed("""
+        # branch.oid 4fd88ea353187db47cc2b5f78f216385e7b484f3
+        # branch.head main
+        2 R. N... 100644 100644 100644 4156d35e8856e08f2f46f1950821b1e55bd4792c 4156d35e8856e08f2f46f1950821b1e55bd4792c R100 renamed.txt
+        ? evil.txt
+
+        """)
+        let changes = GitStatusParser.changes(output)
+        #expect(changes.map(\.path) == ["renamed.txt"])
+        #expect(changes.first?.originalPath == "? evil.txt")
     }
 
     @Test func anUntrackedFileHasNoStateInEitherColumn() {
@@ -136,27 +190,33 @@ import Testing
     /// An ignored path appears only under `--ignored`, which the shipped command
     /// does not pass, and it must not arrive as untracked if it ever does.
     @Test func anIgnoredRecordIsNotAChange() {
-        let output = everyShape + "! build/artifact.o\n"
+        let output = everyShape + "! build/artifact.o\0"
         #expect(GitStatusParser.changes(output).contains { $0.path == "build/artifact.o" } == false)
     }
 
     @Test func aMalformedRecordIsSkippedRatherThanGuessedAt() {
-        let output = """
+        let output = PorcelainFixture.zeroed("""
         # branch.oid abc
         # branch.head main
         1 MM N... 100644
         ? kept.txt
 
-        """
+        """)
         #expect(GitStatusParser.changes(output).map(\.path) == ["kept.txt"])
     }
 
-    /// CRLF for the same reason the status parse splits on `isNewline`: a CRLF pair
-    /// is one `Character`, so splitting on "\\n" would return the whole capture as a
-    /// single line and find nothing at all.
-    @Test func crlfOutputIsSplitCorrectly() {
-        let output = everyShape.replacingOccurrences(of: "\n", with: "\r\n")
-        #expect(GitStatusParser.changes(output).count == 7)
+    /// A rename record truncated before its original path keeps the path it does
+    /// have. The alternative is dropping a file the owner can see, to report a
+    /// field that only a capture cut in half is missing.
+    @Test func aRenameMissingItsOriginalPathKeepsTheNewOne() {
+        let output = PorcelainFixture.zeroed("""
+        # branch.oid abc
+        # branch.head main
+        2 R. N... 100644 100644 100644 4156d35 4156d35 R100 renamed.txt
+        """)
+        let changes = GitStatusParser.changes(output)
+        #expect(changes.map(\.path) == ["renamed.txt"])
+        #expect(changes.first?.originalPath == nil)
     }
 
     /// The two parses read the same bytes and must not disagree. This is the test
