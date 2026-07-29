@@ -175,7 +175,11 @@ public struct ControlError: Sendable, Hashable, Codable {
     /// attacker-controlled up to the frame cap, and a 256 KiB message written to
     /// somebody's terminal for a typo is the same defect whichever field the typo
     /// was in.
-    static func unknownEventKind(_ name: String) -> ControlError {
+    /// Public, unlike its neighbours, because the server resolves `--kinds` and
+    /// so is the one caller outside this package that has to name this failure.
+    /// Spelling the message there instead would put the list of kinds in a second
+    /// place to keep in step with ``ControlEventKind``.
+    public static func unknownEventKind(_ name: String) -> ControlError {
         let shown = name.count > 40 ? String(name.prefix(40)) + "..." : name
         return ControlError(
             code: .refused,

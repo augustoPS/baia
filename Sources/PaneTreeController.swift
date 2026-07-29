@@ -592,6 +592,12 @@ final class PaneTreeController: NSViewController {
         // `PaneGraph.authorize`.
         if let channel, let secret = pane.controlSecret {
             channel.registerPane(id.control, createdBy: createdBy?.control, secret: secret)
+            // Weak on both sides: the pane must not keep the channel alive and the
+            // closure must not keep the pane alive, matching every other callback
+            // this type installs.
+            pane.onObservableChange = { [weak channel] kind, message, activity in
+                channel?.noteEvent(kind, pane: id.control, message: message, activity: activity)
+            }
         }
         // Configured before anything else touches it, and before the view loads,
         // so the surface is built already themed rather than coming up in

@@ -629,6 +629,33 @@ final class TerminalPaneController: NSViewController {
             guard let self else { return }
             // Unconditional, so the footer keeps tracking the label.
             refreshStatus()
+
+            // Activity first, so a subscriber that receives both in one batch sees
+            // what the pane is doing before it sees it ask.
+            //
+            // `activityLabel` is the same property `ControlAdapter.record` reads
+            // for `PaneRecord.activity`. One property read in two places rather
+            // than two renderers, which is what keeps a subscriber's bootstrap and
+            // its stream speaking one vocabulary.
+            let label = activityLabel
+            if label != lastPublishedActivity {
+                lastPublishedActivity = label
+                onObservableChange?(.activityChanged, nil, label)
+            }
+
+            // The boolean, not the three-level chrome value. `onChange` fires on
+            // every poll of a pane that is merely compiling, so this diff is what
+            // makes the event a transition rather than a heartbeat.
+            let asking = activityTracker.wantsAttention
+            if asking != lastPublishedAttention {
+                lastPublishedAttention = asking
+                onObservableChange?(
+                    asking ? .attentionRaised : .attentionCleared,
+                    asking ? attentionMessage : nil,
+                    nil
+                )
+            }
+
             // The upward callback is not. `onChange` fires for any change to the
             // whole agent value, and the label changes as a build walks its
             // targets, so raising attention from here re-bounced the Dock and
@@ -654,6 +681,21 @@ final class TerminalPaneController: NSViewController {
     /// Readable so the channel's read verbs report the same level the footer
     /// draws, and settable only here.
     private(set) var lastAttention: PaneStatus.Attention = .none
+
+    /// The last values published to the control channel, diffed separately from
+    /// `lastAttention`.
+    ///
+    /// `lastAttention` is the chrome's three-level value and drives the footer.
+    /// The channel publishes the boolean the spec defines its events on, plus the
+    /// activity label, so they are held apart: collapsing them would turn a footer
+    /// change into a wire event or the reverse.
+    private var lastPublishedAttention = false
+    private var lastPublishedActivity: String?
+
+    /// Set by `PaneTreeController` when the pane has a capability. Nil for a pane
+    /// running without a channel, where the two diffs above are computed and
+    /// thrown away, which costs two comparisons per poll.
+    var onObservableChange: ((ControlEventKind, String?, String?) -> Void)?
 
     /// Rebuilds the footer's value from the anchor. Git and agent state are left
     /// nil until their subsystems are wired, and `PaneStatusSegments` already
