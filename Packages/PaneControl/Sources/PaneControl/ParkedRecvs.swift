@@ -1,5 +1,19 @@
 import Foundation
 
+/// Which long poll a parked connection is holding.
+///
+/// The table stays one table, so "one long poll per connection" covers both sorts
+/// without a second quota, a second sweep, or a second eviction rule to keep in
+/// step with the first.
+public enum ParkedKind: Sendable, Equatable {
+    case recv
+
+    /// The cursor and the filter the waiter arrived with, so a wake-up can tell
+    /// whether this subscriber has anything to be woken for without going back to
+    /// the frame that parked it.
+    case subscribe(from: UInt64, kinds: Set<ControlEventKind>)
+}
+
 /// The parked long poll per connection, of either sort, and the rule that there
 /// is at most one.
 ///
@@ -20,20 +34,6 @@ import Foundation
 /// import: the server parks a `DispatchWorkItem`, a test parks whatever it likes,
 /// and neither is this type's business. Cancelling one is the caller's job, which
 /// is why every removal hands the waiter back instead of dropping it.
-/// Which long poll a parked connection is holding.
-///
-/// The table stays one table, so "one long poll per connection" covers both sorts
-/// without a second quota, a second sweep, or a second eviction rule to keep in
-/// step with the first.
-public enum ParkedKind: Sendable, Equatable {
-    case recv
-
-    /// The cursor and the filter the waiter arrived with, so a wake-up can tell
-    /// whether this subscriber has anything to be woken for without going back to
-    /// the frame that parked it.
-    case subscribe(from: UInt64, kinds: Set<ControlEventKind>)
-}
-
 public struct ParkedRecvs<Deadline> {
     /// A `recv` that found nothing and asked to wait.
     ///
