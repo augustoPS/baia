@@ -553,7 +553,21 @@ final class TerminalPaneController: NSViewController {
     /// token would send the reader looking at the registry when the truth is that
     /// this pane never got a capability.
     private var shellEnvironment: [String: String] {
-        var environment = ["BAIA_PANE": paneID.rawValue.uuidString]
+        var environment = [
+            "BAIA_PANE": paneID.rawValue.uuidString,
+            // The accent the chrome resolved, so a prompt can wear the same
+            // colour the footer draws this pane's name in. A shell cannot ask
+            // for it any other way: `focusAccent` names a derivation, the theme
+            // decides what it resolves to, and neither is on disk as a hex.
+            //
+            // `#rrggbb`, which zsh takes directly as `%F{$BAIA_ACCENT}` from 5.7
+            // and every other shell can read as a colour. Read once when the
+            // shell spawns, so a live theme edit reaches new panes and leaves the
+            // running ones alone: re-exporting into a live process is not a thing
+            // the kernel offers, and a prompt that redrew in a colour its pane
+            // no longer uses would be worse than one that is a theme behind.
+            "BAIA_ACCENT": theme.inkFocus.hexString,
+        ]
 
         if let helpers = Self.helperDirectory {
             // Prepended to the app's own PATH rather than replacing it. The shell
