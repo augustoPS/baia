@@ -76,7 +76,11 @@ final class FilesSurface: NSObject, WorkspaceSurface {
     /// The surface knows nothing about what happens next. Whether that path is
     /// quoted, sent relative or absolute, or refused outright is `PromptPath`'s
     /// business, and where it goes is the owner's.
-    var onSelect: ((String) -> Void)? {
+    /// Answers `true` when the path landed on the prompt and `false` when it was
+    /// refused, which is the one bit the row needs to know which flash to draw.
+    /// `PromptPath.Resolution` already carries that distinction, so the surface
+    /// stays as ignorant of quoting as it was. Design v3 §2.3.
+    var onSelect: ((String) -> Bool)? {
         get { rows.onSelect }
         set { rows.onSelect = newValue }
     }
@@ -129,8 +133,15 @@ final class FileTreeRowsView: NSView {
 
     private func rebuild() {
         rows = []
+        // A fade in flight belongs to the row that was at that index, and after a
+        // rebuild that index is a different file.
+        feedback.reset()
         append(tree, depth: 0)
         resize()
+        // See `ChangesRowsView.changes`: a frame that does not move marks no layout
+        // pass, so the areas would stay built against the list that was there
+        // before.
+        updateTrackingAreas()
         needsDisplay = true
     }
 
@@ -145,6 +156,9 @@ final class FileTreeRowsView: NSView {
     override func layout() {
         super.layout()
         resize()
+        // See `ChangesRowsView.layout()`: areas built against an unlaid clip view
+        // cover nothing and are never rebuilt.
+        updateTrackingAreas()
     }
 
     /// The equality guard is what makes calling this from `layout()` safe:
@@ -190,6 +204,11 @@ final class FileTreeRowsView: NSView {
         let y = Double(index) * Self.rowHeight
         let x = Self.inset + Double(row.depth) * Self.indent
 
+        if let fill = feedback.fill(index, in: theme) {
+            ChangesSurface.nsColor(fill.colour, alpha: fill.alpha).setFill()
+            NSRect(x: 0, y: y, width: bounds.width, height: Self.rowHeight).fill()
+        }
+
         if row.node.isDirectory {
             let chevron = expanded.contains(row.node.path) ? "▾" : "▸"
             NSAttributedString(
@@ -198,11 +217,15 @@ final class FileTreeRowsView: NSView {
             ).draw(at: NSPoint(x: x, y: y + Self.textOrigin))
         }
 
+        let rest = row.node.isDirectory ? theme.inkContext : theme.foreground
+        let refusal = feedback.ink(index, in: theme)
         NSAttributedString(
             string: row.node.name,
             attributes: [
                 .font: Self.font,
-                .foregroundColor: nsColor(row.node.isDirectory ? theme.inkContext : theme.foreground),
+                .foregroundColor: nsColor(
+                    refusal.map { rest.blended(with: $0.colour, fraction: $0.alpha) } ?? rest
+                ),
             ]
         ).draw(at: NSPoint(x: x + Self.chevronColumn, y: y + Self.textOrigin))
     }
@@ -214,7 +237,11 @@ final class FileTreeRowsView: NSView {
         ).draw(at: NSPoint(x: Self.inset, y: Self.textOrigin))
     }
 
-    var onSelect: ((String) -> Void)?
+    var onSelect: ((String) -> Bool)?
+
+    private lazy var feedback = RowFeedback { [weak self] row in
+        self?.redraw(row)
+    }
 
     /// A directory toggles, a file sends, and neither ever asks for focus.
     ///
@@ -229,19 +256,99 @@ final class FileTreeRowsView: NSView {
     /// the hand goes to, and expanding is what a tree is *for*. A directory path
     /// is still one click away through the changes list or by clicking the file
     /// under it, and it was never the case the picker was built for.
+    /// **Held rather than fired on the way down**, so the press is a state the eye
+    /// can see and a drag off the row cancels. Design v3 §2.3.
     override func mouseDown(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        let index = Int(point.y / Self.rowHeight)
-        guard rows.indices.contains(index) else { return }
+        let row = self.row(at: event)
+        guard rows.indices.contains(row) else { return }
+        feedback.pressed = row
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let pressed = feedback.pressed else { return }
+        feedback.pressed = row(at: event) == pressed ? pressed : nil
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard let index = feedback.pressed else { return }
+        feedback.pressed = nil
+        guard rows.indices.contains(index), row(at: event) == index else { return }
         let node = rows[index].node
 
-        guard node.isDirectory else { return onSelect?(node.path) ?? () }
+        // A directory answers by opening, which is answer enough: the rows below it
+        // change. Only a send has an outcome the column has to state.
+        guard node.isDirectory else {
+            return feedback.answer(onSelect?(node.path) == true ? .landed : .refused, at: index)
+        }
 
         if expanded.contains(node.path) {
             expanded.remove(node.path)
         } else {
             expanded.insert(node.path)
         }
+    }
+
+    private func row(at event: NSEvent) -> Int {
+        Int(convert(event.locationInWindow, from: nil).y / Self.rowHeight)
+    }
+
+    private func redraw(_ row: Int) {
+        setNeedsDisplay(NSRect(
+            x: 0,
+            y: Double(row) * Self.rowHeight,
+            width: bounds.width,
+            height: Self.rowHeight
+        ))
+    }
+
+    // MARK: - Pointing
+
+    /// Rebuilt on scroll as well as on layout: the areas cover the rows the clip
+    /// view can show, and scrolling changes which rows those are without changing
+    /// this view's frame, which is the only thing AppKit calls this for by itself.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard let clip = enclosingScrollView?.contentView, scrollObserver == nil else { return }
+        clip.postsBoundsChangedNotifications = true
+        scrollObserver = NotificationCenter.default.addObserver(
+            forName: NSView.boundsDidChangeNotification,
+            object: clip,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateTrackingAreas() }
+        }
+    }
+
+    private var scrollObserver: (any NSObjectProtocol)?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+        for area in RowFeedback.trackingAreas(
+            rows: rows.count,
+            rowHeight: Self.rowHeight,
+            in: self,
+            owner: self
+        ) { addTrackingArea(area) }
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        feedback.hovered = RowFeedback.row(of: event)
+    }
+
+    /// Only when the row leaving is the row that was hovered. Areas are adjacent,
+    /// so moving down a list delivers the next row's enter before this row's exit,
+    /// and clearing unconditionally would drop the hover that had just arrived.
+    override func mouseExited(with event: NSEvent) {
+        guard feedback.hovered == RowFeedback.row(of: event) else { return }
+        feedback.hovered = nil
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(
+            NSRect(x: 0, y: 0, width: bounds.width, height: Double(rows.count) * Self.rowHeight),
+            cursor: .pointingHand
+        )
     }
 
     private func nsColor(_ rgb: RGB) -> NSColor {

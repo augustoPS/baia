@@ -62,7 +62,12 @@ final class ChangesSurface: NSObject, WorkspaceSurface {
     /// The same callback the tree has, because a changed file and a file in the
     /// tree do the same thing when clicked. That is what makes the sidebar one
     /// idea rather than two pictures.
-    var onSelect: ((String) -> Void)? {
+    ///
+    /// Answers `true` when the path landed on the prompt and `false` when it was
+    /// refused, which is the one bit the row needs to know which flash to draw.
+    /// `PromptPath.Resolution` already carries that distinction, so the surface
+    /// stays as ignorant of quoting as it was. Design v3 §2.3.
+    var onSelect: ((String) -> Bool)? {
         get { rows.onSelect }
         set { rows.onSelect = newValue }
     }
@@ -108,14 +113,28 @@ final class ChangesRowsView: NSView {
     var changes: [RepositoryFileChange] = [] {
         didSet {
             sorted = Self.sort(changes)
+            // The list under the pointer is a different list now, so a fade in
+            // flight belongs to a row that may not be the same file. Design v3's
+            // states are about *this* row answering.
+            feedback.reset()
             resize()
+            // **The rows the areas cover just changed, and nothing else will say
+            // so.** `resize()` only marks a layout pass when the frame actually
+            // moves, and a list that grows inside a document view already as tall
+            // as its clip does not move it, so the areas stayed as they were built
+            // on an empty list: zero of them, for the life of the surface.
+            updateTrackingAreas()
             needsDisplay = true
         }
     }
 
     private var sorted: [RepositoryFileChange] = []
 
-    var onSelect: ((String) -> Void)?
+    var onSelect: ((String) -> Bool)?
+
+    private lazy var feedback = RowFeedback { [weak self] row in
+        self?.redraw(row)
+    }
 
     /// Sends the row's path, and takes no focus doing it.
     ///
@@ -126,11 +145,92 @@ final class ChangesRowsView: NSView {
     /// longer exists. A deleted file sends its path too: `git checkout -- <path>`
     /// is exactly what the owner is reaching for, and this view asks the
     /// filesystem nothing.
+    ///
+    /// **Held rather than fired on the way down.** The send happens on mouse up
+    /// and only over the row the press began on, which is what makes the press a
+    /// state the eye can see and a drag off the row a cancellation rather than an
+    /// action. Design v3 §2.3.
     override func mouseDown(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        let index = Int(point.y / Self.rowHeight)
-        guard sorted.indices.contains(index) else { return }
-        onSelect?(sorted[index].path)
+        let row = self.row(at: event)
+        guard sorted.indices.contains(row) else { return }
+        feedback.pressed = row
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let pressed = feedback.pressed else { return }
+        feedback.pressed = row(at: event) == pressed ? pressed : nil
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard let index = feedback.pressed else { return }
+        feedback.pressed = nil
+        guard sorted.indices.contains(index), row(at: event) == index else { return }
+        feedback.answer(onSelect?(sorted[index].path) == true ? .landed : .refused, at: index)
+    }
+
+    private func row(at event: NSEvent) -> Int {
+        Int(convert(event.locationInWindow, from: nil).y / Self.rowHeight)
+    }
+
+    private func redraw(_ row: Int) {
+        setNeedsDisplay(NSRect(
+            x: 0,
+            y: Double(row) * Self.rowHeight,
+            width: bounds.width,
+            height: Self.rowHeight
+        ))
+    }
+
+    // MARK: - Pointing
+
+    /// Rebuilt on scroll as well as on layout: the areas cover the rows the clip
+    /// view can show, and scrolling changes which rows those are without changing
+    /// this view's frame, which is the only thing AppKit calls this for by itself.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard let clip = enclosingScrollView?.contentView, scrollObserver == nil else { return }
+        clip.postsBoundsChangedNotifications = true
+        scrollObserver = NotificationCenter.default.addObserver(
+            forName: NSView.boundsDidChangeNotification,
+            object: clip,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateTrackingAreas() }
+        }
+    }
+
+    private var scrollObserver: (any NSObjectProtocol)?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+        for area in RowFeedback.trackingAreas(
+            rows: sorted.count,
+            rowHeight: Self.rowHeight,
+            in: self,
+            owner: self
+        ) { addTrackingArea(area) }
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        feedback.hovered = RowFeedback.row(of: event)
+    }
+
+    /// Only when the row leaving is the row that was hovered. Areas are adjacent,
+    /// so moving down a list delivers the next row's enter before this row's exit,
+    /// and clearing unconditionally would drop the hover that had just arrived.
+    override func mouseExited(with event: NSEvent) {
+        guard feedback.hovered == RowFeedback.row(of: event) else { return }
+        feedback.hovered = nil
+    }
+
+    override func resetCursorRects() {
+        // Only over the rows. A pointing hand over the empty half of a short list
+        // would promise a click that has nothing to land on.
+        addCursorRect(
+            NSRect(x: 0, y: 0, width: bounds.width, height: Double(sorted.count) * Self.rowHeight),
+            cursor: .pointingHand
+        )
     }
 
     override var acceptsFirstResponder: Bool { false }
@@ -156,6 +256,12 @@ final class ChangesRowsView: NSView {
     override func layout() {
         super.layout()
         resize()
+        // The tracking areas too, and for the same reason: they cover the rows the
+        // clip view can show, and a freshly installed surface has a clip view that
+        // has not been laid out, so building them once from `updateTrackingAreas`
+        // built them against an empty visible rect and there was nothing to enter
+        // for the rest of the surface's life.
+        updateTrackingAreas()
     }
 
     /// The document view is exactly as tall as its rows, which is what tells the
@@ -191,6 +297,16 @@ final class ChangesRowsView: NSView {
     }
 
     private func draw(_ change: RepositoryFileChange, atIndex index: Int) {
+        if let fill = feedback.fill(index, in: theme) {
+            ChangesSurface.nsColor(fill.colour, alpha: fill.alpha).setFill()
+            NSRect(
+                x: 0,
+                y: Double(index) * Self.rowHeight,
+                width: bounds.width,
+                height: Self.rowHeight
+            ).fill()
+        }
+
         // One origin for both strings. The marker used to draw at `y + 3` and the
         // path at `y + 1`, both top-origin in a flipped view, so the marker sat
         // 2 pt below the path it labels. Design v3 §8/02.
@@ -218,13 +334,19 @@ final class ChangesRowsView: NSView {
         let available = max(0, bounds.width - x - Self.inset)
         let fitted = RowPath.fit(change.path, budget: Int(available / Self.advance))
 
+        // A refusal takes the path's ink with it, blended by how far through the
+        // fade it is so the text rides the same clock as the fill under it.
+        let refusal = feedback.ink(index, in: theme)
+        let directoryInk = refusal.map { theme.inkFaint.blended(with: $0.colour, fraction: $0.alpha) }
+        let nameInk = refusal.map { theme.foreground.blended(with: $0.colour, fraction: $0.alpha) }
+
         let line = NSMutableAttributedString()
         if !fitted.directory.isEmpty {
             line.append(NSAttributedString(
                 string: fitted.directory,
                 attributes: [
                     .font: Self.font,
-                    .foregroundColor: ChangesSurface.nsColor(theme.inkFaint),
+                    .foregroundColor: ChangesSurface.nsColor(directoryInk ?? theme.inkFaint),
                 ]
             ))
         }
@@ -232,7 +354,7 @@ final class ChangesRowsView: NSView {
             string: fitted.name,
             attributes: [
                 .font: Self.font,
-                .foregroundColor: ChangesSurface.nsColor(theme.foreground),
+                .foregroundColor: ChangesSurface.nsColor(nameInk ?? theme.foreground),
             ]
         ))
 

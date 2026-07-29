@@ -239,9 +239,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // comment below records what that class of cycle already cost once: a
         // leaked controller keeps every pane and every live shell under it alive
         // with no window to reach them.
-        let send: (String) -> Void = { [weak self, weak tree] path in
-            guard let self, let tree else { return }
-            sendToPrompt(path, of: tree)
+        // False when the window has gone: a click that reaches nothing is a
+        // refusal from the row's point of view, which is the honest thing to draw.
+        let send: (String) -> Bool = { [weak self, weak tree] path in
+            guard let self, let tree else { return false }
+            return sendToPrompt(path, of: tree)
         }
         changes.onSelect = send
         files.onSelect = send
@@ -608,14 +610,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// whatever repository the pane is anchored to, and a name carrying a control
     /// byte would drive zsh's line editor rather than land on the prompt line.
     ///
-    /// The beep is interim. What a refusal should *look* like is a design item,
-    /// still owed, and the only requirement the spec puts on it is that a refused
-    /// click is distinguishable from one that landed without moving any layout,
-    /// which a sound satisfies while a heading that grew would not.
-    private func sendToPrompt(_ path: String, of tree: PaneTreeController) {
-        guard let pane = tree.focusedPane else { return }
+    /// **Answers whether the path landed**, which is the one bit the row needs to
+    /// draw the right flash. Design v3 §2.3 gives a refusal `alert` on the row and
+    /// in the path's own ink, and gives a landing the pressed fill released and
+    /// nothing more: zsh already brackets the inserted path on the prompt line,
+    /// and a second announcement in the column would be the app saying the same
+    /// thing twice.
+    ///
+    /// The beep stays. It is the half of the answer that survives the pointer
+    /// having moved on, and the drawn half is what it was missing.
+    ///
+    /// A click with no focused pane is `false` without a beep: there is no pane
+    /// for the feedback to belong to, so the row flashes a refusal and nothing
+    /// sounds. That is the one silent no-op here.
+    @discardableResult
+    private func sendToPrompt(_ path: String, of tree: PaneTreeController) -> Bool {
+        guard let pane = tree.focusedPane else { return false }
         let anchor = pane.anchorTracker.anchor
-        guard anchor?.kind == .repository, let root = anchor?.url else { return }
+        guard anchor?.kind == .repository, let root = anchor?.url else { return false }
 
         // **Both directories through the same resolution, or they never match.**
         // `ProcessWorkingDirectory` asks the kernel, which answers with a fully
@@ -633,8 +645,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) {
         case let .send(text):
             pane.send(text)
+            return true
         case .refuse:
             NSSound.beep()
+            return false
         }
     }
 

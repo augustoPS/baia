@@ -62,6 +62,12 @@ printf 'import Testing\nimport Workspace\n' > Tests/WorkspaceTests/PaneTests.swi
 git_quiet add Tests/WorkspaceTests/PaneTests.swift
 printf 'import Testing\nimport Workspace\n@Test func draws() {}\n' > Tests/WorkspaceTests/PaneTests.swift
 
+# A name carrying a control byte, which `PromptPath` refuses outright: raw bytes
+# reach zsh's line editor before its parser, so there is no quoting under which a
+# control byte is safe to send. The one row whose click is answered with a refusal,
+# and the only way to capture that state.
+printf 'struct Ctrl {}\n' > "$(printf 'Sources/Workspace/ctrl\001name.swift')"
+
 # --- clean ------------------------------------------------------------------
 C="$ROOT/clean"
 mkdir -p "$C/Sources"
