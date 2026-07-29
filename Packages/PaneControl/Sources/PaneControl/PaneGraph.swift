@@ -383,6 +383,14 @@ public struct PaneGraph: Sendable, Equatable {
     ///
     /// Both are asserted in `ObserverScopeTests`, including the failing order, so
     /// the rule is a test rather than a comment somebody has to obey.
+    ///
+    /// **Two audiences, because the entry carries an id that is not the
+    /// subject's.** Who may hear that something happened to the subject is
+    /// ``observers(of:)`` of the subject; who may be told the identity of the
+    /// pane that created it is ``observers(of:)`` of the creator, which is the
+    /// same set `authorize` would allow to `list` the creator. The subject is in
+    /// the first and not the second, so a pane still never learns who created it.
+    /// The ring holds both and redacts at the read.
     @discardableResult
     public mutating func emit(
         _ kind: ControlEventKind,
@@ -395,7 +403,7 @@ public struct PaneGraph: Sendable, Equatable {
             kind: kind,
             pane: pane,
             audience: observers(of: pane),
-            createdBy: createdBy,
+            createdBy: createdBy.map { (pane: $0, audience: observers(of: $0)) },
             message: message,
             activity: activity
         )

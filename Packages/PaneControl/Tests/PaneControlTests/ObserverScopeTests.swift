@@ -146,6 +146,84 @@ import Testing
         }
     }
 
+    /// A pane is not told who created it, on the stream any more than anywhere
+    /// else.
+    ///
+    /// ``PaneRecord/redacted(toVisible:)`` already drops `createdBy` from `list`
+    /// and from `whoami` for this exact reader, because a pane's scope is itself,
+    /// its descendants and its peers, and a parent is in none of the three. An
+    /// event is one more read of the same records, so it answers the same way or
+    /// the branch ships two rules for one field.
+    @Test func theSubjectIsNotToldWhoCreatedIt() {
+        var fixture = Fixture()
+        fixture.graph.emit(
+            .paneOpened,
+            pane: fixture.child,
+            createdBy: fixture.parent,
+            message: nil,
+            activity: nil
+        )
+
+        switch fixture.graph.subscribe(token: fixture.tokens[fixture.child]!, from: 0) {
+        case let .ok(batch):
+            #expect(batch.events.map(\.kind) == [.paneOpened])
+            #expect(batch.events.first?.createdBy == nil)
+        case let .denied(error):
+            Issue.record("the subject was denied: \(error.message)")
+        }
+    }
+
+    /// The wider half of the same disclosure. A peer of the subject is in the
+    /// subject's audience and has no edge at all to the subject's creator, so it
+    /// reads the event and not the id.
+    @Test func aPeerOfTheSubjectIsNotToldWhoCreatedIt() {
+        var fixture = Fixture()
+        fixture.graph.addPeerEdge(between: fixture.child, and: fixture.stranger)
+        fixture.graph.emit(
+            .paneOpened,
+            pane: fixture.child,
+            createdBy: fixture.parent,
+            message: nil,
+            activity: nil
+        )
+
+        switch fixture.graph.subscribe(token: fixture.tokens[fixture.stranger]!, from: 0) {
+        case let .ok(batch):
+            #expect(batch.events.map(\.kind) == [.paneOpened])
+            #expect(batch.events.first?.createdBy == nil)
+        case let .denied(error):
+            Issue.record("the peer was denied: \(error.message)")
+        }
+    }
+
+    /// One entry, two entitlements, which is why the redaction is at the read and
+    /// not at the emit. The grandparent may `list` the creator and reads the id;
+    /// the subject reads the same entry with the field gone.
+    @Test func anAncestorAboveTheCreatorStillReadsTheId() {
+        var fixture = Fixture()
+        fixture.graph.emit(
+            .paneOpened,
+            pane: fixture.grandchild,
+            createdBy: fixture.child,
+            message: nil,
+            activity: nil
+        )
+
+        switch fixture.graph.subscribe(token: fixture.tokens[fixture.parent]!, from: 0) {
+        case let .ok(batch):
+            #expect(batch.events.first?.createdBy == fixture.child.description)
+        case let .denied(error):
+            Issue.record("the grandparent was denied: \(error.message)")
+        }
+
+        switch fixture.graph.subscribe(token: fixture.tokens[fixture.grandchild]!, from: 0) {
+        case let .ok(batch):
+            #expect(batch.events.first?.createdBy == nil)
+        case let .denied(error):
+            Issue.record("the subject was denied: \(error.message)")
+        }
+    }
+
     /// The negative invariant the whole capability model rests on, restated for
     /// the new verb: a token that parses as a pane id is refused before the
     /// registry is consulted.

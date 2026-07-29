@@ -21,6 +21,33 @@ public struct EventRing: Sendable, Equatable {
     struct Entry: Sendable, Equatable {
         var event: ControlEvent
         var audience: Set<ControlPaneID>
+
+        /// Every pane entitled to learn the id in ``ControlEvent/createdBy``, or
+        /// empty when there is no creator to name.
+        ///
+        /// A second audience because the two are different questions. The
+        /// audience above is who may hear that something happened to the subject;
+        /// this is who may be told the identity of a pane one step up the tree,
+        /// which is a fact about the creator and not about the subject. The
+        /// subject itself is in the first set and, unless the two peer, in
+        /// neither the second: a pane learns who it created, never who created
+        /// it, and ``PaneRecord/redacted(toVisible:)`` already drops the field on
+        /// `list` and `whoami` for the same reader.
+        var creatorAudience: Set<ControlPaneID>
+
+        /// This entry as one reader is allowed to read it.
+        ///
+        /// Redaction is omission, matching ``PaneRecord/redacted(toVisible:)``: a
+        /// withheld creator prints no line rather than a line saying a creator
+        /// was withheld, which would itself confirm one exists.
+        func visible(to reader: ControlPaneID) -> ControlEvent {
+            guard event.createdBy != nil, creatorAudience.contains(reader) == false else {
+                return event
+            }
+            var redacted = event
+            redacted.createdBy = nil
+            return redacted
+        }
     }
 
     /// Oldest first.
@@ -42,12 +69,18 @@ public struct EventRing: Sendable, Equatable {
     ///
     /// Strings are capped here rather than at the reader, so the ring cannot hold
     /// a byte the wire cannot carry.
+    ///
+    /// `createdBy` arrives as the pane **and** the panes entitled to be told
+    /// about it, in one argument, so there is no way to record a creator without
+    /// recording who may read it. Two parameters would let a caller supply the id
+    /// and leave the audience empty or, worse, default it to the subject's, which
+    /// is the disclosure this pair exists to close.
     @discardableResult
     mutating func append(
         kind: ControlEventKind,
         pane: ControlPaneID,
         audience: Set<ControlPaneID>,
-        createdBy: ControlPaneID?,
+        createdBy: (pane: ControlPaneID, audience: Set<ControlPaneID>)?,
         message: String?,
         activity: String?
     ) -> UInt64 {
@@ -57,12 +90,18 @@ public struct EventRing: Sendable, Equatable {
             seq: lastSequence,
             kind: kind,
             pane: pane.description,
-            createdBy: createdBy?.description,
+            createdBy: createdBy?.pane.description,
             message: ControlEvent.capped(message),
             activity: ControlEvent.capped(activity)
         )
 
-        entries.append(Entry(event: event, audience: audience))
+        entries.append(
+            Entry(
+                event: event,
+                audience: audience,
+                creatorAudience: createdBy?.audience ?? []
+            )
+        )
         while entries.count > ControlWire.maxRingEvents {
             entries.removeFirst()
         }
@@ -109,6 +148,13 @@ extension EventRing {
     /// narrow subscriber does not re-examine the whole ring on every poll. That is
     /// why `--kinds` is delivery and never authority: it changes what is in
     /// `events` and nothing about where the reader is.
+    ///
+    /// **Fields are redacted here and not at the emit**, because one entry serves
+    /// an audience whose members are not entitled to the same things: an event's
+    /// `createdBy` names a pane one step above the subject, which the subject's
+    /// own ancestors may read and the subject and its peers may not. Deciding it
+    /// at the emit would mean one entry per entitlement, which is a queue per
+    /// subscriber under another name.
     func events(
         after cursor: UInt64,
         for pane: ControlPaneID,
@@ -142,7 +188,11 @@ extension EventRing {
                 truncated = true
                 break
             }
-            let candidate = delivered + [entry.event]
+            // Redacted before it is measured, so the budget is spent on the line
+            // this reader is sent. Redaction only ever removes bytes, so
+            // measuring the other way would be conservative rather than wrong,
+            // but it would also make the two numbers disagree for no reason.
+            let candidate = delivered + [entry.visible(to: pane)]
             guard ControlWire.eventBatchFrameSize(events: candidate) <= budget else {
                 truncated = true
                 break

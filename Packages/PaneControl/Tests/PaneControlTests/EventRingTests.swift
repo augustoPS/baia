@@ -106,6 +106,37 @@ import Testing
     /// Everything, for a reader that wants no kind filter.
     static let allKinds = Set(ControlEventKind.allCases)
 
+    /// One entry, two entitlements. Both readers are in the audience, only one is
+    /// in the creator's, and the ring answers each of them accordingly rather
+    /// than storing the entry twice.
+    @Test func theCreatorIsNamedOnlyToItsOwnAudience() {
+        var fixture = Ring()
+        let creator = ControlPaneID(rawValue: UUID())
+        fixture.ring.append(
+            kind: .paneOpened,
+            pane: fixture.one,
+            audience: [fixture.one, fixture.two, creator],
+            createdBy: (pane: creator, audience: [creator]),
+            message: nil,
+            activity: nil
+        )
+
+        let entitled = fixture.ring.events(
+            after: 0, for: creator, kinds: Self.allKinds,
+            limit: ControlWire.maxEventBatch, budget: ControlWire.maxFrameBytes
+        )
+        #expect(entitled.events.first?.createdBy == creator.description)
+
+        for reader in [fixture.one, fixture.two] {
+            let batch = fixture.ring.events(
+                after: 0, for: reader, kinds: Self.allKinds,
+                limit: ControlWire.maxEventBatch, budget: ControlWire.maxFrameBytes
+            )
+            #expect(batch.events.count == 1, "the entry itself is still delivered")
+            #expect(batch.events.first?.createdBy == nil)
+        }
+    }
+
     @Test func aReaderSeesOnlyWhatItsAudienceIncludes() {
         var fixture = Ring()
         fixture.ring.append(
