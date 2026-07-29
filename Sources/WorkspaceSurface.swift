@@ -42,6 +42,61 @@ protocol WorkspaceSurface: AnyObject {
     var backgroundOpacity: Double { get set }
 }
 
+/// What a section draws when it has no rows.
+///
+/// Design v3 §6. **"Nothing changed" and "not a repository" are different answers
+/// and were drawn identically**, character for character, at the same position in
+/// the same ink: capture 12. A clean tree is not an error and should read as the
+/// list's own first line, which is what it is. A pane anchored to a plain
+/// directory is a different kind of answer, so position and ink both say so, and
+/// the path answers the question the message provokes.
+@MainActor
+enum SurfaceMessage {
+    /// A list with nothing in it. First row position, lowercase, faint.
+    static func drawEmpty(_ text: String, in view: NSView, theme: PaneTheme) {
+        NSAttributedString(
+            string: text,
+            attributes: [
+                .font: ChangesRowsView.font,
+                .foregroundColor: ChangesSurface.nsColor(theme.inkFaint),
+            ]
+        ).draw(at: NSPoint(x: ChangesRowsView.inset, y: ChangesRowsView.textOrigin))
+    }
+
+    /// A pane that is not in a repository at all, with where it is instead.
+    ///
+    /// Centred in what the clip view can show rather than in the document view,
+    /// which is as tall as its rows and would put the message off screen in a
+    /// section that has been scrolled.
+    static func drawAbsent(path: String?, in view: NSView, theme: PaneTheme) {
+        let visible = view.visibleRect
+        let message = NSAttributedString(
+            string: "not a repository",
+            attributes: [
+                .font: ChangesRowsView.font,
+                .foregroundColor: ChangesSurface.nsColor(theme.inkContext),
+            ]
+        )
+        let size = message.size()
+        let centre = visible.midY - (path == nil ? size.height / 2 : size.height)
+        message.draw(at: NSPoint(x: visible.midX - size.width / 2, y: centre))
+
+        guard let path else { return }
+        let abbreviated = NSAttributedString(
+            string: (path as NSString).abbreviatingWithTildeInPath,
+            attributes: [
+                .font: ChangesRowsView.font,
+                .foregroundColor: ChangesSurface.nsColor(theme.inkFaint),
+            ]
+        )
+        let width = abbreviated.size().width
+        abbreviated.draw(at: NSPoint(
+            x: max(ChangesRowsView.inset, visible.midX - width / 2),
+            y: centre + size.height + 2
+        ))
+    }
+}
+
 /// The heading a host draws above whatever surface it is holding.
 ///
 /// Drawn by the host and not by the surface, so two surfaces cannot each invent a
@@ -71,6 +126,15 @@ final class SurfaceTitleView: NSView {
     /// window that is not key would compete with the window that is.
     var isWindowActive = true { didSet { needsDisplay = true } }
 
+    /// How the split above this heading is being touched, drawn as 2 pt along the
+    /// heading's own top edge.
+    ///
+    /// **Drawn here rather than by the grab strip**, so the mark lives inside the
+    /// heading's fixed 28 pt and never in the layout: a strip that drew its own
+    /// 2 pt would be a control that changes height, which in this column resizes
+    /// the panes beside it. Design v3 §4.3.
+    var split: DividerGrabView.Touch = .rest { didSet { needsDisplay = true } }
+
     override func draw(_: NSRect) {
         nsColor(theme.barBackground).setFill()
         bounds.fill()
@@ -84,6 +148,21 @@ final class SurfaceTitleView: NSView {
         // baseline below is measured up from the bottom.
         nsColor(theme.hairline).setFill()
         NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
+
+        // The split's reply, on the top edge, which in an unflipped view is
+        // `maxY`. Nothing at rest: the body meeting this heading is already the
+        // boundary, and what an undiscoverable control needs is an answer on
+        // approach rather than a permanent line.
+        switch split {
+        case .rest:
+            break
+        case .hover:
+            nsColor(theme.background.blended(with: theme.foreground, fraction: 0.30)).setFill()
+            NSRect(x: 0, y: bounds.height - 2, width: bounds.width, height: 2).fill()
+        case .drag:
+            nsColor(theme.inkFocus).setFill()
+            NSRect(x: 0, y: bounds.height - 2, width: bounds.width, height: 2).fill()
+        }
 
         // Caps and tracking make the label a label rather than a title, so it stops
         // competing with the row text below it at the same size. Regular rather

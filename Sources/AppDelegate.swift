@@ -579,15 +579,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let anchor = pane?.anchorTracker.anchor
         let root = anchor?.kind == .repository ? anchor?.url : nil
 
+        // The anchor's own path, not the working directory: the absent state is
+        // answering for what the section is pointed at.
+        let anchorPath = anchor?.url.path(percentEncoded: false)
+
         for section in controller.sidebar.sections {
             if let changes = section.surface as? ChangesSurface {
                 changes.hasRepository = pane?.gitStatus.git != nil
                 changes.changes = pane?.gitStatus.changes ?? []
+                changes.anchorPath = anchorPath
             }
             if let files = section.surface as? FilesSurface {
                 files.hasRepository = root != nil
                 files.tree = root.flatMap { fileTrees.tree(for: $0) } ?? []
                 files.changes = pane?.gitStatus.changes ?? []
+                files.anchorPath = anchorPath
                 if let root { readFileTree(at: root) }
             }
         }

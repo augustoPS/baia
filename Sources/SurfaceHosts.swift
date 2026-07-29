@@ -126,9 +126,17 @@ final class SidebarHost: NSViewController {
     /// heights inside a column whose width never moves, so it resizes no ghostty grid
     /// and signals no process: the only thing a sidebar does that costs a reflow is
     /// taking width from the panes in the first place.
-    private lazy var sectionDivider = DividerGrabView(axis: .vertical) { [weak self] delta in
-        self?.dragSplit(by: delta)
-    }
+    private lazy var sectionDivider: DividerGrabView = {
+        let divider = DividerGrabView(axis: .vertical) { [weak self] delta in
+            self?.dragSplit(by: delta)
+        }
+        // Reported to the heading *below* the split, which is the one whose top
+        // edge the boundary is. The strip itself stays transparent and hit-only.
+        divider.onTouch = { [weak self] touch in
+            self?.sections.dropFirst().first?.heading.split = touch
+        }
+        return divider
+    }()
 
     /// The grab area over the sidebar's own edge.
     ///
@@ -436,8 +444,29 @@ final class DividerGrabView: NSView {
         case horizontal
     }
 
+    /// How a strip is being touched, which is all it reports: the mark is drawn by
+    /// whatever owns the edge, inside its own fixed height.
+    ///
+    /// Design v3 §4.3. The split between two stacked sections has no mark at rest,
+    /// because §1 put the body and the heading on different materials and that
+    /// boundary is already visible. What was missing was not a line but a **reply**:
+    /// the same three-state vocabulary the divider between two panes uses, so an
+    /// undiscoverable control becomes discoverable on approach and the column gains
+    /// no permanent chrome for something used once a session.
+    enum Touch { case rest, hover, drag }
+
     private let axis: Axis
     private let onDrag: (Double) -> Void
+
+    /// Raised whenever the strip is approached, pressed or released.
+    var onTouch: ((Touch) -> Void)?
+
+    private var touch: Touch = .rest {
+        didSet {
+            guard touch != oldValue else { return }
+            onTouch?(touch)
+        }
+    }
 
     init(axis: Axis, onDrag: @escaping (Double) -> Void) {
         self.axis = axis
@@ -454,9 +483,31 @@ final class DividerGrabView: NSView {
         addCursorRect(bounds, cursor: axis == .vertical ? .resizeUpDown : .resizeLeftRight)
     }
 
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow],
+            owner: self
+        ))
+    }
+
+    override func mouseEntered(with _: NSEvent) {
+        touch = .hover
+    }
+
+    override func mouseExited(with _: NSEvent) {
+        // Not during a drag: the pointer leaves this seven point strip immediately
+        // and the drag is still going, so exiting must not say it stopped.
+        guard touch != .drag else { return }
+        touch = .rest
+    }
+
     /// Tracked here rather than through `mouseDragged`, so the drag keeps following
     /// the pointer when it leaves this seven point strip, which it does immediately.
     override func mouseDown(with event: NSEvent) {
+        touch = .drag
         var last = event.locationInWindow
         while let next = window?.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
             if next.type == .leftMouseUp { break }
@@ -466,5 +517,11 @@ final class DividerGrabView: NSView {
             onDrag(delta)
             last = next.locationInWindow
         }
+        // Back to hover rather than to rest when the pointer is still on the strip,
+        // which is where a drag that ends without moving away leaves it.
+        touch = bounds.contains(convert(
+            window?.mouseLocationOutsideOfEventStream ?? .zero,
+            from: nil
+        )) ? .hover : .rest
     }
 }

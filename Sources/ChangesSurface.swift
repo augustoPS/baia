@@ -53,6 +53,12 @@ final class ChangesSurface: NSObject, WorkspaceSurface {
         didSet { rows.hasRepository = hasRepository }
     }
 
+    /// Where the pane is anchored, which the absent state names beneath its
+    /// message. The message alone says what this is not; the path says what it is.
+    var anchorPath: String? {
+        didSet { rows.anchorPath = anchorPath }
+    }
+
     /// How many files are waiting, which is what this list is for. Nothing to count
     /// outside a repository, where the section is answering a different question.
     var headingCount: Int? { hasRepository ? changes.count : nil }
@@ -109,6 +115,10 @@ final class ChangesRowsView: NSView {
     var theme: PaneTheme = .darkPastel { didSet { needsDisplay = true } }
 
     var hasRepository = true { didSet { needsDisplay = true } }
+
+    /// Where the pane is anchored, for the absent state to name. Nil while the
+    /// anchor is a repository, where it is never drawn.
+    var anchorPath: String? { didSet { needsDisplay = true } }
 
     var changes: [RepositoryFileChange] = [] {
         didSet {
@@ -281,8 +291,12 @@ final class ChangesRowsView: NSView {
     override func draw(_ dirty: NSRect) {
         // No fill of its own: the scroll view behind it is the column's material,
         // and filling here as well would composite it twice.
-        guard hasRepository else { return draw(message: "not a repository") }
-        guard !sorted.isEmpty else { return draw(message: "no changes") }
+        guard hasRepository else {
+            return SurfaceMessage.drawAbsent(path: anchorPath, in: self, theme: theme)
+        }
+        guard !sorted.isEmpty else {
+            return SurfaceMessage.drawEmpty("no changes", in: self, theme: theme)
+        }
 
         // Only the rows the dirty rect touches, the same reason the file tree does
         // it: a hundred-file refactor is a hundred rows and a scroll must not redraw
@@ -363,16 +377,6 @@ final class ChangesRowsView: NSView {
         // away was the file name the row exists to show. The width is answered
         // before the string is built rather than by the drawing.
         line.draw(at: NSPoint(x: x, y: y))
-    }
-
-    private func draw(message: String) {
-        NSAttributedString(
-            string: message,
-            attributes: [
-                .font: Self.font,
-                .foregroundColor: ChangesSurface.nsColor(theme.inkFaint),
-            ]
-        ).draw(at: NSPoint(x: Self.inset, y: Self.textOrigin))
     }
 
     /// Conflicts first, then staged, then unstaged, then untracked, and by path

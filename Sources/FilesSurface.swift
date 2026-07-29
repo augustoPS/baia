@@ -66,6 +66,12 @@ final class FilesSurface: NSObject, WorkspaceSurface {
         didSet { rows.hasRepository = hasRepository }
     }
 
+    /// Where the pane is anchored, which the absent state names beneath its
+    /// message. The message alone says what this is not; the path says what it is.
+    var anchorPath: String? {
+        didSet { rows.anchorPath = anchorPath }
+    }
+
     /// The same change list the Changes section is given, which the tree reduces to
     /// one glyph per row. The two are not alternatives: a list ordered for
     /// `git commit` answers a question a tree ordered by path cannot, and a tree
@@ -120,6 +126,10 @@ final class FileTreeRowsView: NSView {
     var theme: PaneTheme = .darkPastel { didSet { needsDisplay = true } }
 
     var hasRepository = true { didSet { needsDisplay = true } }
+
+    /// Where the pane is anchored, for the absent state to name. Nil while the
+    /// anchor is a repository, where it is never drawn.
+    var anchorPath: String? { didSet { needsDisplay = true } }
 
     /// What each path has to say for itself, files and the directories above them.
     /// Empty outside a repository and while nothing has changed.
@@ -205,8 +215,12 @@ final class FileTreeRowsView: NSView {
 
     override func draw(_ dirty: NSRect) {
         // No fill of its own: the scroll view behind it is the column's material.
-        guard hasRepository else { return draw(message: "not a repository") }
-        guard !rows.isEmpty else { return draw(message: "no files") }
+        guard hasRepository else {
+            return SurfaceMessage.drawAbsent(path: anchorPath, in: self, theme: theme)
+        }
+        guard !rows.isEmpty else {
+            return SurfaceMessage.drawEmpty("no files", in: self, theme: theme)
+        }
 
         // Only the rows the dirty rect touches. A repository of ten thousand files
         // is ten thousand rows, and drawing them all on every scroll would make the
@@ -310,13 +324,6 @@ final class FileTreeRowsView: NSView {
         case .staged: theme.staged
         case .untracked: theme.inkFaint
         }
-    }
-
-    private func draw(message: String) {
-        NSAttributedString(
-            string: message,
-            attributes: [.font: Self.font, .foregroundColor: nsColor(theme.inkFaint)]
-        ).draw(at: NSPoint(x: Self.inset, y: Self.textOrigin))
     }
 
     var onSelect: ((String) -> Bool)?
