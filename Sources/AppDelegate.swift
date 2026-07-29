@@ -583,7 +583,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         anchor=\(anchor.map { "\($0.kind)" } ?? "nil") \
         root=\(root?.lastPathComponent ?? "nil") \
         changes=\(pane?.gitStatus.changes.count ?? -1) \
-        cachedTree=\(root.flatMap { fileTrees.tree(for: $0) }?.count ?? -1)
+        cachedTree=\(root.flatMap { fileTrees.tree(for: $0) }?.count ?? -1) \
+        docWidths=\(controller.sidebar.sections.map { Int($0.surface.view.bounds.width) })
         """)
 
         for section in controller.sidebar.sections {

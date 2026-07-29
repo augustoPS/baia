@@ -116,13 +116,34 @@ final class FileTreeRowsView: NSView {
     private func rebuild() {
         rows = []
         append(tree, depth: 0)
-        frame = NSRect(
+        resize()
+        needsDisplay = true
+    }
+
+    /// **Sized on every layout pass, not only when the tree changes.**
+    ///
+    /// The tree had the same failure the changes list had, one degree worse. A
+    /// freshly installed surface has a clip view that has not been laid out, so
+    /// the width came out zero: the rows drew into nothing *and* the document
+    /// view could not be hit, which is why clicking a directory did nothing at
+    /// all rather than merely looking blank. It also could not recover the way
+    /// the changes list did, since an equal tree is deliberately not re-assigned.
+    override func layout() {
+        super.layout()
+        resize()
+    }
+
+    /// The equality guard is what makes calling this from `layout()` safe:
+    /// assigning `frame` marks the view for layout again.
+    private func resize() {
+        let wanted = NSRect(
             x: 0,
             y: 0,
-            width: max(frame.width, superview?.bounds.width ?? 0),
+            width: max(superview?.bounds.width ?? 0, 1),
             height: max(Double(rows.count) * Self.rowHeight, superview?.bounds.height ?? 0)
         )
-        needsDisplay = true
+        guard frame != wanted else { return }
+        frame = wanted
     }
 
     private func append(_ nodes: [FileTreeNode], depth: Int) {

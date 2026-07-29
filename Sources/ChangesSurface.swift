@@ -124,12 +124,34 @@ final class ChangesRowsView: NSView {
         resize()
     }
 
+    /// **Sized on every layout pass, not only when the rows change.**
+    ///
+    /// This is the whole of the sidebar bug found on 2026-07-29 and it took a
+    /// trace to see, because every value involved was right: switching the
+    /// sidebar on built a fresh surface, `refreshSidebar(of:)` pushed thirteen
+    /// changes into it, and the column stayed blank. `resize()` reads the clip
+    /// view's width, the clip view has not been laid out when a surface is first
+    /// installed, so the width fell to the `1` floor and every row drew into a
+    /// document view one point wide. Any command afterwards made the poller
+    /// re-assign `changes`, by which time the clip view had a real width, which
+    /// is why it looked like the sidebar needed a command to wake up.
+    override func layout() {
+        super.layout()
+        resize()
+    }
+
     /// The document view is exactly as tall as its rows, which is what tells the
     /// scroll view whether there is anything to scroll to.
+    ///
+    /// The equality guard is what makes calling this from `layout()` safe:
+    /// assigning `frame` marks the view for layout again, and an unguarded write
+    /// would be a loop rather than a settled size.
     private func resize() {
         let width = max(superview?.bounds.width ?? 0, 1)
         let height = max(Double(sorted.count) * Self.rowHeight, superview?.bounds.height ?? 0)
-        frame = NSRect(x: 0, y: 0, width: width, height: height)
+        let wanted = NSRect(x: 0, y: 0, width: width, height: height)
+        guard frame != wanted else { return }
+        frame = wanted
     }
 
     override func draw(_ dirty: NSRect) {
