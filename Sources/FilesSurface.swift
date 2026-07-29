@@ -49,6 +49,16 @@ final class FilesSurface: NSObject, WorkspaceSurface {
         didSet { rows.hasRepository = hasRepository }
     }
 
+    /// Called with a repository-relative path when a row's name is clicked.
+    ///
+    /// The surface knows nothing about what happens next. Whether that path is
+    /// quoted, sent relative or absolute, or refused outright is `PromptPath`'s
+    /// business, and where it goes is the owner's.
+    var onSelect: ((String) -> Void)? {
+        get { rows.onSelect }
+        set { rows.onSelect = newValue }
+    }
+
     private let scrollView = NSScrollView()
     private let rows = FileTreeRowsView()
 
@@ -163,21 +173,34 @@ final class FileTreeRowsView: NSView {
         ).draw(at: NSPoint(x: Self.inset, y: Self.baseline))
     }
 
-    /// Opens or closes a directory, and never asks for focus.
+    var onSelect: ((String) -> Void)?
+
+    /// The chevron toggles, the name sends, and neither ever asks for focus.
     ///
     /// `mouseDown` rather than a control or a table selection, and with no
     /// `becomeFirstResponder` anywhere near it. That is the whole safety argument
     /// for a clickable surface living in this window.
+    ///
+    /// **The split is on x, at the chevron column.** Expansion keeps the
+    /// affordance it already had, and everything right of it sends: the name, the
+    /// empty space after it, and the whole width of a file row, which has no
+    /// chevron to hit. A directory sends its own path too, since `cd`, `ls` and
+    /// `git add` all take one.
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let index = Int(point.y / Self.rowHeight)
         guard rows.indices.contains(index) else { return }
-        let node = rows[index].node
-        guard node.isDirectory else { return }
-        if expanded.contains(node.path) {
-            expanded.remove(node.path)
+        let row = rows[index]
+
+        let nameColumn = Self.inset + Double(row.depth) * Self.indent + Self.chevronColumn
+        guard row.node.isDirectory, point.x < nameColumn else {
+            return onSelect?(row.node.path) ?? ()
+        }
+
+        if expanded.contains(row.node.path) {
+            expanded.remove(row.node.path)
         } else {
-            expanded.insert(node.path)
+            expanded.insert(row.node.path)
         }
     }
 

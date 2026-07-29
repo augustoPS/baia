@@ -327,6 +327,24 @@ final class TerminalPaneController: NSViewController {
         terminalView.scrollToRow(UInt(max(0, centred)))
     }
 
+    /// Writes text into this pane's pty, as though the owner had typed it.
+    ///
+    /// The sidebar's path picker is the only caller. It is the owner's own click
+    /// reaching the owner's own pane, which is what a keyboard already does, and it
+    /// is **not** the control channel's `run`: the channel's refusal to let one
+    /// pane write into another pane's pty stands unchanged.
+    ///
+    /// Sent whatever the pane is doing. An agent may be running or vim may be
+    /// open, nothing can tell reliably, and this has the same semantics as a paste,
+    /// which the owner can already do. The running-agent case is the valuable one
+    /// rather than the one to guard against.
+    ///
+    /// `terminalView` stays private, for the reason find-in-pane reaches the
+    /// surface through methods here rather than by handing the view out.
+    func send(_ text: String) {
+        terminalView.sendText(text)
+    }
+
     private static let rowSearchBound = 64
 
     var gitPollInterval: TimeInterval {

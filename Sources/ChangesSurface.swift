@@ -39,6 +39,16 @@ final class ChangesSurface: NSObject, WorkspaceSurface {
         didSet { rows.hasRepository = hasRepository }
     }
 
+    /// Called with the changed file's path when a row is clicked.
+    ///
+    /// The same callback the tree has, because a changed file and a file in the
+    /// tree do the same thing when clicked. That is what makes the sidebar one
+    /// idea rather than two pictures.
+    var onSelect: ((String) -> Void)? {
+        get { rows.onSelect }
+        set { rows.onSelect = newValue }
+    }
+
     private let scrollView = NSScrollView()
     private let rows = ChangesRowsView()
 
@@ -86,6 +96,24 @@ final class ChangesRowsView: NSView {
     }
 
     private var sorted: [RepositoryFileChange] = []
+
+    var onSelect: ((String) -> Void)?
+
+    /// Sends the row's path, and takes no focus doing it.
+    ///
+    /// No test on x, unlike the tree: there is nothing else on this row to hit.
+    ///
+    /// A rename sends ``RepositoryFileChange/path`` and never `originalPath`,
+    /// because `path` is where the file is now and a staged rename's original no
+    /// longer exists. A deleted file sends its path too: `git checkout -- <path>`
+    /// is exactly what the owner is reaching for, and this view asks the
+    /// filesystem nothing.
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        let index = Int(point.y / Self.rowHeight)
+        guard sorted.indices.contains(index) else { return }
+        onSelect?(sorted[index].path)
+    }
 
     override var acceptsFirstResponder: Bool { false }
 

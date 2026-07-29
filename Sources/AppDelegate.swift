@@ -2,6 +2,7 @@ import AppKit
 import BaiaSettings
 import GitWorkspace
 import PaneChrome
+import PanePrompt
 import WorkspaceLayout
 import WorkspaceMenu
 
@@ -216,7 +217,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let content = configuration.settings.sidebar
         return SidebarHost(
             tree: tree,
-            surfaces: surfaces(for: content),
+            surfaces: surfaces(for: content, tree: tree),
             theme: configuration.paneTheme
         )
     }
@@ -225,9 +226,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ///
     /// The tree goes last under ``SidebarContent/both``, because the last section is
     /// the one given whatever height is left and the tree is the one that wants it.
-    private func surfaces(for content: SidebarContent) -> [any WorkspaceSurface] {
+    private func surfaces(
+        for content: SidebarContent,
+        tree: PaneTreeController
+    ) -> [any WorkspaceSurface] {
         let changes = ChangesSurface()
         let files = FilesSurface()
+        // `weak tree` is not decoration. The surfaces are held by the sidebar
+        // host, which is held by the window controller, which holds the tree, so a
+        // strong capture here is a cycle that outlives the close. The `onClose`
+        // comment below records what that class of cycle already cost once: a
+        // leaked controller keeps every pane and every live shell under it alive
+        // with no window to reach them.
+        let send: (String) -> Void = { [weak self, weak tree] path in
+            guard let self, let tree else { return }
+            sendToPrompt(path, of: tree)
+        }
+        changes.onSelect = send
+        files.onSelect = send
         switch content {
         case .changes: return [changes]
         case .files: return [files]
@@ -377,7 +393,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case ["Files"]: .both
         default: .off
         }
-        window.sidebar.show(surfaces(for: next))
+        // The window's own tree, not the focused one: this rebuilds the surfaces
+        // of one window, and a click in them has to reach that window's panes.
+        window.sidebar.show(surfaces(for: next, tree: window.tree))
+        refreshSidebar(of: window)
     }
 
     /// The panes a search covers, already read.
@@ -560,6 +579,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 files.tree = root.flatMap { fileTrees.tree(for: $0) } ?? []
                 if let root { readFileTree(at: root) }
             }
+        }
+    }
+
+    /// Puts a clicked path on the focused pane's prompt.
+    ///
+    /// **The focused pane of the sidebar's own window**, which is the pane the
+    /// sidebar is already showing: it is repointed by ``refreshSidebar(of:)`` on
+    /// every focus change. With no focused pane a click does nothing and says
+    /// nothing, the one silent no-op here, because there is no pane for feedback
+    /// to belong to.
+    ///
+    /// Every decision about the bytes belongs to ``PromptPath`` and none to this
+    /// function, which reads three values and passes the answer on. A refusal is
+    /// the untrusted-filename case: the tree is filled from `git ls-files` over
+    /// whatever repository the pane is anchored to, and a name carrying a control
+    /// byte would drive zsh's line editor rather than land on the prompt line.
+    ///
+    /// The beep is interim. What a refusal should *look* like is a design item,
+    /// still owed, and the only requirement the spec puts on it is that a refused
+    /// click is distinguishable from one that landed without moving any layout,
+    /// which a sound satisfies while a heading that grew would not.
+    private func sendToPrompt(_ path: String, of tree: PaneTreeController) {
+        guard let pane = tree.focusedPane else { return }
+        let anchor = pane.anchorTracker.anchor
+        guard anchor?.kind == .repository, let root = anchor?.url else { return }
+
+        switch PromptPath.resolve(
+            repositoryRelativePath: path,
+            repositoryRoot: root.path(percentEncoded: false),
+            workingDirectory: pane.anchorTracker.workingDirectory?.path(percentEncoded: false)
+        ) {
+        case let .send(text):
+            pane.send(text)
+        case .refuse:
+            NSSound.beep()
         }
     }
 
