@@ -27,6 +27,7 @@ import Testing
             .send: "send",
             .recv: "recv",
             .revoke: "revoke",
+            .subscribe: "subscribe",
             .run: "run",
         ]
         for verb in ControlVerb.allCases {
@@ -66,6 +67,7 @@ import Testing
             .connect: .selfOnly,
             .peers: .selfOnly,
             .recv: .selfOnly,
+            .subscribe: .selfOnly,
             .list: .scopedRead,
             .send: .peerEdge,
             .revoke: .peerEdge,
@@ -97,5 +99,11 @@ import Testing
         for verb in ControlVerb.allCases {
             #expect(verb.settingGate == (verb == .run ? .allowRun : .channel))
         }
+    }
+
+    @Test func subscribeIsSelfOnlyAndSpelledForTheWire() {
+        #expect(ControlVerb.subscribe.rawValue == "subscribe")
+        #expect(ControlVerb.subscribe.scope == .selfOnly)
+        #expect(ControlVerb.subscribe.settingGate == .channel)
     }
 }

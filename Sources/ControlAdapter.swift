@@ -186,7 +186,7 @@ final class ControlAdapter: ControlWorkspaceBridge {
         case .equalize:
             return equalize(placed)
 
-        case .whoami, .list, .peers, .publish, .connect, .send, .recv, .revoke, .run:
+        case .whoami, .list, .peers, .publish, .connect, .send, .recv, .subscribe, .revoke, .run:
             // Unreachable: the server routes these to the graph and never here.
             // The arm exists because the switch has no `default:` and never will.
             return .failure(

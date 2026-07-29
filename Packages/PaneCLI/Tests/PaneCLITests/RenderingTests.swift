@@ -48,6 +48,42 @@ import Testing
         #expect(lines.contains { $0.stream == .out && $0.text == "pane-1" })
     }
 
+    // MARK: The bootstrap
+
+    /// The help tells a script to take its first cursor from `baia list`, and
+    /// this is the line it takes it from. Last and on stdout, exactly like
+    /// `subscribe`, so one `tail -1` reads either.
+    ///
+    /// Without it the documented `list` then `subscribe --from SEQ` is
+    /// impossible in the line format, and a script's only ways out are
+    /// `list --json | jq .seq`, which is the JSON parser the format exists to
+    /// avoid, or `--from 0`, which answers `gap: true` on any wrapped ring.
+    @Test func listPrintsTheSequenceItReadAtOnItsLastLine() throws {
+        let records = [record("pane-1"), record("pane-2", createdBy: "pane-1")]
+        let lines = Rendering.render(result(panes: records, seq: 17), for: try call("list"))
+
+        #expect(lines.filter { $0.stream == .out }.map(\.text).last == "seq 17")
+    }
+
+    /// `--tree` is a second rendering of the same records, not a second answer,
+    /// so it reports the same cursor. A flag that decided whether a script could
+    /// bootstrap would be the kind of thing nobody finds until the ring wraps.
+    @Test func theTreeRenderingReportsTheSameSequence() throws {
+        let lines = Rendering.render(
+            result(panes: [record("pane-1")], seq: 17), for: try call("list", "--tree")
+        )
+
+        #expect(lines.filter { $0.stream == .out }.map(\.text) == ["pane-1", "seq 17"])
+    }
+
+    /// An answer carrying no sequence prints no seq line. A `list` that invented
+    /// one would hand a subscriber a cursor no ring ever minted.
+    @Test func aListWithNoSequenceSaysNothingAboutOne() throws {
+        let lines = Rendering.render(result(panes: [record("pane-1")]), for: try call("list"))
+
+        #expect(!lines.contains { $0.text.hasPrefix("seq") })
+    }
+
     // MARK: --json
 
     /// `--json` prints the result object and nothing else: no hint, no note, one
@@ -153,6 +189,89 @@ import Testing
         #expect(rendered("connect", result()) == [])
     }
 
+    // MARK: Observation
+
+    /// One line per event, fields separated by spaces, so `while read` splits it
+    /// without a JSON parser. The cursor is last and on stdout, because it is the
+    /// one value the next call needs and a script reads it with `tail -1`.
+    @Test func subscribePrintsOneLinePerEventAndTheCursorLast() throws {
+        let received = result(
+            events: [
+                ControlEvent(seq: 42, kind: .attentionRaised, pane: "pane-1", message: "needs input"),
+                ControlEvent(seq: 43, kind: .paneClosed, pane: "pane-2"),
+            ],
+            gap: false,
+            seq: 43
+        )
+        let lines = Rendering.render(received, for: try call("subscribe", "--from", "0"))
+        let out = lines.filter { $0.stream == .out }.map(\.text)
+        #expect(out.contains("42 attentionRaised pane-1 needs input"))
+        #expect(out.contains("43 paneClosed pane-2"))
+        #expect(out.last == "seq 43")
+    }
+
+    /// The source is marked and sits before the text it qualifies, so a reader
+    /// taking everything after `via osc` has the message and knows what it is
+    /// worth. Unmarked it would be indistinguishable from the free text.
+    @Test func aRaiseNamesWhereItCameFrom() throws {
+        let received = result(
+            events: [
+                ControlEvent(
+                    seq: 42, kind: .attentionRaised, pane: "pane-1",
+                    message: "needs input", source: .osc
+                ),
+                ControlEvent(seq: 43, kind: .attentionCleared, pane: "pane-1"),
+            ],
+            gap: false,
+            seq: 43
+        )
+        let lines = Rendering.render(received, for: try call("subscribe", "--from", "0"))
+        let out = lines.filter { $0.stream == .out }.map(\.text)
+        #expect(out.contains("42 attentionRaised pane-1 via osc needs input"))
+        // A clear has one possible source and names none.
+        #expect(out.contains("43 attentionCleared pane-1"))
+    }
+
+    /// A gap goes to stderr, so `baia subscribe > log` carries events while a
+    /// re-bootstrap warning still reaches a human.
+    @Test func aGapIsReportedOnStandardError() throws {
+        let lines = Rendering.render(
+            result(events: [], gap: true, seq: 600), for: try call("subscribe", "--from", "0")
+        )
+        let errors = lines.filter { $0.stream == .err }.map(\.text)
+        #expect(errors.contains { $0.contains("baia list") })
+        #expect(lines.filter { $0.stream == .out }.map(\.text) == ["seq 600"])
+    }
+
+    @Test func moreTellsTheReaderToPollAgain() throws {
+        let received = result(
+            more: true,
+            events: [ControlEvent(seq: 1, kind: .paneOpened, pane: "pane-1")],
+            gap: false,
+            seq: 1
+        )
+        let lines = Rendering.render(received, for: try call("subscribe", "--from", "0"))
+        let errors = lines.filter { $0.stream == .err }.map(\.text)
+        #expect(errors.contains { $0.contains("more") })
+    }
+
+    /// `createdBy` and `activity` ride on the same line rather than on lines of
+    /// their own, so one event is one record however many fields it carries.
+    @Test func anEventCarriesItsCreatorAndItsActivityOnTheSameLine() throws {
+        let received = result(
+            events: [
+                ControlEvent(seq: 7, kind: .paneOpened, pane: "pane-2", createdBy: "pane-1"),
+                ControlEvent(seq: 8, kind: .activityChanged, pane: "pane-2", activity: "claude"),
+            ],
+            gap: false,
+            seq: 8
+        )
+        let out = Rendering.render(received, for: try call("subscribe", "--from", "0"))
+            .filter { $0.stream == .out }.map(\.text)
+        #expect(out.contains("7 paneOpened pane-2 by pane-1"))
+        #expect(out.contains("8 activityChanged pane-2 claude"))
+    }
+
     // MARK: The tree
 
     /// A pane whose `createdBy` names something outside the returned set is a root
@@ -212,7 +331,10 @@ import Testing
         zoomed: Bool? = nil,
         messages: [ControlMessage]? = nil,
         more: Bool? = nil,
-        dropped: Int? = nil
+        dropped: Int? = nil,
+        events: [ControlEvent]? = nil,
+        gap: Bool? = nil,
+        seq: UInt64? = nil
     ) -> ControlResult {
         ControlResult(
             pane: pane,
@@ -222,7 +344,10 @@ import Testing
             panes: panes,
             messages: messages,
             more: more,
-            dropped: dropped
+            dropped: dropped,
+            events: events,
+            gap: gap,
+            seq: seq
         )
     }
 

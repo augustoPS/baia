@@ -270,6 +270,64 @@ public enum Arguments {
                 }
             }
 
+        case .subscribe:
+            var cursor: UInt64?
+            while let token = tokens.take() {
+                switch token {
+                case "--json":
+                    call.json = true
+                case "--from":
+                    guard let raw = tokens.take() else {
+                        return .usage(
+                            "--from needs a sequence number, or 0 to start from the beginning"
+                        )
+                    }
+                    guard let value = UInt64(raw) else {
+                        return .usage("--from wants a whole sequence number, not \(clamped(raw))")
+                    }
+                    cursor = value
+                case "--wait":
+                    guard let raw = tokens.take() else {
+                        return .usage("--wait needs a number of seconds")
+                    }
+                    guard let seconds = Int(raw), seconds >= 0 else {
+                        return .usage("--wait wants a whole number of seconds, not \(clamped(raw))")
+                    }
+                    call.args.wait = seconds
+                case "--kinds":
+                    guard let raw = tokens.take() else {
+                        return .usage(
+                            "--kinds needs a comma-separated list, any of: "
+                                + ControlEventKind.allCases.map(\.rawValue).joined(separator: ", ")
+                        )
+                    }
+                    let names = raw.split(separator: ",").map(String.init)
+                    guard names.isEmpty == false else {
+                        return .usage("--kinds needs at least one kind")
+                    }
+                    // Checked here so the common misspelling never costs a round
+                    // trip. The server checks it too, and that check is the rule:
+                    // this one can never be the only one, because a frame can
+                    // arrive without this CLI in front of it.
+                    for name in names where ControlEventKind(rawValue: name) == nil {
+                        return .usage(
+                            "\(clamped(name)) is not an event kind. --kinds takes any of: "
+                                + ControlEventKind.allCases.map(\.rawValue).joined(separator: ", ")
+                        )
+                    }
+                    call.args.kinds = names
+                default:
+                    return .usage(unexpected(token, verb))
+                }
+            }
+            guard let cursor else {
+                return .usage(
+                    "subscribe needs --from SEQ. Take it from baia list, which reports the "
+                        + "sequence its records were read at, or pass 0 for everything the ring holds."
+                )
+            }
+            call.args.from = cursor
+
         case .revoke:
             guard let peer = tokens.take() else {
                 return .usage("revoke needs a peer's pane id")

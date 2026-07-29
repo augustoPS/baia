@@ -1,6 +1,21 @@
 import Foundation
 
-/// The parked `recv` per connection, and the rule that there is at most one.
+/// Which long poll a parked connection is holding.
+///
+/// The table stays one table, so "one long poll per connection" covers both sorts
+/// without a second quota, a second sweep, or a second eviction rule to keep in
+/// step with the first.
+public enum ParkedKind: Sendable, Equatable {
+    case recv
+
+    /// The cursor and the filter the waiter arrived with, so a wake-up can tell
+    /// whether this subscriber has anything to be woken for without going back to
+    /// the frame that parked it.
+    case subscribe(from: UInt64, kinds: Set<ControlEventKind>)
+}
+
+/// The parked long poll per connection, of either sort, and the rule that there
+/// is at most one.
 ///
 /// **A connection holds one long poll, and a second one is answered rather than
 /// swallowed.** NDJSON is a pipelinable wire, deliberately so: the spec keeps the
@@ -33,10 +48,26 @@ public struct ParkedRecvs<Deadline> {
         public let token: String
         public let deadline: Deadline
 
-        public init(pane: ControlPaneID, token: String, deadline: Deadline) {
+        /// Which sort of long poll this is, and everything resolving it needs.
+        ///
+        /// **No default value**, so every call site says which sort it is parking.
+        /// A defaulted `.recv` would let each existing caller compile untouched,
+        /// which is the defect ``PaneGraph/open(pane:createdBy:secret:)``'s
+        /// `createdBy` note records: the one site that should say `.subscribe`
+        /// would quietly say `.recv`, and its waiter would then be resolved by
+        /// draining a mailbox it never asked about.
+        public let kind: ParkedKind
+
+        public init(
+            pane: ControlPaneID,
+            token: String,
+            deadline: Deadline,
+            kind: ParkedKind
+        ) {
             self.pane = pane
             self.token = token
             self.deadline = deadline
+            self.kind = kind
         }
     }
 

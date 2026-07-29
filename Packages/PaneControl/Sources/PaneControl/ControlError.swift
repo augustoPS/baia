@@ -165,6 +165,42 @@ public struct ControlError: Sendable, Hashable, Codable {
         ControlError(code: .refused, message: detail)
     }
 
+    /// A `--kinds` list named something that is not an event kind.
+    ///
+    /// `refused` and not `badFrame`, because the frame parsed. The kinds cross
+    /// as strings so that a misspelling can be answered by name, and the channel
+    /// stays drivable by hand.
+    ///
+    /// Echoed back clamped, for ``unknownVerb(_:)``'s reason: the name is
+    /// attacker-controlled up to the frame cap, and a 256 KiB message written to
+    /// somebody's terminal for a typo is the same defect whichever field the typo
+    /// was in.
+    /// Public, unlike its neighbours, because the server resolves `--kinds` and
+    /// so is the one caller outside this package that has to name this failure.
+    /// Spelling the message there instead would put the list of kinds in a second
+    /// place to keep in step with ``ControlEventKind``.
+    /// An explicit `--kinds` list with nothing in it.
+    ///
+    /// Refused rather than read as "no filter", because the two arrive as
+    /// different values and mean opposite things. Accepting it would park a
+    /// connection for a minute on a subscription that cannot deliver, and answer
+    /// the caller with a silence it would read as an idle workspace.
+    public static let emptyEventKinds = ControlError(
+        code: .refused,
+        message: "--kinds was given with no kinds in it. Leave it out to receive every kind, "
+            + "or name at least one of: "
+            + ControlEventKind.allCases.map(\.rawValue).joined(separator: ", ")
+    )
+
+    public static func unknownEventKind(_ name: String) -> ControlError {
+        let shown = name.count > 40 ? String(name.prefix(40)) + "..." : name
+        return ControlError(
+            code: .refused,
+            message: "\(shown) is not an event kind. --kinds takes any of: "
+                + ControlEventKind.allCases.map(\.rawValue).joined(separator: ", ")
+        )
+    }
+
     /// The app minted a ticket the graph cannot record.
     ///
     /// Unreachable for 32 bytes out of `SecRandomCopyBytes`, and answered rather

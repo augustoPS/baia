@@ -2,7 +2,7 @@
 
 `./run.sh` from anywhere. It builds baia, launches it, exercises the control
 channel over the real socket, and exits non-zero naming any check that failed.
-Thirty-five checks, each printing `ok` or `FAIL`, ending in `PASS` or
+Fifty-eight checks, each printing `ok` or `FAIL`, ending in `PASS` or
 `FAILED n of m`.
 
 Quit any running baia first. A second instance owns the socket, and the one this
@@ -44,6 +44,20 @@ The side effect is that a probe run's panes start with none of the owner's shell
 configuration, which is deliberate: what a pane's dotfiles do must not be able to
 change what the run proves.
 
+## How a pane is made to do something
+
+The same plant turned the other way round, for the checks that need a pane to run
+a command rather than report a variable. The probe writes a file, splits, and the
+`.zshrc` of any shell started while that file exists obeys it; the file is removed
+again, so only the panes the probe means to steer are steered. There are two:
+`arm-churn` has the pane close itself, which is the cheapest pair of ring events a
+script can cause, and `arm-activity` has it run a long `sleep`, which is what
+`activityChanged` is supposed to notice.
+
+The sleep runs as a child of the pane's shell rather than replacing it with
+`exec`. The classifier excludes the shell's own pid, so an exec'd command reads as
+an idle pane.
+
 ## The checks
 
 **A token is a capability and nothing else is.** A token that was never issued is
@@ -69,12 +83,26 @@ one pane after that pane has created another. `send` to a live pane that is not 
 peer is `unauthorized`, and `send` to a pane that does not exist answers the same
 code, so a caller cannot enumerate the workspace one id at a time.
 
+**What a supervising pane hears.** A parked `subscribe` is woken by a descendant
+opening and names the pane that created it. A parent hears the close of a child
+after that child is gone, which is the case the audience-at-emit design exists
+for: move the emit in `forgetPane` after `graph.close` and this is what goes red,
+because the parentage that put the parent in the audience has been deleted by
+then. A pane outside the subtree is told about no pane but itself. A subscriber
+that continues from the sequence `list` reported sees every event after it once
+and none of the records it already has. A ring driven past its 512 entries
+answers `gap` rather than a quiet hole. And an `activityChanged` carries the same
+string `list` reports for that pane, which is the live half of the rule that a
+subscriber's bootstrap and its stream speak one vocabulary.
+
 **The two settings keys have consumers.** `controlChannelEnabled` is flipped to
-false live and every one of the fifteen verbs must answer `disabled`, then flipped
-back and `whoami` must work again. `controlAllowRun` is flipped and `run`'s code
-must move from `disabled` to `refused` and back. Each flip is waited on by polling
-the channel rather than by sleeping, so a key with no consumer fails on the
-deadline instead of passing on a race.
+false live and every one of the fifteen verbs v1 shipped must answer `disabled`,
+then flipped back and `whoami` must work again. `subscribe` is the sixteenth verb
+and is not in that list, so its gate is held only by the package's verb table.
+`controlAllowRun` is flipped and `run`'s code must move from `disabled` to
+`refused` and back. Each flip is waited on by polling the channel rather than by
+sleeping, so a key with no consumer fails on the deadline instead of passing on a
+race.
 
 ## Checking that a control can fail
 

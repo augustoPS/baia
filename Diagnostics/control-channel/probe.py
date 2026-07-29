@@ -35,19 +35,28 @@ FRAME_CAP = 256 * 1024
 CONNECT_TIMEOUT = 5.0
 SETTLE_TIMEOUT = 15.0
 
+# The bound on the churn that wraps the ring, not a plan for it. A split and the
+# close the pane answers with are two events, and the ring holds 512, so the loop
+# reaches the wrap well before this and stops the moment it sees it. The cap is
+# here so a ring that never wraps fails the check instead of spawning panes until
+# somebody notices.
+CHURN_SPLITS = 340
+
 VERBS = [
     "split", "close", "focus", "zoom", "resize", "equalize",
     "whoami", "list", "publish", "connect", "peers", "send", "recv", "revoke", "run",
+    "subscribe",
 ]
 
 
 class Probe:
-    def __init__(self, socket_path, token_dir, config_path, session_path, shells_dir):
+    def __init__(self, socket_path, token_dir, config_path, session_path, shells_dir, scratch):
         self.socket_path = socket_path
         self.token_dir = token_dir
         self.config_path = config_path
         self.session_path = session_path
         self.shells_dir = shells_dir
+        self.scratch = scratch
         self.failures = []
         self.checks = 0
 
@@ -164,6 +173,39 @@ class Probe:
             return None
         return sorted(record.get("pane") for record in records)
 
+    @staticmethod
+    def events(response):
+        """The events a `subscribe` answered with, or None when it answered none.
+
+        None rather than an empty list for a malformed answer, so a check that
+        expected events prints the difference between "the batch was empty" and
+        "there was no batch at all".
+        """
+        batch = (response.get("result") or {}).get("events")
+        return batch if isinstance(batch, list) else None
+
+    @staticmethod
+    def sequence(response):
+        """The ring's sequence, which `list` reports and `subscribe` continues from.
+
+        The bootstrap in one field: a supervisor reads the records and the
+        sequence they were read at, and everything after it arrives as an event.
+        """
+        return (response.get("result") or {}).get("seq")
+
+    @staticmethod
+    def gap(response):
+        """Whether the ring evicted events before the cursor that was asked for."""
+        return (response.get("result") or {}).get("gap")
+
+    @staticmethod
+    def record_of(response, pane):
+        """One pane's record out of a `list`, or None when that list omitted it."""
+        for record in (response.get("result") or {}).get("panes") or []:
+            if record.get("pane") == pane:
+                return record
+        return None
+
     # MARK: what the app told the panes
 
     def tokens(self):
@@ -253,6 +295,85 @@ class Probe:
         connection.sendall(frame.encode())
         return connection
 
+    def park_subscribe(self, token, cursor, kinds, seconds):
+        """Sends `subscribe --wait` and returns the connection still holding it.
+
+        ``park``'s twin rather than a parameter on it, for the reason the server
+        keeps a `ParkedKind` at all: the two long polls are woken by different
+        machinery, and a probe that parked one while claiming the other would
+        prove nothing about the one it named.
+        """
+        connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        connection.settimeout(CONNECT_TIMEOUT)
+        connection.connect(self.socket_path)
+        frame = json.dumps({
+            "v": 1,
+            "token": token,
+            "verb": "subscribe",
+            "args": {"from": cursor, "kinds": kinds, "wait": seconds},
+        }) + "\n"
+        connection.sendall(frame.encode())
+        return connection
+
+    @staticmethod
+    def answered(connection):
+        """The line a parked long poll is eventually woken with."""
+        received = b""
+        try:
+            while b"\n" not in received:
+                chunk = connection.recv(65536)
+                if not chunk:
+                    break
+                received += chunk
+        except (socket.timeout, ConnectionResetError):
+            pass
+        try:
+            return json.loads(received)
+        except ValueError:
+            return {"parseFailure": received.decode("utf-8", "replace")}
+
+    def await_events(self, token, cursor, count, kinds=None, pane=None, limit=SETTLE_TIMEOUT):
+        """Polls `subscribe` until the batch holds `count` of the events asked for.
+
+        ``await_code``'s shape and its reason: the wait is the assertion, so an
+        event that never arrives fails on the deadline rather than on a sleep
+        that was too short. Nothing here consumes anything, so every poll reads
+        from the same cursor and the batch that comes back is the whole answer
+        rather than an increment on the last one.
+        """
+        deadline = time.time() + limit
+        seen = []
+        while time.time() < deadline:
+            args = {"from": cursor}
+            if kinds is not None:
+                args["kinds"] = kinds
+            seen = [
+                event
+                for event in self.events(self.request(token, "subscribe", args)) or []
+                if pane is None or event.get("pane") == pane
+            ]
+            if len(seen) >= count:
+                break
+            time.sleep(0.1)
+        return seen
+
+    # MARK: making a pane do something nothing here can type into it
+
+    def arm(self, name):
+        """Plants the file the panes' `.zshrc` reads as their shells start.
+
+        The readout's trick turned the other way round. Nothing here can reach a
+        keyboard, so a check that needs a pane to run a command plants a file and
+        splits: a shell started while the file is there obeys it. `run.sh` holds
+        the two arms and explains what each one does.
+        """
+        with open(os.path.join(self.scratch, "arm-" + name), "w"):
+            pass
+
+    def disarm(self, name):
+        """Removes an arm, so the panes after this one are ordinary panes again."""
+        os.remove(os.path.join(self.scratch, "arm-" + name))
+
     def timed(self, token, verb):
         """A request, and how long the answer took to arrive."""
         started = time.time()
@@ -278,11 +399,11 @@ class Probe:
 
 
 def main():
-    if len(sys.argv) != 6:
-        print("usage: probe.py <socket> <token-dir> <config> <session> <shells-dir>")
+    if len(sys.argv) != 7:
+        print("usage: probe.py <socket> <token-dir> <config> <session> <shells-dir> <scratch>")
         return 2
 
-    probe = Probe(*sys.argv[1:6])
+    probe = Probe(*sys.argv[1:7])
     live = probe.tokens()
     if len(live) < 3:
         probe.abort(
@@ -515,6 +636,127 @@ def main():
         )
     finally:
         parked.close()
+
+    print()
+    print("-- what a supervising pane hears about the panes below it")
+    # Everything here splits, so it sits below the PATH section, whose count is
+    # every pane that reported. It sits above the close section for the opposite
+    # reason: charlie is spent there and these checks need alpha's subtree to
+    # still be a subtree.
+    #
+    # `--kinds` narrows almost every read below, and that is not decoration. A
+    # pane's activity is polled on a timer, so an `activityChanged` about
+    # somebody else can land between any two frames here, and a check that
+    # asserted a whole batch without narrowing it would fail on a timer rather
+    # than on the wire.
+    opening = probe.sequence(probe.request(live[alpha], "list"))
+    waiting = probe.park_subscribe(live[alpha], opening, ["paneOpened"], 10)
+    try:
+        born = (probe.request(live[alpha], "split", {"axis": "vertical"})
+                .get("result") or {}).get("pane")
+        woken = probe.answered(waiting)
+    finally:
+        waiting.close()
+    if not born:
+        probe.abort("the split for the subscribe arms returned no pane id")
+    probe.check(
+        "a parked subscribe is woken by a descendant opening, and names its creator",
+        [(event.get("kind"), event.get("pane"), event.get("createdBy"))
+         for event in probe.events(woken) or []],
+        [("paneOpened", born, alpha)],
+    )
+
+    # The check the audience design exists for, and the one that fails if the
+    # emit in `forgetPane` ever moves after `graph.close`: the parentage that
+    # puts the parent in the audience is gone by then, and the death notice
+    # reaches only the pane that died.
+    born_token = probe.await_token(born)
+    closing = probe.sequence(probe.request(live[alpha], "list"))
+    probe.request(born_token, "close")
+    probe.check(
+        "a parent hears the close of a child that no longer exists to authorise it",
+        [event.get("pane")
+         for event in probe.await_events(live[alpha], closing, 1, kinds=["paneClosed"])],
+        [born],
+    )
+
+    # A read leak fails by over-succeeding, so this asserts contents like the
+    # scope section above it. Bravo's own opening is in the ring and bravo is
+    # entitled to it, which is why the assertion is about every pane that is not
+    # bravo: alpha's subtree has just opened and closed a pane, and none of it is
+    # bravo's business.
+    stray = probe.events(probe.request(live[bravo], "subscribe", {"from": 0})) or []
+    probe.check(
+        "a pane outside the subtree is told about no pane but itself",
+        sorted({event.get("pane") for event in stray} - {bravo}),
+        [],
+    )
+
+    # The bootstrap handoff. `list` reports the sequence it read the records at,
+    # so a subscriber that continues from it must see every event after that
+    # point exactly once and none of the ones already in the records.
+    handoff = probe.sequence(probe.request(live[alpha], "list"))
+    spent = (probe.request(live[alpha], "split", {"axis": "horizontal"})
+             .get("result") or {}).get("pane")
+    probe.request(probe.await_token(spent), "close")
+    kept = (probe.request(live[alpha], "split", {"axis": "horizontal"})
+            .get("result") or {}).get("pane")
+    probe.check(
+        "subscribe from the sequence list reported has no duplicate and no hole",
+        [(event.get("kind"), event.get("pane"))
+         for event in probe.await_events(
+             live[alpha], handoff, 3, kinds=["paneOpened", "paneClosed"]
+         )],
+        [("paneOpened", spent), ("paneClosed", spent), ("paneOpened", kept)],
+    )
+
+    # The live half of the one-renderer rule. `PaneRecord.activity` and the
+    # event's `activity` are the same property read in two places, and the whole
+    # point is that a subscriber's bootstrap and its stream speak one vocabulary,
+    # so the assertion compares them to each other and to what is running.
+    #
+    # Before the churn below rather than after it, which is not tidiness: the
+    # activity a pane reports is polled on a two-second timer, and a run that had
+    # just spawned and reaped two hundred and fifty shells took long enough to
+    # start this one that the poll had nothing to see inside the deadline. The
+    # check was measuring the machine.
+    probe.arm("activity")
+    try:
+        starting = probe.sequence(probe.request(live[alpha], "list"))
+        busy = (probe.request(live[alpha], "split", {"axis": "vertical"})
+                .get("result") or {}).get("pane")
+        heard = probe.await_events(
+            live[alpha], starting, 1, kinds=["activityChanged"], pane=busy
+        )
+        record = probe.record_of(probe.request(live[alpha], "list"), busy) or {}
+    finally:
+        probe.disarm("activity")
+    probe.check(
+        "the activity in an event is the activity list reports for the same pane",
+        [heard[-1].get("activity") if heard else None, record.get("activity")],
+        ["sleep", "sleep"],
+    )
+
+    # Overflow, with the arm doing the closing: a pane that closes itself as its
+    # shell starts is one split for two events, which is the cheapest ring churn
+    # a script with no keyboard can cause. The loop stops at the wrap rather than
+    # running to its cap, and it goes last in this section because it leaves the
+    # machine two hundred and fifty shells busier than it found it.
+    probe.arm("churn")
+    wrapped = False
+    try:
+        for _ in range(CHURN_SPLITS):
+            probe.request(live[alpha], "split", {"axis": "horizontal"})
+            wrapped = probe.gap(probe.request(live[alpha], "subscribe", {"from": 0}))
+            if wrapped:
+                break
+    finally:
+        probe.disarm("churn")
+    probe.check(
+        "a ring that wrapped past the cursor answers gap rather than a quiet hole",
+        wrapped,
+        True,
+    )
 
     print()
     print("-- close answers before the shell it kills")

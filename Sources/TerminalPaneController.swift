@@ -442,7 +442,14 @@ final class TerminalPaneController: NSViewController {
     /// Read off the tracker rather than off `statusBar.status`, which is nil until
     /// the anchor first resolves: a pane whose `baia whoami` ran in that window
     /// would otherwise report no activity for a pane that had some.
-    var activityLabel: String? { activityTracker.agent?.label }
+    /// What is running here, for `PaneRecord.activity` and for the channel's
+    /// `activityChanged`.
+    ///
+    /// Reads the classifier and not `agent?.label`, which substitutes the
+    /// attention message when nothing is running. Under the old spelling an idle
+    /// pane that rang reported "needs input" as its activity, in the same frame
+    /// as it reported "needs input" as what it wanted.
+    var activityLabel: String? { activityTracker.classifiedLabel }
 
     /// How hard this pane is asking, in the chrome's own vocabulary.
     ///
@@ -629,6 +636,24 @@ final class TerminalPaneController: NSViewController {
             guard let self else { return }
             // Unconditional, so the footer keeps tracking the label.
             refreshStatus()
+
+            // Edge-triggering, the ordering, and the source rule all live in
+            // `ObservedPaneState`, which is pure and tested. `onChange` fires on
+            // a timer for any change to the pane's whole state, so what escapes
+            // to the channel has to be a transition rather than a heartbeat, and
+            // that decision was eight lines here where nothing could check it.
+            //
+            // `activityLabel` is the same property `ControlAdapter.record` reads
+            // for `PaneRecord.activity`, so a subscriber's bootstrap and its
+            // stream speak one vocabulary.
+            for change in publishedState.changes(
+                activity: activityLabel,
+                isAsking: activityTracker.wantsAttention,
+                message: attentionMessage
+            ) {
+                onObservableChange?(change.kind, change.message, change.activity, change.source)
+            }
+
             // The upward callback is not. `onChange` fires for any change to the
             // whole agent value, and the label changes as a build walks its
             // targets, so raising attention from here re-bounced the Dock and
@@ -654,6 +679,22 @@ final class TerminalPaneController: NSViewController {
     /// Readable so the channel's read verbs report the same level the footer
     /// draws, and settable only here.
     private(set) var lastAttention: PaneStatus.Attention = .none
+
+    /// The last values published to the control channel, held apart from
+    /// `lastAttention`.
+    ///
+    /// `lastAttention` is the chrome's three-level value and drives the footer.
+    /// The channel publishes the boolean the spec defines its events on plus the
+    /// activity label, and collapsing the two would turn a footer change into a
+    /// wire event or the reverse.
+    private var publishedState = ObservedPaneState()
+
+    /// Set by `PaneTreeController` when the pane has a capability. Nil for a pane
+    /// running without a channel, where the diff above is computed and thrown
+    /// away, which costs two comparisons per poll.
+    var onObservableChange: (
+        (ControlEventKind, String?, String?, ControlEventSource?) -> Void
+    )?
 
     /// Rebuilds the footer's value from the anchor. Git and agent state are left
     /// nil until their subsystems are wired, and `PaneStatusSegments` already

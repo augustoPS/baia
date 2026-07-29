@@ -77,6 +77,17 @@ public enum Rendering {
                         + "created through the channel, and its peers."
                 )
             }
+            if let seq = result.seq {
+                // The bootstrap, and the reason `list` is the verb the help
+                // sends a subscriber to first: the records and the sequence they
+                // were read at arrive in one frame, so no event lands between
+                // the snapshot and the cursor and is seen by neither. Last and
+                // on stdout, exactly like `subscribe`, so one `tail -1` reads
+                // either. Absent from an answer that carries no sequence rather
+                // than defaulted, because a cursor no ring minted is worse than
+                // no cursor at all.
+                out("seq \(seq)")
+            }
 
         case .publish:
             if let ticket = result.rendezvous {
@@ -121,6 +132,38 @@ public enum Rendering {
             }
             if result.more == true {
                 err("the mailbox still holds messages. Run baia recv again.")
+            }
+
+        case .subscribe:
+            for event in result.events ?? [] {
+                // One line per event, fields separated by spaces, so `while read`
+                // splits it without a JSON parser. `--json` is there for anything
+                // that wants structure.
+                var line = "\(event.seq) \(event.kind.rawValue) \(event.pane)"
+                if let createdBy = event.createdBy { line += " by \(createdBy)" }
+                if let activity = event.activity { line += " \(activity)" }
+                // Before the message, because it qualifies the message: a reader
+                // taking everything after `via osc` has the text and knows what
+                // it is worth. Marked like `by`, so a field that is present on
+                // one kind and absent on the others cannot be mistaken for the
+                // free text that follows it.
+                if let source = event.source { line += " via \(source.rawValue)" }
+                if let message = event.message { line += " \(message)" }
+                out(line)
+            }
+            if result.gap == true {
+                err(
+                    "events were dropped before your cursor. Re-read baia list and "
+                        + "subscribe again from the seq it reports."
+                )
+            }
+            if result.more == true {
+                err("more events are waiting. Run baia subscribe again from the seq below.")
+            }
+            if let seq = result.seq {
+                // Last, and on stdout, because it is the one value the next call
+                // needs and a script reads it with `tail -1`.
+                out("seq \(seq)")
             }
         }
 

@@ -59,9 +59,11 @@ import PaneControl
     /// Walked from `allCases`, so a verb added to the package without a spelling
     /// in the parser fails here as well as at the parser's own switch.
     @Test func everyVerbIsReachableByItsWireSpelling() {
-        // The three that need an operand, and what they need. Bare, they must
-        // answer usage rather than send an incomplete request.
-        let needsAnOperand: Set<ControlVerb> = [.resize, .send, .revoke]
+        // The four that need an operand, and what they need. Bare, they must
+        // answer usage rather than send an incomplete request. `subscribe` is one
+        // of them because a cursor it invented would be a re-read of the ring on
+        // every poll.
+        let needsAnOperand: Set<ControlVerb> = [.resize, .send, .revoke, .subscribe]
         for verb in ControlVerb.allCases {
             let outcome = Arguments.parse([verb.rawValue])
             if needsAnOperand.contains(verb) {
@@ -242,6 +244,68 @@ import PaneControl
     @Test func runParsesBareAndRefusesTheArgumentsItDoesNotHaveYet() {
         #expect(invocation(Arguments.parse(["run"]))?.verb == .run)
         #expect(isUsage(Arguments.parse(["run", "ls"])))
+    }
+
+    // MARK: Observation
+
+    @Test func subscribeTakesACursorAWaitAndAKindList() {
+        let call = invocation(
+            Arguments.parse(
+                ["subscribe", "--from", "41", "--wait", "30", "--kinds", "paneClosed,attentionRaised"]
+            )
+        )
+        #expect(call?.verb == .subscribe)
+        #expect(call?.args.from == 41)
+        #expect(call?.args.wait == 30)
+        #expect(call?.args.kinds == ["paneClosed", "attentionRaised"])
+    }
+
+    /// The cursor is required. Defaulting it to 0 would make "start from the
+    /// beginning" the thing that happens when a script forgets to thread its
+    /// cursor through, which is a re-read of the whole ring on every poll.
+    @Test func subscribeNeedsACursor() {
+        let outcome = Arguments.parse(["subscribe"])
+        #expect(isUsage(outcome))
+        #expect(usageMessage(outcome)?.contains("--from") == true)
+    }
+
+    /// Caught here as a convenience so the common case never round-trips. The
+    /// server checks it too, and the server's check is the rule.
+    @Test func subscribeRefusesAKindItDoesNotKnow() {
+        let outcome = Arguments.parse(["subscribe", "--from", "0", "--kinds", "paneOpenned"])
+        #expect(isUsage(outcome))
+        #expect(usageMessage(outcome)?.contains("paneOpenned") == true)
+    }
+
+    @Test func subscribeRefusesANegativeCursor() {
+        let outcome = Arguments.parse(["subscribe", "--from", "-1"])
+        #expect(isUsage(outcome))
+        #expect(usageMessage(outcome)?.contains("--from") == true)
+    }
+
+    /// Every kind spells itself the same way on the command line as on the wire,
+    /// walked from `allCases` so a kind added to the package cannot arrive
+    /// unparseable.
+    @Test func everyEventKindIsAcceptedByItsWireSpelling() {
+        for kind in ControlEventKind.allCases {
+            let call = invocation(Arguments.parse(["subscribe", "--from", "0", "--kinds", kind.rawValue]))
+            #expect(call?.args.kinds == [kind.rawValue], "\(kind.rawValue) should parse")
+        }
+    }
+
+    /// A bare `--kinds` names no kind, and an empty list is a subscription that
+    /// can never deliver anything. Both are refused rather than silently read as
+    /// "all of them".
+    @Test func kindsNeedsAtLeastOneName() {
+        #expect(isUsage(Arguments.parse(["subscribe", "--from", "0", "--kinds"])))
+        #expect(isUsage(Arguments.parse(["subscribe", "--from", "0", "--kinds", ","])))
+    }
+
+    /// The cap is the server's to enforce, exactly as it is for `recv`.
+    @Test func subscribeAcceptsAWaitOverTheCapAndLeavesTheClampToTheServer() {
+        let over = ControlWire.maxWaitSeconds + 60
+        let call = invocation(Arguments.parse(["subscribe", "--from", "0", "--wait", String(over)]))
+        #expect(call?.args.wait == over)
     }
 
     // MARK: Unwrapping

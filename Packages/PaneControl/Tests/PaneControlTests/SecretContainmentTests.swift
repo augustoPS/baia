@@ -69,6 +69,16 @@ import Testing
         peers: [paneID]
     )
 
+    static let event = ControlEvent(
+        seq: 42,
+        kind: .attentionRaised,
+        pane: paneID,
+        createdBy: paneID,
+        message: "needs input",
+        activity: "running",
+        source: .osc
+    )
+
     static let result = ControlResult(
         pane: paneID,
         name: "reviewer",
@@ -77,7 +87,10 @@ import Testing
         panes: [record],
         messages: [ControlMessage(from: paneID, text: "a body")],
         more: true,
-        dropped: 3
+        dropped: 3,
+        events: [event],
+        gap: true,
+        seq: 42
     )
 
     static let error = ControlError(code: .refused, message: "why it failed")
@@ -92,6 +105,7 @@ import Testing
         "ControlResult",
         "PaneRecord",
         "ControlMessage",
+        "ControlEvent",
         "ControlError",
     ]
 
@@ -311,6 +325,7 @@ import Testing
         assertFullyPopulated(Self.result, "ControlResult")
         assertFullyPopulated(Self.record, "PaneRecord")
         assertFullyPopulated(ControlMessage(from: Self.paneID, text: "a body"), "ControlMessage")
+        assertFullyPopulated(Self.event, "ControlEvent")
         assertFullyPopulated(Self.error, "ControlError")
     }
 

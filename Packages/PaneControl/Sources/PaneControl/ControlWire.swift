@@ -69,6 +69,26 @@ public enum ControlWire {
     /// forever, so the client re-polls instead.
     public static let maxWaitSeconds = 60
 
+    /// How long a request asked to park, capped, or nil when it asked for no
+    /// wait at all.
+    ///
+    /// **The cap is applied rather than trusted**, because an uncapped long poll
+    /// is a pool slot held forever by whoever asks for it. One reader for both
+    /// sorts of long poll, so `recv` and `subscribe` cannot drift apart on what
+    /// sixty seconds means.
+    ///
+    /// Zero and negatives are nil rather than errors. A client asking to wait for
+    /// no time has asked to be answered now, and that is the reading which cannot
+    /// surprise anybody.
+    ///
+    /// Here rather than in the server for the reason ``ControlEventKind/resolve(_:)``
+    /// is: it needs no descriptor to decide, and the budget table has claimed this
+    /// number since v1 while nothing could exercise it.
+    public static func cappedWait(_ requested: Int?) -> Int? {
+        let seconds = min(max(requested ?? 0, 0), maxWaitSeconds)
+        return seconds > 0 ? seconds : nil
+    }
+
     /// Connections in the pool.
     public static let maxConnections = 16
 
@@ -125,6 +145,25 @@ public enum ControlWire {
     /// forever. Rotating or reusing a name is what a publisher actually wants.
     public static let maxPublishedChannelsPerPane = 16
 
+    /// Bytes in any string an event carries.
+    ///
+    /// One cap for the attention message and the activity string rather than one
+    /// each. OSC 9 text is untrusted pane output, and unbounded it is one pane
+    /// making another pane's response unframeable, which is
+    /// ``maxChannelNameBytes``'s argument one level along. The activity string is
+    /// built from kernel-supplied names and is bounded already, so the rule costs
+    /// it nothing and removes the question.
+    public static let maxEventStringBytes = 512
+
+    /// Events the ring holds, workspace-wide.
+    ///
+    /// One buffer for every subscriber rather than a queue each, so a slow
+    /// subscriber costs itself a gap rather than costing the app memory.
+    public static let maxRingEvents = 512
+
+    /// Events one `subscribe` may carry.
+    public static let maxEventBatch = 32
+
     /// The channel `baia publish` and `baia connect` mean when no `--as` is
     /// given.
     ///
@@ -157,6 +196,26 @@ public enum ControlWire {
             messages: messages,
             more: false,
             dropped: dropped
+        ))
+        guard let line = encodeResponse(response) else { return .max }
+        return line.count
+    }
+
+    /// The framed size of a `subscribe` answer carrying these events.
+    ///
+    /// Measured rather than estimated, for ``drainFrameSize(messages:dropped:)``'s
+    /// reason: an estimate wrong by one byte in the direction that matters either
+    /// drops an event or writes a line the reader refuses.
+    ///
+    /// Both flags are spelled `false`, which is one byte longer than `true`, and
+    /// `seq` is maximal, so the response finally written is never larger than the
+    /// one that was measured.
+    public static func eventBatchFrameSize(events: [ControlEvent]) -> Int {
+        let response = ControlResponse.success(ControlResult(
+            more: false,
+            events: events,
+            gap: false,
+            seq: UInt64.max
         ))
         guard let line = encodeResponse(response) else { return .max }
         return line.count

@@ -6,11 +6,11 @@ import WorkspaceLayout
 /// image of ``ControlWorkspaceBridge``.
 ///
 /// That protocol is what the channel asks of the windows. This one is what a
-/// window asks of the channel, and it is deliberately three members: where a
-/// pane's shell is told to talk, how a pane's capability is recorded, and how it
-/// is forgotten. A `PaneTreeController` holding the whole ``ControlServer`` could
-/// reach the graph, the pool, and the socket, none of which a window has any
-/// business touching.
+/// window asks of the channel, and it is deliberately four members: where a
+/// pane's shell is told to talk, how a pane's capability is recorded, how it is
+/// forgotten, and what a live pane is observed doing. A `PaneTreeController`
+/// holding the whole ``ControlServer`` could reach the graph, the pool, and the
+/// socket, none of which a window has any business touching.
 ///
 /// **Nothing here hands a capability back.** `registerPane` takes a secret and
 /// returns a `Bool`; there is no member that turns a pane into its secret or a
@@ -49,6 +49,24 @@ protocol PaneControlChannel: AnyObject {
     /// registration outlived its shell is a token that still works against a pane
     /// nobody can see.
     func forgetPane(_ pane: ControlPaneID)
+
+    /// Records something observable about a live pane.
+    ///
+    /// The fourth member of the seam, and it hands nothing back for the reason the
+    /// other three do not: a pane telling the channel what it is doing is not a
+    /// pane asking the channel for anything.
+    ///
+    /// Lifecycle is not routed through here. `registerPane` and `forgetPane`
+    /// already own the two moments where the parentage exists or is about to stop
+    /// existing, and emitting those from a second place would put the ordering
+    /// invariant in two hands.
+    func noteEvent(
+        _ kind: ControlEventKind,
+        pane: ControlPaneID,
+        message: String?,
+        activity: String?,
+        source: ControlEventSource?
+    )
 }
 
 /// The server is the channel. Declared here rather than on the type, so

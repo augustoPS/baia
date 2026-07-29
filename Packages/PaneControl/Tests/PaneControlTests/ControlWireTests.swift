@@ -27,6 +27,7 @@ import Testing
         case .send: ControlArgs(peer: paneID, text: "two\nlines and a \"quote\"")
         case .recv: ControlArgs(wait: 60)
         case .revoke: ControlArgs(peer: paneID)
+        case .subscribe: ControlArgs(wait: 30, from: 41, kinds: ["paneClosed"])
         case .run: ControlArgs()
         }
     }
@@ -348,6 +349,57 @@ import Testing
         let unknownCode = #"{"v": 1, "ok": false, "error": {"code": "teleported", "message": "x"}}"#
         #expect(ControlWire.decodeResponse(Data(unknownCode.utf8)) == nil)
         #expect(ControlWire.decodeResponse(Data(repeating: 0x7B, count: ControlWire.maxFrameBytes + 1)) == nil)
+    }
+
+    /// `kinds` crosses as strings rather than as the enum, so a frame written by
+    /// hand with a misspelled kind is answered `refused` with the bad name in it
+    /// rather than `badFrame` from a decoder that got no further.
+    // MARK: The wait cap
+
+    /// The cap the budget table has claimed since v1 and nothing exercised. It
+    /// was one line in the app target, which has no test target, so "60 s
+    /// maximum" was a number in a document rather than a number under test.
+    @Test func aWaitIsCappedRatherThanTrusted() {
+        #expect(ControlWire.cappedWait(3600) == ControlWire.maxWaitSeconds)
+        #expect(ControlWire.cappedWait(30) == 30)
+        #expect(ControlWire.cappedWait(ControlWire.maxWaitSeconds) == ControlWire.maxWaitSeconds)
+    }
+
+    /// Nil is "do not park", and so is zero, and so is a negative. A client
+    /// asking to wait for a negative time has asked for no wait, and answering it
+    /// immediately is the reading that cannot surprise anybody.
+    @Test func noWaitIsSpelledSeveralWaysAndAllOfThemMeanAnswerNow() {
+        #expect(ControlWire.cappedWait(nil) == nil)
+        #expect(ControlWire.cappedWait(0) == nil)
+        #expect(ControlWire.cappedWait(-1) == nil)
+        #expect(ControlWire.cappedWait(Int.min) == nil)
+    }
+
+    @Test func anUnknownKindIsNamedInTheRefusal() {
+        let error = ControlError.unknownEventKind("paneOpenned")
+        #expect(error.code == .refused)
+        #expect(error.message.contains("paneOpenned"))
+    }
+
+    @Test func subscribeArgumentsSurviveARoundTrip() {
+        let caller = "c1-not-a-uuid-caller"
+        let request = ControlRequest(
+            token: caller,
+            verb: .subscribe,
+            args: ControlArgs(wait: 30, from: 41, kinds: ["paneClosed"])
+        )
+        guard let line = ControlWire.encodeRequest(request) else {
+            Issue.record("a well-formed subscribe did not encode")
+            return
+        }
+        switch ControlWire.decodeRequest(line) {
+        case let .request(decoded):
+            #expect(decoded.args.from == 41)
+            #expect(decoded.args.kinds == ["paneClosed"])
+            #expect(decoded.args.wait == 30)
+        case let .failure(error):
+            Issue.record("a well-formed subscribe was refused: \(error.message)")
+        }
     }
 
     /// A response from another build is nil, not a v1 response with a `v` nobody

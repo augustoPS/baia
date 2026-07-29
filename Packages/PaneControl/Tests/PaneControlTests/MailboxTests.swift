@@ -185,6 +185,29 @@ import Testing
     /// The naive implementation, take 32 and hope, passes every count-shaped test
     /// above and loses everything past the cap here with `ok: true` on the way
     /// out.
+    /// **The batch cap through the call the server actually makes.**
+    ///
+    /// Every other test here supplies `limit` and `budget`, including the
+    /// fixture's own helper, which re-supplies the same two constants. The server
+    /// supplies neither, so the defaulted path was the one path nothing
+    /// exercised: changing `maxDrainBatch` to five would have left this suite
+    /// green while every pane's `baia recv` quietly answered five. Found while
+    /// pinning the same gap in `subscribe`, and it predates the ring.
+    @Test func theDefaultedBatchCapIsTheOneTheServerGets() {
+        var fixture = Fixture()
+        for index in 0..<(ControlWire.maxDrainBatch + 5) {
+            fixture.send("message \(index)")
+        }
+
+        switch fixture.graph.recv(token: fixture.receiverToken) {
+        case let .ok(drain):
+            #expect(drain.messages.count == ControlWire.maxDrainBatch)
+            #expect(drain.more == true)
+        case let .denied(error):
+            Issue.record("recv was denied: \(error.message)")
+        }
+    }
+
     @Test func aDrainThatRunsOutOfBudgetLeavesTheRestInTheMailbox() {
         var fixture = Fixture()
         let sent = 20

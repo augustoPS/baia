@@ -242,6 +242,7 @@ import Testing
         .connect: selfOnlyRow,
         .peers: selfOnlyRow,
         .recv: selfOnlyRow,
+        .subscribe: selfOnlyRow,
         .list: scopedReadRow,
         .send: peerEdgeRow,
         .revoke: peerEdgeRow,

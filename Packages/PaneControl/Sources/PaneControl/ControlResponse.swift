@@ -93,6 +93,21 @@ public struct ControlResult: Sendable, Equatable, Codable {
     /// message, because the reader concludes nothing was sent.
     public var dropped: Int?
 
+    /// `subscribe`: the events the caller is allowed to see, oldest first.
+    public var events: [ControlEvent]?
+
+    /// `subscribe`: true when the ring evicted events before the requested
+    /// cursor. It means "re-bootstrap with list", and it can be a false positive:
+    /// eviction is measured against the whole ring rather than against what this
+    /// caller could see, so a caller whose own events all survived is still told
+    /// when the ring wrapped past its cursor. The cost of the false positive is
+    /// one `list`.
+    public var gap: Bool?
+
+    /// `list`: the ring's sequence when the records were read.
+    /// `subscribe`: the cursor for the next call, so a client never computes one.
+    public var seq: UInt64?
+
     public init(
         pane: String? = nil,
         name: String? = nil,
@@ -101,7 +116,10 @@ public struct ControlResult: Sendable, Equatable, Codable {
         panes: [PaneRecord]? = nil,
         messages: [ControlMessage]? = nil,
         more: Bool? = nil,
-        dropped: Int? = nil
+        dropped: Int? = nil,
+        events: [ControlEvent]? = nil,
+        gap: Bool? = nil,
+        seq: UInt64? = nil
     ) {
         self.pane = pane
         self.name = name
@@ -111,6 +129,9 @@ public struct ControlResult: Sendable, Equatable, Codable {
         self.messages = messages
         self.more = more
         self.dropped = dropped
+        self.events = events
+        self.gap = gap
+        self.seq = seq
     }
 }
 
@@ -118,6 +139,15 @@ public struct ControlResult: Sendable, Equatable, Codable {
 ///
 /// Display ids and human-readable strings only. No token, and no field that
 /// could carry one.
+///
+/// **Every string here is one line**, flattened by the initializer through
+/// ``ControlText/oneLine(_:)-(String)``. Four of these fields are named by
+/// whoever runs in the pane: the working directory, the anchor, the activity
+/// label, and the channel names. `list` prints one field per line, so a newline
+/// in any of them is a pane writing a labelled row of its own into a
+/// supervisor's output, which is the same hole the event ring closes at emit.
+/// Applied to every field rather than to the four, so no reader has to know
+/// which ones a pane gets to name.
 public struct PaneRecord: Sendable, Equatable, Codable {
     /// The persisted `PaneID`, as its UUID string. The same value the pane's own
     /// `$BAIA_PANE` carries, which is a public display id and not a credential.
@@ -171,17 +201,17 @@ public struct PaneRecord: Sendable, Equatable, Codable {
         channels: [String] = [],
         peers: [String] = []
     ) {
-        self.pane = pane
+        self.pane = ControlText.oneLine(pane)
         self.window = window
         self.tab = tab
-        self.workingDirectory = workingDirectory
-        self.anchor = anchor
-        self.branch = branch
-        self.activity = activity
-        self.attention = attention
-        self.createdBy = createdBy
-        self.channels = channels
-        self.peers = peers
+        self.workingDirectory = ControlText.oneLine(workingDirectory)
+        self.anchor = ControlText.oneLine(anchor)
+        self.branch = ControlText.oneLine(branch)
+        self.activity = ControlText.oneLine(activity)
+        self.attention = ControlText.oneLine(attention)
+        self.createdBy = ControlText.oneLine(createdBy)
+        self.channels = channels.map(ControlText.oneLine)
+        self.peers = peers.map(ControlText.oneLine)
     }
 
     /// Drops the display ids this record carries that name panes the caller is

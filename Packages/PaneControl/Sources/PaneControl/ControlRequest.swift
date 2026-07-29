@@ -91,6 +91,18 @@ public struct ControlArgs: Sendable, Equatable, Codable {
     /// by the server rather than trusted from the client.
     public var wait: Int?
 
+    /// `subscribe`: the cursor to read after. 0 means everything the ring still
+    /// holds, which on a ring that has evicted answers `gap: true`.
+    public var from: UInt64?
+
+    /// `subscribe --kinds`: which kinds to deliver, defaulting to all of them.
+    ///
+    /// **Strings rather than ``ControlEventKind``**, so an unknown kind is
+    /// answered `refused` with the offending name rather than `badFrame` from a
+    /// decoder. The channel is meant to stay drivable by hand with `nc`, and a
+    /// hand-written frame is exactly where a misspelling happens.
+    public var kinds: [String]?
+
     public init(
         axis: ControlAxis? = nil,
         cwd: String? = nil,
@@ -102,7 +114,9 @@ public struct ControlArgs: Sendable, Equatable, Codable {
         rendezvous: String? = nil,
         peer: String? = nil,
         text: String? = nil,
-        wait: Int? = nil
+        wait: Int? = nil,
+        from: UInt64? = nil,
+        kinds: [String]? = nil
     ) {
         self.axis = axis
         self.cwd = cwd
@@ -115,6 +129,8 @@ public struct ControlArgs: Sendable, Equatable, Codable {
         self.peer = peer
         self.text = text
         self.wait = wait
+        self.from = from
+        self.kinds = kinds
     }
 }
 

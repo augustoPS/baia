@@ -65,6 +65,13 @@ public struct PaneGraph: Sendable, Equatable {
     /// fresh shell a stranger's backlog.
     var mailboxes: [ControlPaneID: Mailbox] = [:]
 
+    /// The workspace's observable transitions.
+    ///
+    /// One ring for every subscriber, unlike the per-pane mailboxes above it, and
+    /// like them it dies with the app: a restored pane inheriting a previous run's
+    /// events would be told about panes that no longer exist.
+    var ring = EventRing()
+
     public init() {}
 
     // MARK: Lifetime
@@ -188,6 +195,37 @@ public struct PaneGraph: Sendable, Equatable {
             cursor = parentOf[current]
         }
         return false
+    }
+
+    /// Every pane entitled to observe what happens to this one.
+    ///
+    /// The `scopedRead` branch of ``authorize(token:verb:target:)`` stated from
+    /// the other side: an actor may read a subject when it is the subject, when
+    /// the subject is below it, or when the two are peers. So the audience of a
+    /// subject is the subject, its ancestors, and its peers.
+    ///
+    /// **Two readers of one rule, which is normally the defect this codebase
+    /// refuses.** It is allowed here because the ring cannot use the resolver:
+    /// authority has to be decided when the event happens, and by the time
+    /// anybody reads a `paneClosed` the graph has already forgotten the parentage
+    /// that would have authorised it. `ObserverScopeTests` asserts the two agree
+    /// for every ordered pair, so the second reader is checked rather than
+    /// trusted.
+    ///
+    /// Walks up like ``isDescendant(_:of:)``, with its visited set and for its
+    /// reason: nothing in the public API builds a cycle, and an unbounded walk on
+    /// a path the app runs per event would be a hang in the app process.
+    public func observers(of pane: ControlPaneID) -> Set<ControlPaneID> {
+        var audience: Set<ControlPaneID> = [pane]
+
+        var cursor = parentOf[pane]
+        while let current = cursor {
+            guard audience.insert(current).inserted else { break }
+            cursor = parentOf[current]
+        }
+
+        audience.formUnion(peers(of: pane))
+        return audience
     }
 
     // MARK: Peering
@@ -317,6 +355,82 @@ public struct PaneGraph: Sendable, Equatable {
                 return .denied(.unauthorized)
             }
             return .allowed(actor: actor, target: subject)
+        }
+    }
+
+    // MARK: Observing
+
+    /// The ring's highest sequence, which `list` reports so a subscriber can
+    /// bootstrap and then continue from the same point.
+    public var currentSequence: UInt64 { ring.lastSequence }
+
+    /// Records a transition, computing its audience now.
+    ///
+    /// **Public, and it takes no token, because the caller is not a pane.** The
+    /// app is telling the graph what happened; there is nobody to authorise. That
+    /// makes this unlike ``deliver(_:to:)``, which is internal precisely because a
+    /// pane can reach it.
+    ///
+    /// **Ordering is the contract, in both directions.** ``observers(of:)`` reads
+    /// the live graph, so:
+    ///
+    /// - `paneClosed` must be emitted **before** ``close(pane:)``, or the
+    ///   parentage that puts the parent in the audience is already gone and the
+    ///   event reaches nobody.
+    /// - `paneOpened` must be emitted **after**
+    ///   ``open(pane:createdBy:secret:)``, or the parentage does not exist yet and
+    ///   the same thing happens.
+    ///
+    /// Both are asserted in `ObserverScopeTests`, including the failing order, so
+    /// the rule is a test rather than a comment somebody has to obey.
+    ///
+    /// **Two audiences, because the entry carries an id that is not the
+    /// subject's.** Who may hear that something happened to the subject is
+    /// ``observers(of:)`` of the subject; who may be told the identity of the
+    /// pane that created it is ``observers(of:)`` of the creator, which is the
+    /// same set `authorize` would allow to `list` the creator. The subject is in
+    /// the first and not the second, so a pane still never learns who created it.
+    /// The ring holds both and redacts at the read.
+    @discardableResult
+    public mutating func emit(
+        _ kind: ControlEventKind,
+        pane: ControlPaneID,
+        createdBy: ControlPaneID?,
+        message: String?,
+        activity: String?,
+        source: ControlEventSource?
+    ) -> UInt64 {
+        ring.append(
+            kind: kind,
+            pane: pane,
+            audience: observers(of: pane),
+            createdBy: createdBy.map { (pane: $0, audience: observers(of: $0)) },
+            message: message,
+            activity: activity,
+            source: source
+        )
+    }
+
+    /// Reads the calling pane's view of the ring.
+    ///
+    /// `selfOnly` at the verb level: a subscriber names no target, and which
+    /// events reach it was decided when each one was appended. Non-mutating,
+    /// because reading a ring consumes nothing, which is the whole difference
+    /// between this and ``recv(token:limit:budget:)``.
+    public func subscribe(
+        token: String,
+        from cursor: UInt64,
+        kinds: Set<ControlEventKind> = Set(ControlEventKind.allCases),
+        limit: Int = ControlWire.maxEventBatch,
+        budget: Int = ControlWire.maxFrameBytes
+    ) -> ControlOutcome<EventBatch> {
+        switch authorize(token: token, verb: .subscribe, target: nil) {
+        case let .denied(error):
+            return .denied(error)
+        case let .allowed(actor, _):
+            return .ok(ring.events(
+                after: cursor, for: actor, kinds: kinds, limit: limit, budget: budget
+            ))
         }
     }
 }
