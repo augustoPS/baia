@@ -190,6 +190,37 @@ public struct PaneGraph: Sendable, Equatable {
         return false
     }
 
+    /// Every pane entitled to observe what happens to this one.
+    ///
+    /// The `scopedRead` branch of ``authorize(token:verb:target:)`` stated from
+    /// the other side: an actor may read a subject when it is the subject, when
+    /// the subject is below it, or when the two are peers. So the audience of a
+    /// subject is the subject, its ancestors, and its peers.
+    ///
+    /// **Two readers of one rule, which is normally the defect this codebase
+    /// refuses.** It is allowed here because the ring cannot use the resolver:
+    /// authority has to be decided when the event happens, and by the time
+    /// anybody reads a `paneClosed` the graph has already forgotten the parentage
+    /// that would have authorised it. `ObserverScopeTests` asserts the two agree
+    /// for every ordered pair, so the second reader is checked rather than
+    /// trusted.
+    ///
+    /// Walks up like ``isDescendant(_:of:)``, with its visited set and for its
+    /// reason: nothing in the public API builds a cycle, and an unbounded walk on
+    /// a path the app runs per event would be a hang in the app process.
+    public func observers(of pane: ControlPaneID) -> Set<ControlPaneID> {
+        var audience: Set<ControlPaneID> = [pane]
+
+        var cursor = parentOf[pane]
+        while let current = cursor {
+            guard audience.insert(current).inserted else { break }
+            cursor = parentOf[current]
+        }
+
+        audience.formUnion(peers(of: pane))
+        return audience
+    }
+
     // MARK: Peering
 
     public func peers(of pane: ControlPaneID) -> Set<ControlPaneID> {
