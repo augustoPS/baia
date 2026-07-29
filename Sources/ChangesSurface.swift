@@ -174,7 +174,10 @@ final class ChangesRowsView: NSView {
     }
 
     private func draw(_ change: RepositoryFileChange, atIndex index: Int) {
-        let y = Double(index) * Self.rowHeight
+        // One origin for both strings. The marker used to draw at `y + 3` and the
+        // path at `y + 1`, both top-origin in a flipped view, so the marker sat
+        // 2 pt below the path it labels. Design v3 §8/02.
+        let y = Double(index) * Self.rowHeight + Self.textOrigin
         let marker = Self.marker(for: change)
         NSAttributedString(
             string: marker.text,
@@ -182,20 +185,20 @@ final class ChangesRowsView: NSView {
                 .font: Self.font,
                 .foregroundColor: ChangesSurface.nsColor(marker.colour(in: theme)),
             ]
-        ).draw(at: NSPoint(x: Self.inset, y: y + Self.baseline))
+        ).draw(at: NSPoint(x: Self.inset, y: y))
 
         // The last component in the foreground ink and the directory ahead of it
         // faint, so a column of paths reads as a column of file names with context
-        // rather than as a column of shared prefixes.
-        let path = change.path
-        let split = path.lastIndex(of: "/").map { path.index(after: $0) }
-        let directory = split.map { String(path[path.startIndex ..< $0]) } ?? ""
-        let name = split.map { String(path[$0...]) } ?? path
+        // rather than as a column of shared prefixes. Which half gives way when the
+        // row is too narrow follows from that, and ``RowPath`` is the rule.
+        let x = Self.inset + Self.markerColumn
+        let available = max(0, bounds.width - x - Self.inset)
+        let fitted = RowPath.fit(change.path, budget: Int(available / Self.advance))
 
         let line = NSMutableAttributedString()
-        if !directory.isEmpty {
+        if !fitted.directory.isEmpty {
             line.append(NSAttributedString(
-                string: directory,
+                string: fitted.directory,
                 attributes: [
                     .font: Self.font,
                     .foregroundColor: ChangesSurface.nsColor(theme.inkFaint),
@@ -203,20 +206,18 @@ final class ChangesRowsView: NSView {
             ))
         }
         line.append(NSAttributedString(
-            string: name,
+            string: fitted.name,
             attributes: [
                 .font: Self.font,
                 .foregroundColor: ChangesSurface.nsColor(theme.foreground),
             ]
         ))
 
-        let x = Self.inset + Self.markerColumn
-        line.draw(in: NSRect(
-            x: x,
-            y: y + 1,
-            width: max(0, bounds.width - x - Self.inset),
-            height: Self.rowHeight
-        ))
+        // `draw(at:)`, never `draw(in:)`. A rect wraps, `/` is a break opportunity,
+        // and the second line falls outside an 18 pt row, so what a rect clipped
+        // away was the file name the row exists to show. The width is answered
+        // before the string is built rather than by the drawing.
+        line.draw(at: NSPoint(x: x, y: y))
     }
 
     private func draw(message: String) {
@@ -226,7 +227,7 @@ final class ChangesRowsView: NSView {
                 .font: Self.font,
                 .foregroundColor: ChangesSurface.nsColor(theme.inkFaint),
             ]
-        ).draw(at: NSPoint(x: Self.inset, y: Self.baseline))
+        ).draw(at: NSPoint(x: Self.inset, y: Self.textOrigin))
     }
 
     /// Conflicts first, then staged, then unstaged, then untracked, and by path
@@ -286,9 +287,29 @@ final class ChangesRowsView: NSView {
         }
     }
 
-    private static let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-    private static let rowHeight: Double = 18
-    private static let baseline: Double = 3
-    private static let inset: Double = 12
+    static let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+
+    /// The advance of one character, which is a number only because the font is
+    /// monospaced. Every width budget in the sidebar is derived from it.
+    ///
+    /// Measured rather than written down as 6.62: the constant is what the font
+    /// happens to report at size 11, and a font or size change has to move the
+    /// budget with it.
+    static let advance = ("0" as NSString).size(withAttributes: [.font: font]).width
+
+    /// Where a row's text starts, so that its baseline lands on `rowBaseline`.
+    ///
+    /// The same rule the footer follows with `PaneStatusBarMetrics.baselineFromTop`:
+    /// one baseline for everything on the line, rather than each string placed by
+    /// its own idea of centre. Two strings centred independently sit a fraction of
+    /// a point apart, which does not read as a difference, it reads as a mistake.
+    static let textOrigin = rowBaseline - Double(font.ascender)
+
+    static let rowHeight: Double = 18
+    /// Cap-centred in the row: (18 + 7.8) / 2, where 7.8 is the cap height.
+    static let rowBaseline: Double = 13
+    /// One inset for both surfaces and the heading above them. The tree used to
+    /// use 10, so stacked it sat 2 pt out from everything else. Design v3 §8/03.
+    static let inset: Double = 12
     private static let markerColumn: Double = 26
 }

@@ -183,7 +183,7 @@ final class FileTreeRowsView: NSView {
             NSAttributedString(
                 string: chevron,
                 attributes: [.font: Self.font, .foregroundColor: nsColor(theme.inkFaint)]
-            ).draw(at: NSPoint(x: x, y: y + Self.baseline))
+            ).draw(at: NSPoint(x: x, y: y + Self.textOrigin))
         }
 
         NSAttributedString(
@@ -192,14 +192,14 @@ final class FileTreeRowsView: NSView {
                 .font: Self.font,
                 .foregroundColor: nsColor(row.node.isDirectory ? theme.inkContext : theme.foreground),
             ]
-        ).draw(at: NSPoint(x: x + Self.chevronColumn, y: y + Self.baseline))
+        ).draw(at: NSPoint(x: x + Self.chevronColumn, y: y + Self.textOrigin))
     }
 
     private func draw(message: String) {
         NSAttributedString(
             string: message,
             attributes: [.font: Self.font, .foregroundColor: nsColor(theme.inkFaint)]
-        ).draw(at: NSPoint(x: Self.inset, y: Self.baseline))
+        ).draw(at: NSPoint(x: Self.inset, y: Self.textOrigin))
     }
 
     var onSelect: ((String) -> Void)?
@@ -241,10 +241,16 @@ final class FileTreeRowsView: NSView {
         )
     }
 
-    private static let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-    private static let rowHeight: Double = 18
-    private static let baseline: Double = 3
-    private static let inset: Double = 10
+    private static let font = ChangesRowsView.font
+
+    /// Both surfaces read one set of row metrics, so a row in the tree and a row
+    /// in the changes list sit on the same baseline at the same inset when the two
+    /// are stacked. The tree used to inset at 10 against everything else's 12,
+    /// which put it 2 pt out from the heading directly above it, and it placed its
+    /// text by its own constant. Design v3 §8/02 and §8/03.
+    private static let rowHeight = ChangesRowsView.rowHeight
+    private static let textOrigin = ChangesRowsView.textOrigin
+    private static let inset = ChangesRowsView.inset
     private static let indent: Double = 12
     private static let chevronColumn: Double = 14
 }

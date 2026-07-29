@@ -1,21 +1,30 @@
 # Design handoff
 
-Two documents, both pulled down from the Claude Design project **Baia Terminal
+Three documents, all pulled down from the Claude Design project **Baia Terminal
 UI Design** (`6ee431e0-e6f9-44f0-98fe-315e845e9077`). Each is a **design
-reference authored in HTML**, not code to port: recreations of the six app
-captures at 1 pt = 1 px, with each proposed treatment rendered on the real
-window beside its values. The implementation target was AppKit, and it landed in
-`Sources/` and `Packages/PaneChrome/`.
+reference authored in HTML**, not code to port: recreations of the app captures
+at 1 pt = 1 px, with each proposed treatment rendered on the real window beside
+its values. The implementation target was AppKit, and it landed in `Sources/`
+and `Packages/PaneChrome/`.
 
 | File | Pulled | What it is |
 |---|---|---|
-| `Baia Design Pass.dc.html` | 2026-07-25 | v1. Every option, with the arguments for each |
-| `Baia Design Pass v2.dc.html` | 2026-07-26 | v2, "decisions only". One treatment per problem |
+| `Baia Design Pass.dc.html` | 2026-07-25 | v1, the pane chrome. Every option, with the arguments for each |
+| `Baia Design Pass v2.dc.html` | 2026-07-26 | v2, the same subject, "decisions only". One treatment per problem |
+| `Baia Sidebar Design Pass.dc.html` | 2026-07-29 | v3, the workspace sidebar. Nothing to do with v1 and v2 except where they touch |
+| `Baia Sidebar Design Pass.md` | 2026-07-29 | v3 as markdown, the same document's own handoff notes. **The implementable form**: every constant, ready to type |
 
-v2 carries the same nine sections, retitled. It drops the alternatives and picks
+v2 carries v1's nine sections, retitled. It drops the alternatives and picks
 a winner in each, so v1 stays as the record if an argument needs reopening.
 Most of v2 ratifies what shipped from v1; the five places it does not are listed
 below.
+
+v3 is a different subject, the sidebar that shipped 2026-07-27. It answers the
+brief in `vault/projects/baia/2026-07-29-design-v3-prompt.md`, and none of it is
+implemented. Where the two subjects touch, the footer's tier-1 treatment, the
+accent, the hairline vocabulary, v3 follows v2. Its markdown twin is vendored
+alongside it because the values in it are meant to be typed into Swift, and a
+document that has to be served to be read is a poor place to keep them.
 
 ## Reading it
 
@@ -29,10 +38,15 @@ So **read them in the Claude Design project**, where they render complete. The
 local copies are for diffing against what was implemented, and for surviving the
 project being changed or deleted.
 
-The project also holds `design_handoff_baia_chrome/baia-design-pass-v2-standalone.html`,
-a 254 KB self-contained bundle that renders v2 offline with everything inlined.
-It is deliberately not vendored here for the same reason `_ds/` is not. Pull it
-down if you need to read v2 without the project.
+The project also holds a self-contained bundle per document that renders offline
+with everything inlined: `design_handoff_baia_chrome/baia-design-pass-v2-standalone.html`
+at 254 KB, and `design_handoff_baia_sidebar/baia-sidebar-design-pass-standalone.html`
+at 425 KB. Neither is vendored here, for the same reason `_ds/` is not. Pull one
+down if you need to read a document without the project.
+
+v3 is the exception worth knowing about: its markdown twin, `Baia Sidebar Design
+Pass.md`, carries the whole specification in text, including the token block, so
+the bundle is only needed to see the recreations rather than to implement them.
 
 The six source captures both documents were built from live in
 `../design-captures/`, which is gitignored for the images and tracked for
@@ -134,6 +148,58 @@ comparison it was waiting on had been made.
    ignored: a key that stopped applying has to be visible, which is what
    `unknownKeys` exists for, and swallowing one quietly is exactly how
    `focusAccent` came to sit dead for nine days.
+
+## What v3 asks for, and what it found
+
+Its own suggested order is at the end of `Baia Sidebar Design Pass.md`, and step 1
+of it shipped the day it arrived; see below. The eight decisions are the material
+of the column (the terminal's own, not the panel's), per-column `XY` colour, a
+truncation ladder that elides the directory, a heading carrying a count and the
+anchor name, indent guides and trailing per-file status in the tree, five row
+states now that rows act, square flush edges, and no trailing-edge sidebar.
+
+Its one "still unverified" item is answered. `AppDelegate.toggleSurfacePanels`
+cycles `changes → files → both → off` and reopens from `off`, so `off` is in the
+cycle and the brief's claim holds.
+
+## What was implemented from v3
+
+Step 1 of its suggested order, on 2026-07-29. Three of the five §8 corrections,
+which are the whole of what that step covers.
+
+1. **§3 and §8/01, the path ladder.** `PaneChrome.RowPath` fits a path to a
+   character budget by eliding the directory and never the name: the whole path,
+   then the first directory with `…` and as many trailing ones as fit, then `…/`
+   alone, then the name, and at the floor the stem tail-elided with its extension
+   kept. Twelve tests, including one that walks every budget from 0 to 60 across
+   seven paths and asserts nothing ever exceeds what it was given. The row draws
+   with `draw(at:)`, so there is no rect left to wrap in.
+
+   The wrap itself was found independently the same day and first fixed with
+   `.byTruncatingHead`, which §3 rejects for spending the width on the directory
+   and the name together. That fix is gone; the ladder replaces it.
+
+2. **§8/02, one baseline.** Both strings in a changes row now draw from
+   `rowBaseline - font.ascender`, the idiom `PaneStatusBarView` already uses with
+   `PaneStatusBarMetrics.baselineFromTop`. The marker used to draw at `y + 3` and
+   the path at `y + 1`, both top-origin in a flipped view, so it sat 2 pt below
+   the path it labelled.
+
+3. **§8/03, one inset.** `FileTreeRowsView` read 10 against everything else's 12
+   and placed its text by its own constant. It now reads `ChangesRowsView`'s
+   metrics, so a row in either surface sits at the same inset on the same
+   baseline when the two are stacked.
+
+**One correction to the document, from measuring rather than reading.** Every
+width budget in v3 is derived from a 6.62 pt advance for
+`monospacedSystemFont(ofSize: 11, weight: .regular)`. The font reports 6.7998 pt
+on macOS 27, so the real budget at 260 pt is 30 characters rather than 31, and
+`Sources/Workspace/Divider.swift` at 31 elides where the document's table says it
+fits. `RowPath`'s caller measures the advance instead of hardcoding it, so the
+budget follows the font, but v3's character counts run about 3 percent
+optimistic wherever they are quoted.
+
+Steps 2 through 8 are not started.
 
 ## Still open
 
