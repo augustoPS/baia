@@ -45,6 +45,7 @@ CHURN_SPLITS = 340
 VERBS = [
     "split", "close", "focus", "zoom", "resize", "equalize",
     "whoami", "list", "publish", "connect", "peers", "send", "recv", "revoke", "run",
+    "subscribe",
 ]
 
 

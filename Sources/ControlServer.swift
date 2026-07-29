@@ -923,9 +923,17 @@ final class ControlServer {
     /// Goes back through `graph.subscribe`, so the wait is authorised on the way
     /// out exactly as it was on the way in, matching ``resolveByDraining(_:)``.
     private func resolveByReading(_ id: Int) {
+        // **The kind is checked before the waiter is taken out**, so a `recv`
+        // arriving here by some future routing mistake is left where the drain
+        // path can still find it. The order used to be the other way round: the
+        // waiter was removed and its deadline cancelled, and then the kind check
+        // returned, leaving a request with no response, no deadline to fire, and
+        // a connection held until the idle sweep noticed. Unreachable today,
+        // because `resolveByDraining` sends only what is not a `recv` here, and
+        // one line of ordering is cheaper than depending on that staying true.
+        guard case let .subscribe(from, kinds) = waiters[id]?.kind else { return }
         guard let waiter = waiters.remove(id) else { return }
         waiter.deadline.cancel()
-        guard case let .subscribe(from, kinds) = waiter.kind else { return }
 
         // The idle clock restarts when the long poll is answered, for
         // ``resolveByDraining(_:)``'s reason: this connection did not sit thirty

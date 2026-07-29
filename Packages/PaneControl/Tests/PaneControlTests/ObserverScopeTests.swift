@@ -244,6 +244,31 @@ import Testing
         }
     }
 
+    /// **The caps the server actually uses, exercised through the call the server
+    /// actually makes.**
+    ///
+    /// `subscribe` takes `limit` and `budget` as defaulted parameters and the
+    /// server passes neither, so every test that supplies them by hand pins a
+    /// number nothing in production reads. Changing `maxEventBatch` to five would
+    /// have left the suite green. This is the only test that would notice.
+    @Test func theDefaultedCapsAreTheOnesTheServerGets() {
+        var fixture = Fixture()
+        for _ in 0..<(ControlWire.maxEventBatch + 5) {
+            fixture.graph.emit(
+                .attentionRaised, pane: fixture.child, createdBy: nil,
+                message: nil, activity: nil, source: .osc
+            )
+        }
+
+        switch fixture.graph.subscribe(token: fixture.tokens[fixture.parent]!, from: 0) {
+        case let .ok(batch):
+            #expect(batch.events.count == ControlWire.maxEventBatch)
+            #expect(batch.more == true)
+        case let .denied(error):
+            Issue.record("the parent was denied: \(error.message)")
+        }
+    }
+
     @Test func theCurrentSequenceIsWhatListWillReport() {
         var fixture = Fixture()
         #expect(fixture.graph.currentSequence == 0)
