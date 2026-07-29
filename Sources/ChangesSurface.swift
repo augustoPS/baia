@@ -192,13 +192,19 @@ final class ChangesRowsView: NSView {
         // 2 pt below the path it labels. Design v3 §8/02.
         let y = Double(index) * Self.rowHeight + Self.textOrigin
         let marker = Self.marker(for: change)
-        NSAttributedString(
-            string: marker.text,
-            attributes: [
-                .font: Self.font,
-                .foregroundColor: ChangesSurface.nsColor(marker.colour(in: theme)),
-            ]
-        ).draw(at: NSPoint(x: Self.inset, y: y))
+        let columns = NSMutableAttributedString()
+        for column in [marker.index, marker.worktree] {
+            columns.append(NSAttributedString(
+                string: column.text,
+                attributes: [
+                    .font: Self.font,
+                    .foregroundColor: column.role.map {
+                        ChangesSurface.nsColor(Marker.colour($0, in: theme))
+                    } ?? .clear,
+                ]
+            ))
+        }
+        columns.draw(at: NSPoint(x: Self.inset, y: y))
 
         // The last component in the foreground ink and the directory ahead of it
         // faint, so a column of paths reads as a column of file names with context
@@ -269,30 +275,71 @@ final class ChangesRowsView: NSView {
 
     /// The two-column `XY` git itself prints, so the marker is one the owner already
     /// reads in `git status` rather than a vocabulary of baia's own.
+    ///
+    /// **Each column carries its own ink.** `X` is the index and `Y` is the working
+    /// tree, two independent facts, and one colour for the pair threw away the half
+    /// that matters: a file staged and since modified prints `MM`, and rendering
+    /// both letters as staged said the commit would contain the second `M` when it
+    /// will not. Coloured separately the marker teaches itself, left is in the
+    /// commit and right is not. Design v3 §2.1.
+    ///
+    /// An absent column is a space rather than a dot. The font is monospaced, so
+    /// position already says which of the two is missing, and a dot is a character
+    /// git does not print here.
     private static func marker(for change: RepositoryFileChange) -> Marker {
         switch change.kind {
         case .untracked:
-            Marker(text: "??", role: .untracked)
+            // Git prints a pair of the same glyph here rather than two states, and
+            // `RepositoryFileChange` carries none for an untracked file, so this is
+            // the one marker spelled out rather than read off the record.
+            Marker(index: .init("?", .untracked), worktree: .init("?", .untracked))
         case .unmerged:
-            Marker(text: "UU", role: .conflict)
+            // The real letters rather than a hardcoded `UU`. Both columns are the
+            // conflict, so both are red, but a `DU` is a delete against an update
+            // and calling it `UU` is the same class of lie as colouring `MM` once.
+            Marker(
+                index: .init(change.index.map(\.rawValue) ?? "U", .conflict),
+                worktree: .init(change.worktree.map(\.rawValue) ?? "U", .conflict)
+            )
         case .ordinary, .renamedOrCopied:
             Marker(
-                text: String(change.index?.rawValue ?? ".") + String(change.worktree?.rawValue ?? "."),
-                role: change.index != nil ? .staged : .unstaged
+                index: change.index.map { .init($0.rawValue, .staged) } ?? .absent,
+                worktree: change.worktree.map { .init($0.rawValue, .unstaged) } ?? .absent
             )
         }
     }
 
     private struct Marker {
+        let index: Column
+        let worktree: Column
+
+        struct Column {
+            let text: String
+            let role: Role?
+
+            init(_ character: Character, _ role: Role) {
+                text = String(character)
+                self.role = role
+            }
+
+            private init(absent: Bool) {
+                text = " "
+                role = nil
+            }
+
+            static let absent = Column(absent: true)
+        }
+
         enum Role { case staged, unstaged, untracked, conflict }
-        let text: String
-        let role: Role
 
         /// Borrowed from the footer's own vocabulary rather than invented: the same
         /// colours already mean the same things one line below.
-        func colour(in theme: PaneTheme) -> RGB {
+        static func colour(_ role: Role, in theme: PaneTheme) -> RGB {
             switch role {
-            case .staged: theme.ok
+            // Not `ok`, whose own documentation says it is never used for text.
+            // `staged` is that green given `warn`'s construction, so the pair a
+            // reader has to tell apart is one vocabulary rather than two.
+            case .staged: theme.staged
             case .unstaged: theme.warn
             case .untracked: theme.inkFaint
             case .conflict: theme.alert

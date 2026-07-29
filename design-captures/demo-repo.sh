@@ -55,6 +55,13 @@ printf 'scratch\n' > docs/scratch.md
 # row that used to lose its file name outright.
 printf 'struct GridGeometry { var columns = 0 }\n' > Sources/Workspace/Rendering/GridGeometry.swift
 
+# Staged and since modified, which git prints `MM`. The row that argues for
+# colouring the two columns separately: committing now takes the first M and
+# leaves the second behind, and one colour for the pair cannot say that.
+printf 'import Testing\nimport Workspace\n' > Tests/WorkspaceTests/PaneTests.swift
+git_quiet add Tests/WorkspaceTests/PaneTests.swift
+printf 'import Testing\nimport Workspace\n@Test func draws() {}\n' > Tests/WorkspaceTests/PaneTests.swift
+
 # --- clean ------------------------------------------------------------------
 C="$ROOT/clean"
 mkdir -p "$C/Sources"
