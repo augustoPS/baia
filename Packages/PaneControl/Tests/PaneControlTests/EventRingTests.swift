@@ -192,6 +192,23 @@ import Testing
         #expect(batch.seq == 1)
     }
 
+    /// The far end of the same walk-back, and the reason the gap boundary is
+    /// measured downward from the oldest sequence: `cursor + 1` on the highest
+    /// cursor a client can send would trap and take the app with it.
+    @Test func theHighestCursorIsWalkedBackRatherThanOverflowing() {
+        var fixture = Ring()
+        fixture.append(.paneOpened, for: fixture.one)
+
+        let batch = fixture.ring.events(
+            after: .max, for: fixture.one, kinds: Self.allKinds,
+            limit: ControlWire.maxEventBatch, budget: ControlWire.maxFrameBytes
+        )
+        #expect(batch.events.isEmpty)
+        #expect(batch.gap == false)
+        #expect(batch.more == false)
+        #expect(batch.seq == fixture.ring.lastSequence)
+    }
+
     @Test func theBatchCapStopsAtThirtyTwoAndSaysMore() {
         var fixture = Ring()
         for _ in 0..<40 {

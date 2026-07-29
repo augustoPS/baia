@@ -119,7 +119,13 @@ extension EventRing {
         // A gap is eviction past the cursor, measured against the whole ring.
         // `oldest - 1` is the boundary: a reader at exactly that point missed
         // nothing.
-        let gap = oldestSequence.map { $0 > cursor + 1 } ?? false
+        //
+        // The comparison is written downward from the oldest sequence rather than
+        // upward from the cursor. The cursor arrives off the wire and may be any
+        // UInt64, so `cursor + 1` would trap on `UInt64.max` and take the app down
+        // with every pane in it, while `oldest - 1` cannot underflow: sequences
+        // start at 1.
+        let gap = oldestSequence.map { $0 - 1 > cursor } ?? false
 
         var delivered: [ControlEvent] = []
         // Starts at the head, so a read that examines everything ends there even
