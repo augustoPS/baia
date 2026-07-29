@@ -27,13 +27,22 @@ final class FilesSurface: NSObject, WorkspaceSurface {
     var theme: PaneTheme = .darkPastel {
         didSet {
             rows.theme = theme
-            scrollView.backgroundColor = NSColor(
-                srgbRed: CGFloat(theme.panelBackground.red),
-                green: CGFloat(theme.panelBackground.green),
-                blue: CGFloat(theme.panelBackground.blue),
-                alpha: 1
-            )
+            fill()
         }
+    }
+
+    var backgroundOpacity: Double = 1 {
+        didSet { fill() }
+    }
+
+    /// The column's body, drawn once by the scroll view and never by the rows on
+    /// top of it. See ``ChangesSurface/fill()``, which says what filling twice
+    /// costs now that the fill has an alpha.
+    private func fill() {
+        scrollView.backgroundColor = ChangesSurface.nsColor(
+            theme.background,
+            alpha: backgroundOpacity
+        )
     }
 
     /// The tree to draw. A *different* tree collapses everything below the top
@@ -156,9 +165,7 @@ final class FileTreeRowsView: NSView {
     }
 
     override func draw(_ dirty: NSRect) {
-        nsColor(theme.panelBackground).setFill()
-        bounds.fill()
-
+        // No fill of its own: the scroll view behind it is the column's material.
         guard hasRepository else { return draw(message: "not a repository") }
         guard !rows.isEmpty else { return draw(message: "no files") }
 

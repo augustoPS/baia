@@ -20,6 +20,16 @@ protocol WorkspaceSurface: AnyObject {
     var title: String { get }
 
     var theme: PaneTheme { get set }
+
+    /// What the terminal's own background is drawn at, so a surface is filled with
+    /// the same material a pane is.
+    ///
+    /// Design v3 §1: the sidebar is another compartment rather than a panel, so it
+    /// takes the work's material rather than ``PaneTheme/panelBackground``, which
+    /// keeps the surfaces that float. A number rather than a colour because the
+    /// theme cannot know it: it comes from `backgroundOpacity`, which is a setting
+    /// and reaches ghostty as a config override.
+    var backgroundOpacity: Double { get set }
 }
 
 /// The heading a host draws above whatever surface it is holding.

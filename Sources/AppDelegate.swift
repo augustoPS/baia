@@ -218,7 +218,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return SidebarHost(
             tree: tree,
             surfaces: surfaces(for: content, tree: tree),
-            theme: configuration.paneTheme
+            theme: configuration.paneTheme,
+            backgroundOpacity: configuration.settings.backgroundOpacity
         )
     }
 
@@ -728,6 +729,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         discoveredProjects = nil
         for controller in windows {
             controller.tree.refreshTheme()
+            // The sidebar too, which this loop did not reach: a theme or an opacity
+            // edited under a running app repainted every pane and left the column
+            // beside them wearing the values the window was built with, until it
+            // was closed and opened again.
+            controller.sidebar.theme = configuration.paneTheme
+            controller.sidebar.backgroundOpacity = configuration.settings.backgroundOpacity
         }
         palette.theme = configuration.paneTheme
         find.theme = configuration.paneTheme

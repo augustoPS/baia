@@ -21,8 +21,22 @@ final class ChangesSurface: NSObject, WorkspaceSurface {
     var theme: PaneTheme = .darkPastel {
         didSet {
             rows.theme = theme
-            scrollView.backgroundColor = Self.nsColor(theme.panelBackground)
+            fill()
         }
+    }
+
+    var backgroundOpacity: Double = 1 {
+        didSet { fill() }
+    }
+
+    /// The column's body, drawn once by the scroll view.
+    ///
+    /// **Once, not twice.** The rows used to fill their own bounds as well, which
+    /// was invisible while the fill was opaque and would be a second 0.85 layer
+    /// over the first now that it is not: two composites of the same colour land
+    /// at 0.9775 and the column would sit a shade above every pane beside it.
+    private func fill() {
+        scrollView.backgroundColor = Self.nsColor(theme.background, alpha: backgroundOpacity)
     }
 
     /// What to draw. Assigning re-sorts, so the caller hands over git's order and
@@ -62,12 +76,12 @@ final class ChangesSurface: NSObject, WorkspaceSurface {
         rows.theme = theme
     }
 
-    static func nsColor(_ rgb: RGB) -> NSColor {
+    static func nsColor(_ rgb: RGB, alpha: Double = 1) -> NSColor {
         NSColor(
             srgbRed: CGFloat(rgb.red),
             green: CGFloat(rgb.green),
             blue: CGFloat(rgb.blue),
-            alpha: 1
+            alpha: CGFloat(alpha)
         )
     }
 }
@@ -155,9 +169,8 @@ final class ChangesRowsView: NSView {
     }
 
     override func draw(_ dirty: NSRect) {
-        ChangesSurface.nsColor(theme.panelBackground).setFill()
-        bounds.fill()
-
+        // No fill of its own: the scroll view behind it is the column's material,
+        // and filling here as well would composite it twice.
         guard hasRepository else { return draw(message: "not a repository") }
         guard !sorted.isEmpty else { return draw(message: "no changes") }
 

@@ -77,6 +77,19 @@ final class SidebarHost: NSViewController {
         }
     }
 
+    /// What the sections fill their bodies at, so the column is the same material
+    /// as the panes it sits beside. Design v3 §1.
+    ///
+    /// Held here rather than read by each surface, because it is a property of the
+    /// window's material and not of a list of files, and because the two sections
+    /// disagreeing about it is exactly the seam a design pass would then be asked
+    /// to explain.
+    var backgroundOpacity: Double = 1 {
+        didSet {
+            for section in sections { section.surface.backgroundOpacity = backgroundOpacity }
+        }
+    }
+
     private let divider = NSView()
 
     /// The draggable split between two stacked sections.
@@ -111,9 +124,15 @@ final class SidebarHost: NSViewController {
     /// height is known.
     private(set) var firstSectionHeight: Double = SidebarGeometry.default.splitHeight
 
-    init(tree: PaneTreeController, surfaces: [any WorkspaceSurface], theme: PaneTheme) {
+    init(
+        tree: PaneTreeController,
+        surfaces: [any WorkspaceSurface],
+        theme: PaneTheme,
+        backgroundOpacity: Double
+    ) {
         self.tree = tree
         self.theme = theme
+        self.backgroundOpacity = backgroundOpacity
         super.init(nibName: nil, bundle: nil)
         sections = surfaces.map(Section.init(surface:))
     }
@@ -170,6 +189,7 @@ final class SidebarHost: NSViewController {
     private func install() {
         for section in sections {
             section.surface.theme = theme
+            section.surface.backgroundOpacity = backgroundOpacity
             section.heading.title = section.surface.title
             section.heading.theme = theme
             view.addSubview(section.surface.view)
