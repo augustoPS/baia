@@ -748,19 +748,17 @@ final class ControlServer {
     /// `badFrame` from a decoder that got no further. The CLI checks it too; this
     /// check is the rule, because a frame can arrive without the CLI.
     private func subscribe(_ request: ControlRequest, actor: ControlPaneID, on id: Int) {
+        // `ControlEventKind.resolve` and not a copy of it here. The rule is
+        // decidable without a descriptor, so it lives where `make test` reaches
+        // it, and this is the only caller that a frame arriving without the CLI
+        // can meet.
         let kinds: Set<ControlEventKind>
-        if let names = request.args.kinds {
-            var resolved: Set<ControlEventKind> = []
-            for name in names {
-                guard let kind = ControlEventKind(rawValue: name) else {
-                    respond(ControlResponse.failure(.unknownEventKind(name)), to: id)
-                    return
-                }
-                resolved.insert(kind)
-            }
+        switch ControlEventKind.resolve(request.args.kinds) {
+        case let .denied(error):
+            respond(ControlResponse.failure(error), to: id)
+            return
+        case let .ok(resolved):
             kinds = resolved
-        } else {
-            kinds = Set(ControlEventKind.allCases)
         }
 
         let cursor = request.args.from ?? 0

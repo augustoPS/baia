@@ -40,6 +40,58 @@ import Testing
         #expect(ControlEvent.capped(nil) == nil)
     }
 
+    // MARK: Resolving --kinds
+
+    /// No filter means every kind, which is what an absent argument has to mean:
+    /// the wire omits nil fields, so "I did not ask" and "I asked for nothing"
+    /// arrive as different values and must answer differently.
+    @Test func anAbsentFilterIsEveryKind() {
+        switch ControlEventKind.resolve(nil) {
+        case let .ok(kinds): #expect(kinds == Set(ControlEventKind.allCases))
+        case let .denied(error): Issue.record("an absent filter was refused: \(error.message)")
+        }
+    }
+
+    @Test func aNamedFilterResolves() {
+        switch ControlEventKind.resolve(["paneClosed", "attentionRaised"]) {
+        case let .ok(kinds): #expect(kinds == [.paneClosed, .attentionRaised])
+        case let .denied(error): Issue.record("a valid filter was refused: \(error.message)")
+        }
+    }
+
+    /// **An empty list is refused rather than treated as no filter.** A caller
+    /// that sends `[]` has asked for a subscription that can never deliver
+    /// anything, and parking on one is a connection held for sixty seconds
+    /// against a question with no answer. The CLI already refuses it; this is the
+    /// same rule where a frame that never met the CLI can reach it.
+    @Test func anEmptyFilterIsRefused() {
+        switch ControlEventKind.resolve([]) {
+        case .ok:
+            Issue.record("an empty filter was accepted")
+        case let .denied(error):
+            #expect(error.code == .refused)
+        }
+    }
+
+    @Test func anUnknownKindIsRefusedByName() {
+        switch ControlEventKind.resolve(["paneClosed", "paneOpenned"]) {
+        case .ok:
+            Issue.record("a misspelled kind was accepted")
+        case let .denied(error):
+            #expect(error.code == .refused)
+            #expect(error.message.contains("paneOpenned"))
+        }
+    }
+
+    /// A repeat is a set, not an error. The caller asked for a kind twice, which
+    /// is the same request as asking once.
+    @Test func aRepeatedKindCollapses() {
+        switch ControlEventKind.resolve(["paneClosed", "paneClosed"]) {
+        case let .ok(kinds): #expect(kinds == [.paneClosed])
+        case let .denied(error): Issue.record("a repeated kind was refused: \(error.message)")
+        }
+    }
+
     /// Two panes with no relationship, so an audience is whatever the test passes
     /// rather than whatever a graph computed.
     struct Ring {

@@ -179,6 +179,19 @@ public struct ControlError: Sendable, Hashable, Codable {
     /// so is the one caller outside this package that has to name this failure.
     /// Spelling the message there instead would put the list of kinds in a second
     /// place to keep in step with ``ControlEventKind``.
+    /// An explicit `--kinds` list with nothing in it.
+    ///
+    /// Refused rather than read as "no filter", because the two arrive as
+    /// different values and mean opposite things. Accepting it would park a
+    /// connection for a minute on a subscription that cannot deliver, and answer
+    /// the caller with a silence it would read as an idle workspace.
+    public static let emptyEventKinds = ControlError(
+        code: .refused,
+        message: "--kinds was given with no kinds in it. Leave it out to receive every kind, "
+            + "or name at least one of: "
+            + ControlEventKind.allCases.map(\.rawValue).joined(separator: ", ")
+    )
+
     public static func unknownEventKind(_ name: String) -> ControlError {
         let shown = name.count > 40 ? String(name.prefix(40)) + "..." : name
         return ControlError(

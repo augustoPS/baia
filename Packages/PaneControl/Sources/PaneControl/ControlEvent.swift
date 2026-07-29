@@ -11,6 +11,40 @@ public enum ControlEventKind: String, Sendable, Hashable, Codable, CaseIterable 
     case attentionRaised
     case attentionCleared
     case activityChanged
+
+    /// Turns a `--kinds` list off the wire into the set to deliver.
+    ///
+    /// **Here rather than in the server, because it is decidable without a
+    /// descriptor.** The server's own doc comment calls this check "the rule",
+    /// being the one a frame arriving without the CLI still meets, and a rule
+    /// that only exists where `make test` cannot reach it is a rule nobody has
+    /// checked. Same move the CLI's pure half made into `Packages/PaneCLI`.
+    ///
+    /// Three answers, and the middle one is the one that was missing:
+    ///
+    /// - **nil** is "I did not ask", which is every kind. The wire omits nil
+    ///   fields, so this is distinguishable from the next case rather than
+    ///   collapsed into it.
+    /// - **empty** is "I asked for nothing", which is refused. A subscription
+    ///   that can never deliver is a connection parked for sixty seconds against
+    ///   a question with no answer, and the caller will read the silence as the
+    ///   workspace being idle.
+    /// - **named** resolves, refusing the whole list by name at the first kind it
+    ///   does not know rather than dropping it, since a silently dropped
+    ///   misspelling is a filter that looks like it works and delivers nothing.
+    public static func resolve(_ names: [String]?) -> ControlOutcome<Set<ControlEventKind>> {
+        guard let names else { return .ok(Set(allCases)) }
+        guard names.isEmpty == false else { return .denied(.emptyEventKinds) }
+
+        var resolved: Set<ControlEventKind> = []
+        for name in names {
+            guard let kind = ControlEventKind(rawValue: name) else {
+                return .denied(.unknownEventKind(name))
+            }
+            resolved.insert(kind)
+        }
+        return .ok(resolved)
+    }
 }
 
 /// One entry as it crosses the wire.
