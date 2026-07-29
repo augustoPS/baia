@@ -102,4 +102,142 @@ import Testing
         let stored = fixture.ring.entries.last?.event.message
         #expect(stored?.utf8.count == ControlWire.maxEventStringBytes)
     }
+
+    /// Everything, for a reader that wants no kind filter.
+    static let allKinds = Set(ControlEventKind.allCases)
+
+    @Test func aReaderSeesOnlyWhatItsAudienceIncludes() {
+        var fixture = Ring()
+        fixture.ring.append(
+            kind: .paneOpened, pane: fixture.one, audience: [fixture.one],
+            createdBy: nil, message: nil, activity: nil
+        )
+        fixture.ring.append(
+            kind: .paneOpened, pane: fixture.two, audience: [fixture.two],
+            createdBy: nil, message: nil, activity: nil
+        )
+
+        let mine = fixture.ring.events(
+            after: 0, for: fixture.one, kinds: Self.allKinds,
+            limit: ControlWire.maxEventBatch, budget: ControlWire.maxFrameBytes
+        )
+        #expect(mine.events.map(\.seq) == [1])
+        #expect(mine.more == false)
+        #expect(mine.gap == false)
+        // The cursor advances past the event it could not see, so the next call
+        // does not re-examine it.
+        #expect(mine.seq == 2)
+    }
+
+    @Test func kindsNarrowDeliveryAndNotTheCursor() {
+        var fixture = Ring()
+        fixture.append(.paneOpened, for: fixture.one)
+        fixture.append(.activityChanged, for: fixture.one)
+        fixture.append(.paneClosed, for: fixture.one)
+
+        let batch = fixture.ring.events(
+            after: 0, for: fixture.one, kinds: [.paneClosed],
+            limit: ControlWire.maxEventBatch, budget: ControlWire.maxFrameBytes
+        )
+        #expect(batch.events.map(\.kind) == [.paneClosed])
+        #expect(batch.seq == 3)
+        #expect(batch.more == false)
+    }
+
+    /// `from == oldest - 1` is the boundary: nothing was missed. One below it and
+    /// something was.
+    @Test func theGapBoundaryIsExact() {
+        var fixture = Ring()
+        for _ in 0..<(ControlWire.maxRingEvents + 5) {
+            fixture.append(.attentionRaised, for: fixture.one)
+        }
+        let oldest = fixture.ring.oldestSequence!
+        #expect(oldest == 6)
+
+        let clean = fixture.ring.events(
+            after: oldest - 1, for: fixture.one, kinds: Self.allKinds,
+            limit: ControlWire.maxEventBatch, budget: ControlWire.maxFrameBytes
+        )
+        #expect(clean.gap == false)
+
+        let lost = fixture.ring.events(
+            after: oldest - 2, for: fixture.one, kinds: Self.allKinds,
+            limit: ControlWire.maxEventBatch, budget: ControlWire.maxFrameBytes
+        )
+        #expect(lost.gap == true)
+    }
+
+    @Test func anEmptyRingReportsNoGap() {
+        let ring = EventRing()
+        let batch = ring.events(
+            after: 0, for: ControlPaneID(rawValue: UUID()), kinds: Self.allKinds,
+            limit: ControlWire.maxEventBatch, budget: ControlWire.maxFrameBytes
+        )
+        #expect(batch.gap == false)
+        #expect(batch.events.isEmpty)
+        #expect(batch.seq == 0)
+    }
+
+    /// A cursor past the head is walked back rather than treated as an error, so
+    /// a client that lost track re-syncs on its next call instead of wedging.
+    @Test func aCursorAboveTheHeadIsWalkedBack() {
+        var fixture = Ring()
+        fixture.append(.paneOpened, for: fixture.one)
+
+        let batch = fixture.ring.events(
+            after: 99, for: fixture.one, kinds: Self.allKinds,
+            limit: ControlWire.maxEventBatch, budget: ControlWire.maxFrameBytes
+        )
+        #expect(batch.events.isEmpty)
+        #expect(batch.seq == 1)
+    }
+
+    @Test func theBatchCapStopsAtThirtyTwoAndSaysMore() {
+        var fixture = Ring()
+        for _ in 0..<40 {
+            fixture.append(.attentionRaised, for: fixture.one)
+        }
+        let batch = fixture.ring.events(
+            after: 0, for: fixture.one, kinds: Self.allKinds,
+            limit: ControlWire.maxEventBatch, budget: ControlWire.maxFrameBytes
+        )
+        #expect(batch.events.count == ControlWire.maxEventBatch)
+        #expect(batch.more == true)
+        #expect(batch.seq == 32)
+    }
+
+    /// The frame rule from the other side: a budget that fits two events answers
+    /// with two and leaves the rest, rather than promising a line no reader will
+    /// accept.
+    @Test func aTightBudgetTruncatesAndSaysMore() {
+        var fixture = Ring()
+        for _ in 0..<5 {
+            fixture.append(.attentionRaised, for: fixture.one)
+        }
+        let twoFit = ControlWire.eventBatchFrameSize(
+            events: Array(fixture.ring.entries.prefix(2).map(\.event))
+        )
+        let batch = fixture.ring.events(
+            after: 0, for: fixture.one, kinds: Self.allKinds,
+            limit: ControlWire.maxEventBatch, budget: twoFit
+        )
+        #expect(batch.events.count == 2)
+        #expect(batch.more == true)
+        #expect(batch.seq == 2)
+    }
+
+    /// The reason a truncating read can never wedge: one maximal event always
+    /// fits alone, because every string was capped on the way in.
+    @Test func aMaximalEventFramesOnItsOwn() {
+        let filler = String(repeating: "z", count: ControlWire.maxEventStringBytes)
+        let event = ControlEvent(
+            seq: .max,
+            kind: .attentionRaised,
+            pane: UUID().uuidString,
+            createdBy: UUID().uuidString,
+            message: filler,
+            activity: filler
+        )
+        #expect(ControlWire.eventBatchFrameSize(events: [event]) <= ControlWire.maxFrameBytes)
+    }
 }

@@ -69,3 +69,89 @@ public struct EventRing: Sendable, Equatable {
         return lastSequence
     }
 }
+
+/// What one `subscribe` answered.
+public struct EventBatch: Sendable, Equatable {
+    /// Oldest first, at most ``ControlWire/maxEventBatch`` of them, and only
+    /// those whose audience included the reader.
+    public var events: [ControlEvent]
+
+    /// Visible events remain past this batch. It means "poll again", never "some
+    /// are gone", which is what ``gap`` is for.
+    public var more: Bool
+
+    /// The ring evicted events before the requested cursor.
+    public var gap: Bool
+
+    /// The cursor for the next call.
+    public var seq: UInt64
+
+    /// The answer for a reader with nothing waiting, and the answer a parked
+    /// `subscribe` is resolved with when its pane closes, when the channel is
+    /// switched off, and at terminate. A client never sees a bare EOF from a
+    /// wait, matching ``Drain/empty``.
+    public static func empty(at seq: UInt64) -> EventBatch {
+        EventBatch(events: [], more: false, gap: false, seq: seq)
+    }
+}
+
+extension EventRing {
+    /// Everything after `cursor` that this pane may see, as much of it as fits.
+    ///
+    /// **An event is delivered only once it has been framed into a response that
+    /// fits**, which is ``PaneGraph/drain(pane:limit:budget:)``'s rule restated
+    /// for a buffer nobody consumes. Truncation is answered with `more: true` and
+    /// a cursor at the last delivered event, so the next call resumes exactly
+    /// where this one stopped.
+    ///
+    /// **The cursor advances past what was filtered out.** An event the reader
+    /// could not see, or did not ask for by kind, still moves the cursor, so a
+    /// narrow subscriber does not re-examine the whole ring on every poll. That is
+    /// why `--kinds` is delivery and never authority: it changes what is in
+    /// `events` and nothing about where the reader is.
+    func events(
+        after cursor: UInt64,
+        for pane: ControlPaneID,
+        kinds: Set<ControlEventKind>,
+        limit: Int,
+        budget: Int
+    ) -> EventBatch {
+        // A gap is eviction past the cursor, measured against the whole ring.
+        // `oldest - 1` is the boundary: a reader at exactly that point missed
+        // nothing.
+        let gap = oldestSequence.map { $0 > cursor + 1 } ?? false
+
+        var delivered: [ControlEvent] = []
+        // Starts at the head, so a read that examines everything ends there even
+        // when it delivers nothing, and a cursor above the head is walked back
+        // rather than left in the future.
+        var next = lastSequence
+        var truncated = false
+
+        for entry in entries where entry.event.seq > cursor {
+            guard entry.audience.contains(pane), kinds.contains(entry.event.kind) else {
+                continue
+            }
+            guard delivered.count < limit else {
+                truncated = true
+                break
+            }
+            let candidate = delivered + [entry.event]
+            guard ControlWire.eventBatchFrameSize(events: candidate) <= budget else {
+                truncated = true
+                break
+            }
+            delivered = candidate
+        }
+
+        if truncated {
+            // The last one actually delivered, never the head: everything past it
+            // is still owed. `delivered` cannot be empty here, because a single
+            // event always frames alone once its strings were capped at emit, and
+            // `aMaximalEventFramesOnItsOwn` holds that.
+            next = delivered.last?.seq ?? cursor
+        }
+
+        return EventBatch(events: delivered, more: truncated, gap: gap, seq: next)
+    }
+}

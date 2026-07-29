@@ -93,6 +93,21 @@ public struct ControlResult: Sendable, Equatable, Codable {
     /// message, because the reader concludes nothing was sent.
     public var dropped: Int?
 
+    /// `subscribe`: the events the caller is allowed to see, oldest first.
+    public var events: [ControlEvent]?
+
+    /// `subscribe`: true when the ring evicted events before the requested
+    /// cursor. It means "re-bootstrap with list", and it can be a false positive:
+    /// eviction is measured against the whole ring rather than against what this
+    /// caller could see, so a caller whose own events all survived is still told
+    /// when the ring wrapped past its cursor. The cost of the false positive is
+    /// one `list`.
+    public var gap: Bool?
+
+    /// `list`: the ring's sequence when the records were read.
+    /// `subscribe`: the cursor for the next call, so a client never computes one.
+    public var seq: UInt64?
+
     public init(
         pane: String? = nil,
         name: String? = nil,
@@ -101,7 +116,10 @@ public struct ControlResult: Sendable, Equatable, Codable {
         panes: [PaneRecord]? = nil,
         messages: [ControlMessage]? = nil,
         more: Bool? = nil,
-        dropped: Int? = nil
+        dropped: Int? = nil,
+        events: [ControlEvent]? = nil,
+        gap: Bool? = nil,
+        seq: UInt64? = nil
     ) {
         self.pane = pane
         self.name = name
@@ -111,6 +129,9 @@ public struct ControlResult: Sendable, Equatable, Codable {
         self.messages = messages
         self.more = more
         self.dropped = dropped
+        self.events = events
+        self.gap = gap
+        self.seq = seq
     }
 }
 

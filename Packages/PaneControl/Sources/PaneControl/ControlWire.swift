@@ -181,6 +181,26 @@ public enum ControlWire {
         return line.count
     }
 
+    /// The framed size of a `subscribe` answer carrying these events.
+    ///
+    /// Measured rather than estimated, for ``drainFrameSize(messages:dropped:)``'s
+    /// reason: an estimate wrong by one byte in the direction that matters either
+    /// drops an event or writes a line the reader refuses.
+    ///
+    /// Both flags are spelled `false`, which is one byte longer than `true`, and
+    /// `seq` is maximal, so the response finally written is never larger than the
+    /// one that was measured.
+    public static func eventBatchFrameSize(events: [ControlEvent]) -> Int {
+        let response = ControlResponse.success(ControlResult(
+            more: false,
+            events: events,
+            gap: false,
+            seq: UInt64.max
+        ))
+        guard let line = encodeResponse(response) else { return .max }
+        return line.count
+    }
+
     /// Whether any `recv` could ever hand this message back.
     ///
     /// The check `send` enforces, and it is on the framed size rather than the
