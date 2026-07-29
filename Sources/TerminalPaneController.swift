@@ -173,6 +173,10 @@ final class TerminalPaneController: NSViewController {
         guard isPaneFocused != focused else { return }
         isPaneFocused = focused
         applyPresentation()
+        // The cursor accent is the one part of the presentation that lives inside
+        // the surface rather than on a view this can repaint, so it is pushed
+        // through the controller here rather than from `applyPresentation`.
+        applyTerminalConfiguration()
     }
 
     /// Pushes focus, window activation, theme and attention into the three views
@@ -374,8 +378,46 @@ final class TerminalPaneController: NSViewController {
         _ configuration: TerminalConfiguration,
         theme: TerminalTheme
     ) {
-        controller.setTerminalConfiguration(configuration)
-        controller.setTheme(theme)
+        terminalConfiguration = configuration
+        terminalTheme = theme
+        applyTerminalConfiguration()
+    }
+
+    /// What the config file last handed over, kept so the cursor accent can be
+    /// re-applied on a focus change without asking for it again.
+    private var terminalConfiguration: TerminalConfiguration?
+    private var terminalTheme: TerminalTheme?
+
+    /// Re-resolves this pane's surface config, cursor accent included.
+    ///
+    /// **The accent finally reaches the terminal.** `focusAccent` resolved a
+    /// colour that only ever appeared on the chrome, so the setting was doing
+    /// half of what its name says: the pane you are typing in looked like every
+    /// other pane from the baseline down. The focused pane's cursor now carries
+    /// it, and an unfocused pane omits the key entirely rather than setting a
+    /// second colour, so it falls back to whatever the terminal theme chose.
+    ///
+    /// ``PaneTheme/inkFocus`` rather than the raw accent, because that is the
+    /// colour the footer already draws the focused pane's name in. One accent in
+    /// two places reads as one idea; the unrepaired accent beside the repaired
+    /// name is two blues arguing, which is the argument that property was written
+    /// for.
+    ///
+    /// Cheap enough for a focus change, which is the thing to be careful about
+    /// here: someone arrowing across a grid moves focus several times a second.
+    /// `setTerminalConfiguration` returns early on an equal value, so a pass that
+    /// changes nothing costs a comparison, and a real focus change reconfigures
+    /// exactly the two panes whose cursor colour actually moved. Nothing is
+    /// reparented and no shell is signalled: this patches the live surface, which
+    /// is the whole reason it goes through the controller rather than the view.
+    private func applyTerminalConfiguration() {
+        guard let terminalConfiguration, let terminalTheme else { return }
+        controller.setTerminalConfiguration(
+            isPaneFocused
+                ? terminalConfiguration.cursorColor(theme.inkFocus.hexString)
+                : terminalConfiguration
+        )
+        controller.setTheme(terminalTheme)
     }
 
     private lazy var terminalView = TerminalView(
