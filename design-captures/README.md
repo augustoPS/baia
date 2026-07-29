@@ -33,7 +33,7 @@ were built to show. 07 to 13 are the sidebar, for v3.
 | `10-path-picker.png` | What a click does: `Sources/Workspace/Pane.swift` sitting on the focused pane's prompt, unrun |
 | `11-no-changes.png` | The empty state of a clean repository, above a tree that is not empty |
 | `12-not-a-repository.png` | Both sections answering for a pane anchored to a plain directory: `not a repository` centred with the anchor path beneath it, which is deliberately not how `no changes` is drawn |
-| `13-sidebar-and-panes.png` | The sidebar beside three panes. The footer and the sidebar describing one repository with nothing connecting them, and the window's leading corners belonging to the column |
+| `13-sidebar-and-panes.png` | The sidebar beside three panes. The heading and the focused pane's footer name one repository in the same treatment, which is the connection between them, and the window's leading corners belong to the column |
 
 **The elided rows in 07 and 09 are new, and they replace a bug.** Until 2026-07-29
 `ChangesSurface.draw(_:atIndex:)` drew the path with `NSAttributedString.draw(in:)`
