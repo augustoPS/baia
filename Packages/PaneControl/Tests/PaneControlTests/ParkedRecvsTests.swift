@@ -19,12 +19,21 @@ import Testing
         let label: String
     }
 
-    static func waiter(_ pane: ControlPaneID, _ label: String) -> ParkedRecvs<Deadline>.Waiter {
+    /// The kind defaults here and nowhere else. `Waiter.init` takes it with no
+    /// default on purpose, so the app has to say which sort it is parking; a test
+    /// helper that says `.recv` for the suite's existing cases is spelling out
+    /// what those cases already meant.
+    static func waiter(
+        _ pane: ControlPaneID,
+        _ label: String,
+        _ kind: ParkedKind = .recv
+    ) -> ParkedRecvs<Deadline>.Waiter {
         let capability = "c1-not-a-uuid-\(label)"
         return ParkedRecvs<Deadline>.Waiter(
             pane: pane,
             token: capability,
-            deadline: Deadline(label: label)
+            deadline: Deadline(label: label),
+            kind: kind
         )
     }
 
@@ -127,5 +136,36 @@ import Testing
         #expect(parked.isEmpty)
         #expect(parked.oldest(of: nil) == nil)
         #expect(parked.ids.isEmpty)
+    }
+
+    // MARK: Either sort of long poll
+
+    /// One long poll per connection covers both sorts. A `subscribe` arriving on
+    /// a connection already waiting on a `recv` is answered, never swallowed.
+    @Test func a_subscribe_cannot_join_a_connection_that_is_already_waiting() {
+        let pane = ControlPaneID(rawValue: UUID())
+        var parked = ParkedRecvs<Deadline>()
+
+        #expect(parked.park(1, Self.waiter(pane, "recv")) == .parked)
+        #expect(
+            parked.park(
+                1,
+                Self.waiter(pane, "subscribe", .subscribe(from: 7, kinds: [.paneClosed]))
+            ) == .alreadyParked
+        )
+
+        #expect(parked[1]?.kind == .recv)
+    }
+
+    @Test func a_waiter_remembers_which_sort_it_is() {
+        let pane = ControlPaneID(rawValue: UUID())
+        var parked = ParkedRecvs<Deadline>()
+
+        _ = parked.park(
+            2,
+            Self.waiter(pane, "subscribe", .subscribe(from: 7, kinds: [.paneClosed]))
+        )
+
+        #expect(parked[2]?.kind == .subscribe(from: 7, kinds: [.paneClosed]))
     }
 }
