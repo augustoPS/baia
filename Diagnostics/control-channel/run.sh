@@ -211,7 +211,29 @@ EOF
 # the embedded tool executes under hardened runtime with an ad-hoc signature,
 # from inside a real pane, through the whole spawn chain. Both were on the
 # by-hand list until it turned out a plant could answer them.
+#
+# It also carries the probe's two arms, and they come first. Nothing here can
+# type into a pane, so a check that needs a pane to DO something plants a file
+# and splits: a shell started while the file is there obeys it, and the probe
+# removes it again so only the panes it means to steer are steered. The arms sit
+# above the readout because an armed pane is not being asked the PATH question,
+# and running `baia` in one would put a second activity through the ring under
+# the event the check is reading.
+#
+#   arm-churn     the pane closes itself, which is the cheapest pair of ring
+#                 events a script can cause: one open and one close per split.
+#   arm-activity  the pane runs a long `sleep` as a child of its shell, which is
+#                 what `activityChanged` is supposed to notice. A child and not
+#                 an `exec`, because the classifier excludes the shell's own pid
+#                 and an exec'd sleep would read as an idle shell.
 cat > "$ZDOT/.zshrc" <<EOF
+if [ -e "$OUT/arm-churn" ]; then
+  baia close > /dev/null 2>&1
+fi
+if [ -e "$OUT/arm-activity" ]; then
+  sleep 45
+fi
+
 {
   printf 'pane=%s\n' "\$BAIA_PANE"
   printf 'which=%s\n' "\$(command -v baia 2> /dev/null || echo NOT-ON-PATH)"
@@ -250,4 +272,4 @@ if [ "$(ls "$TOKENS" | wc -l | tr -d ' ')" -lt 3 ]; then
 fi
 
 echo
-/usr/bin/python3 "$HERE/probe.py" "$SOCKET" "$TOKENS" "$CONFIG" "$SESSION" "$SHELLS"
+/usr/bin/python3 "$HERE/probe.py" "$SOCKET" "$TOKENS" "$CONFIG" "$SESSION" "$SHELLS" "$OUT"
