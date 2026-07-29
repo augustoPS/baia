@@ -77,6 +77,34 @@ final class SidebarHost: NSViewController {
         }
     }
 
+    /// The repository the column is describing, drawn by the first heading.
+    ///
+    /// The first only: under ``SidebarContent/both`` the two sections are one
+    /// repository, and naming it twice would say there were two. Design v3 §4.2.
+    var anchorName: String? {
+        didSet { refreshHeadings() }
+    }
+
+    /// Whether the window is key, which the anchor name's accent is gated on.
+    private var isWindowActive = true {
+        didSet {
+            guard isWindowActive != oldValue else { return }
+            for section in sections { section.heading.isWindowActive = isWindowActive }
+        }
+    }
+
+    /// Pushes what the headings draw beside their labels.
+    ///
+    /// Called by the caller that fed the surfaces rather than watched, because the
+    /// count is a property of what was just assigned into them and nothing else
+    /// changes it.
+    func refreshHeadings() {
+        for (index, section) in sections.enumerated() {
+            section.heading.count = section.surface.headingCount
+            section.heading.anchorName = index == 0 ? anchorName : nil
+        }
+    }
+
     /// What the sections fill their bodies at, so the column is the same material
     /// as the panes it sits beside. Design v3 §1.
     ///
@@ -184,7 +212,40 @@ final class SidebarHost: NSViewController {
         view.addSubview(widthDivider)
 
         install()
+        refreshHeadings()
     }
+
+    /// The key state the anchor name's accent is gated on, watched the way the
+    /// pane tree watches it for the footers, and for the same reason: a window
+    /// can change key without any responder in it moving.
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        guard let window = view.window, windowObservers.isEmpty else { return }
+        isWindowActive = window.isKeyWindow
+        let centre = NotificationCenter.default
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+            windowObservers.append(
+                centre.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        self?.isWindowActive = self?.view.window?.isKeyWindow ?? true
+                    }
+                }
+            )
+        }
+    }
+
+    /// Removed as the window goes away rather than in `deinit`, which is the same
+    /// shape `PaneTreeController` uses and for the same reason: `deinit` is
+    /// nonisolated and an observer token is not `Sendable`.
+    override func viewWillDisappear() {
+        super.viewWillDisappear()
+        for observer in windowObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        windowObservers.removeAll()
+    }
+
+    private var windowObservers: [any NSObjectProtocol] = []
 
     private func install() {
         for section in sections {
@@ -192,6 +253,7 @@ final class SidebarHost: NSViewController {
             section.surface.backgroundOpacity = backgroundOpacity
             section.heading.title = section.surface.title
             section.heading.theme = theme
+            section.heading.isWindowActive = isWindowActive
             view.addSubview(section.surface.view)
             view.addSubview(section.heading)
         }

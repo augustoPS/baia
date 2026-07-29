@@ -53,6 +53,10 @@ final class ChangesSurface: NSObject, WorkspaceSurface {
         didSet { rows.hasRepository = hasRepository }
     }
 
+    /// How many files are waiting, which is what this list is for. Nothing to count
+    /// outside a repository, where the section is answering a different question.
+    var headingCount: Int? { hasRepository ? changes.count : nil }
+
     /// Called with the changed file's path when a row is clicked.
     ///
     /// The same callback the tree has, because a changed file and a file in the

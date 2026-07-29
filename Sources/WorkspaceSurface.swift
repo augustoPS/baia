@@ -21,6 +21,16 @@ protocol WorkspaceSurface: AnyObject {
 
     var theme: PaneTheme { get set }
 
+    /// What the heading prints after the label, or nil for a surface whose size is
+    /// not a fact worth stating.
+    ///
+    /// Design v3 §4.1 asks for it on Changes alone: how many files are waiting to
+    /// be dealt with is the question that list answers, and how many files a
+    /// repository contains is not a question anyone has. It also earns the heading
+    /// its keep at the 48 pt minimum, where two rows under `CHANGES 41` is still a
+    /// useful section and two rows under `CHANGES` is a broken one.
+    var headingCount: Int? { get }
+
     /// What the terminal's own background is drawn at, so a surface is filled with
     /// the same material a pane is.
     ///
@@ -43,6 +53,24 @@ final class SurfaceTitleView: NSView {
     var title: String = "" { didSet { needsDisplay = true } }
     var theme: PaneTheme = .darkPastel { didSet { needsDisplay = true } }
 
+    /// How many rows the surface below is showing, drawn after the label. Nil on a
+    /// surface whose size is not worth stating. See ``WorkspaceSurface/headingCount``.
+    var count: Int? { didSet { needsDisplay = true } }
+
+    /// The repository the column is describing, drawn trailing.
+    ///
+    /// Design v3 §4.2. The same string in the same treatment appears in the
+    /// focused pane's footer, and **that repetition is the connection** between
+    /// the two: a connector drawn between two things that could simply agree is
+    /// one more thing to keep in step. The host gives it to the first heading
+    /// only, because in `both` the two sections are one repository and printing it
+    /// twice would say there were two.
+    var anchorName: String? { didSet { needsDisplay = true } }
+
+    /// Gated the way the footer's focus frame is: an accent left bright on a
+    /// window that is not key would compete with the window that is.
+    var isWindowActive = true { didSet { needsDisplay = true } }
+
     override func draw(_: NSRect) {
         nsColor(theme.barBackground).setFill()
         bounds.fill()
@@ -50,18 +78,67 @@ final class SurfaceTitleView: NSView {
         // A hairline along the bottom, the same one the tree draws between panes,
         // so the heading is separated by the divider vocabulary already in use
         // rather than by a rule of its own.
+        //
+        // **This view is not flipped**, so `y: 0` is its own bottom edge and the
+        // line faces the rows it labels. The same unflipped geometry is why every
+        // baseline below is measured up from the bottom.
         nsColor(theme.hairline).setFill()
         NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
 
-        let text = NSAttributedString(
-            string: title,
+        // Caps and tracking make the label a label rather than a title, so it stops
+        // competing with the row text below it at the same size. Regular rather
+        // than the medium it used to be: weight is the row's tier signal, not the
+        // heading's. Design v3 §4.1.
+        let label = NSAttributedString(
+            string: title.uppercased(),
             attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .medium),
+                .font: Self.labelFont,
                 .foregroundColor: nsColor(theme.inkContext),
+                .kern: Self.tracking,
             ]
         )
-        let size = text.size()
-        text.draw(at: NSPoint(x: 12, y: (bounds.height - size.height) / 2 + 1))
+        var x = Self.inset
+        label.draw(at: NSPoint(x: x, y: baseline(for: Self.labelFont)))
+        x += label.size().width + Self.countGap
+
+        if let count {
+            NSAttributedString(
+                string: String(count),
+                attributes: [
+                    .font: Self.labelFont,
+                    .foregroundColor: nsColor(theme.inkFaint),
+                ]
+            ).draw(at: NSPoint(x: x, y: baseline(for: Self.labelFont)))
+            x += Double(String(count).count) * Self.labelFont.maximumAdvancement.width
+        }
+
+        guard let anchorName else { return }
+        let anchor = NSAttributedString(
+            string: anchorName,
+            attributes: [
+                .font: Self.anchorFont,
+                .foregroundColor: nsColor(isWindowActive ? theme.inkFocus : theme.foreground),
+            ]
+        )
+        // Dropped rather than truncated when the label leaves it no room. The
+        // footer names the same repository one line below, so a column too narrow
+        // to hold both loses the copy rather than the fact.
+        let width = anchor.size().width
+        let start = bounds.width - Self.inset - width
+        guard start > x + Self.countGap else { return }
+        anchor.draw(at: NSPoint(x: start, y: baseline(for: Self.anchorFont)))
+    }
+
+    /// Where to draw so that `font` lands its baseline on the heading's, measured
+    /// from the top in an unflipped view.
+    ///
+    /// One baseline for both fonts. The mono label and the semibold anchor have
+    /// different descenders, so two strings each centred in the height sit a
+    /// fraction of a point apart, which does not read as a difference. It reads as
+    /// a mistake. Replaces a centring whose `+ 1` was there for the unflipped
+    /// geometry rather than for any typographic reason.
+    private func baseline(for font: NSFont) -> Double {
+        bounds.height - Self.baselineFromTop + Double(font.descender)
     }
 
     private func nsColor(_ rgb: RGB) -> NSColor {
@@ -77,4 +154,16 @@ final class SurfaceTitleView: NSView {
     /// depended on state would resize the surface under it, and in the sidebar that
     /// would resize the panes beside it.
     static let height: Double = 28
+
+    /// Cap-centred in the height: the label, the count and the anchor all sit on
+    /// this line whatever font they are in.
+    private static let baselineFromTop: Double = 18
+    private static let inset = ChangesRowsView.inset
+    /// 6 pt between the label and its count, per design v3 §4.1.
+    private static let countGap: Double = 6
+    private static let labelFont = ChangesRowsView.font
+    private static let anchorFont = NSFont.systemFont(ofSize: 11, weight: .semibold)
+    /// +0.08em at 11 pt, which is what makes caps read as a label rather than as
+    /// shouting.
+    private static let tracking: Double = 0.88
 }

@@ -588,6 +588,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if let root { readFileTree(at: root) }
             }
         }
+        // After the surfaces, not before: the count a heading prints is a property
+        // of what was just assigned into the section below it.
+        controller.sidebar.anchorName = anchor?.displayName
+        controller.sidebar.refreshHeadings()
     }
 
     /// Puts a clicked path on the focused pane's prompt.

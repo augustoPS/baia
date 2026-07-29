@@ -66,6 +66,11 @@ final class FilesSurface: NSObject, WorkspaceSurface {
         didSet { rows.hasRepository = hasRepository }
     }
 
+    /// None. How many files a repository contains is not a question anyone has,
+    /// and a four-digit number beside `FILES` would read as an error. Design v3
+    /// §4.1.
+    var headingCount: Int? { nil }
+
     /// Called with a repository-relative path when a row's name is clicked.
     ///
     /// The surface knows nothing about what happens next. Whether that path is
