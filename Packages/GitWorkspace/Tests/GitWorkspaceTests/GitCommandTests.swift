@@ -137,6 +137,49 @@ import Testing
         #expect(status?.indicators == "*")
     }
 
+    /// The seam the fixture tests cannot cover: real git writing real bytes for
+    /// names that would be C-quoted without `-z`. A fixture proves the grammar and
+    /// this proves the flag is actually passed, which is the half that was wrong.
+    ///
+    /// Every name here is legal on macOS. Before `-z` the panel showed
+    /// `"caf\303\251.txt"` for the first, and a reader taking that as a path would
+    /// have been handed one no filesystem holds.
+    @Test func readsRealPathsThatWouldOtherwiseArriveCQuoted() throws {
+        let root = try repository("proj")
+        try fixture.file("proj/café.txt", contents: "x\n")
+        try fixture.file("proj/ctrl\tname.txt", contents: "x\n")
+        try fixture.file("proj/quo\"te.txt", contents: "x\n")
+        try fixture.file("proj/two\nlines.txt", contents: "x\n")
+
+        let changes = git.read(ofRepositoryRoot: root).changes
+
+        #expect(Set(changes.map(\.path)) == [
+            "café.txt",
+            "ctrl\tname.txt",
+            "quo\"te.txt",
+            "two\nlines.txt",
+        ])
+        #expect(changes.allSatisfy { $0.kind == .untracked })
+    }
+
+    /// A real rename, so the two-entry layout `-z` gives a `2` record is read from
+    /// git's own bytes rather than from a fixture. The original path is chosen to
+    /// look exactly like an untracked record: left loose on the stream it becomes
+    /// a change for a file that does not exist.
+    @Test func readsARealRenameWhoseOriginalPathLooksLikeARecord() throws {
+        let root = try repository("proj")
+        try fixture.file("proj/? evil.txt", contents: "a path shaped like a record\n")
+        run(["add", "--", "? evil.txt"], in: "proj")
+        run(["commit", "--quiet", "--no-verify", "-m", "add"], in: "proj")
+        run(["mv", "--", "? evil.txt", "renamed.txt"], in: "proj")
+
+        let changes = git.read(ofRepositoryRoot: root).changes
+
+        #expect(changes.map(\.path) == ["renamed.txt"])
+        #expect(changes.first?.originalPath == "? evil.txt")
+        #expect(changes.first?.kind == .renamedOrCopied)
+    }
+
     @Test func returnsNoStatusForADirectoryThatIsNotARepository() throws {
         let plain = try fixture.directory("notes")
         #expect(git.status(ofRepositoryRoot: plain) == nil)

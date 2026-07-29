@@ -1,6 +1,6 @@
 import Foundation
 
-/// Reads `git status --porcelain=v2 --branch --untracked-files=all`.
+/// Reads `git status --porcelain=v2 --branch --untracked-files=all -z`.
 ///
 /// v2 rather than v1 because v1 carries no machine-readable branch header, so
 /// ahead and behind would cost a second `git rev-list` on every poll of every
@@ -8,6 +8,15 @@ import Foundation
 /// `normal` collapses an untracked directory into one entry, which makes
 /// `untracked` a count of entries rather than of files: two repositories showing
 /// `?` would disagree about what the number behind it means.
+///
+/// **`-z`, which decides the whole shape of this grammar.** Without it git renders
+/// any path holding a non-ASCII byte, a double quote, a backslash or a control
+/// byte in C-style quoting, so `café.txt` arrives as the fifteen ASCII characters
+/// `"caf\303\251.txt"` and a reader is handed a name no filesystem holds. `-z`
+/// turns the quoting off and terminates every record with a NUL, which is the
+/// only byte a path cannot contain. Two consequences run through everything
+/// below: a newline is a path character rather than a separator, and a rename's
+/// original path is an entry of its own rather than a field after a tab.
 ///
 /// Kept free of any process running so the whole grammar can be tested on
 /// fixture strings. ``GitCommand`` composes the two.
@@ -30,13 +39,11 @@ public enum GitStatusParser {
         var untracked = 0
         var conflicted = 0
 
-        // Split on any newline rather than on "\n". A CRLF pair is a single
-        // `Character` in Swift, so splitting on "\n" does not split a CRLF stream
-        // at all: the whole capture arrives as one line, no header is recognised,
-        // and the parse returns nil for output that is perfectly well formed.
-        // `isNewline` is true for that pair, for a lone return, and for a lone
-        // feed, which covers every spelling this can be handed.
-        for record in output.split(whereSeparator: \.isNewline) {
+        // The original path a rename carries is dropped here rather than read,
+        // but it still has to be taken off the stream by ``records(_:)``: it is a
+        // path, so `? evil.txt` is a legal one, and left loose it would be counted
+        // as an untracked file that does not exist.
+        for record in records(output).map(\.text) {
             guard let marker = record.first else { continue }
 
             switch marker {
@@ -148,47 +155,46 @@ public enum GitStatusParser {
     public static func changes(_ output: String) -> [RepositoryFileChange] {
         var changes: [RepositoryFileChange] = []
 
-        for record in output.split(whereSeparator: \.isNewline) {
+        for entry in records(output) {
+            let record = entry.text
             guard let marker = record.first else { continue }
 
             switch marker {
             case "1":
-                guard let entry = fields(record, count: 9) else { continue }
-                let (index, worktree) = states(entry[1])
+                guard let fields = fields(record, count: 9) else { continue }
+                let (index, worktree) = states(fields[1])
                 changes.append(RepositoryFileChange(
-                    path: String(entry[8]),
+                    path: String(fields[8]),
                     index: index,
                     worktree: worktree,
                     kind: .ordinary
                 ))
             case "2":
-                guard let entry = fields(record, count: 10) else { continue }
-                let (index, worktree) = states(entry[1])
-                // The last field is `<path>TAB<origPath>`. The tab survived
-                // `fields` because that split uses a literal space, which is the
-                // same reason the counting pass sees ten fields here rather than
-                // eleven.
-                let paths = entry[9].split(separator: "\t", maxSplits: 1)
-                guard let path = paths.first else { continue }
+                guard let fields = fields(record, count: 10) else { continue }
+                let (index, worktree) = states(fields[1])
+                // The tenth field is the path alone. The original path was taken
+                // off the stream by ``records(_:)``, because under `-z` it is a
+                // NUL terminated entry of its own rather than a field after a
+                // tab, and a path may contain a tab.
                 changes.append(RepositoryFileChange(
-                    path: String(path),
-                    originalPath: paths.count == 2 ? String(paths[1]) : nil,
+                    path: String(fields[9]),
+                    originalPath: entry.originalPath.map(String.init),
                     index: index,
                     worktree: worktree,
                     kind: .renamedOrCopied
                 ))
             case "u":
-                guard let entry = fields(record, count: 11) else { continue }
-                let (index, worktree) = states(entry[1])
+                guard let fields = fields(record, count: 11) else { continue }
+                let (index, worktree) = states(fields[1])
                 changes.append(RepositoryFileChange(
-                    path: String(entry[10]),
+                    path: String(fields[10]),
                     index: index,
                     worktree: worktree,
                     kind: .unmerged
                 ))
             case "?":
-                guard let entry = fields(record, count: 2) else { continue }
-                changes.append(RepositoryFileChange(path: String(entry[1]), kind: .untracked))
+                guard let fields = fields(record, count: 2) else { continue }
+                changes.append(RepositoryFileChange(path: String(fields[1]), kind: .untracked))
             default:
                 // Headers and `!` ignored records both land here. An ignored path
                 // is not a change, for the reason the counting pass gives: it
@@ -199,6 +205,51 @@ public enum GitStatusParser {
         }
 
         return changes
+    }
+
+    /// One record, with the original path a rename or a copy carries.
+    private struct Record {
+        let text: Substring
+        /// The entry that followed a `2` record, and nil for every other kind.
+        let originalPath: Substring?
+    }
+
+    /// The capture split into records at its NUL bytes, with a rename's original
+    /// path attached to the record that owns it.
+    ///
+    /// **The attachment is the point, not a convenience.** Under `-z` git writes a
+    /// rename as two entries: the record, then the original path. That path is a
+    /// path, so a file really can be called `? evil.txt`, and an entry loop that
+    /// took every entry for a record would read it as an untracked file that
+    /// nothing on disk matches. Consuming it here is what makes both passes safe
+    /// from a name chosen to look like a record.
+    ///
+    /// Empty subsequences are kept, so the trailing NUL after the last record does
+    /// not vanish and cannot be mistaken for a missing terminator. An empty entry
+    /// carries no marker, so both passes skip it. An empty entry standing where a
+    /// rename's original path should be is that terminator rather than a path,
+    /// which is why it becomes nil rather than "".
+    private static func records(_ output: String) -> [Record] {
+        let entries = output.split(separator: "\0", omittingEmptySubsequences: false)
+        var records: [Record] = []
+        var index = entries.startIndex
+
+        while index < entries.endIndex {
+            let entry = entries[index]
+            index += 1
+            // Taken off the stream even when the record turns out to be malformed
+            // below. git wrote the pair, so the entry after a `2` belongs to it
+            // whatever shape the record is in.
+            guard entry.first == "2", index < entries.endIndex else {
+                records.append(Record(text: entry, originalPath: nil))
+                continue
+            }
+            let following = entries[index]
+            index += 1
+            records.append(Record(text: entry, originalPath: following.isEmpty ? nil : following))
+        }
+
+        return records
     }
 
     /// `XY` as two optional states, where `.` becomes nil.
@@ -243,13 +294,13 @@ public enum GitStatusParser {
     /// it has any other shape.
     ///
     /// Two things here are load-bearing. The split is bounded, so the last field
-    /// keeps the rest of the line: a path containing a space would otherwise
+    /// keeps the rest of the record: a path containing a space would otherwise
     /// produce ten fields for an ordinary change and be rejected as malformed,
     /// which would silently stop counting a file named `old name.txt`. And the
-    /// separator is a literal space rather than "any whitespace", because a
-    /// rename record ends in `<path>TAB<origPath>`: treating that tab as a
-    /// separator yields eleven fields where ten are expected, so every rename
-    /// would vanish from the counts.
+    /// separator is a literal space rather than "any whitespace", because a tab
+    /// is a legal character in a filename and `-z` delivers it raw: a file called
+    /// `ctrl<TAB>name.txt` would otherwise split into an extra field and be
+    /// rejected as malformed.
     ///
     /// Empty subsequences are kept. Dropping them would make the same bounded
     /// split forgiving of a record with a missing field, and a malformed record
