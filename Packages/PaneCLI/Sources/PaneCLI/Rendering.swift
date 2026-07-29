@@ -142,6 +142,12 @@ public enum Rendering {
                 var line = "\(event.seq) \(event.kind.rawValue) \(event.pane)"
                 if let createdBy = event.createdBy { line += " by \(createdBy)" }
                 if let activity = event.activity { line += " \(activity)" }
+                // Before the message, because it qualifies the message: a reader
+                // taking everything after `via osc` has the text and knows what
+                // it is worth. Marked like `by`, so a field that is present on
+                // one kind and absent on the others cannot be mistaken for the
+                // free text that follows it.
+                if let source = event.source { line += " via \(source.rawValue)" }
                 if let message = event.message { line += " \(message)" }
                 out(line)
             }

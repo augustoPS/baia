@@ -75,7 +75,8 @@ import Testing
         pane: paneID,
         createdBy: paneID,
         message: "needs input",
-        activity: "running"
+        activity: "running",
+        source: .osc
     )
 
     static let result = ControlResult(

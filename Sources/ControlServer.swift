@@ -169,7 +169,10 @@ final class ControlServer {
         // records it. A refused registration emits nothing, because a pane with no
         // capability is a pane no subscriber can act on.
         if registered {
-            graph.emit(.paneOpened, pane: pane, createdBy: createdBy, message: nil, activity: nil)
+            graph.emit(
+                .paneOpened, pane: pane, createdBy: createdBy,
+                message: nil, activity: nil, source: nil
+            )
             wakeSubscribers()
         }
         return registered
@@ -191,7 +194,10 @@ final class ControlServer {
         // audience of one and deliver the death notice to the pane that died. The
         // parent learning its child is gone is the case the whole audience design
         // exists for.
-        graph.emit(.paneClosed, pane: pane, createdBy: nil, message: nil, activity: nil)
+        graph.emit(
+            .paneClosed, pane: pane, createdBy: nil,
+            message: nil, activity: nil, source: nil
+        )
         graph.close(pane: pane)
         wakeSubscribers()
     }
@@ -220,9 +226,13 @@ final class ControlServer {
         _ kind: ControlEventKind,
         pane: ControlPaneID,
         message: String?,
-        activity: String?
+        activity: String?,
+        source: ControlEventSource?
     ) {
-        graph.emit(kind, pane: pane, createdBy: nil, message: message, activity: activity)
+        graph.emit(
+            kind, pane: pane, createdBy: nil,
+            message: message, activity: activity, source: source
+        )
         wakeSubscribers()
     }
 

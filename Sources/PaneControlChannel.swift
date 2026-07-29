@@ -64,7 +64,8 @@ protocol PaneControlChannel: AnyObject {
         _ kind: ControlEventKind,
         pane: ControlPaneID,
         message: String?,
-        activity: String?
+        activity: String?,
+        source: ControlEventSource?
     )
 }
 

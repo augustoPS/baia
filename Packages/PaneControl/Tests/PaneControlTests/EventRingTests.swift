@@ -40,6 +40,60 @@ import Testing
         #expect(ControlEvent.capped(nil) == nil)
     }
 
+    // MARK: Where an attention request came from
+
+    /// A raise names its source, because the two sources a raise can have differ
+    /// in trust and a supervisor deciding whether to *act* needs the difference.
+    /// Flattening and capping make both safe to render and say nothing about
+    /// that.
+    @Test func aRaiseCarriesItsSource() {
+        var fixture = Ring()
+        fixture.ring.append(
+            kind: .attentionRaised,
+            pane: fixture.one,
+            audience: [fixture.one],
+            createdBy: nil,
+            message: "needs input",
+            activity: nil,
+            source: .osc
+        )
+        #expect(fixture.ring.entries.last?.event.source == .osc)
+    }
+
+    /// A source with no message is still worth carrying: a supervisor may act on
+    /// "this child is asking" whatever it did or did not say.
+    @Test func aSourceSurvivesAnAbsentMessage() {
+        var fixture = Ring()
+        fixture.ring.append(
+            kind: .attentionRaised,
+            pane: fixture.one,
+            audience: [fixture.one],
+            createdBy: nil,
+            message: nil,
+            activity: nil,
+            source: .osc
+        )
+        let event = fixture.ring.entries.last?.event
+        #expect(event?.source == .osc)
+        #expect(event?.message == nil)
+    }
+
+    /// Everything else has one source by construction and says so by omission.
+    /// A clear comes from the owner focusing or typing, which is the only way
+    /// attention is ever answered, so a discriminator there would have one value
+    /// forever.
+    @Test func theOtherKindsCarryNoSource() {
+        var fixture = Ring()
+        fixture.append(.attentionCleared, for: fixture.one)
+        fixture.append(.paneOpened, for: fixture.one)
+        fixture.append(.activityChanged, for: fixture.one)
+        #expect(fixture.ring.entries.allSatisfy { $0.event.source == nil })
+    }
+
+    @Test func theSourceSpellsItselfOnTheWire() {
+        #expect(ControlEventSource.osc.rawValue == "osc")
+    }
+
     // MARK: Resolving --kinds
 
     /// No filter means every kind, which is what an absent argument has to mean:
@@ -107,7 +161,8 @@ import Testing
                 audience: [pane],
                 createdBy: nil,
                 message: nil,
-                activity: nil
+                activity: nil,
+                source: nil
             )
         }
     }
@@ -149,7 +204,8 @@ import Testing
             audience: [fixture.one],
             createdBy: nil,
             message: long,
-            activity: nil
+            activity: nil,
+            source: nil
         )
         let stored = fixture.ring.entries.last?.event.message
         #expect(stored?.utf8.count == ControlWire.maxEventStringBytes)
@@ -170,7 +226,8 @@ import Testing
             audience: [fixture.one, fixture.two, creator],
             createdBy: (pane: creator, audience: [creator]),
             message: nil,
-            activity: nil
+            activity: nil,
+            source: nil
         )
 
         let entitled = fixture.ring.events(
@@ -193,11 +250,13 @@ import Testing
         var fixture = Ring()
         fixture.ring.append(
             kind: .paneOpened, pane: fixture.one, audience: [fixture.one],
-            createdBy: nil, message: nil, activity: nil
+            createdBy: nil, message: nil, activity: nil,
+            source: nil
         )
         fixture.ring.append(
             kind: .paneOpened, pane: fixture.two, audience: [fixture.two],
-            createdBy: nil, message: nil, activity: nil
+            createdBy: nil, message: nil, activity: nil,
+            source: nil
         )
 
         let mine = fixture.ring.events(

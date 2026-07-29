@@ -397,7 +397,8 @@ public struct PaneGraph: Sendable, Equatable {
         pane: ControlPaneID,
         createdBy: ControlPaneID?,
         message: String?,
-        activity: String?
+        activity: String?,
+        source: ControlEventSource?
     ) -> UInt64 {
         ring.append(
             kind: kind,
@@ -405,7 +406,8 @@ public struct PaneGraph: Sendable, Equatable {
             audience: observers(of: pane),
             createdBy: createdBy.map { (pane: $0, audience: observers(of: $0)) },
             message: message,
-            activity: activity
+            activity: activity,
+            source: source
         )
     }
 

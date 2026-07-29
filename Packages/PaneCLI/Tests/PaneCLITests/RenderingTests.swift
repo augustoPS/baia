@@ -210,6 +210,28 @@ import Testing
         #expect(out.last == "seq 43")
     }
 
+    /// The source is marked and sits before the text it qualifies, so a reader
+    /// taking everything after `via osc` has the message and knows what it is
+    /// worth. Unmarked it would be indistinguishable from the free text.
+    @Test func aRaiseNamesWhereItCameFrom() throws {
+        let received = result(
+            events: [
+                ControlEvent(
+                    seq: 42, kind: .attentionRaised, pane: "pane-1",
+                    message: "needs input", source: .osc
+                ),
+                ControlEvent(seq: 43, kind: .attentionCleared, pane: "pane-1"),
+            ],
+            gap: false,
+            seq: 43
+        )
+        let lines = Rendering.render(received, for: try call("subscribe", "--from", "0"))
+        let out = lines.filter { $0.stream == .out }.map(\.text)
+        #expect(out.contains("42 attentionRaised pane-1 via osc needs input"))
+        // A clear has one possible source and names none.
+        #expect(out.contains("43 attentionCleared pane-1"))
+    }
+
     /// A gap goes to stderr, so `baia subscribe > log` carries events while a
     /// re-bootstrap warning still reaches a human.
     @Test func aGapIsReportedOnStandardError() throws {

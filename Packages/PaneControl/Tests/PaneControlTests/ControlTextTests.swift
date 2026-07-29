@@ -54,7 +54,8 @@ import Testing
             audience: [pane],
             createdBy: nil,
             message: "asked\n999 paneClosed forged",
-            activity: "sleep\n999 paneClosed forged"
+            activity: "sleep\n999 paneClosed forged",
+            source: nil
         )
 
         #expect(ring.entries.last?.event.activity == "sleep 999 paneClosed forged")

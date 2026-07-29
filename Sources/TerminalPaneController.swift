@@ -647,7 +647,7 @@ final class TerminalPaneController: NSViewController {
             let label = activityLabel
             if label != lastPublishedActivity {
                 lastPublishedActivity = label
-                onObservableChange?(.activityChanged, nil, label)
+                onObservableChange?(.activityChanged, nil, label, nil)
             }
 
             // The boolean, not the three-level chrome value. `onChange` fires on
@@ -659,7 +659,13 @@ final class TerminalPaneController: NSViewController {
                 onObservableChange?(
                     asking ? .attentionRaised : .attentionCleared,
                     asking ? attentionMessage : nil,
-                    nil
+                    nil,
+                    // Only a raise names a source, and today there is one: the
+                    // pane said so through a bell or an OSC 9 notification. A
+                    // clear is the owner focusing the pane or typing into it,
+                    // which is the only way attention is ever answered here, so
+                    // naming a source for it would be inventing a distinction.
+                    asking ? .osc : nil
                 )
             }
 
@@ -702,7 +708,9 @@ final class TerminalPaneController: NSViewController {
     /// Set by `PaneTreeController` when the pane has a capability. Nil for a pane
     /// running without a channel, where the two diffs above are computed and
     /// thrown away, which costs two comparisons per poll.
-    var onObservableChange: ((ControlEventKind, String?, String?) -> Void)?
+    var onObservableChange: (
+        (ControlEventKind, String?, String?, ControlEventSource?) -> Void
+    )?
 
     /// Rebuilds the footer's value from the anchor. Git and agent state are left
     /// nil until their subsystems are wired, and `PaneStatusSegments` already

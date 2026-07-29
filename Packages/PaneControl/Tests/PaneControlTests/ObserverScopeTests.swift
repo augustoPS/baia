@@ -93,7 +93,7 @@ import Testing
     @Test func aCloseEmittedBeforeTeardownReachesTheParent() {
         var fixture = Fixture()
         fixture.graph.emit(
-            .paneClosed, pane: fixture.child, createdBy: nil, message: nil, activity: nil
+            .paneClosed, pane: fixture.child, createdBy: nil, message: nil, activity: nil, source: nil
         )
         fixture.graph.close(pane: fixture.child)
 
@@ -112,7 +112,7 @@ import Testing
         var fixture = Fixture()
         fixture.graph.close(pane: fixture.child)
         fixture.graph.emit(
-            .paneClosed, pane: fixture.child, createdBy: nil, message: nil, activity: nil
+            .paneClosed, pane: fixture.child, createdBy: nil, message: nil, activity: nil, source: nil
         )
 
         switch fixture.graph.subscribe(token: fixture.tokens[fixture.parent]!, from: 0) {
@@ -134,7 +134,7 @@ import Testing
             secret: PaneSecret(Fixture.capability("fresh"))
         )
         fixture.graph.emit(
-            .paneOpened, pane: fresh, createdBy: fixture.parent, message: nil, activity: nil
+            .paneOpened, pane: fresh, createdBy: fixture.parent, message: nil, activity: nil, source: nil
         )
 
         switch fixture.graph.subscribe(token: fixture.tokens[fixture.parent]!, from: 0) {
@@ -161,7 +161,8 @@ import Testing
             pane: fixture.child,
             createdBy: fixture.parent,
             message: nil,
-            activity: nil
+            activity: nil,
+            source: nil
         )
 
         switch fixture.graph.subscribe(token: fixture.tokens[fixture.child]!, from: 0) {
@@ -184,7 +185,8 @@ import Testing
             pane: fixture.child,
             createdBy: fixture.parent,
             message: nil,
-            activity: nil
+            activity: nil,
+            source: nil
         )
 
         switch fixture.graph.subscribe(token: fixture.tokens[fixture.stranger]!, from: 0) {
@@ -206,7 +208,8 @@ import Testing
             pane: fixture.grandchild,
             createdBy: fixture.child,
             message: nil,
-            activity: nil
+            activity: nil,
+            source: nil
         )
 
         switch fixture.graph.subscribe(token: fixture.tokens[fixture.parent]!, from: 0) {
@@ -230,7 +233,7 @@ import Testing
     @Test func aPaneIdShapedTokenIsRefusedBeforeTheRingIsTouched() {
         var fixture = Fixture()
         fixture.graph.emit(
-            .paneOpened, pane: fixture.child, createdBy: nil, message: nil, activity: nil
+            .paneOpened, pane: fixture.child, createdBy: nil, message: nil, activity: nil, source: nil
         )
 
         switch fixture.graph.subscribe(token: fixture.parent.description, from: 0) {
@@ -245,7 +248,7 @@ import Testing
         var fixture = Fixture()
         #expect(fixture.graph.currentSequence == 0)
         fixture.graph.emit(
-            .paneOpened, pane: fixture.child, createdBy: nil, message: nil, activity: nil
+            .paneOpened, pane: fixture.child, createdBy: nil, message: nil, activity: nil, source: nil
         )
         #expect(fixture.graph.currentSequence == 1)
     }

@@ -82,7 +82,8 @@ public struct EventRing: Sendable, Equatable {
         audience: Set<ControlPaneID>,
         createdBy: (pane: ControlPaneID, audience: Set<ControlPaneID>)?,
         message: String?,
-        activity: String?
+        activity: String?,
+        source: ControlEventSource?
     ) -> UInt64 {
         lastSequence += 1
 
@@ -92,7 +93,8 @@ public struct EventRing: Sendable, Equatable {
             pane: pane.description,
             createdBy: createdBy?.pane.description,
             message: ControlEvent.capped(message),
-            activity: ControlEvent.capped(activity)
+            activity: ControlEvent.capped(activity),
+            source: source
         )
 
         entries.append(

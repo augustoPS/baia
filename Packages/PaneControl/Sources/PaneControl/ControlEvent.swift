@@ -47,6 +47,32 @@ public enum ControlEventKind: String, Sendable, Hashable, Codable, CaseIterable 
     }
 }
 
+/// Where an attention request came from, and therefore how much a subscriber
+/// should trust it.
+///
+/// **The two sources differ in trust and nothing else distinguishes them.**
+/// `ControlText` flattens and caps both, which makes either safe to *render* and
+/// says nothing about whether a supervisor should *act*. An agent that asks for
+/// its owner through an authenticated channel and a build script that emitted an
+/// escape sequence are the same bytes by the time they reach a subscriber, and
+/// only this field tells them apart.
+///
+/// One case today, and the field exists now rather than later on purpose:
+/// `report` is the verb the herdr reading concluded should replace OSC 9 parsing
+/// for agent state, and adding its case to a string enum is additive where adding
+/// the field afterwards would be a wire change. Declared narrow rather than
+/// speculative: a case with no producer would be a value no test could tell from
+/// a decode bug.
+///
+/// The CLI ships inside the app bundle, so a client and its server are always the
+/// same build and an older reader can never meet a case it does not know.
+public enum ControlEventSource: String, Sendable, Hashable, Codable, CaseIterable {
+    /// The pane said so itself, through a bell or an OSC 9 or OSC 777
+    /// notification. Untrusted: anything that can write to the PTY can send one,
+    /// including output from a program the owner is merely reading.
+    case osc
+}
+
 /// One entry as it crosses the wire.
 ///
 /// Display ids and human-readable strings, exactly like ``PaneRecord``. Nothing
@@ -75,13 +101,22 @@ public struct ControlEvent: Sendable, Equatable, Codable {
     /// ``PaneRecord/activity`` means by nil.
     public var activity: String?
 
+    /// `attentionRaised` only: where the request came from.
+    ///
+    /// Absent on every other kind, and that is a statement rather than an
+    /// omission: a clear comes from the owner focusing the pane or typing into
+    /// it, which is the only way attention is ever answered, so a discriminator
+    /// there would carry one value forever.
+    public var source: ControlEventSource?
+
     public init(
         seq: UInt64,
         kind: ControlEventKind,
         pane: String,
         createdBy: String? = nil,
         message: String? = nil,
-        activity: String? = nil
+        activity: String? = nil,
+        source: ControlEventSource? = nil
     ) {
         self.seq = seq
         self.kind = kind
@@ -89,6 +124,7 @@ public struct ControlEvent: Sendable, Equatable, Codable {
         self.createdBy = createdBy
         self.message = message
         self.activity = activity
+        self.source = source
     }
 
     /// Flattens a string to one line and cuts it to the cap, on a scalar
