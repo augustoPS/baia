@@ -722,8 +722,7 @@ final class ControlServer {
     /// than trusted from the client: an uncapped long poll is a pool slot held
     /// forever by whoever asks for it.
     private func wait(from request: ControlRequest) -> Int? {
-        let seconds = min(max(request.args.wait ?? 0, 0), ControlWire.maxWaitSeconds)
-        return seconds > 0 ? seconds : nil
+        ControlWire.cappedWait(request.args.wait)
     }
 
     private func recv(_ request: ControlRequest, actor: ControlPaneID, on id: Int) {

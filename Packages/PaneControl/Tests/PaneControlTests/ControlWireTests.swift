@@ -354,6 +354,27 @@ import Testing
     /// `kinds` crosses as strings rather than as the enum, so a frame written by
     /// hand with a misspelled kind is answered `refused` with the bad name in it
     /// rather than `badFrame` from a decoder that got no further.
+    // MARK: The wait cap
+
+    /// The cap the budget table has claimed since v1 and nothing exercised. It
+    /// was one line in the app target, which has no test target, so "60 s
+    /// maximum" was a number in a document rather than a number under test.
+    @Test func aWaitIsCappedRatherThanTrusted() {
+        #expect(ControlWire.cappedWait(3600) == ControlWire.maxWaitSeconds)
+        #expect(ControlWire.cappedWait(30) == 30)
+        #expect(ControlWire.cappedWait(ControlWire.maxWaitSeconds) == ControlWire.maxWaitSeconds)
+    }
+
+    /// Nil is "do not park", and so is zero, and so is a negative. A client
+    /// asking to wait for a negative time has asked for no wait, and answering it
+    /// immediately is the reading that cannot surprise anybody.
+    @Test func noWaitIsSpelledSeveralWaysAndAllOfThemMeanAnswerNow() {
+        #expect(ControlWire.cappedWait(nil) == nil)
+        #expect(ControlWire.cappedWait(0) == nil)
+        #expect(ControlWire.cappedWait(-1) == nil)
+        #expect(ControlWire.cappedWait(Int.min) == nil)
+    }
+
     @Test func anUnknownKindIsNamedInTheRefusal() {
         let error = ControlError.unknownEventKind("paneOpenned")
         #expect(error.code == .refused)

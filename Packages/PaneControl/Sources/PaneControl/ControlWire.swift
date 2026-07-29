@@ -69,6 +69,26 @@ public enum ControlWire {
     /// forever, so the client re-polls instead.
     public static let maxWaitSeconds = 60
 
+    /// How long a request asked to park, capped, or nil when it asked for no
+    /// wait at all.
+    ///
+    /// **The cap is applied rather than trusted**, because an uncapped long poll
+    /// is a pool slot held forever by whoever asks for it. One reader for both
+    /// sorts of long poll, so `recv` and `subscribe` cannot drift apart on what
+    /// sixty seconds means.
+    ///
+    /// Zero and negatives are nil rather than errors. A client asking to wait for
+    /// no time has asked to be answered now, and that is the reading which cannot
+    /// surprise anybody.
+    ///
+    /// Here rather than in the server for the reason ``ControlEventKind/resolve(_:)``
+    /// is: it needs no descriptor to decide, and the budget table has claimed this
+    /// number since v1 while nothing could exercise it.
+    public static func cappedWait(_ requested: Int?) -> Int? {
+        let seconds = min(max(requested ?? 0, 0), maxWaitSeconds)
+        return seconds > 0 ? seconds : nil
+    }
+
     /// Connections in the pool.
     public static let maxConnections = 16
 
