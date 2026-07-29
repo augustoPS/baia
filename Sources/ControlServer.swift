@@ -490,6 +490,11 @@ final class ControlServer {
     /// Every subject is run past the resolver again before its record is built.
     /// The set builders above are ordinary code that could be wrong; `authorize`
     /// is the function whose job is to be right, so it gets the last word.
+    ///
+    /// `seq` rides along on every introspection answer, which is what makes
+    /// `list` the bootstrap: a subscriber reads the records and the sequence they
+    /// were read at in one frame, so there is no window in which an event lands
+    /// between the snapshot and the cursor and is seen by neither.
     private func introspect(
         _ request: ControlRequest,
         on id: Int,
@@ -533,7 +538,7 @@ final class ControlServer {
                     .sorted()
                 records.append(record.redacted(toVisible: visible))
             }
-            respond(.success(ControlResult(panes: records)), to: id)
+            respond(.success(ControlResult(panes: records, seq: graph.currentSequence)), to: id)
         }
     }
 
