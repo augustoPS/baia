@@ -186,8 +186,17 @@ final class PaneActivityTracker {
 
     /// An idle shell with nothing to say contributes no segment at all, so a pane
     /// sitting at a prompt shows its project and git state and nothing else.
+    /// What is running, with no attention substitution anywhere near it.
+    ///
+    /// The footer reads ``agent`` instead, whose label falls back to the
+    /// attention message so a pane that rang while idle still has something to
+    /// draw. That fallback is a display decision and it stays inside the display:
+    /// anything answering "what is running" for the control channel or for a
+    /// `PaneRecord` reads this, or it reports the message as the process.
+    var classifiedLabel: String? { activity.label }
+
     private func paneAgent() -> PaneStatus.Agent? {
-        let label = label(for: activity)
+        let label = activity.label
         guard label != nil || wantsAttention else { return nil }
         return PaneStatus.Agent(
             label: label ?? attentionLabel,
@@ -212,12 +221,4 @@ final class PaneActivityTracker {
         return false
     }
 
-    private func label(for activity: PaneActivity) -> String? {
-        switch activity {
-        case .idleShell: nil
-        case let .agent(name, _): name
-        case let .build(command): command
-        case let .command(name): name
-        }
-    }
 }

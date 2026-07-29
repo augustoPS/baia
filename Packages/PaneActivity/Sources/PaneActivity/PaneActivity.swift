@@ -26,4 +26,27 @@ public enum PaneActivity: Sendable, Equatable {
     /// Anything else the shell is running, named by the most specific
     /// identifier the kernel yielded for it.
     case command(name: String)
+
+    /// What to call this, or nil when nothing is running.
+    ///
+    /// **Here rather than in the app, because this is the answer to "what is
+    /// running" and it must not be reachable from anything holding the answer to
+    /// "does the pane want the owner".** The two questions have different sources
+    /// and the type's own note above says conflating them is the mistake to
+    /// avoid. It was made anyway: the footer's combined value substituted the
+    /// attention message whenever this was nil, so an idle pane that rang
+    /// reported the message as the thing it was running, and the control
+    /// channel's `activityChanged` inherited that when it read the same property.
+    ///
+    /// Nil for an idle shell is the load-bearing case. A caller that wants
+    /// something to draw for an idle pane substitutes at the point of drawing,
+    /// where the substitution is a display decision and stays one.
+    public var label: String? {
+        switch self {
+        case .idleShell: nil
+        case let .agent(name, _): name
+        case let .build(command): command
+        case let .command(name): name
+        }
+    }
 }

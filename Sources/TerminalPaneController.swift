@@ -442,7 +442,14 @@ final class TerminalPaneController: NSViewController {
     /// Read off the tracker rather than off `statusBar.status`, which is nil until
     /// the anchor first resolves: a pane whose `baia whoami` ran in that window
     /// would otherwise report no activity for a pane that had some.
-    var activityLabel: String? { activityTracker.agent?.label }
+    /// What is running here, for `PaneRecord.activity` and for the channel's
+    /// `activityChanged`.
+    ///
+    /// Reads the classifier and not `agent?.label`, which substitutes the
+    /// attention message when nothing is running. Under the old spelling an idle
+    /// pane that rang reported "needs input" as its activity, in the same frame
+    /// as it reported "needs input" as what it wanted.
+    var activityLabel: String? { activityTracker.classifiedLabel }
 
     /// How hard this pane is asking, in the chrome's own vocabulary.
     ///
