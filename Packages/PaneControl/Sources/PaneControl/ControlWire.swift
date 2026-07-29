@@ -135,6 +135,15 @@ public enum ControlWire {
     /// it nothing and removes the question.
     public static let maxEventStringBytes = 512
 
+    /// Events the ring holds, workspace-wide.
+    ///
+    /// One buffer for every subscriber rather than a queue each, so a slow
+    /// subscriber costs itself a gap rather than costing the app memory.
+    public static let maxRingEvents = 512
+
+    /// Events one `subscribe` may carry.
+    public static let maxEventBatch = 32
+
     /// The channel `baia publish` and `baia connect` mean when no `--as` is
     /// given.
     ///
