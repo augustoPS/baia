@@ -587,6 +587,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let files = section.surface as? FilesSurface {
                 files.hasRepository = root != nil
                 files.tree = root.flatMap { fileTrees.tree(for: $0) } ?? []
+                files.changes = pane?.gitStatus.changes ?? []
                 if let root { readFileTree(at: root) }
             }
         }

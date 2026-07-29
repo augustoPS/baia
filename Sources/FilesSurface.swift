@@ -66,6 +66,17 @@ final class FilesSurface: NSObject, WorkspaceSurface {
         didSet { rows.hasRepository = hasRepository }
     }
 
+    /// The same change list the Changes section is given, which the tree reduces to
+    /// one glyph per row. The two are not alternatives: a list ordered for
+    /// `git commit` answers a question a tree ordered by path cannot, and a tree
+    /// says where in the repository the work is.
+    var changes: [RepositoryFileChange] = [] {
+        didSet {
+            guard changes != oldValue else { return }
+            rows.marks = FileChangeMarks(changes)
+        }
+    }
+
     /// None. How many files a repository contains is not a question anyone has,
     /// and a four-digit number beside `FILES` would read as an error. Design v3
     /// §4.1.
@@ -109,6 +120,15 @@ final class FileTreeRowsView: NSView {
     var theme: PaneTheme = .darkPastel { didSet { needsDisplay = true } }
 
     var hasRepository = true { didSet { needsDisplay = true } }
+
+    /// What each path has to say for itself, files and the directories above them.
+    /// Empty outside a repository and while nothing has changed.
+    var marks = FileChangeMarks([]) {
+        didSet {
+            guard marks != oldValue else { return }
+            needsDisplay = true
+        }
+    }
 
     var tree: [FileTreeNode] = [] { didSet { rebuild() } }
 
@@ -209,6 +229,8 @@ final class FileTreeRowsView: NSView {
             NSRect(x: 0, y: y, width: bounds.width, height: Self.rowHeight).fill()
         }
 
+        drawGuides(of: row, atIndex: index, y: y)
+
         if row.node.isDirectory {
             let chevron = expanded.contains(row.node.path) ? "▾" : "▸"
             NSAttributedString(
@@ -217,17 +239,77 @@ final class FileTreeRowsView: NSView {
             ).draw(at: NSPoint(x: x, y: y + Self.textOrigin))
         }
 
+        // The trailing status, drawn before the name so the name knows what room is
+        // left. Design v3 §5.2: leading is where indentation lives, so a status
+        // column on that side would either push every name right by a quarter of
+        // the depth budget or collide with the guides. Trailing costs the name
+        // 14 pt at any depth and never moves as the tree expands.
+        let mark = marks[row.node.path]
+        if let mark {
+            NSAttributedString(
+                string: String(mark.glyph),
+                attributes: [.font: Self.font, .foregroundColor: nsColor(colour(of: mark))]
+            ).draw(at: NSPoint(
+                x: bounds.width - Self.inset - Self.statusColumn,
+                y: y + Self.textOrigin
+            ))
+        }
+
+        // A directory keeps its trailing slash whatever else it loses. A collapsed
+        // directory and a file with no extension are otherwise the same row with a
+        // chevron that may or may not be there, and the slash is what every shell
+        // prints for the same reason.
+        let nameX = x + Self.chevronColumn
+        let trailing = Self.inset + (mark == nil ? 0 : Self.statusColumn)
+        let available = max(0, bounds.width - nameX - trailing)
+        let slash = row.node.isDirectory ? "/" : ""
+        let budget = Int(available / ChangesRowsView.advance) - slash.count
+        let name = RowPath.fit(row.node.name, budget: max(0, budget)).name + slash
+
         let rest = row.node.isDirectory ? theme.inkContext : theme.foreground
         let refusal = feedback.ink(index, in: theme)
         NSAttributedString(
-            string: row.node.name,
+            string: name,
             attributes: [
                 .font: Self.font,
                 .foregroundColor: nsColor(
                     refusal.map { rest.blended(with: $0.colour, fraction: $0.alpha) } ?? rest
                 ),
             ]
-        ).draw(at: NSPoint(x: x + Self.chevronColumn, y: y + Self.textOrigin))
+        ).draw(at: NSPoint(x: nameX, y: y + Self.textOrigin))
+    }
+
+    /// One vertical line per ancestor level, so depth is read rather than counted.
+    ///
+    /// Design v3 §5.1. Drawn in ``PaneTheme/divider``, the same colour and weight
+    /// as the line between two panes, because each nesting level is literally a
+    /// plank and that is the app's own name for itself.
+    ///
+    /// The hovered directory's own level is drawn in the focus ink across its
+    /// descendants and nowhere else, so the extent of what a click is about to
+    /// collapse is visible before it collapses. §5.3. One guide and never the
+    /// ancestors: the row fill already says which row.
+    private func drawGuides(of row: Row, atIndex index: Int, y: Double) {
+        guard row.depth > 0 else { return }
+        for depth in 0 ..< row.depth {
+            let lit = hoverGuide.map { $0.depth == depth && $0.rows.contains(index) } ?? false
+            nsColor(lit ? theme.inkFocus : theme.divider).setFill()
+            NSRect(
+                x: Self.inset + Double(depth) * Self.indent + Self.guideInset,
+                y: y,
+                width: 1,
+                height: Self.rowHeight
+            ).fill()
+        }
+    }
+
+    private func colour(of mark: FileChangeMark) -> RGB {
+        switch mark {
+        case .conflict: theme.alert
+        case .unstaged: theme.warn
+        case .staged: theme.staged
+        case .untracked: theme.inkFaint
+        }
     }
 
     private func draw(message: String) {
@@ -334,6 +416,7 @@ final class FileTreeRowsView: NSView {
 
     override func mouseEntered(with event: NSEvent) {
         feedback.hovered = RowFeedback.row(of: event)
+        updateHoverGuide()
     }
 
     /// Only when the row leaving is the row that was hovered. Areas are adjacent,
@@ -342,6 +425,38 @@ final class FileTreeRowsView: NSView {
     override func mouseExited(with event: NSEvent) {
         guard feedback.hovered == RowFeedback.row(of: event) else { return }
         feedback.hovered = nil
+        updateHoverGuide()
+    }
+
+    /// The level and the span the hovered directory owns, or nil for a file, a
+    /// collapsed directory, or an empty one: there is no extent to show for a row
+    /// with nothing under it.
+    private var hoverGuide: (depth: Int, rows: Range<Int>)?
+
+    private func updateHoverGuide() {
+        let previous = hoverGuide
+        hoverGuide = guide(for: feedback.hovered)
+        guard previous?.depth != hoverGuide?.depth || previous?.rows != hoverGuide?.rows else {
+            return
+        }
+        for span in [previous?.rows, hoverGuide?.rows].compactMap(\.self) {
+            setNeedsDisplay(NSRect(
+                x: 0,
+                y: Double(span.lowerBound) * Self.rowHeight,
+                width: bounds.width,
+                height: Double(span.count) * Self.rowHeight
+            ))
+        }
+    }
+
+    private func guide(for index: Int?) -> (depth: Int, rows: Range<Int>)? {
+        guard let index, rows.indices.contains(index) else { return nil }
+        let row = rows[index]
+        guard row.node.isDirectory, expanded.contains(row.node.path) else { return nil }
+        var end = index + 1
+        while end < rows.count, rows[end].depth > row.depth { end += 1 }
+        guard end > index + 1 else { return nil }
+        return (depth: row.depth, rows: (index + 1) ..< end)
     }
 
     override func resetCursorRects() {
@@ -371,5 +486,12 @@ final class FileTreeRowsView: NSView {
     private static let textOrigin = ChangesRowsView.textOrigin
     private static let inset = ChangesRowsView.inset
     private static let indent: Double = 12
-    private static let chevronColumn: Double = 14
+    /// One indent step, so a child's name lands under its parent's chevron. It was
+    /// 14, which put every name a fraction off the level above it. Design v3 §5.1.
+    private static let chevronColumn: Double = 12
+    /// Where the guide sits inside its level, chosen so the line runs under the
+    /// middle of the chevron above it rather than against the name.
+    private static let guideInset: Double = 5
+    /// One glyph and the gap before it, trailing. §5.2.
+    private static let statusColumn: Double = 14
 }
