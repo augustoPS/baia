@@ -77,6 +77,17 @@ public enum Rendering {
                         + "created through the channel, and its peers."
                 )
             }
+            if let seq = result.seq {
+                // The bootstrap, and the reason `list` is the verb the help
+                // sends a subscriber to first: the records and the sequence they
+                // were read at arrive in one frame, so no event lands between
+                // the snapshot and the cursor and is seen by neither. Last and
+                // on stdout, exactly like `subscribe`, so one `tail -1` reads
+                // either. Absent from an answer that carries no sequence rather
+                // than defaulted, because a cursor no ring minted is worse than
+                // no cursor at all.
+                out("seq \(seq)")
+            }
 
         case .publish:
             if let ticket = result.rendezvous {

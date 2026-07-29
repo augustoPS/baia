@@ -48,6 +48,42 @@ import Testing
         #expect(lines.contains { $0.stream == .out && $0.text == "pane-1" })
     }
 
+    // MARK: The bootstrap
+
+    /// The help tells a script to take its first cursor from `baia list`, and
+    /// this is the line it takes it from. Last and on stdout, exactly like
+    /// `subscribe`, so one `tail -1` reads either.
+    ///
+    /// Without it the documented `list` then `subscribe --from SEQ` is
+    /// impossible in the line format, and a script's only ways out are
+    /// `list --json | jq .seq`, which is the JSON parser the format exists to
+    /// avoid, or `--from 0`, which answers `gap: true` on any wrapped ring.
+    @Test func listPrintsTheSequenceItReadAtOnItsLastLine() throws {
+        let records = [record("pane-1"), record("pane-2", createdBy: "pane-1")]
+        let lines = Rendering.render(result(panes: records, seq: 17), for: try call("list"))
+
+        #expect(lines.filter { $0.stream == .out }.map(\.text).last == "seq 17")
+    }
+
+    /// `--tree` is a second rendering of the same records, not a second answer,
+    /// so it reports the same cursor. A flag that decided whether a script could
+    /// bootstrap would be the kind of thing nobody finds until the ring wraps.
+    @Test func theTreeRenderingReportsTheSameSequence() throws {
+        let lines = Rendering.render(
+            result(panes: [record("pane-1")], seq: 17), for: try call("list", "--tree")
+        )
+
+        #expect(lines.filter { $0.stream == .out }.map(\.text) == ["pane-1", "seq 17"])
+    }
+
+    /// An answer carrying no sequence prints no seq line. A `list` that invented
+    /// one would hand a subscriber a cursor no ring ever minted.
+    @Test func aListWithNoSequenceSaysNothingAboutOne() throws {
+        let lines = Rendering.render(result(panes: [record("pane-1")]), for: try call("list"))
+
+        #expect(!lines.contains { $0.text.hasPrefix("seq") })
+    }
+
     // MARK: --json
 
     /// `--json` prints the result object and nothing else: no hint, no note, one
