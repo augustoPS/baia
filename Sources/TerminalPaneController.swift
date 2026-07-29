@@ -884,13 +884,18 @@ final class TerminalPaneController: NSViewController {
     /// the cwd rather than the anchor: seeing both is the point, since the whole
     /// feature is about them differing.
     ///
+    /// Shortened to the last two components by ``DisplayPath``, the rule the
+    /// shell prompt follows. A working directory under `$TMPDIR` is 76 characters
+    /// of machine-generated prefix with the two words worth reading at the end,
+    /// and the titlebar draws all of it.
+    ///
     /// Read by whoever owns the window, because with several panes in one window
     /// only the focused pane may name it. A pane that set the title itself would
     /// have every pane fighting over it on every poll.
     var windowTitle: (title: String, subtitle: String) {
         guard let anchor = anchorTracker.anchor else { return ("baia", "") }
         let cwd = anchorTracker.workingDirectory?.path(percentEncoded: false) ?? ""
-        let shown = (cwd as NSString).abbreviatingWithTildeInPath
+        let shown = DisplayPath.shortened((cwd as NSString).abbreviatingWithTildeInPath)
         return (
             tabPath,
             anchor.source == .pinned ? "\(shown) · pinned" : shown
