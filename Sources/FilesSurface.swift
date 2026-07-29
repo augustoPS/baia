@@ -183,32 +183,31 @@ final class FileTreeRowsView: NSView {
 
     var onSelect: ((String) -> Void)?
 
-    /// The chevron toggles, the name sends, and neither ever asks for focus.
+    /// A directory toggles, a file sends, and neither ever asks for focus.
     ///
     /// `mouseDown` rather than a control or a table selection, and with no
     /// `becomeFirstResponder` anywhere near it. That is the whole safety argument
     /// for a clickable surface living in this window.
     ///
-    /// **The split is on x, at the chevron column.** Expansion keeps the
-    /// affordance it already had, and everything right of it sends: the name, the
-    /// empty space after it, and the whole width of a file row, which has no
-    /// chevron to hit. A directory sends its own path too, since `cd`, `ls` and
-    /// `git add` all take one.
+    /// **The whole row, not the chevron.** The first version split the row on x
+    /// and gave the name to the picker, so a directory sent its path and only the
+    /// chevron expanded. That lost in the first live check, on 2026-07-29: the
+    /// chevron is a seven point target in an eighteen point row, the name is what
+    /// the hand goes to, and expanding is what a tree is *for*. A directory path
+    /// is still one click away through the changes list or by clicking the file
+    /// under it, and it was never the case the picker was built for.
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let index = Int(point.y / Self.rowHeight)
         guard rows.indices.contains(index) else { return }
-        let row = rows[index]
+        let node = rows[index].node
 
-        let nameColumn = Self.inset + Double(row.depth) * Self.indent + Self.chevronColumn
-        guard row.node.isDirectory, point.x < nameColumn else {
-            return onSelect?(row.node.path) ?? ()
-        }
+        guard node.isDirectory else { return onSelect?(node.path) ?? () }
 
-        if expanded.contains(row.node.path) {
-            expanded.remove(row.node.path)
+        if expanded.contains(node.path) {
+            expanded.remove(node.path)
         } else {
-            expanded.insert(row.node.path)
+            expanded.insert(node.path)
         }
     }
 

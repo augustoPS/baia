@@ -151,10 +151,22 @@ public enum MenuBarLayout {
             role: .standard,
             items: [
                 item(.toggleStatusBars, "Status Bars", .noConflict),
-                // No key equivalent, for the reason Status Bars has none: every
-                // free single-letter command key is spoken for, and a housing
-                // being compared does not earn a contested one.
-                item(.toggleSurfacePanels, "Switch Sidebar", .noConflict),
+                // ⌥⌘S, added 2026-07-29 after the sidebar became something to
+                // reach for rather than something to compare. Two modifiers
+                // rather than a bare ⌘S: the doctrine above still holds, and a
+                // four-state cycle is not a several-times-an-hour command. `s`
+                // is claimed nowhere else in this menu bar.
+                //
+                // `.noConflict` rather than `.unbind`, which was the first
+                // spelling and which `GhosttyDefaultKeybindsTests` rejected on
+                // the spot: ghostty binds no `super+alt+s`, so an unbind line
+                // would name a trigger that does not exist there. Unbinding is
+                // for keys ghostty would otherwise swallow, not for every key
+                // this menu claims.
+                item(
+                    .toggleSurfacePanels, "Switch Sidebar", .character("s"),
+                    [.command, .option], .noConflict
+                ),
                 item(.resetSidebarSize, "Reset Sidebar Size", .noConflict),
                 item(.zoomPane, "Zoom Pane", .returnKey, [.command, .shift], .unbind),
                 item(

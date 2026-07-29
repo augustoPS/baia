@@ -222,6 +222,19 @@ import Testing
         #expect(segment(.anchorName, in: status)?.alignment == .leading)
     }
 
+    /// The widest trailing segment on a line that must not wrap, so it carries
+    /// the same shortening the shell prompt and the window subtitle use. A shell
+    /// under `$TMPDIR` otherwise spends it on a machine-generated prefix.
+    @Test func theWorkingDirectoryIsShortenedToItsLastTwoComponents() {
+        let deep = Sample.status(workingDirectory: "/private/var/folders/pp/4p7nc/T/repo/src")
+        #expect(segment(.workingDirectory, in: deep)?.text == "../repo/src")
+
+        // Head truncation stays the fallback for a path that is still too wide
+        // after shortening, so the two are not alternatives.
+        let short = Sample.status(workingDirectory: "~/Projects")
+        #expect(segment(.workingDirectory, in: short)?.text == "~/Projects")
+    }
+
     @Test func noWorkingDirectorySegmentWhenTheShellSitsAtTheAnchor() {
         #expect(segment(.workingDirectory, in: Sample.status(workingDirectory: nil)) == nil)
     }

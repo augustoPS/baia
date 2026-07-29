@@ -400,6 +400,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case ["Files"]: .both
         default: .off
         }
+        traceSidebar("switch from=\(titles) to=\(next) window=\(window.tree.tabPath)")
         // The window's own tree, not the focused one: this rebuilds the surfaces
         // of one window, and a click in them has to reach that window's panes.
         window.sidebar.show(surfaces(for: next, tree: window.tree))
@@ -576,6 +577,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let anchor = pane?.anchorTracker.anchor
         let root = anchor?.kind == .repository ? anchor?.url : nil
 
+        traceSidebar("""
+        refresh sections=\(controller.sidebar.sections.map(\.surface.title)) \
+        pane=\(pane == nil ? "nil" : "yes") \
+        anchor=\(anchor.map { "\($0.kind)" } ?? "nil") \
+        root=\(root?.lastPathComponent ?? "nil") \
+        changes=\(pane?.gitStatus.changes.count ?? -1) \
+        cachedTree=\(root.flatMap { fileTrees.tree(for: $0) }?.count ?? -1)
+        """)
+
         for section in controller.sidebar.sections {
             if let changes = section.surface as? ChangesSurface {
                 changes.hasRepository = pane?.gitStatus.git != nil
@@ -632,6 +642,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSSound.beep()
         }
     }
+
+    /// A trace for the one sidebar bug that has survived three readings of the
+    /// code: switching the sidebar on leaves it empty until a command runs in the
+    /// pane, and every path that should populate it appears, on the page, to run.
+    ///
+    /// Gated on `BAIA_DEBUG_SIDEBAR`, read once. Off it costs a `Bool` test per
+    /// refresh, which is a focus change and not a frame. On it writes to standard
+    /// error, so `make run-attached` shows it and the detached launch does not.
+    ///
+    /// Delete this once the bug is closed. A trace that outlives its bug is a
+    /// line nobody dares remove.
+    private func traceSidebar(_ message: @autoclosure () -> String) {
+        guard Self.tracesSidebar else { return }
+        FileHandle.standardError.write(Data("[sidebar] \(message())\n".utf8))
+    }
+
+    private static let tracesSidebar =
+        ProcessInfo.processInfo.environment["BAIA_DEBUG_SIDEBAR"] != nil
 
     /// Every repository's file tree, once read.
     ///
