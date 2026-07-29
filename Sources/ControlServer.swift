@@ -201,13 +201,27 @@ final class ControlServer {
     ///
     /// No ordering rule here, unlike open and close: the pane is live at both ends
     /// of this call, so its audience is whatever the graph says now.
+    ///
+    /// **No `isChannelEnabled` gate, matching the two sites above.** The caller
+    /// diffs the pane's state and updates that diff before it calls, so an event
+    /// dropped here is spent: the controller will not offer it again until the
+    /// next transition, and the reader that missed it sees contiguous sequence
+    /// numbers and `gap: false`, which is loss the whole design says a subscriber
+    /// can detect by arithmetic and here it cannot. Switching the channel off and
+    /// on again would leave a supervisor reporting a pane as waiting for input
+    /// for the rest of the run.
+    ///
+    /// Recording while the channel is off costs a ring slot and no disclosure:
+    /// `serve` refuses every request with `.disabled` before the token is even
+    /// looked at, and `settingsChanged` resolved every parked waiter on the way
+    /// down, so there is nobody to read the ring during the window and nobody to
+    /// wake.
     func noteEvent(
         _ kind: ControlEventKind,
         pane: ControlPaneID,
         message: String?,
         activity: String?
     ) {
-        guard isChannelEnabled else { return }
         graph.emit(kind, pane: pane, createdBy: nil, message: message, activity: activity)
         wakeSubscribers()
     }
