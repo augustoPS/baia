@@ -125,6 +125,16 @@ public enum ControlWire {
     /// forever. Rotating or reusing a name is what a publisher actually wants.
     public static let maxPublishedChannelsPerPane = 16
 
+    /// Bytes in any string an event carries.
+    ///
+    /// One cap for the attention message and the activity string rather than one
+    /// each. OSC 9 text is untrusted pane output, and unbounded it is one pane
+    /// making another pane's response unframeable, which is
+    /// ``maxChannelNameBytes``'s argument one level along. The activity string is
+    /// built from kernel-supplied names and is bounded already, so the rule costs
+    /// it nothing and removes the question.
+    public static let maxEventStringBytes = 512
+
     /// The channel `baia publish` and `baia connect` mean when no `--as` is
     /// given.
     ///
