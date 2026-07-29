@@ -637,36 +637,21 @@ final class TerminalPaneController: NSViewController {
             // Unconditional, so the footer keeps tracking the label.
             refreshStatus()
 
-            // Activity first, so a subscriber that receives both in one batch sees
-            // what the pane is doing before it sees it ask.
+            // Edge-triggering, the ordering, and the source rule all live in
+            // `ObservedPaneState`, which is pure and tested. `onChange` fires on
+            // a timer for any change to the pane's whole state, so what escapes
+            // to the channel has to be a transition rather than a heartbeat, and
+            // that decision was eight lines here where nothing could check it.
             //
             // `activityLabel` is the same property `ControlAdapter.record` reads
-            // for `PaneRecord.activity`. One property read in two places rather
-            // than two renderers, which is what keeps a subscriber's bootstrap and
-            // its stream speaking one vocabulary.
-            let label = activityLabel
-            if label != lastPublishedActivity {
-                lastPublishedActivity = label
-                onObservableChange?(.activityChanged, nil, label, nil)
-            }
-
-            // The boolean, not the three-level chrome value. `onChange` fires on
-            // every poll of a pane that is merely compiling, so this diff is what
-            // makes the event a transition rather than a heartbeat.
-            let asking = activityTracker.wantsAttention
-            if asking != lastPublishedAttention {
-                lastPublishedAttention = asking
-                onObservableChange?(
-                    asking ? .attentionRaised : .attentionCleared,
-                    asking ? attentionMessage : nil,
-                    nil,
-                    // Only a raise names a source, and today there is one: the
-                    // pane said so through a bell or an OSC 9 notification. A
-                    // clear is the owner focusing the pane or typing into it,
-                    // which is the only way attention is ever answered here, so
-                    // naming a source for it would be inventing a distinction.
-                    asking ? .osc : nil
-                )
+            // for `PaneRecord.activity`, so a subscriber's bootstrap and its
+            // stream speak one vocabulary.
+            for change in publishedState.changes(
+                activity: activityLabel,
+                isAsking: activityTracker.wantsAttention,
+                message: attentionMessage
+            ) {
+                onObservableChange?(change.kind, change.message, change.activity, change.source)
             }
 
             // The upward callback is not. `onChange` fires for any change to the
@@ -695,19 +680,18 @@ final class TerminalPaneController: NSViewController {
     /// draws, and settable only here.
     private(set) var lastAttention: PaneStatus.Attention = .none
 
-    /// The last values published to the control channel, diffed separately from
+    /// The last values published to the control channel, held apart from
     /// `lastAttention`.
     ///
     /// `lastAttention` is the chrome's three-level value and drives the footer.
-    /// The channel publishes the boolean the spec defines its events on, plus the
-    /// activity label, so they are held apart: collapsing them would turn a footer
-    /// change into a wire event or the reverse.
-    private var lastPublishedAttention = false
-    private var lastPublishedActivity: String?
+    /// The channel publishes the boolean the spec defines its events on plus the
+    /// activity label, and collapsing the two would turn a footer change into a
+    /// wire event or the reverse.
+    private var publishedState = ObservedPaneState()
 
     /// Set by `PaneTreeController` when the pane has a capability. Nil for a pane
-    /// running without a channel, where the two diffs above are computed and
-    /// thrown away, which costs two comparisons per poll.
+    /// running without a channel, where the diff above is computed and thrown
+    /// away, which costs two comparisons per poll.
     var onObservableChange: (
         (ControlEventKind, String?, String?, ControlEventSource?) -> Void
     )?
