@@ -173,6 +173,10 @@ final class TerminalPaneController: NSViewController {
         guard isPaneFocused != focused else { return }
         isPaneFocused = focused
         applyPresentation()
+        // The cursor accent is the one part of the presentation that lives inside
+        // the surface rather than on a view this can repaint, so it is pushed
+        // through the controller here rather than from `applyPresentation`.
+        applyTerminalConfiguration()
     }
 
     /// Pushes focus, window activation, theme and attention into the three views
@@ -327,6 +331,24 @@ final class TerminalPaneController: NSViewController {
         terminalView.scrollToRow(UInt(max(0, centred)))
     }
 
+    /// Writes text into this pane's pty, as though the owner had typed it.
+    ///
+    /// The sidebar's path picker is the only caller. It is the owner's own click
+    /// reaching the owner's own pane, which is what a keyboard already does, and it
+    /// is **not** the control channel's `run`: the channel's refusal to let one
+    /// pane write into another pane's pty stands unchanged.
+    ///
+    /// Sent whatever the pane is doing. An agent may be running or vim may be
+    /// open, nothing can tell reliably, and this has the same semantics as a paste,
+    /// which the owner can already do. The running-agent case is the valuable one
+    /// rather than the one to guard against.
+    ///
+    /// `terminalView` stays private, for the reason find-in-pane reaches the
+    /// surface through methods here rather than by handing the view out.
+    func send(_ text: String) {
+        terminalView.sendText(text)
+    }
+
     private static let rowSearchBound = 64
 
     var gitPollInterval: TimeInterval {
@@ -356,8 +378,46 @@ final class TerminalPaneController: NSViewController {
         _ configuration: TerminalConfiguration,
         theme: TerminalTheme
     ) {
-        controller.setTerminalConfiguration(configuration)
-        controller.setTheme(theme)
+        terminalConfiguration = configuration
+        terminalTheme = theme
+        applyTerminalConfiguration()
+    }
+
+    /// What the config file last handed over, kept so the cursor accent can be
+    /// re-applied on a focus change without asking for it again.
+    private var terminalConfiguration: TerminalConfiguration?
+    private var terminalTheme: TerminalTheme?
+
+    /// Re-resolves this pane's surface config, cursor accent included.
+    ///
+    /// **The accent finally reaches the terminal.** `focusAccent` resolved a
+    /// colour that only ever appeared on the chrome, so the setting was doing
+    /// half of what its name says: the pane you are typing in looked like every
+    /// other pane from the baseline down. The focused pane's cursor now carries
+    /// it, and an unfocused pane omits the key entirely rather than setting a
+    /// second colour, so it falls back to whatever the terminal theme chose.
+    ///
+    /// ``PaneTheme/inkFocus`` rather than the raw accent, because that is the
+    /// colour the footer already draws the focused pane's name in. One accent in
+    /// two places reads as one idea; the unrepaired accent beside the repaired
+    /// name is two blues arguing, which is the argument that property was written
+    /// for.
+    ///
+    /// Cheap enough for a focus change, which is the thing to be careful about
+    /// here: someone arrowing across a grid moves focus several times a second.
+    /// `setTerminalConfiguration` returns early on an equal value, so a pass that
+    /// changes nothing costs a comparison, and a real focus change reconfigures
+    /// exactly the two panes whose cursor colour actually moved. Nothing is
+    /// reparented and no shell is signalled: this patches the live surface, which
+    /// is the whole reason it goes through the controller rather than the view.
+    private func applyTerminalConfiguration() {
+        guard let terminalConfiguration, let terminalTheme else { return }
+        controller.setTerminalConfiguration(
+            isPaneFocused
+                ? terminalConfiguration.cursorColor(theme.inkFocus.hexString)
+                : terminalConfiguration
+        )
+        controller.setTheme(terminalTheme)
     }
 
     private lazy var terminalView = TerminalView(
@@ -493,7 +553,21 @@ final class TerminalPaneController: NSViewController {
     /// token would send the reader looking at the registry when the truth is that
     /// this pane never got a capability.
     private var shellEnvironment: [String: String] {
-        var environment = ["BAIA_PANE": paneID.rawValue.uuidString]
+        var environment = [
+            "BAIA_PANE": paneID.rawValue.uuidString,
+            // The accent the chrome resolved, so a prompt can wear the same
+            // colour the footer draws this pane's name in. A shell cannot ask
+            // for it any other way: `focusAccent` names a derivation, the theme
+            // decides what it resolves to, and neither is on disk as a hex.
+            //
+            // `#rrggbb`, which zsh takes directly as `%F{$BAIA_ACCENT}` from 5.7
+            // and every other shell can read as a colour. Read once when the
+            // shell spawns, so a live theme edit reaches new panes and leaves the
+            // running ones alone: re-exporting into a live process is not a thing
+            // the kernel offers, and a prompt that redrew in a colour its pane
+            // no longer uses would be worse than one that is a theme behind.
+            "BAIA_ACCENT": theme.inkFocus.hexString,
+        ]
 
         if let helpers = Self.helperDirectory {
             // Prepended to the app's own PATH rather than replacing it. The shell
@@ -810,13 +884,18 @@ final class TerminalPaneController: NSViewController {
     /// the cwd rather than the anchor: seeing both is the point, since the whole
     /// feature is about them differing.
     ///
+    /// Shortened to the last two components by ``DisplayPath``, the rule the
+    /// shell prompt follows. A working directory under `$TMPDIR` is 76 characters
+    /// of machine-generated prefix with the two words worth reading at the end,
+    /// and the titlebar draws all of it.
+    ///
     /// Read by whoever owns the window, because with several panes in one window
     /// only the focused pane may name it. A pane that set the title itself would
     /// have every pane fighting over it on every poll.
     var windowTitle: (title: String, subtitle: String) {
         guard let anchor = anchorTracker.anchor else { return ("baia", "") }
         let cwd = anchorTracker.workingDirectory?.path(percentEncoded: false) ?? ""
-        let shown = (cwd as NSString).abbreviatingWithTildeInPath
+        let shown = DisplayPath.shortened((cwd as NSString).abbreviatingWithTildeInPath)
         return (
             tabPath,
             anchor.source == .pinned ? "\(shown) · pinned" : shown

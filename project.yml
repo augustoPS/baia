@@ -42,6 +42,8 @@ packages:
     path: Packages/PaneSearch
   PaneControl:
     path: Packages/PaneControl
+  PanePrompt:
+    path: Packages/PanePrompt
   PaneCLI:
     path: Packages/PaneCLI
 
@@ -78,6 +80,7 @@ targets:
       - package: BaiaSettings
       - package: PaneSearch
       - package: PaneControl
+      - package: PanePrompt
 
       # The CLI, copied into the bundle it talks to.
       #

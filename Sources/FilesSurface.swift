@@ -36,10 +36,18 @@ final class FilesSurface: NSObject, WorkspaceSurface {
         }
     }
 
-    /// The tree to draw. Assigning collapses everything below the top level, because
-    /// an expansion set from one repository means nothing in the next.
+    /// The tree to draw. A *different* tree collapses everything below the top
+    /// level, because an expansion set from one repository means nothing in the
+    /// next.
+    ///
+    /// **An equal tree is not a different one, and the guard is what makes the
+    /// surface usable.** `refreshSidebar(of:)` assigns on every focus change and
+    /// every git poll that reports something new, so without it a command run in
+    /// the pane collapsed whatever the owner had opened, several times a minute.
+    /// Caught on 2026-07-29, in the first live check of the path picker.
     var tree: [FileTreeNode] = [] {
         didSet {
+            guard tree != oldValue else { return }
             rows.expanded = []
             rows.tree = tree
         }
@@ -47,6 +55,16 @@ final class FilesSurface: NSObject, WorkspaceSurface {
 
     var hasRepository = true {
         didSet { rows.hasRepository = hasRepository }
+    }
+
+    /// Called with a repository-relative path when a row's name is clicked.
+    ///
+    /// The surface knows nothing about what happens next. Whether that path is
+    /// quoted, sent relative or absolute, or refused outright is `PromptPath`'s
+    /// business, and where it goes is the owner's.
+    var onSelect: ((String) -> Void)? {
+        get { rows.onSelect }
+        set { rows.onSelect = newValue }
     }
 
     private let scrollView = NSScrollView()
@@ -98,13 +116,34 @@ final class FileTreeRowsView: NSView {
     private func rebuild() {
         rows = []
         append(tree, depth: 0)
-        frame = NSRect(
+        resize()
+        needsDisplay = true
+    }
+
+    /// **Sized on every layout pass, not only when the tree changes.**
+    ///
+    /// The tree had the same failure the changes list had, one degree worse. A
+    /// freshly installed surface has a clip view that has not been laid out, so
+    /// the width came out zero: the rows drew into nothing *and* the document
+    /// view could not be hit, which is why clicking a directory did nothing at
+    /// all rather than merely looking blank. It also could not recover the way
+    /// the changes list did, since an equal tree is deliberately not re-assigned.
+    override func layout() {
+        super.layout()
+        resize()
+    }
+
+    /// The equality guard is what makes calling this from `layout()` safe:
+    /// assigning `frame` marks the view for layout again.
+    private func resize() {
+        let wanted = NSRect(
             x: 0,
             y: 0,
-            width: max(frame.width, superview?.bounds.width ?? 0),
+            width: max(superview?.bounds.width ?? 0, 1),
             height: max(Double(rows.count) * Self.rowHeight, superview?.bounds.height ?? 0)
         )
-        needsDisplay = true
+        guard frame != wanted else { return }
+        frame = wanted
     }
 
     private func append(_ nodes: [FileTreeNode], depth: Int) {
@@ -163,17 +202,29 @@ final class FileTreeRowsView: NSView {
         ).draw(at: NSPoint(x: Self.inset, y: Self.baseline))
     }
 
-    /// Opens or closes a directory, and never asks for focus.
+    var onSelect: ((String) -> Void)?
+
+    /// A directory toggles, a file sends, and neither ever asks for focus.
     ///
     /// `mouseDown` rather than a control or a table selection, and with no
     /// `becomeFirstResponder` anywhere near it. That is the whole safety argument
     /// for a clickable surface living in this window.
+    ///
+    /// **The whole row, not the chevron.** The first version split the row on x
+    /// and gave the name to the picker, so a directory sent its path and only the
+    /// chevron expanded. That lost in the first live check, on 2026-07-29: the
+    /// chevron is a seven point target in an eighteen point row, the name is what
+    /// the hand goes to, and expanding is what a tree is *for*. A directory path
+    /// is still one click away through the changes list or by clicking the file
+    /// under it, and it was never the case the picker was built for.
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let index = Int(point.y / Self.rowHeight)
         guard rows.indices.contains(index) else { return }
         let node = rows[index].node
-        guard node.isDirectory else { return }
+
+        guard node.isDirectory else { return onSelect?(node.path) ?? () }
+
         if expanded.contains(node.path) {
             expanded.remove(node.path)
         } else {

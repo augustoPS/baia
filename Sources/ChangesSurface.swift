@@ -39,6 +39,16 @@ final class ChangesSurface: NSObject, WorkspaceSurface {
         didSet { rows.hasRepository = hasRepository }
     }
 
+    /// Called with the changed file's path when a row is clicked.
+    ///
+    /// The same callback the tree has, because a changed file and a file in the
+    /// tree do the same thing when clicked. That is what makes the sidebar one
+    /// idea rather than two pictures.
+    var onSelect: ((String) -> Void)? {
+        get { rows.onSelect }
+        set { rows.onSelect = newValue }
+    }
+
     private let scrollView = NSScrollView()
     private let rows = ChangesRowsView()
 
@@ -87,6 +97,24 @@ final class ChangesRowsView: NSView {
 
     private var sorted: [RepositoryFileChange] = []
 
+    var onSelect: ((String) -> Void)?
+
+    /// Sends the row's path, and takes no focus doing it.
+    ///
+    /// No test on x, unlike the tree: there is nothing else on this row to hit.
+    ///
+    /// A rename sends ``RepositoryFileChange/path`` and never `originalPath`,
+    /// because `path` is where the file is now and a staged rename's original no
+    /// longer exists. A deleted file sends its path too: `git checkout -- <path>`
+    /// is exactly what the owner is reaching for, and this view asks the
+    /// filesystem nothing.
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        let index = Int(point.y / Self.rowHeight)
+        guard sorted.indices.contains(index) else { return }
+        onSelect?(sorted[index].path)
+    }
+
     override var acceptsFirstResponder: Bool { false }
 
     override var isFlipped: Bool { true }
@@ -96,12 +124,34 @@ final class ChangesRowsView: NSView {
         resize()
     }
 
+    /// **Sized on every layout pass, not only when the rows change.**
+    ///
+    /// This is the whole of the sidebar bug found on 2026-07-29 and it took a
+    /// trace to see, because every value involved was right: switching the
+    /// sidebar on built a fresh surface, `refreshSidebar(of:)` pushed thirteen
+    /// changes into it, and the column stayed blank. `resize()` reads the clip
+    /// view's width, the clip view has not been laid out when a surface is first
+    /// installed, so the width fell to the `1` floor and every row drew into a
+    /// document view one point wide. Any command afterwards made the poller
+    /// re-assign `changes`, by which time the clip view had a real width, which
+    /// is why it looked like the sidebar needed a command to wake up.
+    override func layout() {
+        super.layout()
+        resize()
+    }
+
     /// The document view is exactly as tall as its rows, which is what tells the
     /// scroll view whether there is anything to scroll to.
+    ///
+    /// The equality guard is what makes calling this from `layout()` safe:
+    /// assigning `frame` marks the view for layout again, and an unguarded write
+    /// would be a loop rather than a settled size.
     private func resize() {
         let width = max(superview?.bounds.width ?? 0, 1)
         let height = max(Double(sorted.count) * Self.rowHeight, superview?.bounds.height ?? 0)
-        frame = NSRect(x: 0, y: 0, width: width, height: height)
+        let wanted = NSRect(x: 0, y: 0, width: width, height: height)
+        guard frame != wanted else { return }
+        frame = wanted
     }
 
     override func draw(_ dirty: NSRect) {

@@ -98,7 +98,13 @@ public enum PaneStatusSegments {
         if let directory = status.workingDirectory, !isBlank(directory) {
             segments.append(PaneStatusSegment(
                 role: .workingDirectory,
-                text: directory,
+                // Shortened here rather than in
+                // ``PaneStatus/workingDirectory(ofShellAt:anchoredAt:home:)``,
+                // which stays a rule about *whether* to show a directory and how
+                // to abbreviate a home. Folding the display rule into it would
+                // erase the tilde from its own tests, which is the evidence they
+                // exist to hold.
+                text: DisplayPath.shortened(directory),
                 alignment: .trailing,
                 priority: Priority.workingDirectory,
                 // Tier 4, and the quietest thing drawn. It is also the first
