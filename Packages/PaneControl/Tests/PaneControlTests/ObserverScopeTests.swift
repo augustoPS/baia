@@ -87,4 +87,88 @@ import Testing
 
         #expect(graph.observers(of: a) == [a, b])
     }
+
+    /// The ordering invariant, and the case the whole audience design exists for.
+    /// Emitting before the teardown is what puts the parent in the audience.
+    @Test func aCloseEmittedBeforeTeardownReachesTheParent() {
+        var fixture = Fixture()
+        fixture.graph.emit(
+            .paneClosed, pane: fixture.child, createdBy: nil, message: nil, activity: nil
+        )
+        fixture.graph.close(pane: fixture.child)
+
+        switch fixture.graph.subscribe(token: fixture.tokens[fixture.parent]!, from: 0) {
+        case let .ok(batch):
+            #expect(batch.events.map(\.kind) == [.paneClosed])
+            #expect(batch.events.first?.pane == fixture.child.description)
+        case let .denied(error):
+            Issue.record("the parent was denied: \(error.message)")
+        }
+    }
+
+    /// The same invariant failing, recorded as a test so the ordering is not
+    /// something a reader has to infer from a doc comment.
+    @Test func aCloseEmittedAfterTeardownReachesNobodyButItself() {
+        var fixture = Fixture()
+        fixture.graph.close(pane: fixture.child)
+        fixture.graph.emit(
+            .paneClosed, pane: fixture.child, createdBy: nil, message: nil, activity: nil
+        )
+
+        switch fixture.graph.subscribe(token: fixture.tokens[fixture.parent]!, from: 0) {
+        case let .ok(batch):
+            #expect(batch.events.isEmpty)
+        case let .denied(error):
+            Issue.record("the parent was denied: \(error.message)")
+        }
+    }
+
+    /// The mirror invariant: an open is emitted after the registration, so the
+    /// parentage exists to put the parent in the audience.
+    @Test func anOpenEmittedAfterRegistrationReachesTheParent() {
+        var fixture = Fixture()
+        let fresh = ControlPaneID(rawValue: UUID())
+        fixture.graph.open(
+            pane: fresh,
+            createdBy: fixture.parent,
+            secret: PaneSecret(Fixture.capability("fresh"))
+        )
+        fixture.graph.emit(
+            .paneOpened, pane: fresh, createdBy: fixture.parent, message: nil, activity: nil
+        )
+
+        switch fixture.graph.subscribe(token: fixture.tokens[fixture.parent]!, from: 0) {
+        case let .ok(batch):
+            #expect(batch.events.map(\.kind) == [.paneOpened])
+            #expect(batch.events.first?.createdBy == fixture.parent.description)
+        case let .denied(error):
+            Issue.record("the parent was denied: \(error.message)")
+        }
+    }
+
+    /// The negative invariant the whole capability model rests on, restated for
+    /// the new verb: a token that parses as a pane id is refused before the
+    /// registry is consulted.
+    @Test func aPaneIdShapedTokenIsRefusedBeforeTheRingIsTouched() {
+        var fixture = Fixture()
+        fixture.graph.emit(
+            .paneOpened, pane: fixture.child, createdBy: nil, message: nil, activity: nil
+        )
+
+        switch fixture.graph.subscribe(token: fixture.parent.description, from: 0) {
+        case .ok:
+            Issue.record("a pane-id-shaped token was accepted")
+        case let .denied(error):
+            #expect(error.code == .badToken)
+        }
+    }
+
+    @Test func theCurrentSequenceIsWhatListWillReport() {
+        var fixture = Fixture()
+        #expect(fixture.graph.currentSequence == 0)
+        fixture.graph.emit(
+            .paneOpened, pane: fixture.child, createdBy: nil, message: nil, activity: nil
+        )
+        #expect(fixture.graph.currentSequence == 1)
+    }
 }

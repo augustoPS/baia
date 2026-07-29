@@ -33,6 +33,9 @@ public enum ControlVerb: String, Sendable, Hashable, Codable, CaseIterable {
     case recv
     case revoke
 
+    /// Observation. Reads the ring, consumes nothing, and names no target.
+    case subscribe
+
     /// Cross-pane execution. Declared in v1 and refused in v1.
     ///
     /// Present rather than absent because absence would make
@@ -60,7 +63,7 @@ public enum ControlVerb: String, Sendable, Hashable, Codable, CaseIterable {
         // Peering verbs that mint, list, or drain something the caller owns.
         // `connect` is here because the rendezvous token it redeems is the
         // authority for the edge, not the caller's relationship to the peer.
-        case .whoami, .publish, .connect, .peers, .recv:
+        case .whoami, .publish, .connect, .peers, .recv, .subscribe:
             .selfOnly
         case .list:
             .scopedRead
@@ -78,7 +81,8 @@ public enum ControlVerb: String, Sendable, Hashable, Codable, CaseIterable {
     public var settingGate: ControlSettingGate {
         switch self {
         case .split, .close, .focus, .zoom, .resize, .equalize,
-             .whoami, .list, .publish, .connect, .peers, .send, .recv, .revoke:
+             .whoami, .list, .publish, .connect, .peers, .send, .recv, .revoke,
+             .subscribe:
             .channel
         case .run:
             .allowRun

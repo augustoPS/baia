@@ -27,6 +27,7 @@ import Testing
         case .send: ControlArgs(peer: paneID, text: "two\nlines and a \"quote\"")
         case .recv: ControlArgs(wait: 60)
         case .revoke: ControlArgs(peer: paneID)
+        case .subscribe: ControlArgs(wait: 30)
         case .run: ControlArgs()
         }
     }
