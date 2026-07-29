@@ -305,6 +305,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         controller.show(joining: sibling)
         updateWindowTitles()
+        // The sidebar opens empty otherwise, and stays empty until something
+        // *changes*: `refreshSidebar(of:)` is reached only from
+        // `onFocusedPaneChange`, so a window whose pane sits still in a settled
+        // repository showed nothing at all. The pane's anchor may not have
+        // resolved yet at this point, which costs nothing: the resolution fires
+        // `onAnchorChange` and lands here again.
+        refreshSidebar(of: controller)
         return controller
     }
 
@@ -605,10 +612,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let anchor = pane.anchorTracker.anchor
         guard anchor?.kind == .repository, let root = anchor?.url else { return }
 
+        // **Both directories through the same resolution, or they never match.**
+        // `ProcessWorkingDirectory` asks the kernel, which answers with a fully
+        // resolved path (`/private/var/folders/...`), while the anchor's root has
+        // been through `resolvingSymlinksInPath()` in `GitRepositoryLocator`,
+        // which on macOS *strips* a leading `/private` when the result exists. The
+        // two spellings of one directory then share no prefix, so a repository
+        // under `$TMPDIR`, `/tmp` or `/var` sent every path absolute: caught on
+        // 2026-07-29 by the fixture, which lives in exactly that place.
         switch PromptPath.resolve(
             repositoryRelativePath: path,
-            repositoryRoot: root.path(percentEncoded: false),
-            workingDirectory: pane.anchorTracker.workingDirectory?.path(percentEncoded: false)
+            repositoryRoot: root.resolvingSymlinksInPath().path(percentEncoded: false),
+            workingDirectory: pane.anchorTracker.workingDirectory?
+                .resolvingSymlinksInPath().path(percentEncoded: false)
         ) {
         case let .send(text):
             pane.send(text)

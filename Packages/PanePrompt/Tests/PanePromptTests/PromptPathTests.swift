@@ -139,6 +139,24 @@ import Testing
         #expect(send("srcinct/a.txt", root: "/repo", cwd: "/repo/src") == "/repo/srcinct/a.txt ")
     }
 
+    /// The caller's precondition, written down as a test because breaking it is
+    /// silent: the result is still a correct path, just never the short one.
+    ///
+    /// Two spellings of one directory share no prefix, so the relative form is
+    /// unreachable. macOS makes this easy to hit and hard to see: the kernel
+    /// reports a process's directory as `/private/var/...` while Foundation's
+    /// `resolvingSymlinksInPath()` *strips* a leading `/private`, so a repository
+    /// under `$TMPDIR` reaches the two sides in two spellings. Every click sent an
+    /// absolute path on 2026-07-29 for exactly this reason. The fix belongs to the
+    /// caller, which now resolves both.
+    @Test func cannotRelativizeTwoSpellingsOfOneDirectory() {
+        #expect(send(
+            "src/a.txt",
+            root: "/var/folders/x/repo",
+            cwd: "/private/var/folders/x/repo"
+        ) == "/var/folders/x/repo/src/a.txt ")
+    }
+
     @Test func toleratesATrailingSlashOnEitherDirectory() {
         #expect(send("src/main.swift", root: "/repo/", cwd: "/repo/src/") == "main.swift ")
     }

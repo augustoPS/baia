@@ -36,10 +36,18 @@ final class FilesSurface: NSObject, WorkspaceSurface {
         }
     }
 
-    /// The tree to draw. Assigning collapses everything below the top level, because
-    /// an expansion set from one repository means nothing in the next.
+    /// The tree to draw. A *different* tree collapses everything below the top
+    /// level, because an expansion set from one repository means nothing in the
+    /// next.
+    ///
+    /// **An equal tree is not a different one, and the guard is what makes the
+    /// surface usable.** `refreshSidebar(of:)` assigns on every focus change and
+    /// every git poll that reports something new, so without it a command run in
+    /// the pane collapsed whatever the owner had opened, several times a minute.
+    /// Caught on 2026-07-29, in the first live check of the path picker.
     var tree: [FileTreeNode] = [] {
         didSet {
+            guard tree != oldValue else { return }
             rows.expanded = []
             rows.tree = tree
         }
