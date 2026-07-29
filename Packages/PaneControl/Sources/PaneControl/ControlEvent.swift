@@ -57,14 +57,18 @@ public struct ControlEvent: Sendable, Equatable, Codable {
         self.activity = activity
     }
 
-    /// Cuts a string to the cap, on a scalar boundary, at the moment it enters
-    /// the ring.
+    /// Flattens a string to one line and cuts it to the cap, on a scalar
+    /// boundary, at the moment it enters the ring.
     ///
     /// **At emit and not at read.** The ring must not be able to hold a byte the
     /// wire cannot carry: a payload accepted here that no response could frame
     /// would sit in the ring forever, and every read that reached it would answer
     /// the same truncated batch and never advance, which is the mailbox's
-    /// undrainable-message defect in a buffer nobody can drain by hand.
+    /// undrainable-message defect in a buffer nobody can drain by hand. The same
+    /// argument decides where the flattening goes: both strings an event carries
+    /// are pane output, one event is one line, and a newline reaching the ring
+    /// would be a pane forging events into its supervisor's stream. See
+    /// ``ControlText/oneLine(_:)-(String)``.
     ///
     /// **The boundary rule is load-bearing, not tidiness.** `String` is UTF-8
     /// underneath and a cut through a multi-byte scalar yields bytes no JSON
@@ -73,11 +77,15 @@ public struct ControlEvent: Sendable, Equatable, Codable {
     /// can only come in under the cap, never over.
     static func capped(_ text: String?) -> String? {
         guard let text else { return nil }
-        guard text.utf8.count > ControlWire.maxEventStringBytes else { return text }
+        // Flattened before it is measured. The substitution can only shrink the
+        // byte count, so the cap below still holds, and cutting first would
+        // spend the budget on bytes that were about to be replaced anyway.
+        let flat = ControlText.oneLine(text)
+        guard flat.utf8.count > ControlWire.maxEventStringBytes else { return flat }
 
         var cut = ""
         var used = 0
-        for character in text {
+        for character in flat {
             let width = String(character).utf8.count
             guard used + width <= ControlWire.maxEventStringBytes else { break }
             cut.append(character)
