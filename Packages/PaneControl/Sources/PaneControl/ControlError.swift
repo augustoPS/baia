@@ -165,6 +165,25 @@ public struct ControlError: Sendable, Hashable, Codable {
         ControlError(code: .refused, message: detail)
     }
 
+    /// A `--kinds` list named something that is not an event kind.
+    ///
+    /// `refused` and not `badFrame`, because the frame parsed. The kinds cross
+    /// as strings so that a misspelling can be answered by name, and the channel
+    /// stays drivable by hand.
+    ///
+    /// Echoed back clamped, for ``unknownVerb(_:)``'s reason: the name is
+    /// attacker-controlled up to the frame cap, and a 256 KiB message written to
+    /// somebody's terminal for a typo is the same defect whichever field the typo
+    /// was in.
+    static func unknownEventKind(_ name: String) -> ControlError {
+        let shown = name.count > 40 ? String(name.prefix(40)) + "..." : name
+        return ControlError(
+            code: .refused,
+            message: "\(shown) is not an event kind. --kinds takes any of: "
+                + ControlEventKind.allCases.map(\.rawValue).joined(separator: ", ")
+        )
+    }
+
     /// The app minted a ticket the graph cannot record.
     ///
     /// Unreachable for 32 bytes out of `SecRandomCopyBytes`, and answered rather
