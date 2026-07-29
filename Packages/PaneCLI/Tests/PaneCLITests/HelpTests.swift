@@ -58,6 +58,17 @@ import Testing
         #expect(text.contains("Not a credential"))
     }
 
+    /// Every event kind is named, walked from `allCases`, so a kind added to the
+    /// package cannot ship as something `--kinds` takes and nothing documents.
+    @Test func helpNamesSubscribeAndItsKinds() {
+        let text = Help.text
+        #expect(text.contains("subscribe"))
+        #expect(text.contains("--kinds"))
+        for kind in ControlEventKind.allCases {
+            #expect(text.contains(kind.rawValue), "\(kind.rawValue) is not in the help")
+        }
+    }
+
     /// The version line carries the protocol version, which is the number a
     /// `badVersion` failure is about. Read from ``ControlWire`` rather than
     /// written out, so a bumped protocol cannot ship with a stale line.

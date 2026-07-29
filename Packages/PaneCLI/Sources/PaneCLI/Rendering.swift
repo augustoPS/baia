@@ -122,6 +122,32 @@ public enum Rendering {
             if result.more == true {
                 err("the mailbox still holds messages. Run baia recv again.")
             }
+
+        case .subscribe:
+            for event in result.events ?? [] {
+                // One line per event, fields separated by spaces, so `while read`
+                // splits it without a JSON parser. `--json` is there for anything
+                // that wants structure.
+                var line = "\(event.seq) \(event.kind.rawValue) \(event.pane)"
+                if let createdBy = event.createdBy { line += " by \(createdBy)" }
+                if let activity = event.activity { line += " \(activity)" }
+                if let message = event.message { line += " \(message)" }
+                out(line)
+            }
+            if result.gap == true {
+                err(
+                    "events were dropped before your cursor. Re-read baia list and "
+                        + "subscribe again from the seq it reports."
+                )
+            }
+            if result.more == true {
+                err("more events are waiting. Run baia subscribe again from the seq below.")
+            }
+            if let seq = result.seq {
+                // Last, and on stdout, because it is the one value the next call
+                // needs and a script reads it with `tail -1`.
+                out("seq \(seq)")
+            }
         }
 
         return lines
