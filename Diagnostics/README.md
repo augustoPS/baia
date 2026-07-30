@@ -5,7 +5,7 @@ exercises, not in `design/`, not in a scratch directory. One home, so that askin
 "has this been checked live?" is a directory listing.
 
 A probe is not a unit test. The package test suites answer everything decidable
-without a window; `make test` runs them and there are 1167 of them. A probe
+without a window; `make test` runs them and there are 1,292 of them across twelve packages. A probe
 answers what those cannot: something that needs a real window, a real Metal
 surface, a real spawned shell, a real socket, or a human comparing two images.
 The rule that draws the line is the one the packages already follow. If a fact is
@@ -37,7 +37,7 @@ responder inside a pane's window and silently kill every ghostty binding" is.
 | `agent-integration/` | Whether an installer that edits `~/.claude/settings.json` can be trusted with a file somebody hand-wrote. Runs against a fixture home and fingerprints the owner's real one to prove it stayed out |
 | `attention-colour/` | Whether the attention treatment resolves to the colour the config asked for |
 | `config-wiring/` | Task 6 of the config-wiring plan: every appearance key round-tripping into the running app. Colour checks are automated, the ones marked `LOOK` need a human |
-| `control-channel/` | Fifty-eight checks over the real socket: scopes, statuses, event kinds, backfill |
+| `control-channel/` | Sixty-seven checks over the real socket: scopes, statuses, event kinds, backfill, and a pane reporting on itself |
 | `find-in-pane/` | Whether the find panel breaks a responder inside a pane's window, or keeps a dead pane's shell alive |
 | `footer-corners/` | The footer's corner geometry, including full screen |
 | `fullscreen-strip/` | The strip that appears along the top in full screen |
