@@ -841,10 +841,24 @@ final class TerminalPaneController: NSViewController {
         observeWindowFocus()
         refreshStatus()
         onAnchorChange?()
+        // **Activity is not gated on focus here, and the other two are.**
+        // `windowDidResignKey` already leaves activity running for the reason
+        // `windowDidBecomeKey` states: it is the one tracker whose whole purpose
+        // is to notice something while the owner is looking elsewhere. This path
+        // gated all three, so a pane appearing in a window that never becomes key
+        // never started polling at all, and nothing else would ever start it: the
+        // only other entry point is `windowDidBecomeKey`, which by definition
+        // does not fire for such a window.
+        //
+        // The pane that matters is one a control-channel `split` opened in a
+        // background window while the owner works in another app, which is the
+        // exact case the feature exists for. Found 2026-07-30 by
+        // `Diagnostics/control-channel/`, whose app is launched from a script and
+        // is never key, so no pane in it ever reported activity.
+        activityTracker.startPolling()
         if view.window?.isKeyWindow == true {
             anchorTracker.startPolling()
             gitStatus.startPolling()
-            activityTracker.startPolling()
         }
     }
 

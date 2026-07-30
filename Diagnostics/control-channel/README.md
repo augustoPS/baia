@@ -5,14 +5,15 @@ channel over the real socket, and exits non-zero naming any check that failed.
 Sixty-seven checks, each printing `ok` or `FAIL`, ending in `PASS` or
 `FAILED n of m`.
 
-**One check is currently failing and it is not a regression.** "the activity in
-an event is the activity list reports for the same pane" answers `[None, None]`
-where it wants `["sleep", "sleep"]`, meaning the armed pane never reported
-running anything. Measured on `main` on 2026-07-30 with nothing but the scheme
-declaration applied: it fails there too, at 59 checks, so it predates the
-`report` work. Its own comment already says the check is timing-sensitive and
-that an earlier version of it "was measuring the machine"; whether that is what
-is happening again has not been established.
+**This probe caught a real bug on 2026-07-30 by being unable to pass.** "the
+activity in an event is the activity list reports for the same pane" answered
+`[None, None]`, and the cause was not the check: `TerminalPaneController`
+gated all three pollers on `isKeyWindow` in `viewDidAppear`, so a pane in a
+window that never becomes key never started reporting activity, and nothing
+else could ever start it. The app here is launched from a script and is never
+key. The same gate would silence a pane a `split` opened in a background window
+while the owner worked in another app, which is the case the feature exists
+for.
 
 Quit any running baia first. A second instance owns the socket, and the one this
 launches would run with no channel and hand its panes no capability; the script
