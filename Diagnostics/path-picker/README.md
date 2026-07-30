@@ -1,7 +1,12 @@
 # Path picker probe
 
 `./run.sh` from anywhere. Builds the fixture, drives the picker, writes five
-images to `verify-out/path-picker/` and prints `LOOK` per step.
+images to `verify-out/path-picker/`, and prints `ok` or `FAIL` per check.
+
+**It needs the machine to itself.** The clicks are real events at real screen
+points, so anything that comes to the front during a run takes them. `act` refuses
+to continue unless baia is genuinely frontmost, which stops a keystroke leaking
+into another app, but a stray click still lands where it lands.
 
 **It passes or fails, and it did not until 2026-07-30.** The question this probe
 exists to answer is what lands on the focused pane's prompt line when a sidebar
