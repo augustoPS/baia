@@ -17,6 +17,14 @@ import Testing
         #expect(ControlEventKind.allCases.count == 5)
     }
 
+    /// A source's spelling is protocol just as a kind's is, so a rename is a
+    /// break and a literal table is what catches one.
+    @Test func theSourceSpellingsAreTheWireSpellings() {
+        #expect(ControlEventSource.osc.rawValue == "osc")
+        #expect(ControlEventSource.report.rawValue == "report")
+        #expect(ControlEventSource.allCases.count == 2)
+    }
+
     /// Truncation happens where the string enters the ring, so the ring cannot
     /// hold a byte the wire cannot carry.
     @Test func aLongStringIsCutToTheCap() {
