@@ -215,7 +215,7 @@ final class ControlAdapter: ControlWorkspaceBridge {
         guard let cwd, !cwd.isEmpty else {
             return .failure(.refused, "cwd needs a path")
         }
-        placed.pane.anchorTracker.reportWorkingDirectory(
+        placed.pane.anchorTracker.announceWorkingDirectory(
             (cwd as NSString).expandingTildeInPath
         )
         return .success()

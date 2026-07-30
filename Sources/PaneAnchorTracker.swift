@@ -110,10 +110,37 @@ final class PaneAnchorTracker {
     /// What the last successful poll read, whether or not it was applied.
     private var lastPolledDirectory: URL?
 
-    /// The OSC 7 path, fed by the pane's pwd delegate. Nothing emits OSC 7 today,
-    /// but the conformance is one method: if anything ever does, updates stop
-    /// waiting for the next tick.
+    /// The OSC 7 path, fed by the pane's pwd delegate.
+    ///
+    /// Something does emit OSC 7, contrary to what this comment used to claim: it
+    /// arrives about 100 ms after every command, when the shell redraws its
+    /// prompt, and it re-states the shell's directory whether or not that
+    /// directory moved.
+    ///
+    /// Which is why it is guarded the same way the poll is. An unguarded OSC 7
+    /// overwrote an announcement within a tenth of a second of it landing, so
+    /// ``announceWorkingDirectory(_:)`` appeared to do nothing at all while doing
+    /// exactly what it was asked. A source that repeats itself every prompt has
+    /// no business overruling something it does not know about; it speaks only
+    /// when its own reading changed.
     func reportWorkingDirectory(_ path: String) {
+        let directory = URL(filePath: path, directoryHint: .isDirectory)
+        guard directory != lastShellReport else { return }
+        lastShellReport = directory
+        apply(directory)
+    }
+
+    /// What the shell last said through OSC 7, whether or not it was applied.
+    private var lastShellReport: URL?
+
+    /// A working directory the pane was explicitly told about, over the control
+    /// channel.
+    ///
+    /// Always applied, unlike the two observers. The poll and OSC 7 both watch a
+    /// process that an agent cd-ing inside a subshell never moves, so neither can
+    /// see what this reports, and neither should be able to talk over it. They
+    /// take it back only by genuinely moving.
+    func announceWorkingDirectory(_ path: String) {
         apply(URL(filePath: path, directoryHint: .isDirectory))
     }
 
