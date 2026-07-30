@@ -1,0 +1,51 @@
+<!-- @dsCard group="Components" viewport="700x280" name="Fields" subtitle="Text, search, tokens, slider, stepper, progress" -->
+<!DOCTYPE html>
+<html lang="en" data-appearance="dark" data-accent="blue" data-motion="low"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="../../ds-runtime.js"></script>
+<style>
+  html, body { margin: 0; }
+  body {
+    font-family: var(--font-system); color: var(--label);
+    background: var(--desktop-image) center/cover no-repeat, var(--desktop-ground);
+    padding: 16px 18px; box-sizing: border-box; -webkit-font-smoothing: antialiased;
+  }
+  .caps { font: var(--type-caps); letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--label-tertiary); }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { color: var(--link-hover); }
+</style></head><body><div id="root"></div>
+<script type="text/jsx" id="demo">
+const { TextField, SearchField, TokenField, Slider, Stepper, ProgressBar } = window.VG;
+function Demo() {
+  const [q, setQ] = React.useState("guard");
+  const [temp, setTemp] = React.useState(0.4);
+  const [jobs, setJobs] = React.useState(4);
+  const [tokens, setTokens] = React.useState(["repo:atlas", "tool:bash"]);
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
+      <div style={{ display: "grid", gap: 12, alignContent: "start" }}>
+        <TextField label="Working directory" mono defaultValue="~/src/atlas" />
+        <TextField label="Timeout" suffix="s" invalid hint="Must be 1–600" defaultValue="900" />
+        <SearchField value={q} onChange={(e) => setQ(e.target.value)} onClear={() => setQ("")} scope="Transcript" width={230} />
+        <TokenField label="Scope" tokens={tokens} onAdd={(v) => setTokens(tokens.concat(v))} onRemove={(t) => setTokens(tokens.filter((x) => x !== t))} />
+      </div>
+      <div style={{ display: "grid", gap: 14, alignContent: "start" }}>
+        <TextField multiline rows={3} label="Task" defaultValue="Refactor the auth guard to use the new session adapter." />
+        <Slider label="Temperature" value={temp * 100} valueLabel={temp.toFixed(2)} onChange={(v) => setTemp(v / 100)} min={0} max={200} ticks={9} />
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ font: "var(--type-body)", color: "var(--label)" }}>Parallel jobs</span>
+          <Stepper value={jobs} onChange={setJobs} min={1} max={16} unit="j" width={72} />
+        </div>
+        <ProgressBar label="Indexing repository" value={64} valueLabel="64%" />
+        <ProgressBar indeterminate size="small" />
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<Demo />);
+</script>
+<script>VG_RUN("demo");</script>
+</body></html>

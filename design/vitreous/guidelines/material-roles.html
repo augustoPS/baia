@@ -1,0 +1,30 @@
+<!-- @dsCard group="Materials" viewport="700x180" name="Role materials" subtitle="chrome, sidebar, menu, hud — chosen by role, never by look" -->
+<!DOCTYPE html>
+<html lang="en" data-appearance="dark" data-accent="blue" data-motion="low"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  html, body { margin: 0; }
+  body {
+    font-family: var(--font-system); color: var(--label);
+    background: var(--desktop-image) center/cover no-repeat, var(--desktop-ground);
+    padding: 16px 18px; box-sizing: border-box;
+    -webkit-font-smoothing: antialiased;
+  }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .grid { display: grid; gap: 10px; }
+  .caps { font: var(--type-caps); letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--label-tertiary); }
+  .mono { font: var(--type-mono); color: var(--label-secondary); }
+  .tag { font: var(--fw-medium) 10px/1.35 var(--font-mono); color: var(--label-secondary); }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { color: var(--link-hover); }
+  .m { border-radius: var(--r-5); padding: 10px; height: 108px; box-sizing: border-box; display: grid; align-content: end; gap: 2px; }
+.m b { font: var(--type-headline); }
+.m i { font-style: normal; font: var(--fw-medium) 10px/1.4 var(--font-mono); color: var(--label-secondary); }
+</style></head><body>
+<div class="grid" style="grid-template-columns: repeat(4, 1fr)">
+  <div class="m" style="background: var(--mat-fill-chrome); backdrop-filter: var(--mat-chrome); box-shadow: var(--lens-rim), var(--shadow-control)"><b>chrome</b><i>titlebars<br>toolbars · status</i></div>
+  <div class="m" style="background: var(--mat-fill-sidebar); backdrop-filter: var(--mat-regular); box-shadow: var(--lens-rim), var(--shadow-control)"><b>sidebar</b><i>source lists</i></div>
+  <div class="m" style="background: var(--mat-fill-menu); backdrop-filter: var(--mat-thick); box-shadow: var(--lens-rim-strong), var(--shadow-popover)"><b>menu</b><i>menus · popovers<br>palette</i></div>
+  <div class="m" style="background: var(--mat-fill-hud); backdrop-filter: var(--mat-hud); box-shadow: var(--lens-rim), var(--shadow-popover)"><b>hud</b><i>tooltips<br>floating overlays</i></div>
+</div>
+</body></html>

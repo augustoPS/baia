@@ -1,0 +1,66 @@
+<!-- @dsCard group="Components" viewport="700x330" name="Window chrome" subtitle="Window frame with sidebar, toolbar, tabs, status bar" -->
+<!DOCTYPE html>
+<html lang="en" data-appearance="dark" data-accent="blue" data-motion="low"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="../../ds-runtime.js"></script>
+<style>
+  html, body { margin: 0; }
+  body {
+    font-family: var(--font-system); color: var(--label);
+    background: var(--desktop-image) center/cover no-repeat, var(--desktop-ground);
+    padding: 16px 18px; box-sizing: border-box; -webkit-font-smoothing: antialiased;
+  }
+  .caps { font: var(--type-caps); letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--label-tertiary); }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { color: var(--link-hover); }
+</style></head><body><div id="root"></div>
+<script type="text/jsx" id="demo">
+const { WindowFrame, Toolbar, ToolbarButton, ToolbarSeparator, Sidebar, Tabs, SearchField, StatusDot, Badge } = window.VG;
+function Demo() {
+  const [tab, setTab] = React.useState("t1");
+  const [nav, setNav] = React.useState("s2");
+  const [q, setQ] = React.useState("");
+  return (
+    <WindowFrame
+      title="Atlas" subtitle="~/src/atlas · main"
+      style={{ height: 296 }}
+      sidebar={<Sidebar value={nav} onSelect={setNav} groups={[
+        { label: "Sessions", items: [
+          { id: "s1", label: "Refactor auth guard", trailing: "4m", marker: "var(--status-positive)" },
+          { id: "s2", label: "Fix flaky e2e", trailing: "now", marker: "var(--accent)" },
+          { id: "s3", label: "Bump deps", trailing: "1h" }
+        ] },
+        { label: "Worktrees", items: [{ id: "w1", label: "codex/release-docs" }, { id: "w2", label: "codex/catalog-sync" }] }
+      ]} />}
+      toolbar={<Toolbar trailing={<SearchField value={q} onChange={(e) => setQ(e.target.value)} onClear={() => setQ("")} width={170} />}>
+        <ToolbarButton label="Run" active />
+        <ToolbarButton label="Stop" disabled />
+        <ToolbarSeparator />
+        <ToolbarButton label="Approvals" badge={2} />
+        <ToolbarButton label="Inspector" />
+      </Toolbar>}
+      tabs={<Tabs value={tab} onChange={setTab} onClose={() => {}} onNew={() => {}} tabs={[
+        { id: "t1", label: "transcript" }, { id: "t2", label: "guard.rs", dirty: true }, { id: "t3", label: "cargo test" }
+      ]} />}
+      statusBar={<>
+        <StatusDot tone="running" pulse label="bash · cargo test -q" />
+        <span style={{ marginLeft: "auto", font: "var(--type-mono)", fontSize: "var(--fs-mono-sm)" }}>47 tools · $1.23 · 62% context</span>
+        <Badge tone="positive">clean</Badge>
+      </>}
+    >
+      <div style={{ padding: "var(--sp-7)", font: "var(--type-mono)", color: "var(--term-fg)", display: "grid", gap: 4, alignContent: "start" }}>
+        <div style={{ color: "var(--term-dim)" }}>$ atlas run --plan fix-flaky-e2e</div>
+        <div style={{ color: "var(--term-cyan)" }}>→ reading tests/e2e/session.spec.ts</div>
+        <div style={{ color: "var(--term-magenta)" }}>→ tool bash · npx playwright test --repeat-each 3</div>
+        <div style={{ color: "var(--term-green)" }}>✓ 3 runs green</div>
+      </div>
+    </WindowFrame>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<Demo />);
+</script>
+<script>VG_RUN("demo");</script>
+</body></html>

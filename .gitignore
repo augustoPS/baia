@@ -18,11 +18,15 @@ xcuserdata/
 # macOS
 .DS_Store
 
-# Screenshots for the Claude Design handover. The images are local only: they are
-# large, they go stale the moment the UI changes, and they would bloat the history
-# of a repo whose whole build output is already ignored. The script that
-# regenerates them is tracked, because that is the part worth keeping.
-design-captures/*.png
+# The Claude Design conversation, under design/. Two of its three folders are
+# working traffic and stay local, one per direction: `inbox/` is design to code,
+# `handoffs/` is code to design. Both are large, both go stale the moment the UI
+# changes, and the captures in handoffs/ regenerate from the real app via
+# Diagnostics/lib/capture.sh, which is tracked because it is the part worth
+# keeping. The design system beside them is none of those things, so
+# `design/vitreous/` is tracked and maintained like source.
+design/inbox/
+design/handoffs/
 
 verify-out/
 

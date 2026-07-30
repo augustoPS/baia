@@ -1,0 +1,67 @@
+<!-- @dsCard group="Components" viewport="700x300" name="Controls" subtitle="Buttons, segmented, pop-up, switches, checkboxes, radios" -->
+<!DOCTYPE html>
+<html lang="en" data-appearance="dark" data-accent="blue" data-motion="low"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="../../ds-runtime.js"></script>
+<style>
+  html, body { margin: 0; }
+  body {
+    font-family: var(--font-system); color: var(--label);
+    background: var(--desktop-image) center/cover no-repeat, var(--desktop-ground);
+    padding: 16px 18px; box-sizing: border-box; -webkit-font-smoothing: antialiased;
+  }
+  .caps { font: var(--type-caps); letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--label-tertiary); }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { color: var(--link-hover); }
+</style></head><body><div id="root"></div>
+<script type="text/jsx" id="demo">
+const { Button, SegmentedControl, PopUpButton, Switch, Checkbox, RadioGroup } = window.VG;
+function Demo() {
+  const [seg, setSeg] = React.useState("Transcript");
+  const [model, setModel] = React.useState("Opus 4.6");
+  const [sw, setSw] = React.useState(true);
+  const [cb, setCb] = React.useState(true);
+  const [rd, setRd] = React.useState("safe");
+  return (
+    <div style={{ display: "grid", gap: 14 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
+        <Button variant="accent" keyEquivalent="⏎">Run</Button>
+        <Button>Cancel</Button>
+        <Button variant="glass">Stop</Button>
+        <Button variant="borderless">Skip</Button>
+        <Button variant="destructive">Delete…</Button>
+        <Button disabled>Disabled</Button>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", gap: 10 }}>
+        <Button size="small">small 20</Button>
+        <Button size="regular">regular 22</Button>
+        <Button size="large">large 28</Button>
+        <Button size="prominent" variant="accent" shape="capsule">prominent 32</Button>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
+        <SegmentedControl value={seg} onChange={setSeg} items={["Transcript", "Diff", "Plan"]} />
+        <PopUpButton value={model} onChange={setModel} options={["Opus 4.6", "Sonnet 4.6", "Haiku 4.5"]} width={150} />
+        <PopUpButton pullDown label="Actions" options={["Duplicate", "Export…"]} width={110} />
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", gap: 26 }}>
+        <div style={{ display: "grid", gap: 8 }}>
+          <Switch checked={sw} onChange={() => setSw(!sw)} label="Stream output" />
+          <Checkbox checked={cb} onChange={() => setCb(!cb)} label="Auto-commit" description="After a green test run" />
+          <Checkbox indeterminate label="Selected files" />
+        </div>
+        <RadioGroup value={rd} onChange={setRd} items={[
+          { id: "ask", label: "Ask before every tool call" },
+          { id: "safe", label: "Auto-approve safe tools", description: "Reads, searches, git status" },
+          { id: "all", label: "Auto-approve everything" }
+        ]} />
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<Demo />);
+</script>
+<script>VG_RUN("demo");</script>
+</body></html>

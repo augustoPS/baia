@@ -1,0 +1,71 @@
+<!-- @dsCard group="Components" viewport="700x330" name="Surfaces" subtitle="Materials, boxes, grouped rows, popover, menu, inspector" -->
+<!DOCTYPE html>
+<html lang="en" data-appearance="dark" data-accent="blue" data-motion="low"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="../../ds-runtime.js"></script>
+<style>
+  html, body { margin: 0; }
+  body {
+    font-family: var(--font-system); color: var(--label);
+    background: var(--desktop-image) center/cover no-repeat, var(--desktop-ground);
+    padding: 16px 18px; box-sizing: border-box; -webkit-font-smoothing: antialiased;
+  }
+  .caps { font: var(--type-caps); letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--label-tertiary); }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { color: var(--link-hover); }
+</style></head><body><div id="root"></div>
+<script type="text/jsx" id="demo">
+const { Material, Box, GroupedSection, Popover, Menu, Inspector, Switch, PopUpButton, Button, Badge } = window.VG;
+function Demo() {
+  const [a, setA] = React.useState(true);
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 220px", gap: 14, alignItems: "start" }}>
+      <div style={{ display: "grid", gap: 12 }}>
+        <Box title="Context" subtitle="4 files attached" actions={<Button size="small">Add…</Button>}>
+          <div style={{ font: "var(--type-body)", color: "var(--label-secondary)" }}>guard.rs · session.rs · plan.rs · main.rs</div>
+        </Box>
+        <Material material="hud" radius="var(--r-6)" pad={12} elevation="popover">
+          <div style={{ display: "grid", gap: 4 }}>
+            <span style={{ font: "var(--type-headline)" }}>HUD material</span>
+            <span style={{ font: "var(--type-subheadline)", color: "var(--label-secondary)" }}>Floating overlays and tooltips</span>
+          </div>
+        </Material>
+      </div>
+      <div style={{ display: "grid", gap: 12 }}>
+        <GroupedSection title="Permissions" footnote="Applies to new sessions only."
+          rows={[
+            { label: "Auto-approve reads", control: <Switch checked={a} onChange={() => setA(!a)} /> },
+            { label: "Shell access", description: "bash, zsh", control: <PopUpButton options={["Ask", "Allow"]} value="Ask" onChange={() => {}} width={92} size="small" /> },
+            { label: "Network", control: <Badge tone="negative">blocked</Badge> }
+          ]} />
+        <Menu width="100%" items={[
+          { label: "New Session", shortcut: "⌘N" },
+          { label: "Duplicate", shortcut: "⌘D" },
+          "-",
+          { label: "Approve All Tools", checked: true },
+          { label: "Export Transcript…", shortcut: "⇧⌘E" },
+          { label: "Revoke Keys", disabled: true }
+        ]} />
+      </div>
+      <div style={{ display: "grid", gap: 12 }}>
+        <Popover anchor="top" width="100%">
+          <div style={{ display: "grid", gap: 6 }}>
+            <span style={{ font: "var(--type-headline)" }}>Popover</span>
+            <span style={{ font: "var(--type-subheadline)", color: "var(--label-secondary)" }}>Attached, transient, dismiss on outside click.</span>
+          </div>
+        </Popover>
+        <Inspector width="100%" tabs={["Run", "Cost"]} tab="Run" onTab={() => {}}
+          sections={[{ title: "Model", content: <span style={{ font: "var(--type-mono)", color: "var(--label-secondary)" }}>opus-4.6</span> },
+                     { title: "Tools", content: <span style={{ font: "var(--type-mono)", color: "var(--label-secondary)" }}>bash · read · edit</span> }]}
+          style={{ borderRadius: "var(--r-5)", boxShadow: "var(--lens-rim), var(--shadow-raised)", overflow: "hidden" }} />
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<Demo />);
+</script>
+<script>VG_RUN("demo");</script>
+</body></html>

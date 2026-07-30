@@ -1,0 +1,30 @@
+<!-- @dsCard group="Materials" viewport="700x190" name="Lensing anatomy" subtitle="What separates lensed glass from a plain blurred box" -->
+<!DOCTYPE html>
+<html lang="en" data-appearance="dark" data-accent="blue" data-motion="low"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  html, body { margin: 0; }
+  body {
+    font-family: var(--font-system); color: var(--label);
+    background: var(--desktop-image) center/cover no-repeat, var(--desktop-ground);
+    padding: 16px 18px; box-sizing: border-box;
+    -webkit-font-smoothing: antialiased;
+  }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .grid { display: grid; gap: 10px; }
+  .caps { font: var(--type-caps); letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--label-tertiary); }
+  .mono { font: var(--type-mono); color: var(--label-secondary); }
+  .tag { font: var(--fw-medium) 10px/1.35 var(--font-mono); color: var(--label-secondary); }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { color: var(--link-hover); }
+  .s { border-radius: var(--r-5); height: 112px; box-sizing: border-box; padding: 10px; display: grid; align-content: end; gap: 2px; background: var(--mat-fill-regular); backdrop-filter: var(--mat-regular); }
+.s b { font: var(--type-headline); }
+.s i { font-style: normal; font: var(--fw-medium) 10px/1.4 var(--font-mono); color: var(--label-secondary); }
+</style></head><body>
+<div class="grid" style="grid-template-columns: repeat(4, 1fr)">
+  <div class="s" style="box-shadow: var(--lens-edge)"><b>1 · fill + blur</b><i>flat, plastic</i></div>
+  <div class="s" style="box-shadow: var(--lens-rim)"><b>2 · rims</b><i>+ top .42<br>+ bottom dark</i></div>
+  <div class="s" style="background-image: var(--lens-sheen); box-shadow: var(--lens-rim-strong)"><b>3 · sheen</b><i>147° specular</i></div>
+  <div class="s" style="background-image: var(--lens-sheen), var(--lens-refract); box-shadow: var(--lens-rim-strong), var(--shadow-raised)"><b>4 · refract</b><i>corner light bend<br>+ drop shadow</i></div>
+</div>
+</body></html>

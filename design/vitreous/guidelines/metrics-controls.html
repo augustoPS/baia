@@ -1,0 +1,30 @@
+<!-- @dsCard group="Metrics" viewport="700x160" name="Control heights" subtitle="16 / 20 / 22 / 28 / 32 — platform metrics, not an 8px grid" -->
+<!DOCTYPE html>
+<html lang="en" data-appearance="dark" data-accent="blue" data-motion="low"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  html, body { margin: 0; }
+  body {
+    font-family: var(--font-system); color: var(--label);
+    background: var(--desktop-image) center/cover no-repeat, var(--desktop-ground);
+    padding: 16px 18px; box-sizing: border-box;
+    -webkit-font-smoothing: antialiased;
+  }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .grid { display: grid; gap: 10px; }
+  .caps { font: var(--type-caps); letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--label-tertiary); }
+  .mono { font: var(--type-mono); color: var(--label-secondary); }
+  .tag { font: var(--fw-medium) 10px/1.35 var(--font-mono); color: var(--label-secondary); }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { color: var(--link-hover); }
+  .c { display: inline-flex; align-items: center; padding: 0 12px; border-radius: var(--r-3); background: var(--fill); backdrop-filter: var(--mat-ultra-thin); box-shadow: var(--lens-rim), var(--shadow-control); font: var(--type-control); }
+</style></head><body>
+<div class="row" style="gap: 12px; align-items: flex-end">
+  <span class="c" style="height: var(--h-mini); font: var(--type-control-sm); padding: 0 8px">mini 16</span>
+  <span class="c" style="height: var(--h-small); font: var(--type-control-sm); padding: 0 9px">small 20</span>
+  <span class="c" style="height: var(--h-regular)">regular 22</span>
+  <span class="c" style="height: var(--h-large)">large 28</span>
+  <span class="c" style="height: var(--h-prominent); border-radius: var(--r-5)">prominent 32</span>
+</div>
+<div class="mono" style="margin-top: 14px; font-size: 10px">rows 24 / 28 / 36 · titlebar 28 · toolbar 52 · menu bar 24 · menu item 22 · status bar 24 · tab 28</div>
+</body></html>

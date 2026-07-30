@@ -1,0 +1,120 @@
+<!-- @dsCard group="Three-pane" viewport="1280x800" subtitle="Sidebar + message list + reading pane (mail/notes/feeds archetype)" -->
+<!-- @startingPoint section="App" subtitle="Three-pane content app" viewport="1280x800" -->
+<!DOCTYPE html>
+<html lang="en" data-appearance="dark" data-accent="blue" data-motion="low"><head><meta charset="utf-8">
+<title>Digest — Vitreous</title>
+<link rel="stylesheet" href="../../styles.css">
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="../../ds-runtime.js"></script>
+<style>
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: var(--font-system); color: var(--label);
+    background: var(--desktop-image) center/cover no-repeat fixed, var(--desktop-ground);
+    -webkit-font-smoothing: antialiased;
+  }
+  #root { min-height: 100vh; }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { color: var(--link-hover); }
+  *::-webkit-scrollbar { width: 9px; height: 9px; }
+  *::-webkit-scrollbar-thumb { background: var(--fill); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  
+</style></head>
+<body>
+<div id="root"></div>
+<script type="text/jsx" id="app">
+const { WindowFrame, Sidebar, SplitView, Toolbar, ToolbarButton, ToolbarSeparator, SearchField, ListRow, Badge, Button, StatusDot, Divider, Material, SegmentedControl, PopUpButton, Tooltip } = window.VG;
+
+const THREADS = [
+  { id: "m1", from: "Rin Takahashi", subject: "Release 1.4 — go/no-go", preview: "Suite is green three runs in a row. I say we cut it tomorrow morning.", when: "9:32", unread: true, flag: "accent" },
+  { id: "m2", from: "build@ci", subject: "playwright: session.spec.ts recovered", preview: "5 of 5 passed after the wait fix. No flakes in the last 40 runs.", when: "9:12", unread: true },
+  { id: "m3", from: "Dario Fu", subject: "Re: agent tool permissions", preview: "Let's keep network denied by default and require an explicit grant.", when: "8:44" },
+  { id: "m4", from: "Sasha Lind", subject: "Design review notes", preview: "Tinted mode reads much better on the 5K panel. Keep the switch prominent.", when: "Mon", flag: "caution" },
+  { id: "m5", from: "ops@atlas", subject: "Weekly spend digest", preview: "$38.14 this month across 62 sessions. Budget at 15%.", when: "Mon" },
+  { id: "m6", from: "Rin Takahashi", subject: "Worktree cleanup", preview: "Three stale worktrees from last week — safe to prune?", when: "Sun" }
+];
+
+function App() {
+  const [box, setBox] = React.useState("inbox");
+  const [thread, setThread] = React.useState("m1");
+  const [q, setQ] = React.useState("");
+  const [density, setDensity] = React.useState("regular");
+  const current = THREADS.find((t) => t.id === thread) || THREADS[0];
+  const list = THREADS.filter((t) => (t.from + t.subject + t.preview).toLowerCase().includes(q.toLowerCase()));
+
+  return (
+    <div style={{ minHeight: "100vh", minWidth: 1180, display: "grid", placeItems: "center", padding: 24, boxSizing: "border-box" }}>
+      <WindowFrame title={current.subject} subtitle={"Digest · " + list.length + " threads"} style={{ width: "100%", maxWidth: 1180, height: 700 }}
+        sidebar={<Sidebar value={box} onSelect={setBox}
+          header={<SearchField value={q} onChange={(e) => setQ(e.target.value)} onClear={() => setQ("")} placeholder="Search" width="100%" />}
+          groups={[
+            { label: "Mailboxes", items: [
+              { id: "inbox", label: "Inbox", trailing: "2", marker: "var(--accent)" },
+              { id: "flagged", label: "Flagged", trailing: "1" },
+              { id: "sent", label: "Sent" }, { id: "archive", label: "Archive" }
+            ] },
+            { label: "Feeds", items: [
+              { id: "ci", label: "CI", trailing: "12" }, { id: "spend", label: "Spend" }, { id: "reviews", label: "Reviews" }
+            ] }
+          ]}
+          footer={<StatusDot tone="ok" label="Synced 9:41" />} />}
+        toolbar={<Toolbar trailing={<><SegmentedControl size="small" value={density} onChange={setDensity} items={[{ id: "compact", label: "Compact" }, { id: "regular", label: "Regular" }]} /><Tooltip content="Compose" shortcut="⌘N"><Button size="small" variant="accent">Compose</Button></Tooltip></>}>
+          <ToolbarButton label="Archive" /><ToolbarButton label="Flag" /><ToolbarSeparator /><ToolbarButton label="Reply" /><ToolbarButton label="Forward" />
+        </Toolbar>}
+        statusBar={<><span style={{ font: "var(--type-footnote)" }}>{list.length} threads · 2 unread</span><span style={{ marginLeft: "auto", font: "var(--fw-medium) var(--fs-mono-sm)/1 var(--font-mono)" }}>last sync 9:41</span></>}
+      >
+        <SplitView panes={[
+          { width: "var(--w-list-pane)", content: (
+            <div style={{ display: "grid", gap: 1, alignContent: "start", padding: "var(--sp-3)" }}>
+              {list.map((t) => (
+                <ListRow key={t.id} selected={t.id === thread} onClick={() => setThread(t.id)}
+                  size={density === "compact" ? "compact" : "regular"}
+                  title={<span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    {t.unread ? <span style={{ width: 6, height: 6, borderRadius: 999, background: "var(--accent)", flex: "none" }} /> : null}
+                    {t.from}
+                  </span>}
+                  subtitle={density === "compact" ? null : t.subject + " — " + t.preview}
+                  trailing={<><span>{t.when}</span>{t.flag ? <span style={{ width: 6, height: 6, borderRadius: 999, background: t.flag === "accent" ? "var(--accent)" : "var(--status-caution)" }} /> : null}</>} />
+              ))}
+            </div>
+          ) },
+          { content: (
+            <div style={{ display: "grid", gap: "var(--sp-6)", alignContent: "start", padding: "var(--sp-8)", maxWidth: "72ch" }}>
+              <div style={{ display: "grid", gap: 4 }}>
+                <span style={{ font: "var(--type-title-1)" }}>{current.subject}</span>
+                <span style={{ font: "var(--type-subheadline)", color: "var(--label-secondary)" }}>{current.from} · today at {current.when}</span>
+              </div>
+              <Divider />
+              <p style={{ margin: 0, font: "var(--type-body)", color: "var(--label)", textWrap: "pretty" }}>{current.preview}</p>
+              <p style={{ margin: 0, font: "var(--type-body)", color: "var(--label-secondary)", textWrap: "pretty" }}>
+                The agent has held the suite green across forty consecutive runs, and the two remaining
+                clippy warnings are suppressed with an issue link. Nothing in the diff touches the
+                session adapter, so the risk of a release-day regression is low.
+              </p>
+              <Material material="ultraThin" radius="var(--r-5)" pad={12} elevation="control" style={{ display: "grid", gap: 8 }}>
+                <span style={{ font: "var(--type-caps)", letterSpacing: "var(--ls-caps)", textTransform: "uppercase", color: "var(--label-tertiary)" }}>Attached run</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <Badge tone="positive">5 of 5 passed</Badge>
+                  <span style={{ font: "var(--type-mono)", color: "var(--label-secondary)" }}>playwright · 38.7s</span>
+                  <Button size="small" variant="borderless" style={{ marginLeft: "auto" }}>Open session</Button>
+                </div>
+              </Material>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Button variant="accent">Reply</Button>
+                <Button>Reply all</Button>
+                <Button variant="borderless">Archive</Button>
+              </div>
+            </div>
+          ) }
+        ]} />
+      </WindowFrame>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+<script>VG_RUN("app");</script>
+</body></html>

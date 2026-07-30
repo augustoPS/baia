@@ -1,0 +1,29 @@
+<!-- @dsCard group="Type" viewport="700x180" name="Titles" subtitle="System stack: SF on Apple platforms, metric fallback elsewhere" -->
+<!DOCTYPE html>
+<html lang="en" data-appearance="dark" data-accent="blue" data-motion="low"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  html, body { margin: 0; }
+  body {
+    font-family: var(--font-system); color: var(--label);
+    background: var(--desktop-image) center/cover no-repeat, var(--desktop-ground);
+    padding: 16px 18px; box-sizing: border-box;
+    -webkit-font-smoothing: antialiased;
+  }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .grid { display: grid; gap: 10px; }
+  .caps { font: var(--type-caps); letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--label-tertiary); }
+  .mono { font: var(--type-mono); color: var(--label-secondary); }
+  .tag { font: var(--fw-medium) 10px/1.35 var(--font-mono); color: var(--label-secondary); }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { color: var(--link-hover); }
+  
+</style></head><body>
+<div class="grid" style="gap: 4px">
+  <div style="font: var(--type-large-title); letter-spacing: var(--ls-large-title)">Large title · 26/32</div>
+  <div style="font: var(--type-title-1); letter-spacing: var(--ls-title)">Title 1 · 22/26</div>
+  <div style="font: var(--type-title-2)">Title 2 · 17/22</div>
+  <div style="font: var(--type-title-3)">Title 3 · 15/20</div>
+  <div class="mono" style="margin-top: 6px; font-size: 10px">weights 400 / 500 / 590 / 700 — 590 is the platform semibold</div>
+</div>
+</body></html>

@@ -1,0 +1,157 @@
+<!-- @dsCard group="Desktop" viewport="1280x800" subtitle="Menu bar, Dock, Control Center, Spotlight palette, layered windows" -->
+<!-- @startingPoint section="App" subtitle="macOS desktop with menu bar, Dock and Control Center" viewport="1280x800" -->
+<!DOCTYPE html>
+<html lang="en" data-appearance="dark" data-accent="blue" data-motion="low"><head><meta charset="utf-8">
+<title>Desktop — Vitreous</title>
+<link rel="stylesheet" href="../../styles.css">
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="../../ds-runtime.js"></script>
+<style>
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: var(--font-system); color: var(--label);
+    background: var(--desktop-image) center/cover no-repeat fixed, var(--desktop-ground);
+    -webkit-font-smoothing: antialiased;
+  }
+  #root { min-height: 100vh; }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { color: var(--link-hover); }
+  *::-webkit-scrollbar { width: 9px; height: 9px; }
+  *::-webkit-scrollbar-thumb { background: var(--fill); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  
+</style></head>
+<body>
+<div id="root"></div>
+<script type="text/jsx" id="app">
+const { MenuBar, Menu, Dock, ControlCenter, CommandPalette, KeyCap, WindowFrame, Toolbar, ToolbarButton, Sidebar, ListRow, Badge, StatusDot, Button, Material, Popover, Switch, SegmentedControl } = window.VG;
+
+function App() {
+  const [menu, setMenu] = React.useState(null);
+  const [cc, setCc] = React.useState(false);
+  const [palette, setPalette] = React.useState(true);
+  const [q, setQ] = React.useState("session");
+  const [agentMode, setAgentMode] = React.useState(true);
+  const [appearance, setAppearance] = React.useState("dark");
+
+  React.useEffect(() => { document.documentElement.setAttribute("data-appearance", appearance); }, [appearance]);
+  React.useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === " " || e.key.toLowerCase() === "k")) { e.preventDefault(); setPalette((p) => !p); }
+      if (e.key === "Escape") { setPalette(false); setCc(false); setMenu(null); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  return (
+    <div style={{ minHeight: "100vh", minWidth: 1180, display: "grid", gridTemplateRows: "auto minmax(0,1fr) auto", position: "relative" }}>
+      <MenuBar appName="Atlas" menus={["File", "Edit", "Session", "View", "Window", "Help"]} open={menu} onOpen={setMenu}
+        statusItems={[<span key="a" onClick={() => setCc(!cc)} style={{ cursor: "default" }}>Control Center</span>, "2 agents", "84%"]}
+        clock="Tue 9:41" />
+
+      <div style={{ position: "relative", padding: "26px 40px", display: "grid", justifyItems: "center", alignItems: "start" }}>
+        {menu ? (
+          <div style={{ position: "absolute", top: -4, left: menu === "File" ? 86 : 168, zIndex: 80 }}>
+            <Menu onPick={() => setMenu(null)} items={[
+              { label: "New Session", shortcut: "⌘N" }, { label: "New Window", shortcut: "⇧⌘N" }, "-",
+              { label: "Open Worktree…", shortcut: "⌘O" }, { label: "Recent", submenu: true }, "-",
+              { label: "Close Window", shortcut: "⌘W" }
+            ]} />
+          </div>
+        ) : null}
+
+        <div style={{ position: "relative", width: "100%", maxWidth: 1100, height: 560 }}>
+          <div style={{ position: "absolute", left: 0, top: 40, width: 520, height: 340, opacity: 0.96 }}>
+            <WindowFrame inactive title="Notes" subtitle="3 files" style={{ height: "100%" }}
+              sidebar={<Sidebar value="n2" onSelect={() => {}} groups={[{ label: "Folders", items: [
+                { id: "n1", label: "Inbox", trailing: "4" }, { id: "n2", label: "Plans", trailing: "12" }, { id: "n3", label: "Archive" }
+              ] }]} />}
+              toolbar={<Toolbar><ToolbarButton label="New" /><ToolbarButton label="Share" /></Toolbar>}>
+              <div style={{ padding: "var(--sp-7)", display: "grid", gap: 8, alignContent: "start" }}>
+                <span style={{ font: "var(--type-title-3)" }}>Release plan</span>
+                <span style={{ font: "var(--type-body)", color: "var(--label-secondary)", textWrap: "pretty" }}>
+                  Cut 1.4 after the e2e suite is green three runs in a row. Agent handles the changelog.
+                </span>
+              </div>
+            </WindowFrame>
+          </div>
+
+          <div style={{ position: "absolute", right: 0, top: 0, width: 620, height: 420 }}>
+            <WindowFrame title="Atlas" subtitle="~/src/atlas · agent/flaky-e2e" style={{ height: "100%" }}
+              toolbar={<Toolbar trailing={<Button size="small" variant="glass" onClick={() => setPalette(true)} keyEquivalent="⌘K">Search</Button>}>
+                <ToolbarButton label="Run" active /><ToolbarButton label="Stop" /><ToolbarButton label="Approvals" badge={1} />
+              </Toolbar>}
+              statusBar={<><StatusDot tone="running" pulse label="bash · playwright" /><span style={{ marginLeft: "auto", font: "var(--fw-medium) var(--fs-mono-sm)/1 var(--font-mono)" }}>$1.23 · 62%</span></>}>
+              <div style={{ padding: "var(--sp-7)", display: "grid", gap: 6, alignContent: "start", font: "var(--type-mono)" }}>
+                <span style={{ color: "var(--term-dim)" }}>$ atlas run --plan fix-flaky-e2e</span>
+                <span style={{ color: "var(--term-cyan)" }}>→ reading tests/e2e/session.spec.ts</span>
+                <span style={{ color: "var(--term-magenta)" }}>→ tool bash · playwright --repeat-each 5</span>
+                <span style={{ color: "var(--term-green)" }}>✓ 5 of 5 passed</span>
+                <span style={{ color: "var(--term-amber)" }}>! awaiting approval · git commit</span>
+              </div>
+            </WindowFrame>
+          </div>
+
+          {cc ? (
+            <div style={{ position: "absolute", right: -18, top: -14, zIndex: 70 }}>
+              <ControlCenter tiles={[
+                { label: "Agent mode", detail: agentMode ? "Auto-approve safe" : "Ask each time", on: agentMode, onToggle: () => setAgentMode(!agentMode), span: 4 },
+                { label: "Wi-Fi", detail: "studio-5g", on: true, span: 2 },
+                { label: "Focus", detail: "Until 5pm", span: 2 },
+                { label: "Brightness", value: 72, span: 4 },
+                { label: "Volume", value: 38, span: 4 }
+              ]} />
+            </div>
+          ) : null}
+
+          {palette ? (
+            <div onClick={() => setPalette(false)} style={{ position: "fixed", inset: 0, zIndex: 90, display: "grid", justifyItems: "center", alignItems: "start", paddingTop: "16vh", background: "rgba(0,0,0,0.24)", backdropFilter: "blur(3px)" }}>
+              <div onClick={(e) => e.stopPropagation()}>
+                <CommandPalette open query={q} onQuery={setQ} selected="r1" onSelect={() => setPalette(false)}
+                  groups={[
+                    { label: "Sessions", items: [
+                      { id: "r1", label: "Fix flaky e2e", detail: "running · 6 tools", shortcut: "⏎" },
+                      { id: "r2", label: "Refactor auth guard", detail: "done · 4m ago" }
+                    ] },
+                    { label: "Files", items: [
+                      { id: "r3", label: "session.spec.ts", detail: "~/src/atlas/tests/e2e" },
+                      { id: "r4", label: "guard.rs", detail: "~/src/atlas/src/auth" }
+                    ] },
+                    { label: "Actions", items: [
+                      { id: "r5", label: "Approve pending tool", detail: "1 waiting", shortcut: "⇧⌘A" },
+                      { id: "r6", label: "Toggle tinted glass", detail: "accessibility" }
+                    ] }
+                  ]}
+                  footer={<><span style={{ display: "inline-flex", gap: 3 }}><KeyCap size="small">↑</KeyCap><KeyCap size="small">↓</KeyCap></span> navigate · <KeyCap size="small">⏎</KeyCap> open · <KeyCap size="small">⌘</KeyCap><KeyCap size="small">Space</KeyCap> toggle</>} />
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      <div style={{ display: "grid", justifyItems: "center", paddingBottom: 14, gap: 10 }}>
+        <Material material="hud" radius="var(--r-capsule)" pad="6px 10px" elevation="popover" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <SegmentedControl size="small" value={appearance} onChange={setAppearance} items={[{ id: "dark", label: "Dark" }, { id: "light", label: "Light" }]} />
+          <Switch size="small" checked={cc} onChange={() => setCc(!cc)} label="Control Center" />
+          <Switch size="small" checked={palette} onChange={() => setPalette(!palette)} label="Spotlight" />
+        </Material>
+        <Dock items={[
+          { initials: "A", tint: "linear-gradient(180deg,#5aa9ff,#1d4ed8)", running: true },
+          { initials: "T", tint: "linear-gradient(180deg,#3f4c5c,#0f172a)", running: true },
+          { initials: "N", tint: "linear-gradient(180deg,#fde68a,#d97706)" },
+          { initials: "M", tint: "linear-gradient(180deg,#f9a8d4,#be185d)" },
+          { initials: "F", tint: "linear-gradient(180deg,#93c5fd,#2563eb)" },
+          { initials: "S", tint: "linear-gradient(180deg,#6ee7b7,#047857)" },
+          { initials: "X", tint: "linear-gradient(180deg,#cbd5e1,#475569)" }
+        ]} />
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+<script>VG_RUN("app");</script>
+</body></html>

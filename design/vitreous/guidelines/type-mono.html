@@ -1,0 +1,32 @@
+<!-- @dsCard group="Type" viewport="700x165" name="Mono" subtitle="Paths, shas, numbers, commands, transcripts" -->
+<!DOCTYPE html>
+<html lang="en" data-appearance="dark" data-accent="blue" data-motion="low"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  html, body { margin: 0; }
+  body {
+    font-family: var(--font-system); color: var(--label);
+    background: var(--desktop-image) center/cover no-repeat, var(--desktop-ground);
+    padding: 16px 18px; box-sizing: border-box;
+    -webkit-font-smoothing: antialiased;
+  }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .grid { display: grid; gap: 10px; }
+  .caps { font: var(--type-caps); letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--label-tertiary); }
+  .mono { font: var(--type-mono); color: var(--label-secondary); }
+  .tag { font: var(--fw-medium) 10px/1.35 var(--font-mono); color: var(--label-secondary); }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { color: var(--link-hover); }
+  
+</style></head><body>
+<div class="grid" style="gap: 8px">
+  <div style="font: var(--type-mono)">12/16 · ~/src/atlas/crates/agent/src/plan.rs</div>
+  <div style="font: var(--fw-medium) var(--fs-mono-sm)/1.4 var(--font-mono); color: var(--label-secondary)">11/15 · 4f2c9ab · 1.28s · 42 tok/s · $0.19</div>
+  <div class="row" style="gap: 14px; margin-top: 4px">
+    <span style="font: var(--fw-semibold) 22px/1 var(--font-mono)">$1.23</span>
+    <span style="font: var(--fw-semibold) 22px/1 var(--font-mono)">62%</span>
+    <span style="font: var(--fw-semibold) 22px/1 var(--font-mono)">47</span>
+    <span class="tag">tabular numbers for any metric</span>
+  </div>
+</div>
+</body></html>

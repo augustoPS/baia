@@ -1,0 +1,43 @@
+<!-- @dsCard group="Colors" viewport="700x160" name="Accent in use" subtitle="Selection, default button, switch, focus ring — one accent per window" -->
+<!DOCTYPE html>
+<html lang="en" data-appearance="dark" data-accent="blue" data-motion="low"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  html, body { margin: 0; }
+  body {
+    font-family: var(--font-system); color: var(--label);
+    background: var(--desktop-image) center/cover no-repeat, var(--desktop-ground);
+    padding: 16px 18px; box-sizing: border-box;
+    -webkit-font-smoothing: antialiased;
+  }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .grid { display: grid; gap: 10px; }
+  .caps { font: var(--type-caps); letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--label-tertiary); }
+  .mono { font: var(--type-mono); color: var(--label-secondary); }
+  .tag { font: var(--fw-medium) 10px/1.35 var(--font-mono); color: var(--label-secondary); }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { color: var(--link-hover); }
+  .demo { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: var(--r-5); background: var(--mat-fill-regular); backdrop-filter: var(--mat-regular); box-shadow: var(--lens-rim), var(--shadow-raised); }
+.btn { height: 22px; padding: 0 12px; border-radius: var(--r-3); font: var(--type-control); display: inline-flex; align-items: center; }
+.sel { padding: 3px 8px; border-radius: var(--r-2); background: var(--selection); color: var(--selection-text); font: var(--type-body); }
+.sw { width: 38px; height: 22px; border-radius: 999px; background: var(--accent); position: relative; box-shadow: var(--lens-rim), var(--shadow-accent); }
+.sw i { position: absolute; top: 2px; left: 18px; width: 18px; height: 18px; border-radius: 999px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.32); }
+.fld { height: 22px; width: 130px; border-radius: var(--r-2); background: var(--fill-tertiary); box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px var(--focus-ring); }
+</style></head><body>
+<div class="grid" style="gap: 12px">
+  <div class="demo" data-accent="purple">
+    <span class="btn" style="background: var(--accent); color: var(--label-on-accent); box-shadow: var(--lens-rim), var(--shadow-accent)">Run</span>
+    <span class="sel">selected row</span>
+    <span class="sw"><i></i></span>
+    <span class="fld"></span>
+    <span class="tag">data-accent="purple"</span>
+  </div>
+  <div class="demo" data-accent="green">
+    <span class="btn" style="background: var(--accent); color: var(--label-on-accent); box-shadow: var(--lens-rim), var(--shadow-accent)">Run</span>
+    <span class="sel">selected row</span>
+    <span class="sw"><i></i></span>
+    <span class="fld"></span>
+    <span class="tag">data-accent="green"</span>
+  </div>
+</div>
+</body></html>

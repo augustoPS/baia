@@ -1,0 +1,63 @@
+<!-- @dsCard group="Components" viewport="700x330" name="Desktop chrome" subtitle="Menu bar, Dock, Control Center, command palette" -->
+<!DOCTYPE html>
+<html lang="en" data-appearance="dark" data-accent="blue" data-motion="low"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="../../ds-runtime.js"></script>
+<style>
+  html, body { margin: 0; }
+  body {
+    font-family: var(--font-system); color: var(--label);
+    background: var(--desktop-image) center/cover no-repeat, var(--desktop-ground);
+    padding: 16px 18px; box-sizing: border-box; -webkit-font-smoothing: antialiased;
+  }
+  .caps { font: var(--type-caps); letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--label-tertiary); }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { color: var(--link-hover); }
+</style></head><body><div id="root"></div>
+<script type="text/jsx" id="demo">
+const { MenuBar, Dock, ControlCenter, CommandPalette, KeyCap } = window.VG;
+function Demo() {
+  const [open, setOpen] = React.useState(null);
+  const [q, setQ] = React.useState("auth");
+  const [cc, setCc] = React.useState(true);
+  return (
+    <div style={{ display: "grid", gap: 12 }}>
+      <MenuBar appName="Atlas" menus={["File", "Edit", "Session", "View", "Window", "Help"]} open={open} onOpen={setOpen}
+        statusItems={["2 agents", "$1.23", "84%"]} clock="Tue 9:41" style={{ borderRadius: "var(--r-3)" }} />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: 14, alignItems: "start" }}>
+        <CommandPalette open query={q} onQuery={setQ} selected="p2" onSelect={() => {}} width="100%"
+          groups={[
+            { label: "Sessions", items: [
+              { id: "p1", label: "Refactor auth guard", detail: "4m ago", shortcut: "⏎" },
+              { id: "p2", label: "auth/guard.rs", detail: "~/src/atlas/src" }
+            ] },
+            { label: "Commands", items: [
+              { id: "p3", label: "Run plan…", detail: "agent", shortcut: "⌘R" },
+              { id: "p4", label: "Approve pending tools", detail: "2 waiting" }
+            ] }
+          ]}
+          footer={<><span style={{ display: "inline-flex", gap: 3 }}><KeyCap size="small">↑</KeyCap><KeyCap size="small">↓</KeyCap></span> navigate · <KeyCap size="small">⏎</KeyCap> open</>} />
+        <ControlCenter width="100%" tiles={[
+          { label: "Agent mode", detail: cc ? "Auto-approve safe" : "Ask each time", on: cc, onToggle: () => setCc(!cc), span: 4 },
+          { label: "Do Not Disturb", detail: "Until 5pm", span: 2 },
+          { label: "Network", detail: "Wi-Fi", on: true, span: 2 },
+          { label: "Brightness", value: 72, span: 4 }
+        ]} />
+      </div>
+      <Dock items={[
+        { initials: "A", tint: "linear-gradient(180deg,#3b82f6,#1d4ed8)", running: true },
+        { initials: "T", tint: "linear-gradient(180deg,#334155,#0f172a)", running: true },
+        { initials: "X", tint: "linear-gradient(180deg,#f472b6,#be185d)" },
+        { initials: "S", tint: "linear-gradient(180deg,#34d399,#047857)" },
+        { initials: "M", tint: "linear-gradient(180deg,#fbbf24,#b45309)" }
+      ]} style={{ justifySelf: "center" }} />
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<Demo />);
+</script>
+<script>VG_RUN("demo");</script>
+</body></html>

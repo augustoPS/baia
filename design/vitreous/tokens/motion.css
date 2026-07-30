@@ -1,0 +1,47 @@
+/* Vitreous — motion. Two documented settings: [data-motion="low"] (default,
+   fades and short springs) and [data-motion="high"] (glass morphs, specular
+   sweeps, elastic sheets). Components read the semantic --t-* tokens only. */
+:root {
+  --ease-standard: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --spring-snappy: cubic-bezier(0.28, 0.9, 0.24, 1);
+  --spring-bouncy: cubic-bezier(0.34, 1.42, 0.64, 1);
+
+  --dur-1: 90ms;
+  --dur-2: 140ms;
+  --dur-3: 220ms;
+  --dur-4: 340ms;
+  --dur-5: 520ms;
+
+  --t-control: background-color var(--dur-2) var(--ease-standard), box-shadow var(--dur-2) var(--ease-standard), border-color var(--dur-2) var(--ease-standard), color var(--dur-2) var(--ease-standard);
+  --t-press: transform var(--dur-1) var(--ease-in);
+  --t-surface: opacity var(--dur-3) var(--ease-out), transform var(--dur-3) var(--ease-out);
+  --t-sheet: opacity var(--dur-3) var(--ease-out), transform var(--dur-4) var(--spring-snappy);
+  --press-scale: 0.98;
+  --sheen-travel: 0s;
+}
+
+[data-motion="high"] {
+  --t-surface: opacity var(--dur-3) var(--ease-out), transform var(--dur-4) var(--spring-bouncy);
+  --t-sheet: opacity var(--dur-3) var(--ease-out), transform var(--dur-5) var(--spring-bouncy);
+  --t-control: background-color var(--dur-2) var(--spring-snappy), box-shadow var(--dur-3) var(--spring-bouncy), border-color var(--dur-2) var(--ease-standard), color var(--dur-2) var(--ease-standard), transform var(--dur-3) var(--spring-bouncy);
+  --press-scale: 0.955;
+  --sheen-travel: 1.1s;
+}
+
+@keyframes vg-appear { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: none; } }
+@keyframes vg-rise { from { opacity: 0; transform: translate3d(0, 12px, 0) scale(0.99); } to { opacity: 1; transform: none; } }
+@keyframes vg-sheen { from { transform: translate3d(-140%, 0, 0) skewX(-12deg); } to { transform: translate3d(260%, 0, 0) skewX(-12deg); } }
+@keyframes vg-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+@keyframes vg-spin { to { transform: rotate(360deg); } }
+@keyframes vg-caret { 0%, 45% { opacity: 1; } 55%, 100% { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --t-surface: opacity var(--dur-2) linear;
+    --t-sheet: opacity var(--dur-2) linear;
+    --press-scale: 1;
+    --sheen-travel: 0s;
+  }
+}

@@ -1,0 +1,30 @@
+<!-- @dsCard group="Materials" viewport="700x170" name="Elevation" subtitle="control → window: shadows carry depth, materials carry hierarchy" -->
+<!DOCTYPE html>
+<html lang="en" data-appearance="dark" data-accent="blue" data-motion="low"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  html, body { margin: 0; }
+  body {
+    font-family: var(--font-system); color: var(--label);
+    background: var(--desktop-image) center/cover no-repeat, var(--desktop-ground);
+    padding: 16px 18px; box-sizing: border-box;
+    -webkit-font-smoothing: antialiased;
+  }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .grid { display: grid; gap: 10px; }
+  .caps { font: var(--type-caps); letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--label-tertiary); }
+  .mono { font: var(--type-mono); color: var(--label-secondary); }
+  .tag { font: var(--fw-medium) 10px/1.35 var(--font-mono); color: var(--label-secondary); }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { color: var(--link-hover); }
+  .e { border-radius: var(--r-5); height: 96px; box-sizing: border-box; padding: 10px; display: grid; align-content: end; background: var(--mat-fill-thin); backdrop-filter: var(--mat-thin); }
+.e i { font-style: normal; font: var(--fw-medium) 10px/1.4 var(--font-mono); color: var(--label-secondary); }
+</style></head><body>
+<div class="grid" style="grid-template-columns: repeat(5, 1fr)">
+  <div class="e" style="box-shadow: var(--lens-rim), var(--shadow-control)"><i>control<br>0 1 2 /.34</i></div>
+  <div class="e" style="box-shadow: var(--lens-rim), var(--shadow-raised)"><i>raised<br>0 4 14 /.34</i></div>
+  <div class="e" style="box-shadow: var(--lens-rim), var(--shadow-popover)"><i>popover<br>0 12 38 /.48</i></div>
+  <div class="e" style="box-shadow: var(--lens-rim), var(--shadow-sheet)"><i>sheet<br>0 32 80 /.56</i></div>
+  <div class="e" style="box-shadow: var(--shadow-window)"><i>window<br>0 26 70 /.62 + hairline</i></div>
+</div>
+</body></html>

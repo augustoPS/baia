@@ -1,0 +1,70 @@
+<!-- @dsCard group="Components" viewport="700x300" name="Display" subtitle="Badges, status dots, key caps, rows, table, tooltip" -->
+<!DOCTYPE html>
+<html lang="en" data-appearance="dark" data-accent="blue" data-motion="low"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="../../ds-runtime.js"></script>
+<style>
+  html, body { margin: 0; }
+  body {
+    font-family: var(--font-system); color: var(--label);
+    background: var(--desktop-image) center/cover no-repeat, var(--desktop-ground);
+    padding: 16px 18px; box-sizing: border-box; -webkit-font-smoothing: antialiased;
+  }
+  .caps { font: var(--type-caps); letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--label-tertiary); }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { color: var(--link-hover); }
+</style></head><body><div id="root"></div>
+<script type="text/jsx" id="demo">
+const { Badge, StatusDot, KeyCap, Spinner, Divider, Tooltip, Table, ListRow, Button } = window.VG;
+function Demo() {
+  const [sel, setSel] = React.useState(1);
+  const [row, setRow] = React.useState("b");
+  return (
+    <div style={{ display: "grid", gap: 12 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
+        <Badge tone="positive">passed</Badge>
+        <Badge tone="caution">needs review</Badge>
+        <Badge tone="negative">failed</Badge>
+        <Badge tone="accent" mono>tool: bash</Badge>
+        <Badge count={3} tone="accent" />
+        <Divider orientation="vertical" />
+        <StatusDot tone="running" pulse label="cargo test" />
+        <StatusDot tone="ok" label="12s" />
+        <StatusDot tone="idle" label="queued" />
+        <Divider orientation="vertical" />
+        <Spinner />
+        <span style={{ display: "flex", gap: 3 }}><KeyCap>⌘</KeyCap><KeyCap>K</KeyCap></span>
+        <Tooltip content="Re-run last command" shortcut="⌘R"><Button size="small" variant="glass">Re-run</Button></Tooltip>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "270px 1fr", gap: 16 }}>
+        <div style={{ display: "grid", gap: 1, alignContent: "start" }}>
+          <ListRow title="Refactor auth guard" subtitle="12 tools · 4m ago" selected={row === "a"} onClick={() => setRow("a")} trailing={<Badge tone="positive">done</Badge>} />
+          <ListRow title="Fix flaky e2e" subtitle="running · 2 tools" selected={row === "b"} onClick={() => setRow("b")} trailing={<Spinner size={11} />} />
+          <ListRow title="src/agents" disclosure={true} depth={0} onClick={() => {}} />
+          <ListRow title="plan.rs" depth={1} size="compact" onClick={() => {}} trailing="4 KB" />
+        </div>
+        <Table
+          columns={[
+            { id: "tool", label: "Tool", width: "110px" },
+            { id: "target", label: "Target", mono: true },
+            { id: "ms", label: "Time", width: "68px", align: "right", mono: true }
+          ]}
+          rows={[
+            { id: 1, tool: "read", target: "src/auth/guard.rs", ms: "12ms" },
+            { id: 2, tool: "bash", target: "cargo test -q", ms: "8.4s" },
+            { id: 3, tool: "edit", target: "src/auth/guard.rs", ms: "31ms" },
+            { id: 4, tool: "bash", target: "cargo clippy", ms: "5.1s" }
+          ]}
+          sort={{ id: "ms", dir: "desc" }} onSort={() => {}}
+          selected={sel} onSelect={setSel} />
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<Demo />);
+</script>
+<script>VG_RUN("demo");</script>
+</body></html>

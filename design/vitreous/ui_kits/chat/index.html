@@ -1,0 +1,142 @@
+<!-- @dsCard group="Chat" viewport="1180x760" subtitle="Conversation list, message thread, glass composer" -->
+<!-- @startingPoint section="App" subtitle="Chat window with thread and composer" viewport="1180x760" -->
+<!DOCTYPE html>
+<html lang="en" data-appearance="dark" data-accent="blue" data-motion="low"><head><meta charset="utf-8">
+<title>Messages — Vitreous</title>
+<link rel="stylesheet" href="../../styles.css">
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="../../ds-runtime.js"></script>
+<style>
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: var(--font-system); color: var(--label);
+    background: var(--desktop-image) center/cover no-repeat fixed, var(--desktop-ground);
+    -webkit-font-smoothing: antialiased;
+  }
+  #root { min-height: 100vh; }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { color: var(--link-hover); }
+  *::-webkit-scrollbar { width: 9px; height: 9px; }
+  *::-webkit-scrollbar-thumb { background: var(--fill); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+  *::-webkit-scrollbar-track { background: transparent; }
+</style></head>
+<body>
+<div id="root"></div>
+<script type="text/jsx" id="app">
+const { WindowFrame, Sidebar, SplitView, Toolbar, ToolbarButton, SearchField, ListRow, Badge, Button, StatusDot, Divider, Material, KeyCap, Popover, Tooltip, TextField } = window.VG;
+
+const CHATS = [
+  { id: "c1", who: "Rin Takahashi", last: "Cutting 1.4 tomorrow then.", when: "9:34", unread: 2, online: true },
+  { id: "c2", who: "atlas · agent", last: "Awaiting approval: git commit", when: "9:31", unread: 1, agent: true },
+  { id: "c3", who: "Design", last: "Sasha: tinted mode reads better", when: "8:52", members: 6 },
+  { id: "c4", who: "Dario Fu", last: "Keep network denied by default.", when: "Mon" },
+  { id: "c5", who: "ops", last: "Spend digest posted.", when: "Mon", members: 12 }
+];
+
+const MSGS = [
+  { id: 1, me: false, who: "Rin", text: "Suite has been green for forty runs. Ready to cut 1.4?", when: "9:28" },
+  { id: 2, me: true, text: "Yes — the flake was the session-ready attribute landing a frame late.", when: "9:30" },
+  { id: 3, me: true, text: "Agent has the commit staged, just needs an approval.", when: "9:30" },
+  { id: 4, me: false, who: "Rin", text: "Approve it and I'll tag the release after CI.", when: "9:33" },
+  { id: 5, me: false, who: "Rin", text: "Cutting 1.4 tomorrow then.", when: "9:34" }
+];
+
+function App() {
+  const [chat, setChat] = React.useState("c1");
+  const [q, setQ] = React.useState("");
+  const [draft, setDraft] = React.useState("");
+  const [msgs, setMsgs] = React.useState(MSGS);
+  const [info, setInfo] = React.useState(false);
+  const current = CHATS.find((c) => c.id === chat) || CHATS[0];
+
+  const send = () => {
+    if (!draft.trim()) return;
+    setMsgs(msgs.concat({ id: Date.now(), me: true, text: draft.trim(), when: "9:41" }));
+    setDraft("");
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", minWidth: 1080, display: "grid", placeItems: "center", padding: 24, boxSizing: "border-box" }}>
+      <WindowFrame title={current.who} subtitle={current.agent ? "agent session · flaky-e2e" : current.members ? current.members + " members" : current.online ? "online" : "last seen 9:20"}
+        style={{ width: "100%", maxWidth: 1080, height: 680 }}
+        sidebarWidth="260px"
+        sidebar={<Sidebar value={chat} onSelect={setChat}
+          header={<SearchField value={q} onChange={(e) => setQ(e.target.value)} onClear={() => setQ("")} placeholder="Search" width="100%" />}
+          groups={[{ label: "Conversations", items: CHATS.filter((c) => (c.who + c.last).toLowerCase().includes(q.toLowerCase())).map((c) => ({
+            id: c.id, label: c.who, trailing: c.unread ? String(c.unread) : c.when,
+            marker: c.agent ? "var(--status-caution)" : c.online ? "var(--status-positive)" : undefined
+          })) }]}
+          footer={<StatusDot tone="ok" label="All caught up" />} />}
+        toolbar={<Toolbar trailing={<><Tooltip content="Conversation info" shortcut="⌘I"><Button size="small" variant="glass" onClick={() => setInfo(!info)}>Info</Button></Tooltip><Button size="small">Call</Button></>}>
+          <ToolbarButton label="Search" /><ToolbarButton label="Pin" /><ToolbarButton label="Mute" />
+        </Toolbar>}
+      >
+        <div style={{ position: "relative", display: "grid", gridTemplateRows: "minmax(0,1fr) auto", minHeight: 0 }}>
+          <div style={{ overflow: "auto", padding: "var(--sp-7) var(--sp-8)", display: "grid", gap: 8, alignContent: "start" }}>
+            <Divider label="Today" />
+            {msgs.map((m) => (
+              <div key={m.id} style={{ justifySelf: m.me ? "end" : "start", maxWidth: "62%", display: "grid", gap: 3 }}>
+                {!m.me ? <span style={{ font: "var(--type-footnote)", color: "var(--label-tertiary)", paddingLeft: 4 }}>{m.who} · {m.when}</span> : null}
+                <div style={{
+                  padding: "8px 12px",
+                  borderRadius: m.me ? "16px 16px 6px 16px" : "16px 16px 16px 6px",
+                  background: m.me ? "var(--accent)" : "var(--mat-fill-thin)",
+                  backgroundImage: m.me ? "var(--lens-sheen-soft)" : undefined,
+                  backdropFilter: m.me ? undefined : "var(--mat-thin)",
+                  WebkitBackdropFilter: m.me ? undefined : "var(--mat-thin)",
+                  boxShadow: m.me ? "var(--lens-rim), var(--shadow-accent)" : "var(--lens-rim), var(--shadow-control)",
+                  color: m.me ? "var(--label-on-accent)" : "var(--label)",
+                  font: "var(--type-body)", textWrap: "pretty"
+                }}>{m.text}</div>
+                {m.me ? <span style={{ font: "var(--type-footnote)", color: "var(--label-tertiary)", justifySelf: "end", paddingRight: 4 }}>{m.when} · delivered</span> : null}
+              </div>
+            ))}
+            <div style={{ justifySelf: "start", display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: "var(--r-capsule)", background: "var(--mat-fill-thin)", backdropFilter: "var(--mat-thin)", boxShadow: "var(--lens-rim)" }}>
+              {[0, 1, 2].map((i) => (
+                <span key={i} style={{ width: 5, height: 5, borderRadius: 999, background: "var(--label-tertiary)", animation: "vg-pulse 1.2s var(--ease-standard) infinite", animationDelay: (i * 0.18) + "s" }} />
+              ))}
+            </div>
+          </div>
+
+          <div style={{ padding: "var(--sp-5) var(--sp-8) var(--sp-7)" }}>
+            <Material material="thin" radius="var(--r-7)" elevation="raised" style={{ display: "flex", alignItems: "flex-end", gap: 8, padding: "8px 10px" }}>
+              <textarea
+                value={draft} onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || !e.shiftKey)) { e.preventDefault(); send(); } }}
+                placeholder="Message" rows={1}
+                style={{ all: "unset", flex: 1, font: "var(--type-body)", color: "var(--label)", lineHeight: "var(--lh-body)", resize: "none", maxHeight: 80 }} />
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 5, font: "var(--type-footnote)", color: "var(--label-tertiary)" }}>
+                <KeyCap size="small">⏎</KeyCap> send
+              </span>
+              <Button size="small" variant="accent" onClick={send}>Send</Button>
+            </Material>
+          </div>
+
+          {info ? (
+            <div style={{ position: "absolute", top: 12, right: 16, zIndex: 40 }}>
+              <Popover anchor="top" width={260}>
+                <div style={{ display: "grid", gap: 10 }}>
+                  <span style={{ font: "var(--type-title-3)" }}>{current.who}</span>
+                  <Divider />
+                  <div style={{ display: "grid", gap: 6 }}>
+                    <span style={{ font: "var(--type-subheadline)", color: "var(--label-secondary)" }}>Shared sessions</span>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      <Badge tone="positive">flaky-e2e</Badge><Badge>refactor-auth</Badge>
+                    </div>
+                  </div>
+                  <Button size="small" fullWidth onClick={() => setInfo(false)}>Done</Button>
+                </div>
+              </Popover>
+            </div>
+          ) : null}
+        </div>
+      </WindowFrame>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+<script>VG_RUN("app");</script>
+</body></html>

@@ -1,0 +1,35 @@
+<!-- @dsCard group="Colors" viewport="700x160" name="Accent set" subtitle="Eight runtime accents; set [data-accent] on the root" -->
+<!DOCTYPE html>
+<html lang="en" data-appearance="dark" data-accent="blue" data-motion="low"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  html, body { margin: 0; }
+  body {
+    font-family: var(--font-system); color: var(--label);
+    background: var(--desktop-image) center/cover no-repeat, var(--desktop-ground);
+    padding: 16px 18px; box-sizing: border-box;
+    -webkit-font-smoothing: antialiased;
+  }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .grid { display: grid; gap: 10px; }
+  .caps { font: var(--type-caps); letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--label-tertiary); }
+  .mono { font: var(--type-mono); color: var(--label-secondary); }
+  .tag { font: var(--fw-medium) 10px/1.35 var(--font-mono); color: var(--label-secondary); }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { color: var(--link-hover); }
+  .a { display: grid; gap: 6px; justify-items: center; }
+.a i { width: 100%; height: 46px; border-radius: var(--r-4); box-shadow: var(--lens-rim), var(--shadow-control); }
+.a span { font: var(--fw-medium) 10px/1 var(--font-mono); color: var(--label-secondary); }
+</style></head><body>
+<div class="grid" style="grid-template-columns: repeat(8, 1fr)">
+  <span class="a"><i style="background: var(--system-blue)"></i><span>blue</span></span>
+  <span class="a"><i style="background: var(--system-purple)"></i><span>purple</span></span>
+  <span class="a"><i style="background: var(--system-pink)"></i><span>pink</span></span>
+  <span class="a"><i style="background: var(--system-red)"></i><span>red</span></span>
+  <span class="a"><i style="background: var(--system-orange)"></i><span>orange</span></span>
+  <span class="a"><i style="background: var(--system-yellow)"></i><span>yellow</span></span>
+  <span class="a"><i style="background: var(--system-green)"></i><span>green</span></span>
+  <span class="a"><i style="background: var(--system-graphite)"></i><span>graphite</span></span>
+</div>
+<div class="mono" style="margin-top: 12px; font-size: 10px">--accent drives selection, focus rings, switches, default buttons, progress. Everything else stays neutral.</div>
+</body></html>

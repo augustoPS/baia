@@ -1,0 +1,160 @@
+<!-- @dsCard group="File browser" viewport="1280x800" subtitle="Columns and grid views, path bar, quick look sheet" -->
+<!-- @startingPoint section="App" subtitle="File browser with column and grid views" viewport="1280x800" -->
+<!DOCTYPE html>
+<html lang="en" data-appearance="dark" data-accent="blue" data-motion="low"><head><meta charset="utf-8">
+<title>Files — Vitreous</title>
+<link rel="stylesheet" href="../../styles.css">
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="../../ds-runtime.js"></script>
+<style>
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: var(--font-system); color: var(--label);
+    background: var(--desktop-image) center/cover no-repeat fixed, var(--desktop-ground);
+    -webkit-font-smoothing: antialiased;
+  }
+  #root { min-height: 100vh; }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { color: var(--link-hover); }
+  *::-webkit-scrollbar { width: 9px; height: 9px; }
+  *::-webkit-scrollbar-thumb { background: var(--fill); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+  *::-webkit-scrollbar-track { background: transparent; }
+</style></head>
+<body>
+<div id="root"></div>
+<script type="text/jsx" id="app">
+const { WindowFrame, Sidebar, SplitView, Toolbar, ToolbarButton, ToolbarSeparator, SearchField, ListRow, SegmentedControl, Badge, Button, Sheet, Material, Divider, Table, PopUpButton, StatusDot } = window.VG;
+
+const TREE = {
+  root: [
+    { id: "crates", label: "crates", dir: true, size: "—", kind: "Folder", when: "Today 9:12" },
+    { id: "tests", label: "tests", dir: true, size: "—", kind: "Folder", when: "Today 9:33" },
+    { id: "docs", label: "docs", dir: true, size: "—", kind: "Folder", when: "Mon" },
+    { id: "cargo", label: "Cargo.toml", size: "2 KB", kind: "TOML", when: "Mon" },
+    { id: "readme", label: "README.md", size: "14 KB", kind: "Markdown", when: "Sun" }
+  ],
+  tests: [
+    { id: "e2e", label: "e2e", dir: true, size: "—", kind: "Folder", when: "Today 9:33" },
+    { id: "unit", label: "unit", dir: true, size: "—", kind: "Folder", when: "Fri" },
+    { id: "fixtures", label: "fixtures", dir: true, size: "—", kind: "Folder", when: "Fri" }
+  ],
+  e2e: [
+    { id: "spec", label: "session.spec.ts", size: "8 KB", kind: "TypeScript", when: "Today 9:33" },
+    { id: "spec2", label: "plan.spec.ts", size: "6 KB", kind: "TypeScript", when: "Today 8:58" },
+    { id: "helper", label: "helpers.ts", size: "3 KB", kind: "TypeScript", when: "Fri" },
+    { id: "snap", label: "__snapshots__", dir: true, size: "—", kind: "Folder", when: "Fri" }
+  ]
+};
+
+function App() {
+  const [view, setView] = React.useState("columns");
+  const [path, setPath] = React.useState(["root", "tests", "e2e"]);
+  const [sel, setSel] = React.useState("spec");
+  const [q, setQ] = React.useState("");
+  const [quick, setQuick] = React.useState(false);
+  const cols = path.map((p) => ({ id: p, items: TREE[p] || [] }));
+  const selected = (TREE[path[path.length - 1]] || []).find((i) => i.id === sel);
+
+  const open = (colIdx, item) => {
+    setSel(item.id);
+    if (item.dir && TREE[item.id]) setPath(path.slice(0, colIdx + 1).concat(item.id));
+    else setPath(path.slice(0, colIdx + 1));
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", minWidth: 1180, display: "grid", placeItems: "center", padding: 24, boxSizing: "border-box" }}>
+      <div style={{ position: "relative", width: "100%", maxWidth: 1180, height: 700 }}>
+      <WindowFrame title="atlas" subtitle={"~/src/atlas/" + path.slice(1).join("/")} style={{ height: "100%" }}
+        sidebar={<Sidebar value="atlas" onSelect={() => {}}
+          groups={[
+            { label: "Favorites", items: [
+              { id: "recents", label: "Recents" }, { id: "atlas", label: "atlas" },
+              { id: "downloads", label: "Downloads" }, { id: "desktop", label: "Desktop" }
+            ] },
+            { label: "Worktrees", items: [
+              { id: "w1", label: "agent/flaky-e2e", marker: "var(--accent)" },
+              { id: "w2", label: "agent/refactor-auth", marker: "var(--status-positive)" }
+            ] },
+            { label: "Tags", items: [
+              { id: "t1", label: "Review", marker: "var(--status-caution)" },
+              { id: "t2", label: "Shipped", marker: "var(--status-positive)" }
+            ] }
+          ]} />}
+        toolbar={<Toolbar trailing={<><SearchField value={q} onChange={(e) => setQ(e.target.value)} onClear={() => setQ("")} width={170} scope="atlas" /><PopUpButton pullDown label="Arrange" options={["Name", "Date", "Kind"]} width={104} size="small" /></>}>
+          <SegmentedControl size="small" value={view} onChange={setView} items={[{ id: "columns", label: "Columns" }, { id: "grid", label: "Grid" }, { id: "list", label: "List" }]} />
+          <ToolbarSeparator />
+          <ToolbarButton label="Quick Look" onClick={() => setQuick(true)} />
+          <ToolbarButton label="Share" />
+          <ToolbarButton label="New Folder" />
+        </Toolbar>}
+        statusBar={<>
+          <span style={{ font: "var(--type-footnote)" }}>{(TREE[path[path.length - 1]] || []).length} items · 1 selected</span>
+          <span style={{ marginLeft: "auto", font: "var(--fw-medium) var(--fs-mono-sm)/1 var(--font-mono)" }}>412 GB available</span>
+          <StatusDot tone="ok" label="iCloud synced" />
+        </>}
+      >
+        {view === "columns" ? (
+          <SplitView panes={cols.map((c, i) => ({
+            id: c.id, width: i === cols.length - 1 ? "minmax(0,1fr)" : "240px",
+            content: (
+              <div style={{ display: "grid", gap: 1, alignContent: "start", padding: "var(--sp-3)" }}>
+                {c.items.filter((it) => it.label.toLowerCase().includes(q.toLowerCase())).map((it) => (
+                  <ListRow key={it.id} size="compact" title={it.label} selected={sel === it.id || path[i + 1] === it.id}
+                    onClick={() => open(i, it)}
+                    trailing={it.dir ? <span style={{ fontSize: 8 }}>▶</span> : <span>{it.size}</span>} />
+                ))}
+              </div>
+            )
+          }))} />
+        ) : view === "grid" ? (
+          <div style={{ padding: "var(--sp-7)", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(112px, 1fr))", gap: "var(--sp-7)", alignContent: "start", overflow: "auto" }}>
+            {(TREE[path[path.length - 1]] || []).map((it) => (
+              <button key={it.id} onClick={() => setSel(it.id)}
+                style={{ all: "unset", cursor: "default", display: "grid", gap: 6, justifyItems: "center", padding: "8px 4px", borderRadius: "var(--r-4)", background: sel === it.id ? "var(--selection)" : "transparent" }}>
+                <span style={{
+                  width: 64, height: 52, borderRadius: "var(--r-4)",
+                  background: it.dir ? "linear-gradient(180deg, color-mix(in srgb, var(--accent) 82%, white 18%), var(--accent))" : "var(--mat-fill-thick)",
+                  backdropFilter: it.dir ? undefined : "var(--mat-thick)",
+                  boxShadow: "var(--lens-rim), var(--shadow-raised)",
+                  display: "grid", placeItems: "center",
+                  font: "var(--fw-semibold) 11px/1 var(--font-mono)",
+                  color: it.dir ? "var(--label-on-accent)" : "var(--label-secondary)"
+                }}>{it.dir ? "" : (it.label.split(".").pop() || "").slice(0, 4)}</span>
+                <span style={{ font: "var(--type-subheadline)", color: sel === it.id ? "var(--selection-text)" : "var(--label)", textAlign: "center", wordBreak: "break-word" }}>{it.label}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div style={{ padding: "var(--sp-5)", minHeight: 0, display: "grid" }}>
+            <Table
+              columns={[{ id: "label", label: "Name" }, { id: "kind", label: "Kind", width: "120px", secondary: true }, { id: "size", label: "Size", width: "80px", align: "right", mono: true }, { id: "when", label: "Modified", width: "130px", secondary: true }]}
+              rows={(TREE[path[path.length - 1]] || []).map((it) => ({ ...it }))}
+              selected={sel} onSelect={setSel} sort={{ id: "when", dir: "desc" }} onSort={() => {}} zebra />
+          </div>
+        )}
+      </WindowFrame>
+
+      <Sheet open={quick} onDismiss={() => setQuick(false)} width={520}
+        title={selected ? selected.label : "Quick Look"}
+        message={selected ? selected.kind + " · " + selected.size + " · modified " + selected.when : null}
+        actions={<><Button onClick={() => setQuick(false)}>Done</Button><Button variant="accent">Open in editor</Button></>}>
+        <Material material="ultraThin" radius="var(--r-5)" pad={12} elevation="control">
+          <pre style={{ margin: 0, font: "var(--type-mono)", color: "var(--term-fg)", whiteSpace: "pre-wrap" }}>{
+"test('session becomes ready', async ({ page }) => {\n" +
+"  await page.goto('/session/new');\n" +
+"  await page.waitForEvent('session-ready');\n" +
+"  await expect(page.getByRole('log')).toBeVisible();\n" +
+"});"
+}</pre>
+        </Material>
+      </Sheet>
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+<script>VG_RUN("app");</script>
+</body></html>

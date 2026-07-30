@@ -1,0 +1,27 @@
+<!-- @dsCard group="Metrics" viewport="700x185" name="Pane widths" subtitle="sidebar 220 · list 300 · inspector 280 · popover 300 · palette 640" -->
+<!DOCTYPE html>
+<html lang="en" data-appearance="dark" data-accent="blue" data-motion="low"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  html, body { margin: 0; }
+  body {
+    font-family: var(--font-system); color: var(--label);
+    background: var(--desktop-image) center/cover no-repeat, var(--desktop-ground);
+    padding: 16px 18px; box-sizing: border-box;
+    -webkit-font-smoothing: antialiased;
+  }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .grid { display: grid; gap: 10px; }
+  .caps { font: var(--type-caps); letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--label-tertiary); }
+  .mono { font: var(--type-mono); color: var(--label-secondary); }
+  .tag { font: var(--fw-medium) 10px/1.35 var(--font-mono); color: var(--label-secondary); }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { color: var(--link-hover); }
+  .z { border-radius: var(--r-4); background: var(--mat-fill-ultra-thin); backdrop-filter: var(--mat-ultra-thin); box-shadow: inset 0 0 0 .5px var(--separator); padding: 8px; font: var(--fw-medium) 10px/1.4 var(--font-mono); color: var(--label-secondary); }
+</style></head><body>
+<div style="display: grid; grid-template-columns: 220px 1fr 150px; gap: 0; height: 128px; border-radius: var(--r-5); overflow: hidden; box-shadow: var(--shadow-window)">
+  <div class="z" style="border-radius: 0; background: var(--mat-fill-sidebar); backdrop-filter: var(--mat-regular)">--w-sidebar<br>220</div>
+  <div class="z" style="border-radius: 0; background: var(--mat-fill-regular); backdrop-filter: var(--mat-regular)">content · minmax(0,1fr)<br>insets: pane 10 · row 8 · content 20</div>
+  <div class="z" style="border-radius: 0; background: var(--mat-fill-sidebar); backdrop-filter: var(--mat-regular)">--w-inspector<br>280 (clipped)</div>
+</div>
+</body></html>

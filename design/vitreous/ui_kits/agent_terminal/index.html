@@ -1,0 +1,210 @@
+<!-- @dsCard group="Agent terminal" viewport="1280x800" subtitle="Agent-centric terminal app — sessions, transcript, approvals, inspector" -->
+<!-- @startingPoint section="App" subtitle="Agent terminal window with transcript and run inspector" viewport="1280x800" -->
+<!DOCTYPE html>
+<html lang="en" data-appearance="dark" data-accent="blue" data-motion="low"><head><meta charset="utf-8">
+<title>Atlas — agent terminal</title>
+<link rel="stylesheet" href="../../styles.css">
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="../../ds-runtime.js"></script>
+<script src="./data.js"></script>
+<style>
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: var(--font-system); color: var(--label);
+    background: var(--desktop-image) center/cover no-repeat fixed, var(--desktop-ground);
+    -webkit-font-smoothing: antialiased;
+  }
+  #root { min-height: 100vh; }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { color: var(--link-hover); }
+  *::-webkit-scrollbar { width: 9px; height: 9px; }
+  *::-webkit-scrollbar-thumb { background: var(--fill); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+  *::-webkit-scrollbar-track { background: transparent; }
+</style></head>
+<body>
+<div id="root"></div>
+<script>VG_LOAD(["./Transcript.jsx", "./RunInspector.jsx", "./Screens.jsx"]);</script>
+<script type="text/jsx" id="app">
+const {
+  WindowFrame, Toolbar, ToolbarButton, ToolbarSeparator, Sidebar, Tabs, SearchField,
+  StatusDot, Badge, Button, CommandPalette, KeyCap, Sheet, TextField, PopUpButton,
+  MenuBar, Menu, Switch, SegmentedControl
+} = window.VG;
+const D = window.ATLAS;
+
+const MARKERS = { done: "var(--status-positive)", running: "var(--accent)", review: "var(--status-caution)", idle: "var(--label-quaternary)" };
+
+function App() {
+  const [view, setView] = React.useState("Transcript");
+  const [session, setSession] = React.useState("s2");
+  const [tab, setTab] = React.useState("t1");
+  const [inspTab, setInspTab] = React.useState("Run");
+  const [query, setQuery] = React.useState("");
+  const [palette, setPalette] = React.useState(false);
+  const [paletteQ, setPaletteQ] = React.useState("");
+  const [sheet, setSheet] = React.useState(false);
+  const [menu, setMenu] = React.useState(null);
+  const [draft, setDraft] = React.useState("");
+  const [mode, setMode] = React.useState("Act");
+  const [model, setModel] = React.useState("Opus 4.6");
+  const [auto, setAuto] = React.useState(true);
+  const [temp, setTemp] = React.useState(0.4);
+  const [appearance, setAppearance] = React.useState("dark");
+  const [glass, setGlass] = React.useState("clear");
+  const [entries, setEntries] = React.useState(D.transcript);
+
+  React.useEffect(() => {
+    const r = document.documentElement;
+    r.setAttribute("data-appearance", appearance);
+    if (glass === "tinted") r.setAttribute("data-glass", "tinted"); else r.removeAttribute("data-glass");
+  }, [appearance, glass]);
+
+  React.useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setPalette((p) => !p); }
+      if (e.key === "Escape") { setPalette(false); setSheet(false); setMenu(null); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const approve = () => setEntries((es) => es.map((e) => e.kind === "pending"
+    ? { kind: "tool", tool: e.tool, target: e.target, ms: "0.4s", out: "[main 4f2c9ab] fix(e2e): await session-ready event" }
+    : e));
+  const deny = () => setEntries((es) => es.filter((e) => e.kind !== "pending"));
+  const pending = entries.some((e) => e.kind === "pending");
+  const current = D.sessions.find((s) => s.id === session) || D.sessions[1];
+
+  return (
+    <div style={{ minHeight: "100vh", minWidth: 1180, display: "grid", gridTemplateRows: "auto minmax(0,1fr)", boxSizing: "border-box" }}>
+      <MenuBar appName="Atlas" menus={["File", "Edit", "Session", "Tools", "View", "Help"]} open={menu} onOpen={setMenu}
+        statusItems={[pending ? "1 approval" : "2 agents", "$1.23"]} clock="Tue 9:41" />
+
+      <div style={{ position: "relative", padding: "18px 22px 26px", display: "grid", minHeight: 0 }}>
+        {menu ? (
+          <div style={{ position: "absolute", top: -2, left: menu === "File" ? 86 : menu === "Edit" ? 128 : 172, zIndex: 80 }}>
+            <Menu
+              onPick={() => setMenu(null)}
+              items={menu === "Session" ? [
+                { label: "New Session", shortcut: "⌘N" },
+                { label: "Duplicate Session", shortcut: "⌘D" },
+                "-",
+                { label: "Auto-approve Safe Tools", checked: auto },
+                { label: "Stop Agent", shortcut: "⌘." },
+                "-",
+                { label: "Export Transcript…", shortcut: "⇧⌘E" }
+              ] : [
+                { label: "New Window", shortcut: "⌘N" },
+                { label: "Open Worktree…", shortcut: "⌘O" },
+                "-",
+                { label: "Close", shortcut: "⌘W" }
+              ]} />
+          </div>
+        ) : null}
+
+        <WindowFrame
+          title={current.label}
+          subtitle={"~/src/atlas · agent/flaky-e2e · " + model}
+          sidebarWidth="var(--w-sidebar)"
+          style={{ minHeight: 0 }}
+          sidebar={
+            <Sidebar
+              value={session}
+              onSelect={setSession}
+              header={<SearchField value={query} onChange={(e) => setQuery(e.target.value)} onClear={() => setQuery("")} placeholder="Filter sessions" width="100%" />}
+              footer={
+                <div style={{ display: "grid", gap: 6 }}>
+                  <SegmentedControl size="small" fullWidth value={appearance} onChange={setAppearance} items={[{ id: "dark", label: "Dark" }, { id: "light", label: "Light" }]} />
+                  <Switch size="small" checked={glass === "tinted"} onChange={() => setGlass(glass === "tinted" ? "clear" : "tinted")} label="Tinted glass" />
+                </div>
+              }
+              groups={[
+                { label: "Sessions", items: D.sessions
+                  .filter((s) => s.label.toLowerCase().includes(query.toLowerCase()))
+                  .map((s) => ({ id: s.id, label: s.label, trailing: s.when, marker: MARKERS[s.state] })) },
+                { label: "Worktrees", items: D.worktrees.map((w) => ({ id: w.id, label: w.label, marker: MARKERS[w.state] })) }
+              ]}
+            />
+          }
+          toolbar={
+            <Toolbar leading={
+              <SegmentedControl size="small" value={view} onChange={setView} items={["Transcript", "Approvals", "Diff", "Cost"]} />
+            } trailing={
+              <>
+                <Button size="small" variant="glass" onClick={() => setPalette(true)} keyEquivalent="⌘K">Search</Button>
+                <PopUpButton size="small" value={model} onChange={setModel} options={["Opus 4.6", "Sonnet 4.6", "Haiku 4.5"]} width={128} />
+              </>
+            }>
+              <ToolbarButton label="Run" active />
+              <ToolbarButton label="Stop" />
+              <ToolbarSeparator />
+              <ToolbarButton label="Approvals" badge={pending ? 1 : undefined} onClick={approve} />
+              <ToolbarButton label="New session" onClick={() => setSheet(true)} />
+            </Toolbar>
+          }
+          tabs={
+            <Tabs value={tab} onChange={setTab} onClose={() => {}} onNew={() => setSheet(true)} tabs={[
+              { id: "t1", label: "transcript" },
+              { id: "t2", label: "session.spec.ts", dirty: true },
+              { id: "t3", label: "playwright" }
+            ]} />
+          }
+          inspector={
+            <RunInspector tab={inspTab} onTab={setInspTab} calls={D.calls} model={model} onModel={setModel}
+              autoApprove={auto} onAutoApprove={setAuto} temp={temp} onTemp={setTemp} />
+          }
+          statusBar={
+            <>
+              <StatusDot tone={pending ? "warn" : "running"} pulse={!pending} label={pending ? "waiting for approval · git commit" : "bash · playwright --repeat-each 5"} />
+              <span style={{ marginLeft: "auto", font: "var(--fw-medium) var(--fs-mono-sm)/1 var(--font-mono)", color: "var(--label-secondary)" }}>
+                {current.tools} tools · ${current.cost.toFixed(2)} · 62% context
+              </span>
+              <Badge tone={pending ? "caution" : "positive"}>{pending ? "1 pending" : "clean"}</Badge>
+            </>
+          }
+        >
+          {view === "Transcript" ? (
+            <div style={{ display: "grid", gridTemplateRows: "minmax(0,1fr) auto", minHeight: 0 }}>
+              <Transcript entries={entries} streaming={!pending} onApprove={approve} onDeny={deny} />
+              <Composer value={draft} onChange={setDraft} onSend={() => setDraft("")} mode={mode} onMode={setMode} />
+            </div>
+          ) : view === "Approvals" ? <ApprovalsScreen />
+            : view === "Diff" ? <DiffScreen />
+            : <CostScreen />}
+        </WindowFrame>
+
+        {palette ? (
+          <div
+            onClick={() => setPalette(false)}
+            style={{ position: "fixed", inset: 0, zIndex: 90, display: "grid", justifyItems: "center", alignItems: "start", paddingTop: "12vh", background: "rgba(0,0,0,0.28)", backdropFilter: "blur(3px)" }}
+          >
+            <div onClick={(e) => e.stopPropagation()}>
+              <CommandPalette
+                open query={paletteQ} onQuery={setPaletteQ} selected="p0" onSelect={() => setPalette(false)}
+                groups={[{ label: "Top hits", items: D.palette.map((p, i) => ({ id: "p" + i, label: p.label, detail: p.detail, shortcut: p.shortcut })) }]}
+                footer={<><span style={{ display: "inline-flex", gap: 3 }}><KeyCap size="small">↑</KeyCap><KeyCap size="small">↓</KeyCap></span> navigate · <KeyCap size="small">⏎</KeyCap> open · <KeyCap size="small">⎋</KeyCap> dismiss</>}
+              />
+            </div>
+          </div>
+        ) : null}
+
+        <Sheet open={sheet} title="New session" message="The agent starts in this directory with the permissions below."
+          onDismiss={() => setSheet(false)}
+          actions={<><Button onClick={() => setSheet(false)}>Cancel</Button><Button variant="accent" onClick={() => setSheet(false)}>Create</Button></>}>
+          <div style={{ display: "grid", gap: 12 }}>
+            <TextField label="Working directory" mono defaultValue="~/src/atlas" />
+            <TextField label="Task" multiline rows={3} placeholder="Describe what the agent should do…" />
+            <PopUpButton value={model} onChange={setModel} options={["Opus 4.6", "Sonnet 4.6", "Haiku 4.5"]} width="100%" />
+          </div>
+        </Sheet>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+<script>VG_RUN("app");</script>
+</body></html>

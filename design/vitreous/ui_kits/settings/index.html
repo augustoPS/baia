@@ -1,0 +1,140 @@
+<!-- @dsCard group="Settings" viewport="1000x720" subtitle="Settings window — sidebar categories, grouped rows" -->
+<!-- @startingPoint section="App" subtitle="Settings window with grouped rows" viewport="1000x720" -->
+<!DOCTYPE html>
+<html lang="en" data-appearance="dark" data-accent="blue" data-motion="low"><head><meta charset="utf-8">
+<title>Settings — Vitreous</title>
+<link rel="stylesheet" href="../../styles.css">
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="../../ds-runtime.js"></script>
+<style>
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: var(--font-system); color: var(--label);
+    background: var(--desktop-image) center/cover no-repeat fixed, var(--desktop-ground);
+    -webkit-font-smoothing: antialiased;
+  }
+  #root { min-height: 100vh; }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { color: var(--link-hover); }
+  *::-webkit-scrollbar { width: 9px; height: 9px; }
+  *::-webkit-scrollbar-thumb { background: var(--fill); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  
+</style></head>
+<body>
+<div id="root"></div>
+<script type="text/jsx" id="app">
+const { WindowFrame, Sidebar, GroupedSection, Switch, PopUpButton, Button, Stepper, Slider, TextField, SegmentedControl, Badge, Divider, Alert, SearchField, StatusDot } = window.VG;
+
+function App() {
+  const [pane, setPane] = React.useState("agents");
+  const [q, setQ] = React.useState("");
+  const [auto, setAuto] = React.useState(true);
+  const [stream, setStream] = React.useState(true);
+  const [network, setNetwork] = React.useState(false);
+  const [notify, setNotify] = React.useState(true);
+  const [jobs, setJobs] = React.useState(4);
+  const [temp, setTemp] = React.useState(0.4);
+  const [appearance, setAppearance] = React.useState("dark");
+  const [glass, setGlass] = React.useState("clear");
+  const [accent, setAccent] = React.useState("blue");
+  const [reset, setReset] = React.useState(false);
+
+  React.useEffect(() => {
+    const r = document.documentElement;
+    r.setAttribute("data-appearance", appearance);
+    r.setAttribute("data-accent", accent);
+    if (glass === "tinted") r.setAttribute("data-glass", "tinted"); else r.removeAttribute("data-glass");
+  }, [appearance, glass, accent]);
+
+  const panes = {
+    agents: (
+      <>
+        <GroupedSection title="Defaults" rows={[
+          { label: "Model", description: "Used for new sessions", control: <PopUpButton size="small" value="Opus 4.6" onChange={() => {}} options={["Opus 4.6", "Sonnet 4.6", "Haiku 4.5"]} width={140} /> },
+          { label: "Temperature", control: <span style={{ width: 160 }}><Slider value={temp * 100} valueLabel={temp.toFixed(2)} min={0} max={200} onChange={(v) => setTemp(v / 100)} /></span> },
+          { label: "Parallel jobs", description: "Worktrees the agent may run at once", control: <Stepper value={jobs} onChange={setJobs} min={1} max={16} width={68} /> }
+        ]} />
+        <GroupedSection title="Permissions" footnote="Changes apply to new sessions. Running agents keep their granted scope." rows={[
+          { label: "Auto-approve safe tools", description: "Reads, searches, git status", control: <Switch checked={auto} onChange={() => setAuto(!auto)} /> },
+          { label: "Stream tool output", control: <Switch checked={stream} onChange={() => setStream(!stream)} /> },
+          { label: "Network access", description: "Fetch, package installs", control: <Switch checked={network} onChange={() => setNetwork(!network)} /> },
+          { label: "Shell", control: <PopUpButton size="small" value="Ask" onChange={() => {}} options={["Ask", "Allow", "Deny"]} width={96} /> }
+        ]} />
+        <GroupedSection title="Budget" rows={[
+          { label: "Monthly cap", control: <TextField prefix="$" size="regular" defaultValue="250" wrapStyle={{ width: 110 }} /> },
+          { label: "Warn at", control: <PopUpButton size="small" value="80%" onChange={() => {}} options={["50%", "80%", "90%"]} width={84} /> },
+          { label: "This month", control: <Badge tone="positive" mono>$38.14</Badge> }
+        ]} />
+      </>
+    ),
+    appearance: (
+      <>
+        <GroupedSection title="Appearance" rows={[
+          { label: "Theme", control: <SegmentedControl size="small" value={appearance} onChange={setAppearance} items={[{ id: "dark", label: "Dark" }, { id: "light", label: "Light" }]} /> },
+          { label: "Glass", description: "Tinted raises opacity and cuts blur for readability", control: <SegmentedControl size="small" value={glass} onChange={setGlass} items={[{ id: "clear", label: "Clear" }, { id: "tinted", label: "Tinted" }]} /> },
+          { label: "Accent color", control: <PopUpButton size="small" value={accent} onChange={setAccent} options={["blue", "purple", "pink", "red", "orange", "yellow", "green", "graphite"]} width={110} /> }
+        ]} />
+        <GroupedSection title="Motion" footnote="High adds glass morphs and specular sweeps; low keeps fades and short springs." rows={[
+          { label: "Motion", control: <SegmentedControl size="small" value="low" onChange={(v) => document.documentElement.setAttribute("data-motion", v)} items={[{ id: "low", label: "Low" }, { id: "high", label: "High" }]} /> },
+          { label: "Reduce transparency", description: "System accessibility override", control: <Switch checked={glass === "tinted"} onChange={() => setGlass(glass === "tinted" ? "clear" : "tinted")} /> }
+        ]} />
+        <GroupedSection title="Transcript" rows={[
+          { label: "Font size", control: <Stepper value={13} onChange={() => {}} min={10} max={20} unit="pt" width={74} /> },
+          { label: "Show timestamps", control: <Switch checked={notify} onChange={() => setNotify(!notify)} /> }
+        ]} />
+      </>
+    ),
+    keys: (
+      <>
+        <GroupedSection title="Providers" rows={[
+          { label: "Anthropic", description: "sk-ant-…4f2c", control: <Badge tone="positive">connected</Badge> },
+          { label: "OpenAI", description: "not configured", control: <Button size="small">Connect…</Button> },
+          { label: "Local runtime", description: "ollama · 11434", control: <StatusDot tone="ok" label="reachable" /> }
+        ]} />
+        <GroupedSection title="Storage" footnote="Transcripts stay on this Mac. Removing keys does not delete sessions." rows={[
+          { label: "Keychain item", control: <Button size="small">Reveal…</Button> },
+          { label: "Session store", description: "~/Library/Application Support/Atlas", control: <Button size="small">Show in Finder</Button> },
+          { label: "Reset all settings", control: <Button size="small" variant="destructive" onClick={() => setReset(true)}>Reset…</Button> }
+        ]} />
+      </>
+    )
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 28, boxSizing: "border-box" }}>
+      <div style={{ position: "relative", width: "100%", maxWidth: 940, height: 640 }}>
+        <WindowFrame title="Settings" style={{ height: "100%" }} sidebarWidth="200px"
+          sidebar={<Sidebar value={pane} onSelect={setPane}
+            header={<SearchField value={q} onChange={(e) => setQ(e.target.value)} onClear={() => setQ("")} placeholder="Search" width="100%" />}
+            groups={[
+              { label: "Agent", items: [{ id: "agents", label: "Agents & tools" }, { id: "keys", label: "Providers & keys" }] },
+              { label: "App", items: [{ id: "appearance", label: "Appearance" }, { id: "shortcuts", label: "Shortcuts" }, { id: "updates", label: "Updates" }] }
+            ]} />}
+        >
+          <div style={{ overflow: "auto", padding: "var(--sp-8)", display: "grid", gap: "var(--sp-8)", alignContent: "start", maxWidth: 620, justifySelf: "center", width: "100%" }}>
+            {panes[pane] || (
+              <div style={{ display: "grid", gap: 8, padding: "var(--sp-9)", justifyItems: "center", textAlign: "center" }}>
+                <span style={{ font: "var(--type-title-3)", color: "var(--label-secondary)" }}>Nothing here yet</span>
+                <span style={{ font: "var(--type-body)", color: "var(--label-tertiary)", maxWidth: "40ch" }}>
+                  This pane is intentionally empty — the kit only builds panes the design system has content for.
+                </span>
+              </div>
+            )}
+          </div>
+        </WindowFrame>
+
+        <Alert open={reset} severity="warning" title="Reset all settings?"
+          message="Providers, permissions and appearance return to defaults. Sessions and transcripts are kept."
+          onDismiss={() => setReset(false)}
+          actions={<><Button size="small" onClick={() => setReset(false)}>Cancel</Button><Button size="small" variant="destructive" onClick={() => setReset(false)}>Reset</Button></>} />
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+<script>VG_RUN("app");</script>
+</body></html>

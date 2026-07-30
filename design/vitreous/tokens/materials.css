@@ -1,0 +1,47 @@
+/* Vitreous — materials.
+   Glass here is "lensed", not merely blurred: every material is
+   fill + backdrop blur/saturate + a bright top rim + a dark bottom rim, and the
+   larger materials add a specular sweep so light appears to bend along the edge.
+   Intensity is dialed high (95/100) — use --material-tint-boost to calm a surface
+   locally rather than editing these. */
+:root {
+  /* Backdrop filters */
+  --mat-ultra-thin: blur(14px) saturate(180%) brightness(0.98);
+  --mat-thin: blur(24px) saturate(180%) brightness(0.96);
+  --mat-regular: blur(40px) saturate(190%) brightness(0.94);
+  --mat-thick: blur(60px) saturate(165%) brightness(0.90);
+  --mat-chrome: blur(48px) saturate(200%) brightness(0.96);
+  --mat-hud: blur(72px) saturate(150%) brightness(0.86);
+
+  /* Fills that ride on top of the blur. Dark glass tints toward ink, not white —
+     white-alpha fills over a bright wallpaper turn the whole app milky grey. The
+     rim and sheen supply the highlight instead. */
+  --mat-fill-ultra-thin: rgba(20, 22, 26, 0.26);
+  --mat-fill-thin: rgba(20, 22, 26, 0.34);
+  --mat-fill-regular: rgba(20, 22, 26, 0.42);
+  --mat-fill-thick: rgba(22, 24, 28, 0.52);
+  --mat-fill-chrome: rgba(18, 20, 24, 0.44);
+  --mat-fill-hud: rgba(18, 20, 24, 0.62);
+  --mat-fill-sidebar: rgba(18, 20, 24, 0.34);
+  --mat-fill-menu: rgba(30, 32, 37, 0.58);
+
+  /* Lensing: bright leading rim, dark trailing rim, faint outer halo */
+  --lens-rim: inset 0 0.5px 0 var(--rim-top), inset 0 -0.5px 0 var(--rim-bottom);
+  --lens-rim-strong: inset 0 1px 0 rgba(255, 255, 255, 0.52), inset 0 -1px 0 rgba(0, 0, 0, 0.44), inset 1px 0 0 rgba(255, 255, 255, 0.12), inset -1px 0 0 rgba(255, 255, 255, 0.08);
+  --lens-edge: 0 0 0 0.5px rgba(255, 255, 255, 0.14);
+  --lens-sheen: linear-gradient(147deg, rgba(255, 255, 255, 0.26) 0%, rgba(255, 255, 255, 0.06) 22%, rgba(255, 255, 255, 0) 48%);
+  --lens-sheen-soft: linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0) 38%);
+  --lens-refract: radial-gradient(120% 90% at 12% -10%, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0) 62%);
+
+  /* Elevation */
+  --shadow-control: 0 1px 2px rgba(0, 0, 0, 0.34);
+  --shadow-raised: 0 4px 14px rgba(0, 0, 0, 0.34), 0 1px 2px rgba(0, 0, 0, 0.26);
+  --shadow-popover: 0 12px 38px rgba(0, 0, 0, 0.48), 0 2px 6px rgba(0, 0, 0, 0.30);
+  --shadow-sheet: 0 32px 80px rgba(0, 0, 0, 0.56), 0 4px 12px rgba(0, 0, 0, 0.34);
+  --shadow-window: 0 26px 70px rgba(0, 0, 0, 0.62), 0 0 0 0.5px rgba(255, 255, 255, 0.14);
+  --shadow-accent: 0 2px 10px var(--accent-glow);
+
+  /* Desktop backdrop */
+  --desktop-image: url("../assets/wallpapers/desk-ae86.jpg");
+  --desktop-ground: #0c0f0d;
+}

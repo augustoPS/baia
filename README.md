@@ -33,7 +33,24 @@ management, and the workspace UI.
 `project.yml` is the single source of truth for the build; `baia.xcodeproj` is
 generated and not checked in. Architecture notes, decisions, and gotchas live in
 the vault at `vault/projects/baia/baia.md`; agent-facing conventions live in
-`.claude/rules/baia.md`.
+`~/Projects/.claude/rules/baia.md`.
+
+## Testing
+
+`make test` runs the package suites, which cover everything decidable without a
+window.
+
+Anything that needs a real window, a Metal surface, a spawned shell, a live socket
+or a human comparing two images is a probe, and every probe lives in
+`Diagnostics/`. See `Diagnostics/README.md` for the layout, the shared harness in
+`Diagnostics/lib/`, and what each of the ten probes answers.
+
+## Design
+
+`design/` is the Claude Design conversation, split by direction: `inbox/` is
+design → code, `handoffs/` is code → design, both gitignored. `design/vitreous/`
+beside them is tracked and maintained like source, since it is what the Liquid
+Glass work is built against. See `design/README.md`.
 
 ## License
 

@@ -1,0 +1,30 @@
+<!-- @dsCard group="Type" viewport="700x190" name="Text & labels" subtitle="13px body is the platform baseline — never smaller for reading copy" -->
+<!DOCTYPE html>
+<html lang="en" data-appearance="dark" data-accent="blue" data-motion="low"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  html, body { margin: 0; }
+  body {
+    font-family: var(--font-system); color: var(--label);
+    background: var(--desktop-image) center/cover no-repeat, var(--desktop-ground);
+    padding: 16px 18px; box-sizing: border-box;
+    -webkit-font-smoothing: antialiased;
+  }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .grid { display: grid; gap: 10px; }
+  .caps { font: var(--type-caps); letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--label-tertiary); }
+  .mono { font: var(--type-mono); color: var(--label-secondary); }
+  .tag { font: var(--fw-medium) 10px/1.35 var(--font-mono); color: var(--label-secondary); }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { color: var(--link-hover); }
+  
+</style></head><body>
+<div class="grid" style="gap: 8px">
+  <span class="caps">section header</span>
+  <div style="font: var(--type-headline)">Headline · 13/17 semibold — row titles, selected state</div>
+  <div style="font: var(--type-body); color: var(--label-secondary); max-width: 62ch; text-wrap: pretty">Body · 13/17 regular. Descriptive copy in inspectors, settings footnotes and empty states sits at secondary alpha so titles stay dominant.</div>
+  <div style="font: var(--type-callout); color: var(--label-secondary)">Callout · 12/16 — dense panels</div>
+  <div style="font: var(--type-subheadline); color: var(--label-secondary)">Subheadline · 11/14 — subtitles, metadata</div>
+  <div style="font: var(--type-footnote); color: var(--label-tertiary)">Footnote · 10/13 — status bars, caps labels</div>
+</div>
+</body></html>

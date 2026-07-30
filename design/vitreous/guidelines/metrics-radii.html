@@ -1,0 +1,33 @@
+<!-- @dsCard group="Metrics" viewport="700x150" name="Radii" subtitle="3 → 20, window 11, sheet 16, capsule for fields and pills" -->
+<!DOCTYPE html>
+<html lang="en" data-appearance="dark" data-accent="blue" data-motion="low"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  html, body { margin: 0; }
+  body {
+    font-family: var(--font-system); color: var(--label);
+    background: var(--desktop-image) center/cover no-repeat, var(--desktop-ground);
+    padding: 16px 18px; box-sizing: border-box;
+    -webkit-font-smoothing: antialiased;
+  }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .grid { display: grid; gap: 10px; }
+  .caps { font: var(--type-caps); letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--label-tertiary); }
+  .mono { font: var(--type-mono); color: var(--label-secondary); }
+  .tag { font: var(--fw-medium) 10px/1.35 var(--font-mono); color: var(--label-secondary); }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { color: var(--link-hover); }
+  .r { height: 66px; background: var(--mat-fill-thin); backdrop-filter: var(--mat-thin); box-shadow: var(--lens-rim), var(--shadow-control); display: grid; place-items: center; }
+.r span { font: var(--fw-medium) 10px/1.3 var(--font-mono); color: var(--label-secondary); text-align: center; }
+</style></head><body>
+<div class="grid" style="grid-template-columns: repeat(8, 1fr)">
+  <div class="r" style="border-radius: var(--r-1)"><span>1<br>3</span></div>
+  <div class="r" style="border-radius: var(--r-2)"><span>2<br>5</span></div>
+  <div class="r" style="border-radius: var(--r-3)"><span>3<br>6</span></div>
+  <div class="r" style="border-radius: var(--r-4)"><span>4<br>8</span></div>
+  <div class="r" style="border-radius: var(--r-5)"><span>5<br>10</span></div>
+  <div class="r" style="border-radius: var(--r-6)"><span>6<br>12</span></div>
+  <div class="r" style="border-radius: var(--r-window)"><span>window<br>11</span></div>
+  <div class="r" style="border-radius: var(--r-capsule)"><span>capsule</span></div>
+</div>
+</body></html>

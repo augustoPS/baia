@@ -1,0 +1,141 @@
+<!-- @dsCard group="Editor" viewport="1280x800" subtitle="Code editor — tabs, gutter, minimap-free glass panes, inspector" -->
+<!-- @startingPoint section="App" subtitle="Code editor with tabs and inspector" viewport="1280x800" -->
+<!DOCTYPE html>
+<html lang="en" data-appearance="dark" data-accent="blue" data-motion="low"><head><meta charset="utf-8">
+<title>Editor — Vitreous</title>
+<link rel="stylesheet" href="../../styles.css">
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="../../ds-runtime.js"></script>
+<style>
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: var(--font-system); color: var(--label);
+    background: var(--desktop-image) center/cover no-repeat fixed, var(--desktop-ground);
+    -webkit-font-smoothing: antialiased;
+  }
+  #root { min-height: 100vh; }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { color: var(--link-hover); }
+  *::-webkit-scrollbar { width: 9px; height: 9px; }
+  *::-webkit-scrollbar-thumb { background: var(--fill); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+  *::-webkit-scrollbar-track { background: transparent; }
+</style></head>
+<body>
+<div id="root"></div>
+<script type="text/jsx" id="app">
+const { WindowFrame, Sidebar, Tabs, Toolbar, ToolbarButton, ToolbarSeparator, SearchField, Inspector, Badge, Button, StatusDot, Divider, Material, SegmentedControl, Table, ProgressBar } = window.VG;
+
+const LINES = [
+  { n: 118, t: "test('session becomes ready', async ({ page }) => {", k: "plain" },
+  { n: 119, t: "  await page.goto('/session/new');", k: "plain" },
+  { n: 120, t: "-  await page.waitForSelector('[data-session-ready]');", k: "del" },
+  { n: 121, t: "+  await page.waitForEvent('session-ready');", k: "add" },
+  { n: 122, t: "+  // the attribute lands a frame later than the event", k: "add" },
+  { n: 123, t: "  await expect(page.getByRole('log')).toBeVisible();", k: "plain" },
+  { n: 124, t: "});", k: "plain" },
+  { n: 125, t: "", k: "plain" },
+  { n: 126, t: "test('plan renders each step', async ({ page }) => {", k: "plain" },
+  { n: 127, t: "  const steps = page.getByTestId('plan-step');", k: "plain" },
+  { n: 128, t: "  await expect(steps).toHaveCount(4);", k: "plain" },
+  { n: 129, t: "});", k: "plain" }
+];
+
+function App() {
+  const [tab, setTab] = React.useState("spec");
+  const [file, setFile] = React.useState("spec");
+  const [insp, setInsp] = React.useState("Diff");
+  const [q, setQ] = React.useState("");
+
+  return (
+    <div style={{ minHeight: "100vh", minWidth: 1180, display: "grid", placeItems: "center", padding: 24, boxSizing: "border-box" }}>
+      <WindowFrame title="session.spec.ts" subtitle="~/src/atlas/tests/e2e · agent/flaky-e2e" style={{ width: "100%", maxWidth: 1180, height: 700 }}
+        sidebar={<Sidebar value={file} onSelect={setFile}
+          header={<SearchField value={q} onChange={(e) => setQ(e.target.value)} onClear={() => setQ("")} placeholder="Find in project" width="100%" />}
+          groups={[
+            { label: "Changed", items: [
+              { id: "spec", label: "session.spec.ts", trailing: "+6 −3", marker: "var(--status-caution)" },
+              { id: "guard", label: "guard.rs", trailing: "+2", marker: "var(--status-positive)" }
+            ] },
+            { label: "tests/e2e", items: [
+              { id: "plan", label: "plan.spec.ts", depth: 0 },
+              { id: "helpers", label: "helpers.ts", depth: 0 },
+              { id: "snap", label: "__snapshots__", depth: 0 }
+            ] },
+            { label: "crates", items: [
+              { id: "agent", label: "agent", depth: 0 }, { id: "cli", label: "cli", depth: 0 }, { id: "core", label: "core", depth: 0 }
+            ] }
+          ]} />}
+        toolbar={<Toolbar trailing={<><Badge tone="caution" mono>+6 −3</Badge><Button size="small" variant="accent">Commit…</Button></>}>
+          <ToolbarButton label="Run tests" active />
+          <ToolbarButton label="Debug" />
+          <ToolbarSeparator />
+          <ToolbarButton label="Blame" />
+          <ToolbarButton label="Problems" badge={2} />
+        </Toolbar>}
+        tabs={<Tabs value={tab} onChange={setTab} onClose={() => {}} onNew={() => {}} tabs={[
+          { id: "spec", label: "session.spec.ts", dirty: true },
+          { id: "guard", label: "guard.rs" },
+          { id: "cargo", label: "Cargo.toml" }
+        ]} />}
+        inspector={<Inspector tabs={["Diff", "Problems", "Test"]} tab={insp} onTab={setInsp}
+          sections={insp === "Diff" ? [
+            { title: "Hunk", content: <span style={{ font: "var(--type-mono)", color: "var(--label-secondary)" }}>@@ -118,7 +118,9 @@</span> },
+            { title: "Changes", content: (
+              <div style={{ display: "grid", gap: 6 }}>
+                <span style={{ font: "var(--type-mono)", color: "var(--term-green)" }}>+2 assertions</span>
+                <span style={{ font: "var(--type-mono)", color: "var(--term-red)" }}>−1 selector wait</span>
+                <Divider />
+                <Button size="small" fullWidth>Stage hunk</Button>
+                <Button size="small" fullWidth variant="borderless">Revert hunk</Button>
+              </div>
+            ) }
+          ] : insp === "Problems" ? [
+            { title: "clippy", content: (
+              <div style={{ display: "grid", gap: 6 }}>
+                <span style={{ font: "var(--type-subheadline)", color: "var(--status-caution)" }}>needless_borrow · guard.rs:42</span>
+                <span style={{ font: "var(--type-subheadline)", color: "var(--status-caution)" }}>needless_borrow · guard.rs:57</span>
+              </div>
+            ) },
+            { title: "tsc", content: <span style={{ font: "var(--type-subheadline)", color: "var(--label-secondary)" }}>No errors</span> }
+          ] : [
+            { title: "Last run", content: <ProgressBar value={100} tone="positive" label="playwright" valueLabel="5/5" /> },
+            { title: "History", content: (
+              <Table rowHeight="var(--h-list-row)"
+                columns={[{ id: "r", label: "Run" }, { id: "s", label: "Result", width: "70px", align: "right" }]}
+                rows={[{ id: 1, r: "9:33", s: "5/5" }, { id: 2, r: "9:12", s: "3/5" }, { id: 3, r: "8:58", s: "5/5" }]} />
+            ) }
+          ]} />}
+        statusBar={<>
+          <StatusDot tone="ok" label="playwright 5/5" />
+          <span style={{ marginLeft: "auto", font: "var(--fw-medium) var(--fs-mono-sm)/1 var(--font-mono)" }}>Ln 121, Col 34 · TypeScript · UTF-8 · LF</span>
+        </>}
+      >
+        <div style={{ display: "grid", gridTemplateRows: "auto minmax(0,1fr)", minHeight: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px var(--sp-7)", boxShadow: "inset 0 -0.5px 0 var(--separator)" }}>
+            <span style={{ font: "var(--type-mono)", color: "var(--label-tertiary)" }}>tests / e2e / session.spec.ts</span>
+            <SegmentedControl size="small" value="Diff" onChange={() => {}} items={["Source", "Diff", "Blame"]} style={{ marginLeft: "auto" }} />
+          </div>
+          <div style={{ overflow: "auto", padding: "var(--sp-6) 0" }}>
+            {LINES.map((l) => (
+              <div key={l.n} style={{
+                display: "grid", gridTemplateColumns: "56px 1fr", alignItems: "center",
+                minHeight: 20,
+                background: l.k === "add" ? "color-mix(in srgb, var(--status-positive) 12%, transparent)"
+                  : l.k === "del" ? "color-mix(in srgb, var(--status-negative) 12%, transparent)" : "transparent"
+              }}>
+                <span style={{ textAlign: "right", paddingRight: 12, font: "var(--fw-regular) var(--fs-mono-sm)/1.5 var(--font-mono)", color: "var(--label-quaternary)" }}>{l.n}</span>
+                <span style={{ font: "var(--type-mono)", color: l.k === "add" ? "var(--term-green)" : l.k === "del" ? "var(--term-red)" : "var(--term-fg)", whiteSpace: "pre" }}>{l.t}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </WindowFrame>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+<script>VG_RUN("app");</script>
+</body></html>

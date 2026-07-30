@@ -1,0 +1,56 @@
+/* Vitreous — type.
+   No font binaries: the system stack resolves to SF on Apple platforms and to a
+   near-metric local face elsewhere. Sizes follow the macOS 13px body baseline. */
+:root {
+  --font-system: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", "Segoe UI", system-ui, sans-serif;
+  --font-rounded: -apple-system-rounded, "SF Pro Rounded", ui-rounded, var(--font-system);
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+  --fs-large-title: 26px;
+  --fs-title-1: 22px;
+  --fs-title-2: 17px;
+  --fs-title-3: 15px;
+  --fs-headline: 13px;
+  --fs-body: 13px;
+  --fs-callout: 12px;
+  --fs-subheadline: 11px;
+  --fs-footnote: 10px;
+  --fs-caption: 10px;
+  --fs-mono: 12px;
+  --fs-mono-sm: 11px;
+
+  --lh-large-title: 32px;
+  --lh-title-1: 26px;
+  --lh-title-2: 22px;
+  --lh-title-3: 20px;
+  --lh-body: 17px;
+  --lh-callout: 16px;
+  --lh-subheadline: 14px;
+  --lh-footnote: 13px;
+  --lh-mono: 16px;
+
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 590;
+  --fw-bold: 700;
+
+  --ls-large-title: 0.008em;
+  --ls-title: 0.004em;
+  --ls-body: -0.003em;
+  --ls-caps: 0.06em;
+
+  /* Semantic roles */
+  --type-large-title: var(--fw-bold) var(--fs-large-title) / var(--lh-large-title) var(--font-system);
+  --type-title-1: var(--fw-bold) var(--fs-title-1) / var(--lh-title-1) var(--font-system);
+  --type-title-2: var(--fw-semibold) var(--fs-title-2) / var(--lh-title-2) var(--font-system);
+  --type-title-3: var(--fw-semibold) var(--fs-title-3) / var(--lh-title-3) var(--font-system);
+  --type-headline: var(--fw-semibold) var(--fs-headline) / var(--lh-body) var(--font-system);
+  --type-body: var(--fw-regular) var(--fs-body) / var(--lh-body) var(--font-system);
+  --type-callout: var(--fw-regular) var(--fs-callout) / var(--lh-callout) var(--font-system);
+  --type-subheadline: var(--fw-regular) var(--fs-subheadline) / var(--lh-subheadline) var(--font-system);
+  --type-footnote: var(--fw-regular) var(--fs-footnote) / var(--lh-footnote) var(--font-system);
+  --type-control: var(--fw-medium) var(--fs-body) / 1 var(--font-system);
+  --type-control-sm: var(--fw-medium) var(--fs-subheadline) / 1 var(--font-system);
+  --type-mono: var(--fw-regular) var(--fs-mono) / var(--lh-mono) var(--font-mono);
+  --type-caps: var(--fw-semibold) var(--fs-footnote) / 1.2 var(--font-system);
+}

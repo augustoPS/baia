@@ -1,0 +1,30 @@
+<!-- @dsCard group="Colors" viewport="700x175" name="Terminal palette" subtitle="For transcripts and code over glass — dimmed, never pure white" -->
+<!DOCTYPE html>
+<html lang="en" data-appearance="dark" data-accent="blue" data-motion="low"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  html, body { margin: 0; }
+  body {
+    font-family: var(--font-system); color: var(--label);
+    background: var(--desktop-image) center/cover no-repeat, var(--desktop-ground);
+    padding: 16px 18px; box-sizing: border-box;
+    -webkit-font-smoothing: antialiased;
+  }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .grid { display: grid; gap: 10px; }
+  .caps { font: var(--type-caps); letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--label-tertiary); }
+  .mono { font: var(--type-mono); color: var(--label-secondary); }
+  .tag { font: var(--fw-medium) 10px/1.35 var(--font-mono); color: var(--label-secondary); }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { color: var(--link-hover); }
+  .t { padding: 12px 14px; border-radius: var(--r-4); background: var(--term-bg); backdrop-filter: var(--mat-thin); box-shadow: inset 0 0 0 .5px var(--separator); font: var(--type-mono); }
+</style></head><body>
+<div class="t">
+<div style="color: var(--term-dim)">$ <span style="color: var(--term-fg)">atlas run --plan refactor-auth</span></div>
+<div style="color: var(--term-cyan)">→ reading src/auth/guard.rs</div>
+<div style="color: var(--term-magenta)">→ tool bash · cargo test -q</div>
+<div style="color: var(--term-green)">✓ 128 passed</div>
+<div style="color: var(--term-amber)">! 2 warnings suppressed</div>
+<div style="color: var(--term-red)">✗ clippy::needless_borrow (2)</div>
+</div>
+</body></html>

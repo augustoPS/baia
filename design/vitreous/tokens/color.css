@@ -1,0 +1,96 @@
+/* Vitreous — color.
+   Dark appearance is the base; tokens/appearance.css re-declares for light and tinted.
+   Accent values are the standard platform accent hues; the live accent is --accent,
+   swapped at runtime by setting [data-accent] on the root. */
+:root {
+  /* Greys — window ground, not glass */
+  --grey-0: #000000;
+  --grey-1: #0b0b0d;
+  --grey-2: #16161a;
+  --grey-3: #1f1f24;
+  --grey-4: #2a2a30;
+  --grey-5: #38383f;
+  --grey-6: #48484f;
+  --grey-7: #636369;
+  --grey-8: #8e8e93;
+  --grey-9: #c7c7cc;
+  --grey-10: #f2f2f7;
+  --white: #ffffff;
+
+  /* Label hierarchy (on glass) */
+  --label: rgba(255, 255, 255, 0.96);
+  --label-secondary: rgba(255, 255, 255, 0.60);
+  --label-tertiary: rgba(255, 255, 255, 0.38);
+  --label-quaternary: rgba(255, 255, 255, 0.22);
+  --label-on-accent: #ffffff;
+
+  /* Fills — for control interiors that are not full glass */
+  --fill: rgba(255, 255, 255, 0.10);
+  --fill-secondary: rgba(255, 255, 255, 0.07);
+  --fill-tertiary: rgba(255, 255, 255, 0.045);
+  --fill-quaternary: rgba(255, 255, 255, 0.025);
+
+  /* Separators and rims */
+  --separator: rgba(255, 255, 255, 0.10);
+  --separator-opaque: rgba(255, 255, 255, 0.16);
+  --rim-top: rgba(255, 255, 255, 0.42);
+  --rim-bottom: rgba(0, 0, 0, 0.38);
+  --shade: rgba(0, 0, 0, 0.55);
+
+  /* Selection */
+  --selection: color-mix(in srgb, var(--accent) 82%, transparent);
+  --selection-inactive: rgba(255, 255, 255, 0.11);
+  --selection-text: #ffffff;
+
+  /* System hues (dark values) */
+  --system-blue: #0a84ff;
+  --system-purple: #bf5af2;
+  --system-pink: #ff375f;
+  --system-red: #ff453a;
+  --system-orange: #ff9f0a;
+  --system-yellow: #ffd60a;
+  --system-green: #32d74b;
+  --system-teal: #64d2ff;
+  --system-graphite: #98989d;
+
+  /* Semantic status */
+  --status-positive: var(--system-green);
+  --status-caution: var(--system-orange);
+  --status-negative: var(--system-red);
+  --status-info: var(--system-blue);
+
+  /* Live accent — [data-accent] overrides this */
+  --accent: var(--system-blue);
+  --accent-hover: color-mix(in srgb, var(--accent) 86%, white 14%);
+  --accent-press: color-mix(in srgb, var(--accent) 82%, black 18%);
+  --accent-quiet: color-mix(in srgb, var(--accent) 22%, transparent);
+  --accent-glow: color-mix(in srgb, var(--accent) 44%, transparent);
+  --focus-ring: color-mix(in srgb, var(--accent) 58%, transparent);
+
+  /* Terminal / code palette (agent-app oriented) */
+  --term-bg: rgba(10, 11, 13, 0.42);
+  --term-fg: rgba(236, 238, 243, 0.94);
+  --term-dim: rgba(236, 238, 243, 0.46);
+  --term-green: #7ee787;
+  --term-cyan: #79d4ff;
+  --term-magenta: #d2a8ff;
+  --term-amber: #ffd479;
+  --term-red: #ff7b72;
+
+  /* Desktop menu bar: rides on the wallpaper, so it never inherits the app label color. */
+  --menubar-label: rgba(255, 255, 255, 0.94);
+  --menubar-label-shadow: 0 0.5px 2px rgba(0, 0, 0, 0.55);
+  --menubar-scrim: linear-gradient(180deg, rgba(0, 0, 0, 0.30) 0%, rgba(0, 0, 0, 0.06) 70%, rgba(0, 0, 0, 0) 100%);
+
+  --link: var(--accent);
+  --link-hover: var(--accent-hover);
+}
+
+[data-accent="blue"] { --accent: var(--system-blue); }
+[data-accent="purple"] { --accent: var(--system-purple); }
+[data-accent="pink"] { --accent: var(--system-pink); }
+[data-accent="red"] { --accent: var(--system-red); }
+[data-accent="orange"] { --accent: var(--system-orange); }
+[data-accent="yellow"] { --accent: var(--system-yellow); --label-on-accent: rgba(0,0,0,0.88); }
+[data-accent="green"] { --accent: var(--system-green); --label-on-accent: rgba(0,0,0,0.88); }
+[data-accent="graphite"] { --accent: var(--system-graphite); }

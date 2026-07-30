@@ -1,0 +1,36 @@
+<!-- @dsCard group="Appearance" viewport="700x170" name="Label hierarchy" subtitle="Four alphas — legibility on glass comes from alpha, not from color" -->
+<!DOCTYPE html>
+<html lang="en" data-appearance="dark" data-accent="blue" data-motion="low"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  html, body { margin: 0; }
+  body {
+    font-family: var(--font-system); color: var(--label);
+    background: var(--desktop-image) center/cover no-repeat, var(--desktop-ground);
+    padding: 16px 18px; box-sizing: border-box;
+    -webkit-font-smoothing: antialiased;
+  }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .grid { display: grid; gap: 10px; }
+  .caps { font: var(--type-caps); letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--label-tertiary); }
+  .mono { font: var(--type-mono); color: var(--label-secondary); }
+  .tag { font: var(--fw-medium) 10px/1.35 var(--font-mono); color: var(--label-secondary); }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { color: var(--link-hover); }
+  .p { padding: 12px 14px; border-radius: var(--r-5); background: var(--mat-fill-regular); backdrop-filter: var(--mat-regular); box-shadow: var(--lens-rim), var(--shadow-raised); display: grid; gap: 3px; }
+</style></head><body>
+<div class="grid" style="grid-template-columns: 1fr 1fr; gap: 14px">
+  <div class="p">
+    <span style="font: var(--type-title-3); color: var(--label)">label · 96%</span>
+    <span style="font: var(--type-body); color: var(--label-secondary)">label-secondary · 60%</span>
+    <span style="font: var(--type-subheadline); color: var(--label-tertiary)">label-tertiary · 38%</span>
+    <span style="font: var(--type-footnote); color: var(--label-quaternary)">label-quaternary · 22% (dividers, disabled)</span>
+  </div>
+  <div class="p" data-appearance="light">
+    <span style="font: var(--type-title-3); color: var(--label)">label · 90%</span>
+    <span style="font: var(--type-body); color: var(--label-secondary)">label-secondary · 55%</span>
+    <span style="font: var(--type-subheadline); color: var(--label-tertiary)">label-tertiary · 32%</span>
+    <span style="font: var(--type-footnote); color: var(--label-quaternary)">label-quaternary · 18%</span>
+  </div>
+</div>
+</body></html>

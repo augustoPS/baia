@@ -1,0 +1,130 @@
+<!-- @dsCard group="Menu-bar utility" viewport="1100x620" subtitle="Status-item popover and Control Center panel — an app with no window" -->
+<!-- @startingPoint section="App" subtitle="Menu-bar utility popover" viewport="1100x620" -->
+<!DOCTYPE html>
+<html lang="en" data-appearance="dark" data-accent="blue" data-motion="low"><head><meta charset="utf-8">
+<title>Menu-bar utility — Vitreous</title>
+<link rel="stylesheet" href="../../styles.css">
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="../../ds-runtime.js"></script>
+<style>
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: var(--font-system); color: var(--label);
+    background: var(--desktop-image) center/cover no-repeat fixed, var(--desktop-ground);
+    -webkit-font-smoothing: antialiased;
+  }
+  #root { min-height: 100vh; }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { color: var(--link-hover); }
+  *::-webkit-scrollbar { width: 9px; height: 9px; }
+  *::-webkit-scrollbar-thumb { background: var(--fill); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+</style></head>
+<body>
+<div id="root"></div>
+<script type="text/jsx" id="app">
+const { MenuBar, Menu, Popover, Material, ControlCenter, Button, Badge, StatusDot, Switch, SegmentedControl, Divider, ListRow, ProgressBar, KeyCap, Spinner, Tooltip, PopUpButton } = window.VG;
+
+const RUNS = [
+  { id: "r1", label: "Fix flaky e2e", detail: "bash · playwright", state: "running", cost: "$0.19" },
+  { id: "r2", label: "Bump deps to 1.82", detail: "awaiting approval", state: "warn", cost: "$0.88" },
+  { id: "r3", label: "Refactor auth guard", detail: "finished 4m ago", state: "ok", cost: "$0.41" }
+];
+
+function App() {
+  const [open, setOpen] = React.useState("agent");
+  const [auto, setAuto] = React.useState(true);
+  const [mode, setMode] = React.useState("Act");
+  const [appearance, setAppearance] = React.useState("dark");
+  const [glass, setGlass] = React.useState("clear");
+
+  React.useEffect(() => {
+    const r = document.documentElement;
+    r.setAttribute("data-appearance", appearance);
+    if (glass === "tinted") r.setAttribute("data-glass", "tinted"); else r.removeAttribute("data-glass");
+  }, [appearance, glass]);
+
+  return (
+    <div style={{ minHeight: "100vh", display: "grid", gridTemplateRows: "auto minmax(0,1fr)" }}>
+      <MenuBar appName="Atlas" menus={[]} open={null} onOpen={() => {}} clock="Tue 9:41"
+        statusItems={[
+          <span key="s1" onClick={() => setOpen(open === "agent" ? null : "agent")} style={{ cursor: "default", padding: "1px 6px", borderRadius: "var(--r-2)", background: open === "agent" ? "var(--selection)" : "transparent" }}>◐ 2 agents</span>,
+          <span key="s2" onClick={() => setOpen(open === "cc" ? null : "cc")} style={{ cursor: "default", padding: "1px 6px", borderRadius: "var(--r-2)", background: open === "cc" ? "var(--selection)" : "transparent" }}>Control Center</span>,
+          "84%"
+        ]} />
+
+      <div style={{ position: "relative", padding: "8px 16px 26px" }}>
+        {open === "agent" ? (
+          <div style={{ position: "absolute", top: 4, right: 210 }}>
+            <Popover anchor="top" width={320}>
+              <div style={{ display: "grid", gap: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ font: "var(--type-title-3)" }}>Atlas</span>
+                  <Badge tone="caution">1 approval</Badge>
+                  <Button size="small" variant="borderless" style={{ marginLeft: "auto" }}>Open app</Button>
+                </div>
+
+                <SegmentedControl size="small" fullWidth value={mode} onChange={setMode} items={["Plan", "Act", "Ask"]} />
+
+                <div style={{ display: "grid", gap: 1 }}>
+                  {RUNS.map((r) => (
+                    <ListRow key={r.id} size="regular" title={r.label} subtitle={r.detail}
+                      leading={r.state === "running" ? <Spinner size={11} tone="accent" /> : <StatusDot tone={r.state === "warn" ? "warn" : "ok"} />}
+                      trailing={<span style={{ font: "var(--fw-medium) var(--fs-mono-sm)/1 var(--font-mono)" }}>{r.cost}</span>} />
+                  ))}
+                </div>
+
+                <Divider />
+
+                <div style={{ display: "grid", gap: 8 }}>
+                  <Switch checked={auto} onChange={() => setAuto(!auto)} label="Auto-approve safe tools" />
+                  <ProgressBar value={15} tone="positive" label="Month against budget" valueLabel="$38.14 / $250" />
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <Button size="small" variant="accent">Approve pending</Button>
+                  <Button size="small">Stop all</Button>
+                  <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 4, font: "var(--type-footnote)", color: "var(--label-tertiary)" }}>
+                    <KeyCap size="small">⌥</KeyCap><KeyCap size="small">A</KeyCap>
+                  </span>
+                </div>
+              </div>
+            </Popover>
+          </div>
+        ) : null}
+
+        {open === "cc" ? (
+          <div style={{ position: "absolute", top: 4, right: 60 }}>
+            <ControlCenter width={300} tiles={[
+              { label: "Agent mode", detail: auto ? "Auto-approve safe" : "Ask each time", on: auto, onToggle: () => setAuto(!auto), span: 4 },
+              { label: "Wi-Fi", detail: "studio-5g", on: true, span: 2 },
+              { label: "Focus", detail: "Until 5pm", span: 2 },
+              { label: "Brightness", value: 72, span: 4 },
+              { label: "Volume", value: 38, span: 4 }
+            ]} />
+          </div>
+        ) : null}
+
+        <div style={{ display: "grid", placeItems: "center", minHeight: "60vh" }}>
+          <Material material="hud" radius="var(--r-7)" pad={18} elevation="popover" style={{ display: "grid", gap: 12, width: 420 }}>
+            <span style={{ font: "var(--type-title-3)" }}>Menu-bar utility</span>
+            <span style={{ font: "var(--type-body)", color: "var(--label-secondary)", textWrap: "pretty" }}>
+              Click <strong>2 agents</strong> or <strong>Control Center</strong> in the menu bar. A utility has no window:
+              the popover is the whole app, so it carries state, one primary action, and a way into the full app.
+            </span>
+            <Divider />
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <SegmentedControl size="small" value={appearance} onChange={setAppearance} items={[{ id: "dark", label: "Dark" }, { id: "light", label: "Light" }]} />
+              <Switch size="small" checked={glass === "tinted"} onChange={() => setGlass(glass === "tinted" ? "clear" : "tinted")} label="Tinted" />
+            </div>
+          </Material>
+        </div>
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+<script>VG_RUN("app");</script>
+</body></html>

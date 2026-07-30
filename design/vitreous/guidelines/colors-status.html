@@ -1,0 +1,31 @@
+<!-- @dsCard group="Colors" viewport="700x150" name="System hues" subtitle="Status only — never decoration" -->
+<!DOCTYPE html>
+<html lang="en" data-appearance="dark" data-accent="blue" data-motion="low"><head><meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  html, body { margin: 0; }
+  body {
+    font-family: var(--font-system); color: var(--label);
+    background: var(--desktop-image) center/cover no-repeat, var(--desktop-ground);
+    padding: 16px 18px; box-sizing: border-box;
+    -webkit-font-smoothing: antialiased;
+  }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .grid { display: grid; gap: 10px; }
+  .caps { font: var(--type-caps); letter-spacing: var(--ls-caps); text-transform: uppercase; color: var(--label-tertiary); }
+  .mono { font: var(--type-mono); color: var(--label-secondary); }
+  .tag { font: var(--fw-medium) 10px/1.35 var(--font-mono); color: var(--label-secondary); }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { color: var(--link-hover); }
+  .r { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--r-4); background: var(--mat-fill-ultra-thin); backdrop-filter: var(--mat-ultra-thin); box-shadow: var(--lens-rim); }
+.r i { width: 9px; height: 9px; border-radius: 999px; }
+.r b { font: var(--type-headline); }
+.r span { margin-left: auto; font: var(--fw-medium) 10px/1 var(--font-mono); color: var(--label-tertiary); }
+</style></head><body>
+<div class="grid" style="grid-template-columns: 1fr 1fr; gap: 8px 14px">
+  <div class="r"><i style="background: var(--status-positive)"></i><b>positive</b><span>#32D74B</span></div>
+  <div class="r"><i style="background: var(--status-caution)"></i><b>caution</b><span>#FF9F0A</span></div>
+  <div class="r"><i style="background: var(--status-negative)"></i><b>negative</b><span>#FF453A</span></div>
+  <div class="r"><i style="background: var(--status-info)"></i><b>info · running</b><span>--accent</span></div>
+</div>
+</body></html>
