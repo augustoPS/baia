@@ -1,3 +1,4 @@
+import AgentIntegration
 import Foundation
 import PaneCLI
 import PaneControl
@@ -22,6 +23,11 @@ enum Run {
         case let .usage(message):
             StandardStreams.err(message)
             exit(ExitStatus.usage)
+        case let .local(command):
+            // Answered here and now. No socket, no token, and no pane: this one
+            // edits the owner's own files and is meant to be run from any shell,
+            // including one outside baia entirely.
+            exit(local(command))
         case let .invoke(parsed):
             call = parsed
         }
@@ -136,6 +142,33 @@ enum Run {
         case let .broken(reason):
             StandardStreams.err(reason)
             exit(ExitStatus.transport)
+        }
+    }
+
+    /// The subcommands the CLI answers itself.
+    ///
+    /// Prints what changed, unlike every verb that crosses the socket. Those are
+    /// called by scripts and hooks, where a line of output is noise in somebody
+    /// else's transcript; this one is typed by a person at their own prompt and
+    /// silence would leave them guessing whether it worked.
+    private static func local(_ command: LocalCommand) -> Int32 {
+        switch command {
+        case let .installHooks(uninstall):
+            let layout = HookInstaller.Layout.standard(home: HookInstaller.Layout.home())
+            let outcome = uninstall
+                ? HookInstaller.uninstall(layout)
+                : HookInstaller.install(layout)
+            switch outcome {
+            case let .changed(notes):
+                for note in notes { StandardStreams.out(note) }
+                return ExitStatus.ok
+            case .unchanged:
+                StandardStreams.out(uninstall ? "nothing to remove" : "already installed")
+                return ExitStatus.ok
+            case let .refused(reason):
+                StandardStreams.err(reason)
+                return ExitStatus.usage
+            }
         }
     }
 }

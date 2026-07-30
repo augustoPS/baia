@@ -46,6 +46,8 @@ packages:
     path: Packages/PanePrompt
   PaneCLI:
     path: Packages/PaneCLI
+  AgentIntegration:
+    path: Packages/AgentIntegration
 
 targets:
   baia:
@@ -162,6 +164,10 @@ targets:
       # What stays here is what needs a socket, an environment, or a file
       # descriptor.
       - package: PaneCLI
+      # The hook, the settings merge and the installer. Here rather than in the
+      # app for the same reason as the two above: `install-hooks` is a CLI
+      # subcommand and never crosses the socket, so nothing in the app needs it.
+      - package: AgentIntegration
 
     settings:
       base:

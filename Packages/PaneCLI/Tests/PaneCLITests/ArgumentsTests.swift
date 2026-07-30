@@ -381,4 +381,37 @@ import PaneControl
         #expect(isUsage(Arguments.parse(["report", "--state", "working", "--ttl", "soon"])))
         #expect(isUsage(Arguments.parse(["report", "--state", "working", "--seq", "next"])))
     }
+
+    // MARK: install-hooks
+
+    /// **Not a verb, and the suite that sweeps every verb must not see it.** The
+    /// channel's enum is what a capability reaches; this edits a file at home and
+    /// opens no socket.
+    @Test func installHooksIsNotAControlVerb() {
+        #expect(ControlVerb(rawValue: "install-hooks") == nil)
+        #expect(ControlVerb.allCases.contains { $0.rawValue == "install-hooks" } == false)
+    }
+
+    @Test func installHooksParsesAsALocalCommand() {
+        guard case let .local(command) = Arguments.parse(["install-hooks"]) else {
+            Issue.record("install-hooks did not parse as a local command")
+            return
+        }
+        #expect(command == .installHooks(uninstall: false))
+    }
+
+    @Test func uninstallParses() {
+        guard case let .local(command) = Arguments.parse(["install-hooks", "--uninstall"]) else {
+            Issue.record("--uninstall did not parse")
+            return
+        }
+        #expect(command == .installHooks(uninstall: true))
+    }
+
+    /// A usage failure, not `unknownVerb`. That code is the socket's answer and
+    /// claiming it here would say the channel had refused something it never saw.
+    @Test func installHooksRefusesAFlagItDoesNotHave() {
+        #expect(isUsage(Arguments.parse(["install-hooks", "--nonesuch"])))
+        #expect(isUsage(Arguments.parse(["install-hooks", "stray"])))
+    }
 }
