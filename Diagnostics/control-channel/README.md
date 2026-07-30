@@ -2,8 +2,17 @@
 
 `./run.sh` from anywhere. It builds baia, launches it, exercises the control
 channel over the real socket, and exits non-zero naming any check that failed.
-Fifty-eight checks, each printing `ok` or `FAIL`, ending in `PASS` or
+Sixty-seven checks, each printing `ok` or `FAIL`, ending in `PASS` or
 `FAILED n of m`.
+
+**One check is currently failing and it is not a regression.** "the activity in
+an event is the activity list reports for the same pane" answers `[None, None]`
+where it wants `["sleep", "sleep"]`, meaning the armed pane never reported
+running anything. Measured on `main` on 2026-07-30 with nothing but the scheme
+declaration applied: it fails there too, at 59 checks, so it predates the
+`report` work. Its own comment already says the check is timing-sensitive and
+that an earlier version of it "was measuring the machine"; whether that is what
+is happening again has not been established.
 
 Quit any running baia first. A second instance owns the socket, and the one this
 launches would run with no channel and hand its panes no capability; the script

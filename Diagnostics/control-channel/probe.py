@@ -759,6 +759,83 @@ def main():
     )
 
     print()
+    print("-- a pane reporting on itself")
+    # `report` is `.selfOnly` and routes through the layout handler, which
+    # authorizes with `target: nil`. There is therefore no wire path by which a
+    # caller could name another pane, so the out-of-scope case is asserted in
+    # `AuthorizationMatrixTests` and cannot be reached from here. What is
+    # reachable is everything the verb does to the pane that sent it.
+    report_from = probe.sequence(probe.request(live[alpha], "list"))
+    probe.check(
+        "a blocked report is accepted",
+        probe.code(probe.request(live[alpha], "report",
+                                 {"state": "blocked", "text": "which branch?", "seq": 9})),
+        "ok",
+    )
+    raised = probe.await_events(
+        live[alpha], report_from, 1, kinds=["attentionRaised"], pane=alpha
+    )
+    # The whole point of the source field: these are the same bytes a bell would
+    # have produced, and only this tells a supervisor which one it was.
+    probe.check(
+        "and it raises attention carrying its message and naming itself as the source",
+        [raised[-1].get("message") if raised else None,
+         raised[-1].get("source") if raised else None],
+        ["which branch?", "report"],
+    )
+
+    # Edge-triggering, over the socket rather than in the comparator's own tests.
+    # A report restating the current state is not a transition, which is why the
+    # verb needed no new event kinds.
+    steady = probe.sequence(probe.request(live[alpha], "list"))
+    probe.request(live[alpha], "report", {"state": "blocked", "text": "which branch?", "seq": 10})
+    probe.check(
+        "a report restating the same state publishes nothing",
+        probe.events(probe.request(live[alpha], "subscribe", {"from": steady})) or [],
+        [],
+    )
+
+    # The duplicate-hook rule, live. A stale sequence must be a no-op that still
+    # answers success, because the caller is a hook inside a `set -e` script with
+    # no way to tell a duplicate from a failure.
+    stale_from = probe.sequence(probe.request(live[alpha], "list"))
+    probe.check(
+        "a stale sequence still answers ok",
+        probe.code(probe.request(live[alpha], "report", {"state": "idle", "seq": 4})),
+        "ok",
+    )
+    probe.check(
+        "and changes nothing",
+        probe.events(probe.request(live[alpha], "subscribe", {"from": stale_from})) or [],
+        [],
+    )
+
+    cleared_from = probe.sequence(probe.request(live[alpha], "list"))
+    probe.request(live[alpha], "report", {"state": "working", "seq": 11})
+    probe.check(
+        "reporting working clears the attention the report raised",
+        [event.get("kind") for event in probe.await_events(
+            live[alpha], cleared_from, 1, kinds=["attentionCleared"], pane=alpha
+        )],
+        ["attentionCleared"],
+    )
+
+    # `--release` hands authority back. Asserted by its answer rather than by an
+    # event, because the pollers may well agree with the report that was in
+    # force, and a check that demanded a transition would be asserting what the
+    # pane happened to be doing.
+    probe.check(
+        "a release is accepted",
+        probe.code(probe.request(live[alpha], "report", {"release": True})),
+        "ok",
+    )
+    probe.check(
+        "and a report needs a state or a release, never neither",
+        probe.code(probe.request(live[alpha], "report", {})),
+        "refused",
+    )
+
+    print()
     print("-- close answers before the shell it kills")
     # The other item that turned out scriptable: "the response arrives before the
     # shell dies on baia close". The spec has the server flush the answer before
