@@ -83,6 +83,9 @@ targets:
       - package: PaneSearch
       - package: PaneControl
       - package: PanePrompt
+      # Only for the outdated-install notice at launch. The installer itself is
+      # a CLI subcommand and the app never runs it.
+      - package: AgentIntegration
 
       # The CLI, copied into the bundle it talks to.
       #

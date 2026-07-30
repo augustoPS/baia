@@ -1,3 +1,4 @@
+import AgentIntegration
 import AppKit
 import BaiaSettings
 import GitWorkspace
@@ -120,6 +121,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Warmed here so the first ⌘K of a session opens on a full list rather
         // than on an empty one that fills in a moment later.
         discoverProjects()
+        noticeOutdatedHook()
+    }
+
+    /// One line on stderr when an installed agent hook is older than this build.
+    ///
+    /// **One line, and nothing else.** Not a dialog: a modal at launch about a
+    /// hook the owner may have installed months ago is the wrong weight for an app
+    /// whose whole chrome argument is that a pane must not be interrupted. Not a
+    /// notification either, because that surface is for panes asking for their
+    /// owner and this is not that.
+    ///
+    /// **Silent when the file is absent.** Not installing is not a problem, and an
+    /// app that nagged about an integration nobody asked for would be answering a
+    /// question nobody put.
+    private func noticeOutdatedHook() {
+        let layout = HookInstaller.Layout.standard(home: HookInstaller.Layout.home())
+        guard let text = try? String(contentsOf: layout.script, encoding: .utf8) else { return }
+        guard ManagedHeader.isOutdated(text) else { return }
+        let installed = ManagedHeader.version(in: text).map(String.init) ?? "unknown"
+        FileHandle.standardError.write(Data(
+            ("baia: the agent hook at \(layout.script.path) is version \(installed) and this build "
+                + "ships \(ManagedHeader.currentVersion). Run `baia install-hooks` to update it.\n").utf8
+        ))
     }
 
     /// Binds the control socket, and says on stderr what happened either way.
