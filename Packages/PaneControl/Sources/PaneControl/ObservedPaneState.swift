@@ -12,6 +12,20 @@ public struct ObservedChange: Sendable, Equatable {
     public var source: ControlEventSource?
 }
 
+/// What the working authority managed to conclude this poll.
+///
+/// Three answers where there were two, and the third is the point. `String?` used
+/// to mean both "nothing is running" and "something is running that I cannot
+/// name", and publishing the second as the first is a wrong answer wearing the
+/// shape of a right one: the hub records a pane that never labelled anything
+/// while running something. A detector that cannot tell must say so rather than
+/// conclude.
+public enum ActivityReading: Sendable, Equatable {
+    case running(String)
+    case idle
+    case cannotTell
+}
+
 /// The last values a pane published, and the rule that turns a poll into events.
 ///
 /// **This is where "edge-triggered, never level-triggered" is actually decided**,
@@ -46,14 +60,58 @@ public struct ObservedPaneState: Sendable, Equatable {
     /// The message rides on a raise and never on a clear. A clear is the owner
     /// focusing the pane or typing into it, and the text the pane sent when it
     /// asked has been answered by then.
+    /// **Authority is resolved before the comparison, never inside it.** The
+    /// comparison below is the edge-triggering rule and it is unchanged; the
+    /// merge above it is a separate, pure step. Keeping the two apart is what let
+    /// three authorities arrive without the spec's third decision moving, and
+    /// every test written against that decision still passes untouched.
+    ///
+    /// The precedence is one rule: a live report decides both fields, and absent
+    /// one the two pollers decide as they always did. `report` is already the
+    /// live report, so expiry is the caller's business and never a case here.
     public mutating func changes(
-        activity nextActivity: String?,
-        isAsking nextAsking: Bool,
-        message: String?
+        activity reading: ActivityReading,
+        isAsking oscAsking: Bool,
+        message oscMessage: String?,
+        report: PaneReport?
     ) -> [ObservedChange] {
         var changes: [ObservedChange] = []
 
-        if nextActivity != activity {
+        // The working authority, and its abstention.
+        var nextActivity: String?
+        var holdActivity = false
+        switch reading {
+        case .running(let label): nextActivity = label
+        case .idle: nextActivity = nil
+        case .cannotTell:
+            nextActivity = activity
+            holdActivity = true
+        }
+
+        // A report reaches the activity in exactly one case. `idle` is a finished
+        // agent whose process is still resident, which no poller can see;
+        // `working` and `blocked` say nothing the process tree does not already
+        // say better, so they leave the label alone.
+        if report?.state == .idle {
+            nextActivity = nil
+            holdActivity = false
+        }
+
+        // The blocker authority, overridden wholesale by any live report.
+        let nextAsking: Bool
+        let nextMessage: String?
+        let nextSource: ControlEventSource
+        if let report {
+            nextAsking = report.state == .blocked
+            nextMessage = report.message
+            nextSource = .report
+        } else {
+            nextAsking = oscAsking
+            nextMessage = oscMessage
+            nextSource = .osc
+        }
+
+        if holdActivity == false, nextActivity != activity {
             activity = nextActivity
             changes.append(
                 ObservedChange(kind: .activityChanged, message: nil, activity: nextActivity, source: nil)
@@ -65,12 +123,13 @@ public struct ObservedPaneState: Sendable, Equatable {
             changes.append(
                 ObservedChange(
                     kind: nextAsking ? .attentionRaised : .attentionCleared,
-                    message: nextAsking ? message : nil,
+                    message: nextAsking ? nextMessage : nil,
                     activity: nil,
-                    // Only a raise names a source, and today a pane can only ask
-                    // by saying so itself: a bell, or an OSC 9 or OSC 777
-                    // notification. `report` will produce the other value.
-                    source: nextAsking ? .osc : nil
+                    // Only a raise names a source. Which source it names is the
+                    // one fact a subscriber cannot recover any other way: the
+                    // same bytes arrive whether a build script emitted an escape
+                    // sequence or an agent asked over an authenticated socket.
+                    source: nextAsking ? nextSource : nil
                 )
             )
         }
