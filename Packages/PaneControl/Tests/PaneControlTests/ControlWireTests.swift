@@ -29,6 +29,7 @@ import Testing
         case .recv: ControlArgs(wait: 60)
         case .revoke: ControlArgs(peer: paneID)
         case .subscribe: ControlArgs(wait: 30, from: 41, kinds: ["paneClosed"])
+        case .report: ControlArgs(text: "which branch?", state: .blocked, ttl: 120, seq: 7)
         case .run: ControlArgs()
         }
     }
@@ -374,6 +375,39 @@ import Testing
         #expect(ControlWire.cappedWait(0) == nil)
         #expect(ControlWire.cappedWait(-1) == nil)
         #expect(ControlWire.cappedWait(Int.min) == nil)
+    }
+
+    // MARK: How long a report may hold authority
+
+    /// The default is what a reporter that says nothing gets, and it is finite on
+    /// purpose: an unbounded report is a pane holding authority forever against a
+    /// poller that can see it is wrong.
+    @Test func anAbsentTTLTakesTheDefault() {
+        #expect(ControlWire.cappedReportTTL(nil) == ControlWire.defaultReportTTLSeconds)
+    }
+
+    @Test func aTTLInsideTheBudgetIsKept() {
+        #expect(ControlWire.cappedReportTTL(120) == 120)
+        #expect(ControlWire.cappedReportTTL(ControlWire.maxReportTTLSeconds) == ControlWire.maxReportTTLSeconds)
+    }
+
+    /// Capped rather than trusted, the same reading ``ControlWire/cappedWait(_:)``
+    /// gives a long poll, so the two cannot drift apart on what a client may ask
+    /// for.
+    @Test func anOversizedTTLIsCappedRatherThanRefused() {
+        #expect(ControlWire.cappedReportTTL(999_999) == ControlWire.maxReportTTLSeconds)
+        #expect(ControlWire.cappedReportTTL(Int.max) == ControlWire.maxReportTTLSeconds)
+    }
+
+    /// **Zero is kept here where `cappedWait` folds it into nil.** The two verbs
+    /// mean opposite things by it: a zero wait is "answer me now", and a zero TTL
+    /// is "this expires at once", which is `--release` said with a number. Both
+    /// readings are the one that cannot surprise the caller, and they differ
+    /// because the underlying quantities do.
+    @Test func zeroAndNegativeTTLsExpireImmediately() {
+        #expect(ControlWire.cappedReportTTL(0) == 0)
+        #expect(ControlWire.cappedReportTTL(-5) == 0)
+        #expect(ControlWire.cappedReportTTL(Int.min) == 0)
     }
 
     @Test func anUnknownKindIsNamedInTheRefusal() {

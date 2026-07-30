@@ -6,8 +6,18 @@ baia.xcodeproj/
 .build/
 DerivedData/
 
+# `xcodebuild` invoked without `-derivedDataPath` drops one of these in the repo
+# root and in every local package. Nothing reads them and nothing should: the
+# tracked build output path is `.build/`, with the dot.
+build/
+
 # Agent worktrees, created inside the repo by subagent-driven work
 .claude/worktrees/
+
+# Plan execution state. Ephemeral coordination for a run in progress, not
+# project history: the plan itself is in the vault and the commits are the record.
+.claude/plan-state.json
+.claude/progress.md
 
 # Xcode user state
 *.xcuserstate

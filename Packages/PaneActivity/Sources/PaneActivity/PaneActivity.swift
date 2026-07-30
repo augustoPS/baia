@@ -27,6 +27,21 @@ public enum PaneActivity: Sendable, Equatable {
     /// identifier the kernel yielded for it.
     case command(name: String)
 
+    /// Something is running below the shell and the classifier could not name any
+    /// of it.
+    ///
+    /// **Carved out of `idleShell`, which used to absorb it.** `classify` ends in
+    /// `best?.activity ?? .idleShell`, and a process yielding no identifying
+    /// token is skipped by the ranker, so a pane running only such processes
+    /// concluded that it was idle. A detector that cannot tell must say so rather
+    /// than conclude.
+    ///
+    /// A nested shell is deliberately **not** this case. `candidate(_:)` rejects
+    /// one too, but a bare shell below the pane shell is genuinely idle, and
+    /// folding the two together would trade a silent wrong answer for a noisy
+    /// one.
+    case unnameable
+
     /// What to call this, or nil when nothing is running.
     ///
     /// **Here rather than in the app, because this is the answer to "what is
@@ -44,6 +59,10 @@ public enum PaneActivity: Sendable, Equatable {
     public var label: String? {
         switch self {
         case .idleShell: nil
+        // Nil here as well, so the chrome draws exactly what it drew before this
+        // case existed. The distinction is for whoever must decide whether a pane
+        // has finished, not for whoever is drawing it.
+        case .unnameable: nil
         case let .agent(name, _): name
         case let .build(command): command
         case let .command(name): name

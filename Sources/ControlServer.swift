@@ -456,7 +456,11 @@ final class ControlServer {
         // verb added without a route has to fail to compile here rather than fall
         // through to whatever the fallback happened to answer.
         switch request.verb {
-        case .split, .close, .focus, .zoom, .resize, .equalize, .cwd:
+        // `report` routes with the layout verbs because it reaches the pane
+        // controller, not the graph: what it changes is one pane's own view of
+        // itself, and the graph learns about it the same way it learns about a
+        // poll, through the observable change the controller publishes.
+        case .split, .close, .focus, .zoom, .resize, .equalize, .cwd, .report:
             layout(request, on: id)
 
         case .whoami:

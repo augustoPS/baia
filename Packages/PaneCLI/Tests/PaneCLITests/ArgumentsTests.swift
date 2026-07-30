@@ -63,7 +63,7 @@ import PaneControl
         // answer usage rather than send an incomplete request. `subscribe` is one
         // of them because a cursor it invented would be a re-read of the ring on
         // every poll.
-        let needsAnOperand: Set<ControlVerb> = [.resize, .send, .revoke, .subscribe, .cwd]
+        let needsAnOperand: Set<ControlVerb> = [.resize, .send, .revoke, .subscribe, .cwd, .report]
         for verb in ControlVerb.allCases {
             let outcome = Arguments.parse([verb.rawValue])
             if needsAnOperand.contains(verb) {
@@ -86,6 +86,7 @@ import PaneControl
             .send: ["pane-1", "hello"],
             .revoke: ["pane-1"],
             .cwd: ["/tmp"],
+            .report: ["--state", "working"],
         ]
         for verb in ControlVerb.allCases {
             let argv = [verb.rawValue] + (operand[verb] ?? []) + ["--nonesuch"]
@@ -333,5 +334,51 @@ import PaneControl
     private func isVersion(_ outcome: ParseOutcome) -> Bool {
         if case .version = outcome { return true }
         return false
+    }
+
+    // MARK: report
+
+    /// A statement about nothing is not a statement. Exactly one of the two
+    /// forms is required, and both together is a caller that has not decided.
+    @Test func reportRequiresExactlyOneOfStateOrRelease() {
+        #expect(isUsage(Arguments.parse(["report"])))
+        #expect(isUsage(Arguments.parse(["report", "--state", "working", "--release"])))
+    }
+
+    @Test func reportRefusesAnUnknownState() {
+        #expect(isUsage(Arguments.parse(["report", "--state", "thinking"])))
+    }
+
+    /// A message rides a raise and never a clear, so it is meaningless on the two
+    /// states that do not raise. Refused rather than ignored, like every other
+    /// stray flag here.
+    @Test func aMessageIsAcceptedOnlyWithBlocked() {
+        #expect(isUsage(Arguments.parse(["report", "--state", "blocked", "--message", "hi"])) == false)
+        #expect(isUsage(Arguments.parse(["report", "--state", "working", "--message", "hi"])))
+        #expect(isUsage(Arguments.parse(["report", "--state", "idle", "--message", "hi"])))
+    }
+
+    @Test func reportCarriesItsFieldsOntoTheWire() {
+        let call = invocation(Arguments.parse(["report", "--state", "blocked",
+                                               "--message", "which branch?",
+                                               "--ttl", "120", "--seq", "7"]))
+        #expect(call?.verb == .report)
+        #expect(call?.args.state == .blocked)
+        #expect(call?.args.text == "which branch?")
+        #expect(call?.args.ttl == 120)
+        #expect(call?.args.seq == 7)
+    }
+
+    @Test func releaseCarriesNothingElse() {
+        let call = invocation(Arguments.parse(["report", "--release"]))
+        #expect(call?.args.release == true)
+        #expect(call?.args.state == nil)
+    }
+
+    /// A TTL or a sequence that is not a number is a usage failure rather than a
+    /// zero, which is the reading that cannot be mistaken for an answer.
+    @Test func reportRefusesNonNumericTTLAndSeq() {
+        #expect(isUsage(Arguments.parse(["report", "--state", "working", "--ttl", "soon"])))
+        #expect(isUsage(Arguments.parse(["report", "--state", "working", "--seq", "next"])))
     }
 }

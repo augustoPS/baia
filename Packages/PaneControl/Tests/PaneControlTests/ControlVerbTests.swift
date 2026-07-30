@@ -29,6 +29,7 @@ import Testing
             .recv: "recv",
             .revoke: "revoke",
             .subscribe: "subscribe",
+            .report: "report",
             .run: "run",
         ]
         for verb in ControlVerb.allCases {
@@ -70,6 +71,7 @@ import Testing
             .peers: .selfOnly,
             .recv: .selfOnly,
             .subscribe: .selfOnly,
+            .report: .selfOnly,
             .list: .scopedRead,
             .send: .peerEdge,
             .revoke: .peerEdge,
@@ -107,5 +109,13 @@ import Testing
         #expect(ControlVerb.subscribe.rawValue == "subscribe")
         #expect(ControlVerb.subscribe.scope == .selfOnly)
         #expect(ControlVerb.subscribe.settingGate == .channel)
+    }
+
+    /// A pane describing itself is the least privileged thing on the wire: it
+    /// names no target and reaches nothing, so it needs no key of its own.
+    @Test func reportIsSelfOnlyAndGatedOnTheChannelAlone() {
+        #expect(ControlVerb.report.scope == .selfOnly)
+        #expect(ControlVerb.report.settingGate == .channel)
+        #expect(ControlVerb.report.rawValue == "report")
     }
 }

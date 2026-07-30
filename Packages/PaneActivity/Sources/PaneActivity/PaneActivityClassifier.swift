@@ -28,13 +28,20 @@ public enum PaneActivityClassifier {
     public static func classify(tree: [ProcessSnapshot], shellPid: pid_t) -> PaneActivity {
         let depths = depthsBelow(shellPid, in: tree)
         var best: Candidate?
+        // Something ran that yielded no identifying token at all. Distinct from a
+        // nested shell, which `candidate(_:)` also rejects and which really is
+        // idle; only this one means the classifier could not tell.
+        var sawUnnameable = false
         for process in tree {
             // The pane's own shell is idle by definition, and it is excluded by
             // pid rather than by name. baia hands over the pid it spawned, so a
             // pane running a shell that is not in `shellNames` must still read
             // as idle rather than as permanently running a command called `nu`.
             guard process.pid != shellPid, let depth = depths[process.pid] else { continue }
-            guard let (rank, activity) = candidate(process) else { continue }
+            guard let (rank, activity) = candidate(process) else {
+                if identifyingTokens(of: process).isEmpty { sawUnnameable = true }
+                continue
+            }
             let contender = Candidate(
                 rank: rank,
                 depth: depth,
@@ -47,7 +54,10 @@ public enum PaneActivityClassifier {
             }
             if contender.beats(incumbent) { best = contender }
         }
-        return best?.activity ?? .idleShell
+        // Idle means nothing is running. Nothing *nameable* running is a
+        // different fact, and it now says so instead of borrowing this answer.
+        if let best { return best.activity }
+        return sawUnnameable ? .unnameable : .idleShell
     }
 
     /// The agents worth naming.

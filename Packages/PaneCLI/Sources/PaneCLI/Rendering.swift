@@ -54,7 +54,11 @@ public enum Rendering {
         // `cwd` prints nothing, and that is a decision rather than an
         // omission: an agent announcing where it is wants an exit status,
         // not a line of output in the middle of whatever it is doing.
-        case .close, .focus, .resize, .equalize, .send, .revoke, .run, .cwd:
+        // `report` prints nothing for the same reason `cwd` does, and more so:
+        // its caller is a hook running inside an agent's session, where a line of
+        // output is noise in somebody else's transcript. The exit status is the
+        // answer.
+        case .close, .focus, .resize, .equalize, .send, .revoke, .run, .cwd, .report:
             break
 
         case .zoom:

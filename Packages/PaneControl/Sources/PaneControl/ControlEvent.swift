@@ -57,12 +57,9 @@ public enum ControlEventKind: String, Sendable, Hashable, Codable, CaseIterable 
 /// escape sequence are the same bytes by the time they reach a subscriber, and
 /// only this field tells them apart.
 ///
-/// One case today, and the field exists now rather than later on purpose:
-/// `report` is the verb the herdr reading concluded should replace OSC 9 parsing
-/// for agent state, and adding its case to a string enum is additive where adding
-/// the field afterwards would be a wire change. Declared narrow rather than
-/// speculative: a case with no producer would be a value no test could tell from
-/// a decode bug.
+/// Two cases. The field shipped on 2026-07-28 with one of them and a note that
+/// `report` would produce the other, which is what happened; the enum being
+/// `String`-backed is what made that additive rather than a wire change.
 ///
 /// The CLI ships inside the app bundle, so a client and its server are always the
 /// same build and an older reader can never meet a case it does not know.
@@ -71,6 +68,14 @@ public enum ControlEventSource: String, Sendable, Hashable, Codable, CaseIterabl
     /// notification. Untrusted: anything that can write to the PTY can send one,
     /// including output from a program the owner is merely reading.
     case osc
+
+    /// The pane said so over this channel, authenticated with its own token.
+    ///
+    /// Trusted where ``osc`` is not, and that is the entire difference the field
+    /// exists to record. An escape sequence can be emitted by any output the
+    /// owner happens to be reading; this arrived on a socket carrying a per-run
+    /// secret that only the pane's own shell was ever given.
+    case report
 }
 
 /// One entry as it crosses the wire.
