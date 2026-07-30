@@ -815,7 +815,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         notifier.isEnabled = configuration.settings.notificationsEnabled
         control.settingsChanged(
             channelEnabled: configuration.settings.controlChannelEnabled,
-            allowRun: configuration.settings.controlAllowRun
+            allowRun: configuration.settings.controlAllowRun,
+            allowRead: configuration.settings.controlAllowRead
         )
         // Dropped so the next palette walks the roots the file now names. The
         // walk is not started here: it would fire on every keystroke of an

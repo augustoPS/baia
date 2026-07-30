@@ -108,6 +108,15 @@ public struct ControlResult: Sendable, Equatable, Codable {
     /// `subscribe`: the cursor for the next call, so a client never computes one.
     public var seq: UInt64?
 
+    /// `read`: the pane's lines, oldest first, wrapping already undone.
+    public var lines: [String]?
+
+    /// `read`: whether either bound bit, the line count or the byte budget.
+    ///
+    /// Always present on a read, including when false, so a caller cannot mistake
+    /// an omitted field for a complete answer.
+    public var truncated: Bool?
+
     public init(
         pane: String? = nil,
         name: String? = nil,
@@ -119,7 +128,9 @@ public struct ControlResult: Sendable, Equatable, Codable {
         dropped: Int? = nil,
         events: [ControlEvent]? = nil,
         gap: Bool? = nil,
-        seq: UInt64? = nil
+        seq: UInt64? = nil,
+        lines: [String]? = nil,
+        truncated: Bool? = nil
     ) {
         self.pane = pane
         self.name = name
@@ -132,6 +143,8 @@ public struct ControlResult: Sendable, Equatable, Codable {
         self.events = events
         self.gap = gap
         self.seq = seq
+        self.lines = lines
+        self.truncated = truncated
     }
 }
 

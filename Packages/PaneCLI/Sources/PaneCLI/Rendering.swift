@@ -61,6 +61,15 @@ public enum Rendering {
         case .close, .focus, .resize, .equalize, .send, .revoke, .run, .cwd, .report:
             break
 
+        // One line per line, which is what makes `baia read` pipe into grep. The
+        // truncation flag is deliberately not printed here: a caller who needs it
+        // asks for `--json`, and a trailing marker in the plain output would end
+        // up in somebody's grep results as though the pane had printed it.
+        case .read:
+            for line in result.lines ?? [] {
+                out(line)
+            }
+
         case .zoom:
             out((result.zoomed ?? false) ? "on" : "off")
 

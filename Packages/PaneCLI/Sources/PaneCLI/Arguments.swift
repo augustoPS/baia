@@ -194,6 +194,29 @@ public enum Arguments {
                 return .usage("--message applies only to --state blocked")
             }
 
+        case .read:
+            // One positional and required, the pane to read, because a `read`
+            // that defaulted to the caller would be an expensive way to ask a
+            // question `whoami` answers, and a typo in a pane id would silently
+            // become a read of oneself.
+            guard let target = tokens.take(), !target.hasPrefix("--") else {
+                return .usage("read needs a pane id")
+            }
+            call.args.peer = target
+            while let token = tokens.take() {
+                switch token {
+                case "--lines":
+                    guard let raw = tokens.take(), let count = Int(raw) else {
+                        return .usage("--lines needs a number")
+                    }
+                    call.args.lines = count
+                case "--json":
+                    call.json = true
+                default:
+                    return .usage(unexpected(token, verb))
+                }
+            }
+
         case .cwd:
             // One positional, and required. `baia cwd` with nothing after it is
             // almost certainly a shell that meant to print the directory, and

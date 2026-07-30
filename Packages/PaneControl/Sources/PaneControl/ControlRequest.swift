@@ -120,6 +120,11 @@ public struct ControlArgs: Sendable, Equatable, Codable {
     /// `report --release`: hand authority back to the pollers now.
     public var release: Bool?
 
+    /// `read`: how many lines to answer with, capped by ``ScreenRead/maxLines``
+    /// at the server rather than trusted from the client, the same treatment
+    /// ``wait`` and ``ttl`` get.
+    public var lines: Int?
+
     public init(
         axis: ControlAxis? = nil,
         cwd: String? = nil,
@@ -137,7 +142,8 @@ public struct ControlArgs: Sendable, Equatable, Codable {
         state: ReportedState? = nil,
         ttl: Int? = nil,
         seq: UInt64? = nil,
-        release: Bool? = nil
+        release: Bool? = nil,
+        lines: Int? = nil
     ) {
         self.axis = axis
         self.cwd = cwd
@@ -156,6 +162,7 @@ public struct ControlArgs: Sendable, Equatable, Codable {
         self.ttl = ttl
         self.seq = seq
         self.release = release
+        self.lines = lines
     }
 }
 

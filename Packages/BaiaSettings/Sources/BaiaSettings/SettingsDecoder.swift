@@ -63,6 +63,7 @@ public enum SettingsDecoder {
         "sidebar",
         "controlChannelEnabled",
         "controlAllowRun",
+        "controlAllowRead",
     ]
 
     /// One bad or unknown field must never discard the whole file. Every field
@@ -315,6 +316,9 @@ public enum SettingsDecoder {
             settings.controlChannelEnabled = enabled
         }
 
+        if let allowRead = reader.flag("controlAllowRead") {
+            settings.controlAllowRead = allowRead
+        }
         if let allowRun = reader.flag("controlAllowRun") {
             settings.controlAllowRun = allowRun
         }

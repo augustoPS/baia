@@ -153,6 +153,22 @@ final class ControlAdapter: ControlWorkspaceBridge {
 
     /// Applies one authorised layout verb and answers with the caller's frame.
     ///
+    /// Every logical line a pane holds, or nil when it has no surface yet.
+    ///
+    /// Straight through to the same reader `find-in-pane` uses, deliberately. The
+    /// hub records the trap that makes one reader the rule: a whole-screen read
+    /// returns logical lines and an exact-coordinate read returns screen rows, so
+    /// a line index is not a row index, and two readers is what lets one of them
+    /// be wrong about which it is.
+    ///
+    /// Nil for a pane the graph still knows and no window holds, which the server
+    /// answers as an empty read rather than an error. The caller is authorised to
+    /// see this pane; it simply has nothing on it yet.
+    func readLines(from pane: ControlPaneID) -> [String]? {
+        guard let placed = placement(of: pane) else { return nil }
+        return placed.pane.readScreenLines()
+    }
+
     /// No `default:`, matching `ControlVerb.scope` and the server's own router: a
     /// verb added without a route has to fail to compile here rather than fall
     /// through to whatever the fallback happened to answer.
@@ -190,7 +206,8 @@ final class ControlAdapter: ControlWorkspaceBridge {
         case .report:
             return accept(report: args, on: placed)
 
-        case .whoami, .list, .peers, .publish, .connect, .send, .recv, .subscribe, .revoke, .run:
+        case .whoami, .list, .peers, .publish, .connect, .send, .recv, .subscribe, .revoke, .run,
+             .read:
             // Unreachable: the server routes these to the graph and never here.
             // The arm exists because the switch has no `default:` and never will.
             return .failure(

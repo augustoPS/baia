@@ -90,7 +90,13 @@ import Testing
         dropped: 3,
         events: [event],
         gap: true,
-        seq: 42
+        seq: 42,
+        // A pane's own output, which is the one field on this wire whose contents
+        // baia never chose. It goes through the same containment walk as
+        // everything else: whatever a pane printed must not be able to look like a
+        // capability on the way back out.
+        lines: ["a line the pane printed", "and another"],
+        truncated: true
     )
 
     static let error = ControlError(code: .refused, message: "why it failed")
