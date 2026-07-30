@@ -316,7 +316,12 @@ public struct PaneGraph: Sendable, Equatable {
         // byte-identical to the answer for a live pane out of scope. A caller
         // that could tell them apart could enumerate the workspace one id at a
         // time.
-        if let target, isOpen(target) == false { return .denied(.unauthorized) }
+        //
+        // **`verb.scope` and not a constant, here as much as below.** The
+        // message varies by verb, so this refusal has to draw the same one the
+        // in-scope refusals draw or the liveness check becomes the oracle the
+        // rest of this function is written to avoid.
+        if let target, isOpen(target) == false { return .denied(.unauthorized(verb.scope)) }
 
         // No `default:`, for the reason ``ControlVerb/scope`` has none: a scope
         // added without a decided resolution must fail to compile here rather
@@ -327,7 +332,7 @@ public struct PaneGraph: Sendable, Equatable {
             // is refused rather than ignored, because ignoring it would let a
             // later wiring mistake pass silently through the one function whose
             // job is to catch exactly that.
-            guard target == nil || target == actor else { return .denied(.unauthorized) }
+            guard target == nil || target == actor else { return .denied(.unauthorized(verb.scope)) }
             return .allowed(actor: actor, target: actor)
 
         case .scopedRead:
@@ -335,14 +340,14 @@ public struct PaneGraph: Sendable, Equatable {
             guard subject == actor
                 || isDescendant(subject, of: actor)
                 || peers(of: actor).contains(subject)
-            else { return .denied(.unauthorized) }
+            else { return .denied(.unauthorized(verb.scope)) }
             return .allowed(actor: actor, target: subject)
 
         case .peerEdge:
             // No target means no peer named, which is not a request that can be
             // answered rather than one that defaults to the caller.
-            guard let subject = target else { return .denied(.unauthorized) }
-            guard peers(of: actor).contains(subject) else { return .denied(.unauthorized) }
+            guard let subject = target else { return .denied(.unauthorized(verb.scope)) }
+            guard peers(of: actor).contains(subject) else { return .denied(.unauthorized(verb.scope)) }
             return .allowed(actor: actor, target: subject)
 
         case .descendant:
@@ -352,7 +357,7 @@ public struct PaneGraph: Sendable, Equatable {
             // control would make consent to talk into consent to be driven.
             let subject = target ?? actor
             guard subject == actor || isDescendant(subject, of: actor) else {
-                return .denied(.unauthorized)
+                return .denied(.unauthorized(verb.scope))
             }
             return .allowed(actor: actor, target: subject)
         }

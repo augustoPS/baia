@@ -237,7 +237,13 @@ extension PaneGraph {
     /// has no edge to: a caller that could tell a malformed id from a live
     /// non-peer could walk id space.
     public mutating func revoke(token: String, peer: String) -> ControlOutcome<ControlPaneID> {
-        guard let target = ControlPaneID(uuidString: peer) else { return .denied(.unauthorized) }
+        // Drawn from the verb rather than written out, for the reason
+        // ``send(token:peer:text:)`` gives: a malformed id and a live non-peer
+        // have to answer the same sentence, and two spellings of it is how they
+        // stop doing that.
+        guard let target = ControlPaneID(uuidString: peer) else {
+            return .denied(.unauthorized(ControlVerb.revoke.scope))
+        }
 
         switch authorize(token: token, verb: .revoke, target: target) {
         case let .denied(error):

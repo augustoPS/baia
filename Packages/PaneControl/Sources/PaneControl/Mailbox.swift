@@ -87,7 +87,13 @@ extension PaneGraph {
         peer: String,
         text: String
     ) -> ControlOutcome<ControlPaneID> {
-        guard let target = ControlPaneID(uuidString: peer) else { return .denied(.unauthorized) }
+        // `ControlVerb.send.scope` rather than `.peerEdge` written out, so the
+        // sentence a malformed id draws cannot drift from the one `authorize`
+        // draws for a live non-peer. The two being identical is the whole point
+        // of refusing here at all.
+        guard let target = ControlPaneID(uuidString: peer) else {
+            return .denied(.unauthorized(ControlVerb.send.scope))
+        }
 
         switch authorize(token: token, verb: .send, target: target) {
         case let .denied(error):

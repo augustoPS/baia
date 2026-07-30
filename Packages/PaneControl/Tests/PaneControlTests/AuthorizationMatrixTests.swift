@@ -374,7 +374,10 @@ import Testing
                 token: sent, verb: verb, target: fixture.unrelated
             )
             #expect(absent == outOfScope, "\(verb.rawValue) distinguished absent from out of scope")
-            #expect(absent == .denied(.unauthorized))
+            // Keyed on the verb's own scope. The message differs between verbs
+            // by design, and may never differ between targets of one verb, which
+            // is the line above.
+            #expect(absent == .denied(.unauthorized(verb.scope)))
         }
     }
 

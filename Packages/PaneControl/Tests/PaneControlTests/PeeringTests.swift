@@ -432,14 +432,16 @@ import Testing
     @Test func revokingAPaneThatIsNotAPeerIsUnauthorized() {
         var fixture = Fixture()
 
+        let refusal = ControlError.unauthorized(ControlVerb.revoke.scope)
+
         #expect(fixture.graph.revoke(token: fixture.publisherToken, peer: fixture.other.description)
-            == .denied(.unauthorized))
+            == .denied(refusal))
         #expect(fixture.graph.revoke(
             token: fixture.publisherToken,
             peer: UUID().uuidString
-        ) == .denied(.unauthorized))
+        ) == .denied(refusal))
         #expect(fixture.graph.revoke(token: fixture.publisherToken, peer: "not-an-id")
-            == .denied(.unauthorized))
+            == .denied(refusal))
     }
 
     /// A revoked pane learns nothing a pane holding an invented ticket does not,
