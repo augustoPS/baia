@@ -44,3 +44,41 @@ public enum PaneAttention: Sendable, Equatable {
         }
     }
 }
+
+public extension PaneAttention {
+    /// This attention once the pane's own statement about itself is taken into
+    /// account.
+    ///
+    /// **The report owns whether the pane is asking; the latch owns how loudly.**
+    /// A report answers "does the agent still need me". Acknowledgement answers
+    /// "have I been here since it started", which is a different question a
+    /// report has no view on, so it passes through untouched.
+    ///
+    /// A reported block that stayed loud until released was considered and
+    /// rejected: it reproduces the failure recorded under the two-level model, a
+    /// pane that ever rang staying marked for life, with the owner working in the
+    /// very pane that is shouting. Intolerability at four panes is why
+    /// ``acknowledged`` exists at all.
+    ///
+    /// **`blocked` is optional, and that is load-bearing.** Nil is "the pane has
+    /// said nothing" and leaves the latch alone; `false` is "the agent says it is
+    /// working", which outranks a bell the pane emitted earlier and silences it.
+    /// A plain `Bool` folds those together and would make every pane with no
+    /// report unable to ring.
+    ///
+    /// Takes a `Bool?` and a `String?` rather than the channel's own state enum,
+    /// because this package imports Foundation and nothing else. The app maps one
+    /// onto the other in one place, which is the call ``ActivityReading`` already
+    /// makes and the reason `ControlAxis` and `SplitAxis` are separate types.
+    func overridden(byReportedBlock blocked: Bool?, message: String?) -> PaneAttention {
+        guard let blocked else { return self }
+        guard blocked else { return .none }
+        // Asking, at whatever volume the latch had already settled on. The
+        // report's message wins, because the report is the thing asking and the
+        // latch may be holding an hour-old bell from a build.
+        switch self {
+        case .none, .requested: return .requested(message: message)
+        case .acknowledged: return .acknowledged(message: message)
+        }
+    }
+}
