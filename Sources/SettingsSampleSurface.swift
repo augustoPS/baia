@@ -75,8 +75,22 @@ final class SettingsSampleSurface: NSViewController {
             terminalView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             terminalView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
+    }
+
+    /// Feeds the canned output once the surface exists.
+    ///
+    /// Not in `viewDidLoad`. The ghostty surface is created when the view reaches
+    /// a window and its Metal layer is set up, and `InMemoryTerminalSession` only
+    /// gains a surface at that point, so anything received before it is written
+    /// to nothing and silently lost.
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        guard !hasFedOutput else { return }
+        hasFedOutput = true
         session.receive(Self.cannedOutput)
     }
+
+    private var hasFedOutput = false
 
     /// Re-themes the sample without rebuilding it.
     ///

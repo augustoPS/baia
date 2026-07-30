@@ -29,12 +29,16 @@ final class SettingsDraft {
     /// offered but the catalog could not resolve would fall back to the default
     /// while looking applied.
     ///
-    /// `search("")` and not `allThemes`, which is declared without `public` in
-    /// the generated catalog and is unreachable from here. The empty query
-    /// matches everything, because `search` filters on
-    /// `name.lowercased().contains(query.lowercased())` and every string contains
-    /// the empty string.
-    static let themeNames: [String] = GhosttyThemeCatalog.search("")
+    /// `allThemes` and not `search("")`. The catalog declares it inside a
+    /// `public extension`, so the member is public even though the line itself
+    /// does not say so, and it is reachable from here.
+    ///
+    /// `search("")` looks like the same thing and returns nothing. It filters on
+    /// `name.lowercased().contains(lowered)`, and with Foundation imported that
+    /// is the range-based overload, where `range(of: "")` is nil. So the empty
+    /// query matches no name at all rather than every one. Measured against the
+    /// running app: `allThemes` is 485, `search("")` is 0, `search("dark")` is 67.
+    static let themeNames: [String] = GhosttyThemeCatalog.allThemes
         .map(\.name)
         .sorted()
 }
