@@ -36,6 +36,7 @@ responder inside a pane's window and silently kill every ghostty binding" is.
 |---|---|
 | `agent-integration/` | Whether an installer that edits `~/.claude/settings.json` can be trusted with a file somebody hand-wrote. Runs against a fixture home and fingerprints the owner's real one to prove it stayed out |
 | `attention-colour/` | Whether the attention treatment resolves to the colour the config asked for |
+| `clip-layout/` | The bug shape that has cost four hand-found hours: something derived from a view's size, the size changing, and the derived thing never rebuilt. Drives a real rows view through a first layout, a width change and a scroll |
 | `config-wiring/` | Task 6 of the config-wiring plan: every appearance key round-tripping into the running app. Colour checks are automated, the ones marked `LOOK` need a human |
 | `control-channel/` | Sixty-seven checks over the real socket: scopes, statuses, event kinds, backfill, and a pane reporting on itself |
 | `find-in-pane/` | Whether the find panel breaks a responder inside a pane's window, or keeps a dead pane's shell alive |
