@@ -19,6 +19,7 @@ import Testing
         case .zoom: ControlArgs(on: true)
         case .resize: ControlArgs(direction: .left, by: 0.05)
         case .equalize: ControlArgs()
+        case .cwd: ControlArgs(cwd: "/Users/x/Projects/website")
         case .whoami: ControlArgs()
         case .list: ControlArgs()
         case .publish: ControlArgs(name: "reviewer", rotate: true)

@@ -112,6 +112,19 @@ public enum Arguments {
                 call.args.axis = .horizontal
             }
 
+        case .cwd:
+            // One positional, and required. `baia cwd` with nothing after it is
+            // almost certainly a shell that meant to print the directory, and
+            // answering that by silently announcing nothing would be worse than
+            // saying what the verb needs.
+            guard let path = tokens.take(), !path.hasPrefix("--") else {
+                return .usage("cwd needs a path")
+            }
+            call.args.cwd = path
+            if let extra = tokens.take() {
+                return .usage(unexpected(extra, verb))
+            }
+
         case .close, .focus, .equalize:
             if let token = tokens.take() {
                 return .usage(unexpected(token, verb))

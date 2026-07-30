@@ -456,7 +456,7 @@ final class ControlServer {
         // verb added without a route has to fail to compile here rather than fall
         // through to whatever the fallback happened to answer.
         switch request.verb {
-        case .split, .close, .focus, .zoom, .resize, .equalize:
+        case .split, .close, .focus, .zoom, .resize, .equalize, .cwd:
             layout(request, on: id)
 
         case .whoami:

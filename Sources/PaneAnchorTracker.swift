@@ -90,8 +90,25 @@ final class PaneAnchorTracker {
         guard let pid = foregroundPid(),
               let directory = ProcessWorkingDirectory.url(ofProcess: pid)
         else { return }
+        // Compared against what the *poll* last saw, not against
+        // `workingDirectory`, and the difference is the whole point. An
+        // announcement through `reportWorkingDirectory` moves
+        // `workingDirectory` and cannot move the process, so a poll comparing
+        // against `workingDirectory` would find a disagreement every single tick
+        // and overwrite the announcement within the second. That is exactly the
+        // case the announcement exists for: an agent that cds in a subshell moves
+        // no process cwd at all, so the poll would clobber it forever.
+        //
+        // Comparing against the last polled value instead means the poll speaks
+        // only when the process genuinely moved, which is what earns it the right
+        // to overrule what it was told.
+        guard directory != lastPolledDirectory else { return }
+        lastPolledDirectory = directory
         apply(directory)
     }
+
+    /// What the last successful poll read, whether or not it was applied.
+    private var lastPolledDirectory: URL?
 
     /// The OSC 7 path, fed by the pane's pwd delegate. Nothing emits OSC 7 today,
     /// but the conformance is one method: if anything ever does, updates stop
