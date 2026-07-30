@@ -68,7 +68,12 @@ struct SettingsView: View {
                     // the settings window behind it, so both will flatter.
                     LabeledContent("Opacity") {
                         HStack {
-                            Slider(value: $model.draft.backgroundOpacity, in: 0 ... 1)
+                            // Stepped, like padding and size. Without it a drag
+                            // writes the full Double into a file meant to be read
+                            // and edited by hand, and the writer round-trips it
+                            // faithfully: a real config came back carrying
+                            // `"backgroundOpacity": 0.6008831521739131`.
+                            Slider(value: $model.draft.backgroundOpacity, in: 0 ... 1, step: 0.01)
                             Text(model.draft.backgroundOpacity, format: .number.precision(.fractionLength(2)))
                                 .monospacedDigit()
                                 .frame(width: 44, alignment: .trailing)
