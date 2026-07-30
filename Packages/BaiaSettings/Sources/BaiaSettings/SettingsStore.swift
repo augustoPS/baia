@@ -67,6 +67,63 @@ public struct SettingsStore: Sendable {
         return Self.writeAll(Array(Self.defaultFileContents.utf8), to: descriptor)
     }
 
+    /// Writes `settings` into the existing document, answering whether it landed.
+    ///
+    /// Read-modify-write: the file on disk is parsed, the appearance keys are
+    /// replaced, and every other key is carried through untouched. See
+    /// ``SettingsWriter`` for why an encoder built from ``Settings`` would be
+    /// wrong, and `projectRoots` for the case that decides it.
+    ///
+    /// The bytes go to a sibling temporary file and are renamed over the target.
+    /// `rename` within a directory is atomic, so a reader never sees half a
+    /// document and a crash mid-write leaves the previous file intact. Truncating
+    /// in place would leave a file that stops halfway through a key, which decodes
+    /// as unreadable, and baia would then report an error about a file it wrote
+    /// itself and never repair it, the path now existing.
+    ///
+    /// The rename also fires `.rename` and `.delete` on the `ConfigurationCenter`
+    /// watcher rather than `.write`, which is already the handled path: it re-arms
+    /// against the path instead of the descriptor it just lost.
+    ///
+    /// Not `O_EXCL`. That is ``writeDefaultIfAbsent()``'s contract, and this one
+    /// exists to overwrite.
+    public func write(_ settings: Settings) -> Bool {
+        let directory = fileURL.deletingLastPathComponent()
+        guard Self.createDirectories(directory) else { return false }
+
+        let path = fileURL.path(percentEncoded: false)
+        let existing = FileManager.default.contents(atPath: path) ?? Data()
+        let document = SettingsWriter.patch(
+            JSONValue.parse(existing) ?? .object([:]),
+            with: settings
+        )
+        let bytes = Array(SettingsWriter.serialize(document).utf8)
+
+        // The pid is in the temporary name so two processes writing at once
+        // cannot share it. Either rename then wins whole, and neither observes
+        // the other's partial bytes.
+        let temporaryURL = directory.appending(path: ".config.json.\(getpid()).tmp")
+        let temporaryPath = temporaryURL.path(percentEncoded: false)
+
+        // 0o600 for the same reason `writeDefaultIfAbsent` asks for it: the file
+        // this becomes is the config, and it should not be briefly world-readable
+        // on its way there.
+        let descriptor = open(temporaryPath, O_WRONLY | O_CREAT | O_TRUNC, 0o600)
+        guard descriptor >= 0 else { return false }
+
+        let wrote = Self.writeAll(bytes, to: descriptor)
+        close(descriptor)
+        guard wrote else {
+            unlink(temporaryPath)
+            return false
+        }
+        guard rename(temporaryPath, path) == 0 else {
+            unlink(temporaryPath)
+            return false
+        }
+        return true
+    }
+
     /// Creates `directory` and every missing parent, answering whether it exists
     /// afterwards.
     ///
@@ -96,7 +153,10 @@ public struct SettingsStore: Sendable {
             guard let base = buffer.baseAddress else { return false }
             var written = 0
             while written < buffer.count {
-                let count = write(descriptor, base + written, buffer.count - written)
+                // `Darwin.` qualified because the type now has its own `write(_:)`,
+                // which otherwise wins the unqualified lookup and fails to compile
+                // against a file descriptor.
+                let count = Darwin.write(descriptor, base + written, buffer.count - written)
                 if count > 0 {
                     written += count
                     continue
