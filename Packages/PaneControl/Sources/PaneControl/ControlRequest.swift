@@ -84,7 +84,10 @@ public struct ControlArgs: Sendable, Equatable, Codable {
     public var peer: String?
 
     /// `send`: the message body, capped at
-    /// ``ControlWire/maxMessagePayloadBytes``.
+    /// ``ControlWire/maxMessagePayloadBytes``. `report --message`: what a blocked
+    /// pane is asking for, capped instead at ``ControlWire/maxEventStringBytes``
+    /// when it enters the ring. One field for both, the way `name` serves both
+    /// `publish` and `connect`: the caps differ because the destinations do.
     public var text: String?
 
     /// `recv --wait`: how long to park, capped at ``ControlWire/maxWaitSeconds``
@@ -103,6 +106,20 @@ public struct ControlArgs: Sendable, Equatable, Codable {
     /// hand-written frame is exactly where a misspelling happens.
     public var kinds: [String]?
 
+    /// `report`: what the pane says it is doing.
+    public var state: ReportedState?
+
+    /// `report`: how long the statement holds, capped by
+    /// ``ControlWire/cappedReportTTL(_:)`` at the server rather than trusted from
+    /// the client, the same treatment ``wait`` gets.
+    public var ttl: Int?
+
+    /// `report`: the reporter's ordering claim. Nil is a reporter making none.
+    public var seq: UInt64?
+
+    /// `report --release`: hand authority back to the pollers now.
+    public var release: Bool?
+
     public init(
         axis: ControlAxis? = nil,
         cwd: String? = nil,
@@ -116,7 +133,11 @@ public struct ControlArgs: Sendable, Equatable, Codable {
         text: String? = nil,
         wait: Int? = nil,
         from: UInt64? = nil,
-        kinds: [String]? = nil
+        kinds: [String]? = nil,
+        state: ReportedState? = nil,
+        ttl: Int? = nil,
+        seq: UInt64? = nil,
+        release: Bool? = nil
     ) {
         self.axis = axis
         self.cwd = cwd
@@ -131,6 +152,10 @@ public struct ControlArgs: Sendable, Equatable, Codable {
         self.wait = wait
         self.from = from
         self.kinds = kinds
+        self.state = state
+        self.ttl = ttl
+        self.seq = seq
+        self.release = release
     }
 }
 

@@ -112,6 +112,53 @@ public enum Arguments {
                 call.args.axis = .horizontal
             }
 
+        case .report:
+            // Exactly one of `--state` or `--release`. A report about nothing is
+            // not a report, and both together is a caller that has not decided,
+            // so neither is answered by picking one.
+            while let token = tokens.take() {
+                switch token {
+                case "--state":
+                    guard let name = tokens.take(), let state = ReportedState(rawValue: name) else {
+                        let known = ReportedState.allCases.map(\.rawValue).joined(separator: ", ")
+                        return .usage("--state needs one of: \(known)")
+                    }
+                    call.args.state = state
+                case "--release":
+                    call.args.release = true
+                case "--message":
+                    guard let text = tokens.take() else {
+                        return .usage("--message needs text")
+                    }
+                    call.args.text = text
+                case "--ttl":
+                    guard let raw = tokens.take(), let seconds = Int(raw) else {
+                        return .usage("--ttl needs a number of seconds")
+                    }
+                    call.args.ttl = seconds
+                case "--seq":
+                    guard let raw = tokens.take(), let seq = UInt64(raw) else {
+                        return .usage("--seq needs a whole number")
+                    }
+                    call.args.seq = seq
+                case "--json":
+                    call.json = true
+                default:
+                    return .usage(unexpected(token, verb))
+                }
+            }
+            let releasing = call.args.release == true
+            guard (call.args.state != nil) != releasing else {
+                return .usage("report needs exactly one of --state or --release")
+            }
+            // A message rides a raise and never a clear, which is the rule
+            // `ObservedPaneState` already follows for OSC messages. Meaningless
+            // here rather than merely unused, so it is refused rather than
+            // dropped: a caller who wrote it believes it will be shown.
+            if call.args.text != nil, call.args.state != .blocked {
+                return .usage("--message applies only to --state blocked")
+            }
+
         case .cwd:
             // One positional, and required. `baia cwd` with nothing after it is
             // almost certainly a shell that meant to print the directory, and
