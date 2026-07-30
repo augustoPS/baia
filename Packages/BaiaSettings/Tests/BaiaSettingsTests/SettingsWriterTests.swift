@@ -121,4 +121,90 @@ import Testing
         #expect(Set(members(.object([:]), .defaultSettings).keys)
             == SettingsWriter.appearanceKeys)
     }
+
+    // MARK: - Serializing
+
+    @Test func theDocumentIsSerializedInTheCanonicalOrder() {
+        let text = SettingsWriter.serialize(.object([
+            "themeName": .string("Midnight"),
+            "fontSize": .number(14),
+            "fontFamily": .null,
+        ]))
+        let fontFamily = text.range(of: "\"fontFamily\"")
+        let fontSize = text.range(of: "\"fontSize\"")
+        let themeName = text.range(of: "\"themeName\"")
+        #expect(fontFamily != nil)
+        #expect(fontSize != nil)
+        #expect(themeName != nil)
+        guard let fontFamily, let fontSize, let themeName else { return }
+        // The order `keyOrder` declares: fontFamily, fontSize, themeName. Sorted
+        // would put fontFamily, fontSize, themeName too, so the assertion is
+        // deliberately made against a document whose declared order differs from
+        // alphabetical further down.
+        #expect(fontFamily.lowerBound < fontSize.lowerBound)
+        #expect(fontSize.lowerBound < themeName.lowerBound)
+    }
+
+    @Test func thecanonicalOrderIsNotMerelyAlphabetical() {
+        // `backgroundHex` sorts before `themeName` but is declared after it, so a
+        // serializer that quietly sorted would pass the test above and fail here.
+        let text = SettingsWriter.serialize(.object([
+            "themeName": .string("Midnight"),
+            "backgroundHex": .string("#141414"),
+        ]))
+        let themeName = text.range(of: "\"themeName\"")
+        let backgroundHex = text.range(of: "\"backgroundHex\"")
+        #expect(themeName != nil)
+        #expect(backgroundHex != nil)
+        guard let themeName, let backgroundHex else { return }
+        #expect(themeName.lowerBound < backgroundHex.lowerBound)
+    }
+
+    @Test func aKeyTheDecoderDoesNotKnowIsKeptRatherThanDropped() {
+        // The decoder already reports an unread key on stderr. Deleting the
+        // owner's text on top of having told them about it is worse than carrying
+        // it, and carrying it costs nothing.
+        let text = SettingsWriter.serialize(.object([
+            "themeName": .string("Midnight"),
+            "somethingTheOwnerAdded": .string("keep me"),
+        ]))
+        #expect(text.contains("\"somethingTheOwnerAdded\": \"keep me\""))
+    }
+
+    @Test func unknownKeysComeAfterTheKnownOnesAndInAStableOrder() {
+        // Sorted rather than in dictionary order, so two writes of the same
+        // document produce the same bytes and the file does not churn under
+        // version control.
+        let text = SettingsWriter.serialize(.object([
+            "themeName": .string("Midnight"),
+            "zzzOwnerKey": .string("z"),
+            "aaaOwnerKey": .string("a"),
+        ]))
+        let themeName = text.range(of: "\"themeName\"")
+        let aaa = text.range(of: "\"aaaOwnerKey\"")
+        let zzz = text.range(of: "\"zzzOwnerKey\"")
+        #expect(themeName != nil)
+        #expect(aaa != nil)
+        #expect(zzz != nil)
+        guard let themeName, let aaa, let zzz else { return }
+        #expect(themeName.lowerBound < aaa.lowerBound)
+        #expect(aaa.lowerBound < zzz.lowerBound)
+    }
+
+    @Test func theSerializedDocumentEndsWithASingleNewline() {
+        // Matching `defaultFileContents`, and keeping the file well formed for any
+        // line-oriented tool the owner points at it.
+        let text = SettingsWriter.serialize(.object(["themeName": .string("Midnight")]))
+        #expect(text.hasSuffix("}\n"))
+        #expect(!text.hasSuffix("}\n\n"))
+    }
+
+    @Test func serializingANonObjectYieldsAnEmptyDocumentRatherThanGarbage() {
+        #expect(SettingsWriter.serialize(.string("not a document")) == "{}\n")
+    }
+
+    @Test func serializingAndReparsingYieldsTheSameDocument() {
+        let document = SettingsWriter.patch(.object([:]), with: .defaultSettings)
+        #expect(JSONValue.parse(Data(SettingsWriter.serialize(document).utf8)) == document)
+    }
 }

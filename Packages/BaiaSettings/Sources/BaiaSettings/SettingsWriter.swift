@@ -115,4 +115,26 @@ enum SettingsWriter {
 
         return .object(members)
     }
+
+    /// `document` as the text to write to the config file.
+    ///
+    /// Keys named in ``keyOrder`` come first and in that order, so the file keeps
+    /// the grouping the owner learned it by rather than the alphabetical order a
+    /// dictionary would fall out in.
+    ///
+    /// Anything else follows, sorted. That covers a key the owner added which the
+    /// decoder reports as unread: dropping it would delete their own text on top
+    /// of having already warned about it, and sorting keeps two writes of one
+    /// document byte-identical so the file does not churn.
+    static func serialize(_ document: JSONValue) -> String {
+        guard case let .object(members) = document else { return "{}\n" }
+
+        let known = keyOrder.filter { members[$0] != nil }
+        let unknown = members.keys.filter { !keyOrder.contains($0) }.sorted()
+
+        let lines = (known + unknown).map { key in
+            "  " + JSONValue.quoted(key) + ": " + members[key]!.serialized(indent: 1)
+        }
+        return "{\n" + lines.joined(separator: ",\n") + "\n}\n"
+    }
 }
