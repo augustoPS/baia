@@ -54,4 +54,65 @@ enum SettingsWriter {
         "controlChannelEnabled",
         "controlAllowRun",
     ]
+
+    /// The fourteen keys the settings window owns.
+    ///
+    /// Everything outside this set is carried through untouched: the nine the
+    /// window does not show, and any key the owner added that the decoder already
+    /// reports as unread.
+    ///
+    /// Declared rather than inferred from ``patch(_:with:)``, and pinned against
+    /// what that function actually writes by a test, so the two cannot drift into
+    /// a key that is claimed but never assigned.
+    static let appearanceKeys: Set<String> = [
+        "themeName",
+        "backgroundHex",
+        "backgroundOpacity",
+        "backgroundBlur",
+        "windowPadding",
+        "windowPaddingBalance",
+        "transparentTitlebar",
+        "fontFamily",
+        "fontSize",
+        "cursorStyle",
+        "focusAccent",
+        "attentionStyle",
+        "attentionAccent",
+        "alertBehavior",
+    ]
+
+    /// `document` with the appearance keys replaced from `settings`.
+    ///
+    /// A document that is not an object starts from empty rather than aborting. A
+    /// file the owner mangled by hand decodes as unreadable, and accept still has
+    /// to land the fourteen keys rather than silently doing nothing and leaving
+    /// the window looking like it worked.
+    static func patch(_ document: JSONValue, with settings: Settings) -> JSONValue {
+        var members: [String: JSONValue]
+        if case let .object(existing) = document {
+            members = existing
+        } else {
+            members = [:]
+        }
+
+        members["themeName"] = .string(settings.themeName)
+        members["backgroundHex"] = .string(settings.backgroundHex)
+        members["backgroundOpacity"] = .number(settings.backgroundOpacity)
+        members["backgroundBlur"] = .bool(settings.backgroundBlur)
+        members["windowPadding"] = .number(settings.windowPadding)
+        members["windowPaddingBalance"] = .bool(settings.windowPaddingBalance)
+        members["transparentTitlebar"] = .bool(settings.transparentTitlebar)
+        // Null rather than absent. The decoder reads both as unset, and the
+        // default file says null, so the key stays visible to whoever opens the
+        // file looking for the spelling.
+        members["fontFamily"] = settings.fontFamily.map { JSONValue.string($0) } ?? .null
+        members["fontSize"] = .number(settings.fontSize)
+        members["cursorStyle"] = .string(settings.cursorStyle.rawValue)
+        members["focusAccent"] = .string(settings.focusAccent.rawValue)
+        members["attentionStyle"] = .string(settings.attentionStyle.rawValue)
+        members["attentionAccent"] = .string(settings.attentionAccent.rawValue)
+        members["alertBehavior"] = .string(settings.alertBehavior.rawValue)
+
+        return .object(members)
+    }
 }
