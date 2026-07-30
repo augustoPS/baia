@@ -198,3 +198,29 @@ targets:
 
         ALWAYS_SEARCH_USER_PATHS: NO
         ENABLE_USER_SCRIPT_SANDBOXING: NO
+
+# Generated explicitly rather than left to Xcode.
+#
+# Without this block xcodegen produces the `baia` target and no scheme for it, so
+# `make build` (which passes `-scheme baia`) worked only on a machine where
+# somebody had opened the project in Xcode and let it autocreate one. That scheme
+# lands in `xcuserdata`, which is gitignored, and every `make gen` wipes it. The
+# result was a build that failed on a fresh clone, and after any regenerate, with
+# an error naming a scheme rather than the missing declaration.
+#
+# `baia-cli` is deliberately absent: it is built as a dependency of the app, which
+# is where it has to end up, and a scheme of its own would invite building it
+# alone into a bundle nothing installs.
+schemes:
+  baia:
+    build:
+      targets:
+        baia: all
+    run:
+      config: Debug
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

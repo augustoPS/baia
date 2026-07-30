@@ -187,6 +187,8 @@ final class ControlAdapter: ControlWorkspaceBridge {
             return equalize(placed)
         case .cwd:
             return report(cwd: args.cwd, on: placed)
+        case .report:
+            return accept(report: args, on: placed)
 
         case .whoami, .list, .peers, .publish, .connect, .send, .recv, .subscribe, .revoke, .run:
             // Unreachable: the server routes these to the graph and never here.
@@ -217,6 +219,38 @@ final class ControlAdapter: ControlWorkspaceBridge {
         }
         placed.pane.anchorTracker.announceWorkingDirectory(
             (cwd as NSString).expandingTildeInPath
+        )
+        return .success()
+    }
+
+    /// Records what the pane says about itself, overriding both pollers.
+    ///
+    /// **A superseded report answers success.** A hook can fire twice for one
+    /// transition, and a non-zero code would reach a `set -e` script with no way
+    /// to tell a duplicate from a failure. The ordering rule already made the
+    /// duplicate a no-op; saying so loudly would only break the caller.
+    ///
+    /// The TTL is capped here rather than trusted from the frame, the same way
+    /// `recv --wait` is, so a hand-written frame cannot hold authority longer
+    /// than the CLI could ask for.
+    private func accept(report args: ControlArgs, on placed: Placement) -> ControlResponse {
+        if args.release == true {
+            placed.pane.releaseReport()
+            return .success()
+        }
+
+        guard let state = args.state else {
+            return .failure(.refused, "report needs a state or --release")
+        }
+
+        let seconds = ControlWire.cappedReportTTL(args.ttl)
+        placed.pane.accept(
+            report: PaneReport(
+                state: state,
+                message: args.text,
+                seq: args.seq,
+                expires: Date().addingTimeInterval(TimeInterval(seconds))
+            )
         )
         return .success()
     }

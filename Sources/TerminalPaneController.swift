@@ -721,9 +721,10 @@ final class TerminalPaneController: NSViewController {
             // for `PaneRecord.activity`, so a subscriber's bootstrap and its
             // stream speak one vocabulary.
             for change in publishedState.changes(
-                activity: activityLabel,
+                activity: activityTracker.activityReading,
                 isAsking: activityTracker.wantsAttention,
-                message: attentionMessage
+                message: attentionMessage,
+                report: reports.live(at: Date())
             ) {
                 onObservableChange?(change.kind, change.message, change.activity, change.source)
             }
@@ -762,6 +763,35 @@ final class TerminalPaneController: NSViewController {
     /// activity label, and collapsing the two would turn a footer change into a
     /// wire event or the reverse.
     private var publishedState = ObservedPaneState()
+
+    /// The pane's own statement about itself, when it has made one.
+    ///
+    /// Per pane and per run, like the capability that reaches it. Nothing
+    /// persists: a report describes a process that will not outlive a relaunch,
+    /// and a restored one would be a claim about a pane that no longer exists.
+    private var reports = ReportStore()
+
+    /// Records a statement the pane made about itself and publishes at once.
+    ///
+    /// **Publishes rather than waiting for the next poll.** The tracker fires on
+    /// a one-second timer, and a report is a synchronous answer to something that
+    /// already happened: an agent that says it is blocked has stopped, and up to a
+    /// second of the pane looking busy is the whole latency the verb exists to
+    /// remove.
+    ///
+    /// A superseded report still runs the publish. It changes nothing, because
+    /// the comparator sees no transition, and skipping it would make the fast
+    /// path depend on the ordering rule agreeing with the comparator.
+    func accept(report: PaneReport) {
+        reports.accept(report)
+        activityTracker.onChange?()
+    }
+
+    /// Hands authority back to the pollers and publishes whatever they now say.
+    func releaseReport() {
+        reports.release()
+        activityTracker.onChange?()
+    }
 
     /// Set by `PaneTreeController` when the pane has a capability. Nil for a pane
     /// running without a channel, where the diff above is computed and thrown

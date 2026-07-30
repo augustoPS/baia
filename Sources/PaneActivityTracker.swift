@@ -1,6 +1,7 @@
 import AppKit
 import PaneActivity
 import PaneChrome
+import PaneControl
 
 /// One pane's answer to "what is running here, and does it want me?"
 ///
@@ -194,6 +195,28 @@ final class PaneActivityTracker {
     /// anything answering "what is running" for the control channel or for a
     /// `PaneRecord` reads this, or it reports the message as the process.
     var classifiedLabel: String? { activity.label }
+
+    /// The same conclusion as ``classifiedLabel``, keeping the case a `String?`
+    /// cannot carry.
+    ///
+    /// **Mapped here rather than by giving `PaneActivity` the wire type**, which
+    /// is the move `ControlAxis` and `SplitAxis` already make: a package that
+    /// imports Foundation and nothing else does not gain a dependency so another
+    /// package can spell one enum, and the app translates in one place.
+    ///
+    /// `classifiedLabel` folds `idleShell` and `unnameable` together, which is
+    /// right for the chrome because it draws nothing either way, and wrong for
+    /// the control channel, where "running nothing" and "running something I
+    /// cannot name" are different claims about the pane.
+    var activityReading: ActivityReading {
+        switch activity {
+        case .idleShell: .idle
+        case .unnameable: .cannotTell
+        case let .agent(name, _): .running(name)
+        case let .build(command): .running(command)
+        case let .command(name): .running(name)
+        }
+    }
 
     private func paneAgent() -> PaneStatus.Agent? {
         let label = activity.label
