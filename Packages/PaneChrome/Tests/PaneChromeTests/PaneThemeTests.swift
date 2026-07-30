@@ -5,6 +5,15 @@ import Testing
 @testable import PaneChrome
 
 @Suite struct PaneThemeTests {
+    /// Dark Pastel's sixteen slots, for the tests that need a theme built with a
+    /// stated ``FocusAccent`` rather than ``PaneTheme/darkPastel``'s default.
+    private static let darkPastelPalette: [Int: String] = [
+        0: "000000", 1: "ff5555", 2: "55ff55", 3: "ffff55",
+        4: "5555ff", 5: "ff55ff", 6: "55ffff", 7: "bbbbbb",
+        8: "555555", 9: "ff5555", 10: "55ff55", 11: "ffff55",
+        12: "5555ff", 13: "ff55ff", 14: "55ffff", 15: "ffffff",
+    ]
+
     /// A theme that is light in ghostty's own terms, for the tests that pin the
     /// chrome to the theme rather than to a dark palette.
     private let paper = PaneTheme(
@@ -275,13 +284,88 @@ import Testing
         // rather than as a colour nobody recognises.
         let theme = PaneTheme.darkPastel
         #expect(theme.barBackground.hexString == "#212121")
-        #expect(theme.hairline.hexString == "#323232")
         #expect(theme.inkContext.hexString == "#9d9d9d")
         #expect(theme.inkFaint.hexString == "#898989")
         #expect(theme.warn.hexString == "#c4c445")
         #expect(theme.boneAccent.hexString == "#e0e0e0")
         #expect(theme.alert.hexString == "#ff5555")
         #expect(theme.ok.hexString == "#55ff55")
+        // Design v3 §9. `staged` is `warn`'s construction on the adjacent slot,
+        // which is what makes the two read as one vocabulary in a row that
+        // colours its index and worktree columns independently.
+        #expect(theme.staged.hexString == "#45c445")
+    }
+
+    /// `divider` and `hairline` are no longer neutral, and this is the invariant
+    /// that replaced the hex they used to be pinned to.
+    ///
+    /// Design v3 §1 wants the planks tinted and the compartments they divide
+    /// neutral, under a rule it states plainly: the line changes hue, never
+    /// weight. It also quotes the fractions 0.14 and 0.20 as satisfying that.
+    /// **They satisfy it for `midnight` alone**, which is the accent that document
+    /// was written against: a fixed fraction carries as far as the accent is
+    /// light, so the same 0.14 lands 31 percent brighter under the default accent
+    /// and 42 percent under `bone`. `PaneTheme` solves the fraction instead, so
+    /// the rule holds for every accent rather than for the one that was measured.
+    @Test func theTintedLinesKeepTheWeightOfTheNeutralTheyReplace() {
+        for accent in FocusAccent.allCases {
+            let theme = PaneTheme(
+                background: "#141414", foreground: "#bbbbbb",
+                selectionBackground: "#b5d5ff", palette: Self.darkPastelPalette,
+                focusAccent: accent
+            )
+            let neutralDivider = theme.background.blended(with: theme.foreground, fraction: 0.12)
+            let neutralHairline = theme.background.blended(with: theme.foreground, fraction: 0.18)
+            #expect(
+                abs(theme.divider.relativeLuminance - neutralDivider.relativeLuminance) < 1e-6,
+                "divider changed weight under \(accent)"
+            )
+            #expect(
+                abs(theme.hairline.relativeLuminance - neutralHairline.relativeLuminance) < 1e-6,
+                "hairline changed weight under \(accent)"
+            )
+            // And the plank between stalls still never outranks the plank under
+            // one, which is the older rule the tint had to survive.
+            #expect(theme.divider.relativeLuminance < theme.hairline.relativeLuminance)
+        }
+    }
+
+    /// A hueless accent is a request for no tint, and the honest answer is the
+    /// grey the line had before. At a fixed 0.14 `bone` returns a *brighter* grey,
+    /// which is the same defect as above wearing no colour.
+    @Test func aHuelessAccentResolvesTheLinesBackToTheirGreys() {
+        let bone = PaneTheme(
+            background: "#141414", foreground: "#bbbbbb",
+            selectionBackground: "#b5d5ff", palette: Self.darkPastelPalette,
+            focusAccent: .bone
+        )
+        #expect(bone.divider.hexString == "#282828")
+        #expect(bone.hairline.hexString == "#323232")
+    }
+
+    /// The hexes v3 prints for its own accent, which is what someone reads that
+    /// document against. Within a unit of eight-bit colour of the values quoted
+    /// there, `#2d2535` and `#382d43`, the difference being the solved fraction.
+    @Test func theTintedLinesUnderTheDocumentsOwnAccent() {
+        let midnight = PaneTheme(
+            background: "#141414", foreground: "#bbbbbb",
+            selectionBackground: "#b5d5ff", palette: Self.darkPastelPalette,
+            focusAccent: .midnight
+        )
+        #expect(midnight.divider.hexString == "#2d2534")
+        #expect(midnight.hairline.hexString == "#392d44")
+    }
+
+    /// Text, unlike ``ok``, which is why it is not ``ok``.
+    @Test func stagedIsReadableAsTextOnEverySurfaceARowIsDrawnOn() {
+        let theme = PaneTheme.darkPastel
+        #expect(theme.staged.contrastRatio(against: theme.background)
+            >= PaneTheme.minimumTextContrast)
+        #expect(theme.staged.contrastRatio(against: theme.barBackground)
+            >= PaneTheme.minimumTextContrast)
+        #expect(theme.staged.contrastRatio(against: theme.panelBackground)
+            >= PaneTheme.minimumTextContrast)
+        #expect(theme.staged != theme.ok)
     }
 
     @Test func plankIsOneDerivationDoingTwoJobs() {

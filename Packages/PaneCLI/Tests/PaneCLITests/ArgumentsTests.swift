@@ -63,7 +63,7 @@ import PaneControl
         // answer usage rather than send an incomplete request. `subscribe` is one
         // of them because a cursor it invented would be a re-read of the ring on
         // every poll.
-        let needsAnOperand: Set<ControlVerb> = [.resize, .send, .revoke, .subscribe]
+        let needsAnOperand: Set<ControlVerb> = [.resize, .send, .revoke, .subscribe, .cwd]
         for verb in ControlVerb.allCases {
             let outcome = Arguments.parse([verb.rawValue])
             if needsAnOperand.contains(verb) {
@@ -85,6 +85,7 @@ import PaneControl
             .resize: ["left"],
             .send: ["pane-1", "hello"],
             .revoke: ["pane-1"],
+            .cwd: ["/tmp"],
         ]
         for verb in ControlVerb.allCases {
             let argv = [verb.rawValue] + (operand[verb] ?? []) + ["--nonesuch"]

@@ -64,7 +64,7 @@ public enum MenuBarLayout {
                 item(.closeTab, "Close Tab", .character("w"), [.command, .option], .unbind),
                 item(.closeWindow, "Close Window", .character("w"), [.command, .shift], .unbind),
                 item(
-                    .openConfiguration, "Open Configuration", .character(","), .command, .unbind,
+                    .openConfiguration, "Settings…", .character(","), .command, .unbind,
                     separatorBefore: true
                 ),
             ]

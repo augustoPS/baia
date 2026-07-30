@@ -120,4 +120,99 @@ import Testing
         let permissions = attributes[.posixPermissions] as? Int
         #expect(permissions.map { $0 & 0o077 } == 0)
     }
+
+    // MARK: - Writing
+
+    @Test func writingThenLoadingYieldsTheSameSettings() {
+        let url = fixture.root.appending(path: "config.json")
+        let store = SettingsStore(fileURL: url)
+        var settings = Settings.defaultSettings
+        settings.themeName = "Midnight"
+        settings.fontSize = 14
+        settings.backgroundOpacity = 0.7
+
+        #expect(store.write(settings))
+        let result = store.load()
+        #expect(result.settings == settings)
+        #expect(result.invalidKeys.isEmpty)
+        #expect(result.unknownKeys.isEmpty)
+        #expect(!result.documentIsUnreadable)
+    }
+
+    @Test func writingOverAnExistingFileKeepsTheKeysItDoesNotOwn() throws {
+        let url = fixture.root.appending(path: "config.json")
+        let store = SettingsStore(fileURL: url)
+        #expect(store.writeDefaultIfAbsent())
+
+        var settings = store.load().settings
+        settings.themeName = "Midnight"
+        #expect(store.write(settings))
+
+        let text = try String(contentsOf: url, encoding: .utf8)
+        // The tilde is the one that matters. `Settings.projectRoots` holds the
+        // expanded path, so a file that came back absolute would prove the write
+        // went through `Settings` rather than through the document.
+        #expect(text.contains("\"projectRoots\": [\"~/Projects\"]"))
+        #expect(!text.contains(NSHomeDirectory()))
+        #expect(text.contains("\"themeName\": \"Midnight\""))
+    }
+
+    @Test func writingKeepsEveryKeyTheDecoderReads() throws {
+        // The same guard the default file has. A write that dropped a key would
+        // still decode to the same settings, so the round trip cannot see it.
+        let url = fixture.root.appending(path: "config.json")
+        let store = SettingsStore(fileURL: url)
+        #expect(store.writeDefaultIfAbsent())
+        #expect(store.write(store.load().settings))
+
+        let data = FileManager.default.contents(atPath: url.path(percentEncoded: false)) ?? Data()
+        var keys: Set<String> = []
+        if case let .object(fields)? = JSONValue.parse(data) {
+            keys = Set(fields.keys)
+        }
+        #expect(keys == SettingsDecoder.knownKeys)
+    }
+
+    @Test func writingCreatesTheDirectoryWhenItIsMissing() {
+        let url = fixture.root.appending(path: "nested/deeper/config.json")
+        #expect(SettingsStore(fileURL: url).write(.defaultSettings))
+        #expect(FileManager.default.fileExists(atPath: url.path(percentEncoded: false)))
+    }
+
+    @Test func writingLeavesNoTemporaryFileBehind() throws {
+        // The write lands on a sibling path and is renamed over the target. A
+        // leftover would sit next to the config forever, and a hidden one would
+        // not even be visible to the owner wondering what wrote it.
+        let url = fixture.root.appending(path: "config.json")
+        #expect(SettingsStore(fileURL: url).write(.defaultSettings))
+        let contents = try FileManager.default.contentsOfDirectory(
+            atPath: fixture.root.path(percentEncoded: false)
+        )
+        #expect(contents == ["config.json"])
+    }
+
+    @Test func writingOverAMangledFileStillLandsTheSettings() throws {
+        // A file the owner broke by hand decodes as unreadable. Accept still has
+        // to work, or the window would appear to do nothing on exactly the file
+        // most in need of being fixed.
+        let url = fixture.root.appending(path: "config.json")
+        try Data("not json at all".utf8).write(to: url)
+        let store = SettingsStore(fileURL: url)
+        var settings = Settings.defaultSettings
+        settings.themeName = "Midnight"
+        #expect(store.write(settings))
+        #expect(store.load().settings.themeName == "Midnight")
+    }
+
+    @Test func writingTwiceProducesTheSameBytes() throws {
+        // Nothing in the document is ordered by chance, so a second write of an
+        // unchanged value must not churn the file.
+        let url = fixture.root.appending(path: "config.json")
+        let store = SettingsStore(fileURL: url)
+        #expect(store.write(.defaultSettings))
+        let first = try String(contentsOf: url, encoding: .utf8)
+        #expect(store.write(.defaultSettings))
+        let second = try String(contentsOf: url, encoding: .utf8)
+        #expect(first == second)
+    }
 }

@@ -185,6 +185,8 @@ final class ControlAdapter: ControlWorkspaceBridge {
             return resize(placed, args: args)
         case .equalize:
             return equalize(placed)
+        case .cwd:
+            return report(cwd: args.cwd, on: placed)
 
         case .whoami, .list, .peers, .publish, .connect, .send, .recv, .subscribe, .revoke, .run:
             // Unreachable: the server routes these to the graph and never here.
@@ -194,6 +196,29 @@ final class ControlAdapter: ControlWorkspaceBridge {
                 "\(verb.rawValue) is answered by the graph and never by the workspace"
             )
         }
+    }
+
+    /// Hands the pane a working directory it says it moved to.
+    ///
+    /// Straight through to the tracker's OSC 7 entry point, which has existed
+    /// unused because nothing emits OSC 7: the bundled libghostty ships no
+    /// shell-integration resources. This is the caller taking that job.
+    ///
+    /// Advisory, and it does not pin. The one-second poll of the foreground
+    /// process's cwd keeps running, and a later read that disagrees wins, because
+    /// then the pane genuinely moved and this announcement is stale.
+    ///
+    /// The path is not checked for existence. A directory that vanishes between
+    /// the announcement and the read is the same race the poll already lives with,
+    /// and `AnchorResolver` already drops an anchor it cannot resolve.
+    private func report(cwd: String?, on placed: Placement) -> ControlResponse {
+        guard let cwd, !cwd.isEmpty else {
+            return .failure(.refused, "cwd needs a path")
+        }
+        placed.pane.anchorTracker.announceWorkingDirectory(
+            (cwd as NSString).expandingTildeInPath
+        )
+        return .success()
     }
 
     private func split(_ placed: Placement, args: ControlArgs) -> ControlResponse {

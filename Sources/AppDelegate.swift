@@ -218,7 +218,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return SidebarHost(
             tree: tree,
             surfaces: surfaces(for: content, tree: tree),
-            theme: configuration.paneTheme
+            theme: configuration.paneTheme,
+            backgroundOpacity: configuration.settings.backgroundOpacity
         )
     }
 
@@ -238,9 +239,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // comment below records what that class of cycle already cost once: a
         // leaked controller keeps every pane and every live shell under it alive
         // with no window to reach them.
-        let send: (String) -> Void = { [weak self, weak tree] path in
-            guard let self, let tree else { return }
-            sendToPrompt(path, of: tree)
+        // False when the window has gone: a click that reaches nothing is a
+        // refusal from the row's point of view, which is the honest thing to draw.
+        let send: (String) -> Bool = { [weak self, weak tree] path in
+            guard let self, let tree else { return false }
+            return sendToPrompt(path, of: tree)
         }
         changes.onSelect = send
         files.onSelect = send
@@ -313,6 +316,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // `onAnchorChange` and lands here again.
         refreshSidebar(of: controller)
         return controller
+    }
+
+    /// Held so the window survives being shown. An `NSWindowController` created
+    /// inside the action and not retained is released before it can appear.
+    private var settingsWindow: SettingsWindowController?
+
+    @objc func showSettings(_: Any?) {
+        // Rebuilt rather than reused, because `SettingsDraft` snapshots the
+        // committed settings at init. A controller kept from last time would open
+        // showing whatever was in effect then, which after one accept is stale.
+        settingsWindow?.close()
+        let controller = SettingsWindowController(center: configuration)
+        settingsWindow = controller
+        controller.showWindow(nil)
+        controller.window?.center()
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     @objc func newTab(_: Any?) {
@@ -574,19 +593,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func refreshSidebar(of controller: WorkspaceWindowController) {
         let pane = controller.tree.focusedPane
         let anchor = pane?.anchorTracker.anchor
+        // The repository root, and nil outside one. Changes answers for a
+        // repository and has nothing to say about a plain directory, so this stays
+        // what it was.
         let root = anchor?.kind == .repository ? anchor?.url : nil
+
+        // The anchor's own path, not the working directory: the absent state is
+        // answering for what the section is pointed at.
+        let anchorPath = anchor?.url.path(percentEncoded: false)
 
         for section in controller.sidebar.sections {
             if let changes = section.surface as? ChangesSurface {
                 changes.hasRepository = pane?.gitStatus.git != nil
                 changes.changes = pane?.gitStatus.changes ?? []
+                changes.anchorPath = anchorPath
             }
             if let files = section.surface as? FilesSurface {
-                files.hasRepository = root != nil
-                files.tree = root.flatMap { fileTrees.tree(for: $0) } ?? []
-                if let root { readFileTree(at: root) }
+                files.hasRoot = anchor != nil
+                // Inside a repository git lists the files; outside one the
+                // directory is walked. The mode follows the anchor rather than a
+                // control, because repo-or-local has one right answer at any
+                // moment and it is a fact about the pane, not a preference.
+                //
+                // `Anchor.Kind` has said as much all along: a plain anchor exists
+                // "so a file tree always has a root". Until now this discarded it.
+                if let root {
+                    // Optional because the cache can miss: the read is async and a
+                    // first refresh arrives before it lands.
+                    files.tree = fileTrees.tree(for: root) ?? []
+                    readFileTree(at: root)
+                } else if let plain = anchor?.url {
+                    files.tree = DirectoryTree.tree(at: plain)
+                } else {
+                    files.tree = []
+                }
+                files.changes = pane?.gitStatus.changes ?? []
+                files.anchorPath = anchorPath
             }
         }
+        // After the surfaces, not before: the count a heading prints is a property
+        // of what was just assigned into the section below it.
+        controller.sidebar.anchorName = anchor?.displayName
+        controller.sidebar.refreshHeadings()
     }
 
     /// Puts a clicked path on the focused pane's prompt.
@@ -603,14 +651,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// whatever repository the pane is anchored to, and a name carrying a control
     /// byte would drive zsh's line editor rather than land on the prompt line.
     ///
-    /// The beep is interim. What a refusal should *look* like is a design item,
-    /// still owed, and the only requirement the spec puts on it is that a refused
-    /// click is distinguishable from one that landed without moving any layout,
-    /// which a sound satisfies while a heading that grew would not.
-    private func sendToPrompt(_ path: String, of tree: PaneTreeController) {
-        guard let pane = tree.focusedPane else { return }
+    /// **Answers whether the path landed**, which is the one bit the row needs to
+    /// draw the right flash. Design v3 §2.3 gives a refusal `alert` on the row and
+    /// in the path's own ink, and gives a landing the pressed fill released and
+    /// nothing more: zsh already brackets the inserted path on the prompt line,
+    /// and a second announcement in the column would be the app saying the same
+    /// thing twice.
+    ///
+    /// The beep stays. It is the half of the answer that survives the pointer
+    /// having moved on, and the drawn half is what it was missing.
+    ///
+    /// A click with no focused pane is `false` without a beep: there is no pane
+    /// for the feedback to belong to, so the row flashes a refusal and nothing
+    /// sounds. That is the one silent no-op here.
+    @discardableResult
+    private func sendToPrompt(_ path: String, of tree: PaneTreeController) -> Bool {
+        guard let pane = tree.focusedPane else { return false }
         let anchor = pane.anchorTracker.anchor
-        guard anchor?.kind == .repository, let root = anchor?.url else { return }
+        guard anchor?.kind == .repository, let root = anchor?.url else { return false }
 
         // **Both directories through the same resolution, or they never match.**
         // `ProcessWorkingDirectory` asks the kernel, which answers with a fully
@@ -628,8 +686,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) {
         case let .send(text):
             pane.send(text)
+            return true
         case .refuse:
             NSSound.beep()
+            return false
         }
     }
 
@@ -728,6 +788,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         discoveredProjects = nil
         for controller in windows {
             controller.tree.refreshTheme()
+            // The sidebar too, which this loop did not reach: a theme or an opacity
+            // edited under a running app repainted every pane and left the column
+            // beside them wearing the values the window was built with, until it
+            // was closed and opened again.
+            controller.sidebar.theme = configuration.paneTheme
+            controller.sidebar.backgroundOpacity = configuration.settings.backgroundOpacity
         }
         palette.theme = configuration.paneTheme
         find.theme = configuration.paneTheme

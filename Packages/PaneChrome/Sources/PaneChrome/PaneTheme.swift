@@ -78,13 +78,62 @@ public struct PaneTheme: Sendable, Equatable {
     /// never outranks the plank *under* one. It is also why the split view must
     /// not use AppKit's `.thin` divider style: that separator follows the system
     /// appearance, which is the one thing this whole type exists to avoid.
+    ///
+    /// **Blended towards the accent rather than the foreground.** Design v3 §1:
+    /// the lines carry the accent and the surfaces stay neutral, so the planks are
+    /// tinted and the compartments they divide are not. The rule that document
+    /// states is that the line changes hue and never weight, which is what
+    /// ``tinted(matching:)`` holds to.
     public var divider: RGB {
-        background.blended(with: foreground, fraction: 0.12)
+        tinted(matching: 0.12)
     }
 
     /// The line between the terminal and its own footer.
+    ///
+    /// Tinted like ``divider`` and for the same reason, holding the weight of the
+    /// 0.18 towards the foreground it replaces.
     public var hairline: RGB {
-        background.blended(with: foreground, fraction: 0.18)
+        tinted(matching: 0.18)
+    }
+
+    /// The accent blended into the background as far as it takes to match the
+    /// luminance of `fraction` towards the foreground, and no further.
+    ///
+    /// **The fraction is solved rather than written down, and that is a
+    /// correction to the design pass.** v3 §1 quotes 0.14 and 0.20 as the
+    /// fractions that hold the weight of the neutrals they replace. They do, for
+    /// `focusAccent: "midnight"`, which is what that document was written
+    /// against. Under the default accent the same fractions land 31 percent
+    /// brighter, and under `bone` 42 percent, because how far a fixed fraction
+    /// carries depends entirely on how light the accent is. A line that gains a
+    /// third of its weight when the accent changes is the thing the rule forbids.
+    ///
+    /// Solving also delivers the document's other claim about these two, that a
+    /// hueless accent resolves them back to greys. `bone` at a fixed 0.14 is a
+    /// *brighter* grey than the neutral; solved, it is the neutral.
+    ///
+    /// Bisection rather than algebra: relative luminance is piecewise over the
+    /// sRGB transfer function, and 24 halvings settle it well inside a step of
+    /// eight-bit colour.
+    private func tinted(matching fraction: Double) -> RGB {
+        let neutral = background.blended(with: foreground, fraction: fraction)
+        let target = neutral.relativeLuminance
+        let tint = inkFocus
+        // An accent too dark to reach the neutral's weight cannot be dimmed into
+        // it, so it goes as far as it can rather than overshooting the hue.
+        guard tint.relativeLuminance > target else { return tint }
+
+        var low = 0.0
+        var high = 1.0
+        for _ in 0 ..< 24 {
+            let middle = (low + high) / 2
+            if background.blended(with: tint, fraction: middle).relativeLuminance < target {
+                low = middle
+            } else {
+                high = middle
+            }
+        }
+        return background.blended(with: tint, fraction: (low + high) / 2)
     }
 
     /// The planks: the icon's dividers, and the PIN chip's border on an ordinary
@@ -353,6 +402,20 @@ public struct PaneTheme: Sendable, Equatable {
 
     /// A working agent's dot. Never used for text.
     public var ok: RGB { ansiColor(2) }
+
+    /// A staged change: in the index, and what a commit right now would contain.
+    ///
+    /// Built like ``warn``, from the adjacent ANSI slot at the same fraction, so
+    /// the pair reads as a pair. The sidebar's changed-file rows colour the two
+    /// `XY` columns independently, and the two colours have to look like one
+    /// vocabulary or the distinction reads as decoration.
+    ///
+    /// Not raw ``ok``, which the row used before design v3 §2: `ansi[2]` at full
+    /// strength is a signal light, and its own documentation says it is never used
+    /// for text.
+    public var staged: RGB {
+        background.blended(with: ansiColor(2), fraction: 0.75)
+    }
 
     /// A conflicted tree, and an agent asking for input. Nothing else.
     public var alert: RGB { ansiColor(1) }

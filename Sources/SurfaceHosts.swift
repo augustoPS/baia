@@ -77,6 +77,47 @@ final class SidebarHost: NSViewController {
         }
     }
 
+    /// The repository the column is describing, drawn by the first heading.
+    ///
+    /// The first only: under ``SidebarContent/both`` the two sections are one
+    /// repository, and naming it twice would say there were two. Design v3 §4.2.
+    var anchorName: String? {
+        didSet { refreshHeadings() }
+    }
+
+    /// Whether the window is key, which the anchor name's accent is gated on.
+    private var isWindowActive = true {
+        didSet {
+            guard isWindowActive != oldValue else { return }
+            for section in sections { section.heading.isWindowActive = isWindowActive }
+        }
+    }
+
+    /// Pushes what the headings draw beside their labels.
+    ///
+    /// Called by the caller that fed the surfaces rather than watched, because the
+    /// count is a property of what was just assigned into them and nothing else
+    /// changes it.
+    func refreshHeadings() {
+        for (index, section) in sections.enumerated() {
+            section.heading.count = section.surface.headingCount
+            section.heading.anchorName = index == 0 ? anchorName : nil
+        }
+    }
+
+    /// What the sections fill their bodies at, so the column is the same material
+    /// as the panes it sits beside. Design v3 §1.
+    ///
+    /// Held here rather than read by each surface, because it is a property of the
+    /// window's material and not of a list of files, and because the two sections
+    /// disagreeing about it is exactly the seam a design pass would then be asked
+    /// to explain.
+    var backgroundOpacity: Double = 1 {
+        didSet {
+            for section in sections { section.surface.backgroundOpacity = backgroundOpacity }
+        }
+    }
+
     private let divider = NSView()
 
     /// The draggable split between two stacked sections.
@@ -85,9 +126,17 @@ final class SidebarHost: NSViewController {
     /// heights inside a column whose width never moves, so it resizes no ghostty grid
     /// and signals no process: the only thing a sidebar does that costs a reflow is
     /// taking width from the panes in the first place.
-    private lazy var sectionDivider = DividerGrabView(axis: .vertical) { [weak self] delta in
-        self?.dragSplit(by: delta)
-    }
+    private lazy var sectionDivider: DividerGrabView = {
+        let divider = DividerGrabView(axis: .vertical) { [weak self] delta in
+            self?.dragSplit(by: delta)
+        }
+        // Reported to the heading *below* the split, which is the one whose top
+        // edge the boundary is. The strip itself stays transparent and hit-only.
+        divider.onTouch = { [weak self] touch in
+            self?.sections.dropFirst().first?.heading.split = touch
+        }
+        return divider
+    }()
 
     /// The grab area over the sidebar's own edge.
     ///
@@ -111,9 +160,15 @@ final class SidebarHost: NSViewController {
     /// height is known.
     private(set) var firstSectionHeight: Double = SidebarGeometry.default.splitHeight
 
-    init(tree: PaneTreeController, surfaces: [any WorkspaceSurface], theme: PaneTheme) {
+    init(
+        tree: PaneTreeController,
+        surfaces: [any WorkspaceSurface],
+        theme: PaneTheme,
+        backgroundOpacity: Double
+    ) {
         self.tree = tree
         self.theme = theme
+        self.backgroundOpacity = backgroundOpacity
         super.init(nibName: nil, bundle: nil)
         sections = surfaces.map(Section.init(surface:))
     }
@@ -165,13 +220,48 @@ final class SidebarHost: NSViewController {
         view.addSubview(widthDivider)
 
         install()
+        refreshHeadings()
     }
+
+    /// The key state the anchor name's accent is gated on, watched the way the
+    /// pane tree watches it for the footers, and for the same reason: a window
+    /// can change key without any responder in it moving.
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        guard let window = view.window, windowObservers.isEmpty else { return }
+        isWindowActive = window.isKeyWindow
+        let centre = NotificationCenter.default
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+            windowObservers.append(
+                centre.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        self?.isWindowActive = self?.view.window?.isKeyWindow ?? true
+                    }
+                }
+            )
+        }
+    }
+
+    /// Removed as the window goes away rather than in `deinit`, which is the same
+    /// shape `PaneTreeController` uses and for the same reason: `deinit` is
+    /// nonisolated and an observer token is not `Sendable`.
+    override func viewWillDisappear() {
+        super.viewWillDisappear()
+        for observer in windowObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        windowObservers.removeAll()
+    }
+
+    private var windowObservers: [any NSObjectProtocol] = []
 
     private func install() {
         for section in sections {
             section.surface.theme = theme
+            section.surface.backgroundOpacity = backgroundOpacity
             section.heading.title = section.surface.title
             section.heading.theme = theme
+            section.heading.isWindowActive = isWindowActive
             view.addSubview(section.surface.view)
             view.addSubview(section.heading)
         }
@@ -354,8 +444,29 @@ final class DividerGrabView: NSView {
         case horizontal
     }
 
+    /// How a strip is being touched, which is all it reports: the mark is drawn by
+    /// whatever owns the edge, inside its own fixed height.
+    ///
+    /// Design v3 §4.3. The split between two stacked sections has no mark at rest,
+    /// because §1 put the body and the heading on different materials and that
+    /// boundary is already visible. What was missing was not a line but a **reply**:
+    /// the same three-state vocabulary the divider between two panes uses, so an
+    /// undiscoverable control becomes discoverable on approach and the column gains
+    /// no permanent chrome for something used once a session.
+    enum Touch { case rest, hover, drag }
+
     private let axis: Axis
     private let onDrag: (Double) -> Void
+
+    /// Raised whenever the strip is approached, pressed or released.
+    var onTouch: ((Touch) -> Void)?
+
+    private var touch: Touch = .rest {
+        didSet {
+            guard touch != oldValue else { return }
+            onTouch?(touch)
+        }
+    }
 
     init(axis: Axis, onDrag: @escaping (Double) -> Void) {
         self.axis = axis
@@ -372,9 +483,31 @@ final class DividerGrabView: NSView {
         addCursorRect(bounds, cursor: axis == .vertical ? .resizeUpDown : .resizeLeftRight)
     }
 
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow],
+            owner: self
+        ))
+    }
+
+    override func mouseEntered(with _: NSEvent) {
+        touch = .hover
+    }
+
+    override func mouseExited(with _: NSEvent) {
+        // Not during a drag: the pointer leaves this seven point strip immediately
+        // and the drag is still going, so exiting must not say it stopped.
+        guard touch != .drag else { return }
+        touch = .rest
+    }
+
     /// Tracked here rather than through `mouseDragged`, so the drag keeps following
     /// the pointer when it leaves this seven point strip, which it does immediately.
     override func mouseDown(with event: NSEvent) {
+        touch = .drag
         var last = event.locationInWindow
         while let next = window?.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
             if next.type == .leftMouseUp { break }
@@ -384,5 +517,11 @@ final class DividerGrabView: NSView {
             onDrag(delta)
             last = next.locationInWindow
         }
+        // Back to hover rather than to rest when the pointer is still on the strip,
+        // which is where a drag that ends without moving away leaves it.
+        touch = bounds.contains(convert(
+            window?.mouseLocationOutsideOfEventStream ?? .zero,
+            from: nil
+        )) ? .hover : .rest
     }
 }

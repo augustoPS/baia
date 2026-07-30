@@ -23,7 +23,7 @@ enum MenuCommandSelectors {
         case .closePane: #selector(AppDelegate.closePane(_:))
         case .closeTab: #selector(AppDelegate.closeTab(_:))
         case .closeWindow: #selector(NSWindow.performClose(_:))
-        case .openConfiguration: nil
+        case .openConfiguration: #selector(AppDelegate.showSettings(_:))
 
         // Ghostty implements these inside the surface and they reach it through
         // the responder chain via its own IBActions, which is why the menu keeps

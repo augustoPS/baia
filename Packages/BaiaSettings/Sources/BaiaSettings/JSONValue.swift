@@ -47,6 +47,86 @@ extension JSONValue {
         byte == 0x20 || byte == 0x09 || byte == 0x0A || byte == 0x0D
     }
 
+    /// The value as JSON text, round-tripping through ``parse(_:)``.
+    ///
+    /// Object keys come out sorted, which is stable but not what the config file
+    /// wants. ``SettingsWriter`` serializes the top-level document itself so it
+    /// can impose the reading order the owner learned the file by; this is the
+    /// fallback for nested values, where sorted is the only stable choice on
+    /// offer, since `object` is a dictionary and carries no order of its own.
+    func serialized(indent: Int = 0) -> String {
+        switch self {
+        case .null:
+            return "null"
+        case let .bool(value):
+            return value ? "true" : "false"
+        case let .number(value):
+            return Self.numberText(value)
+        case let .string(value):
+            return Self.quoted(value)
+        case let .array(values):
+            // Inline. The one array in this document is `projectRoots`, a short
+            // list of paths, and a block form would spend four lines on it.
+            return "[" + values.map { $0.serialized(indent: indent) }.joined(separator: ", ") + "]"
+        case let .object(members):
+            guard !members.isEmpty else { return "{}" }
+            let inner = String(repeating: "  ", count: indent + 1)
+            let body = members.keys.sorted().map { key in
+                inner + Self.quoted(key) + ": " + members[key]!.serialized(indent: indent + 1)
+            }
+            return "{\n" + body.joined(separator: ",\n")
+                + "\n" + String(repeating: "  ", count: indent) + "}"
+        }
+    }
+
+    /// A `Double` as the shortest text that reparses to the same value, with whole
+    /// numbers written without a fractional part.
+    ///
+    /// `"\(value)"` is already the shortest round-tripping form Swift prints, so
+    /// the only work is the integral case, which that spelling renders as `8.0`.
+    /// The default file says `8`, and the file is where the owner learns the
+    /// spellings, so writing `8.0` back would be a silent edit to a document
+    /// nobody asked to change.
+    ///
+    /// The magnitude guard keeps `Int64(value)` from trapping on a value no
+    /// setting can hold but a hand-edited file could. A non-finite value cannot
+    /// be written as JSON at all, and `0` is the one value every numeric setting
+    /// either accepts or clamps, so it degrades rather than emitting `nan` for
+    /// the decoder to reject.
+    static func numberText(_ value: Double) -> String {
+        guard value.isFinite else { return "0" }
+        if value == value.rounded(), abs(value) < 1e15 {
+            return String(Int64(value))
+        }
+        return "\(value)"
+    }
+
+    /// A string as a quoted JSON scalar.
+    ///
+    /// Escapes the five sequences the parser understands plus the C0 range, which
+    /// JSON forbids raw. Anything above that is emitted as itself: the file is
+    /// UTF-8, and escaping non-ASCII would turn a theme name into `\u` noise in
+    /// the document the owner edits by hand.
+    static func quoted(_ value: String) -> String {
+        var out = "\""
+        for scalar in value.unicodeScalars {
+            switch scalar {
+            case "\"": out += "\\\""
+            case "\\": out += "\\\\"
+            case "\n": out += "\\n"
+            case "\r": out += "\\r"
+            case "\t": out += "\\t"
+            default:
+                if scalar.value < 0x20 {
+                    out += String(format: "\\u%04x", scalar.value)
+                } else {
+                    out.unicodeScalars.append(scalar)
+                }
+            }
+        }
+        return out + "\""
+    }
+
     /// A cursor over the document's UTF-8 bytes.
     ///
     /// Bytes rather than `Character`s: every structural token in JSON is ASCII, so

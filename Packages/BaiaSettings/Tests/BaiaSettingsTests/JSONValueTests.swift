@@ -148,4 +148,72 @@ import Testing
         let deep = String(repeating: "[", count: 200) + String(repeating: "]", count: 200)
         #expect(parse(deep) == nil)
     }
+
+    // MARK: - Serializing
+
+    @Test func anIntegralNumberSerializesWithoutAFractionalPart() {
+        // The default file says `"windowPadding": 8`. Writing `8.0` back would be a
+        // silent change to the document the owner reads to learn the spellings, and
+        // `.number(Double)` cannot tell the two apart on its own.
+        #expect(JSONValue.number(8).serialized() == "8")
+        #expect(JSONValue.number(-3).serialized() == "-3")
+        #expect(JSONValue.number(0).serialized() == "0")
+    }
+
+    @Test func afractionalNumberKeepsEveryDigitItNeedsToReparse() {
+        // `backgroundOpacity: 0.85` has to come back as exactly 0.85, not as a value
+        // that merely prints the same.
+        #expect(JSONValue.number(0.85).serialized() == "0.85")
+        #expect(JSONValue.number(11.5).serialized() == "11.5")
+        #expect(parse(JSONValue.number(0.85).serialized()) == .number(0.85))
+        #expect(parse(JSONValue.number(11.5).serialized()) == .number(11.5))
+    }
+
+    @Test func stringsEscapeWhatJSONRequiresAndNothingElse() {
+        #expect(JSONValue.string("plain").serialized() == "\"plain\"")
+        #expect(JSONValue.string("a\"b").serialized() == "\"a\\\"b\"")
+        #expect(JSONValue.string("a\\b").serialized() == "\"a\\\\b\"")
+        #expect(JSONValue.string("a\nb").serialized() == "\"a\\nb\"")
+        #expect(JSONValue.string("a\tb").serialized() == "\"a\\tb\"")
+        // Non-ASCII is emitted as itself. The file is UTF-8, and escaping this
+        // would make a theme name unreadable in the document the owner edits.
+        #expect(JSONValue.string("Café").serialized() == "\"Café\"")
+    }
+
+    @Test func theSimpleCasesSerializeAsThemselves() {
+        #expect(JSONValue.null.serialized() == "null")
+        #expect(JSONValue.bool(true).serialized() == "true")
+        #expect(JSONValue.bool(false).serialized() == "false")
+    }
+
+    @Test func anArrayOfStringsSerializesInline() {
+        // `projectRoots` is the only array in the document and it is short, so it
+        // reads better on one line than split across four.
+        #expect(JSONValue.array([.string("~/Projects"), .string("~/src")]).serialized()
+            == "[\"~/Projects\", \"~/src\"]")
+        #expect(JSONValue.array([]).serialized() == "[]")
+    }
+
+    @Test func everyValueSurvivesASerializeAndParseRoundTrip() {
+        let document = JSONValue.object([
+            "a": .null,
+            "b": .bool(true),
+            "c": .number(0.85),
+            "d": .number(8),
+            "e": .string("with \"quotes\" and \\ and \n"),
+            "f": .array([.string("~/Projects")]),
+            "g": .object(["nested": .number(1)]),
+        ])
+        #expect(parse(document.serialized()) == document)
+    }
+
+    @Test func aRawControlByteSurvivesBeingWrittenAsAnEscape() {
+        // The two sides are deliberately asymmetric: the parser keeps a raw
+        // control byte inside a string, and serializing writes it as a six-byte
+        // escape, because JSON forbids it raw. The round trip is what makes that
+        // safe, and it holds only because the parser decodes those escapes too.
+        let value = JSONValue.string("bell\u{01}end")
+        #expect(value.serialized() == "\"bell\\u0001end\"")
+        #expect(parse(value.serialized()) == value)
+    }
 }

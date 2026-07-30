@@ -27,13 +27,22 @@ final class FilesSurface: NSObject, WorkspaceSurface {
     var theme: PaneTheme = .darkPastel {
         didSet {
             rows.theme = theme
-            scrollView.backgroundColor = NSColor(
-                srgbRed: CGFloat(theme.panelBackground.red),
-                green: CGFloat(theme.panelBackground.green),
-                blue: CGFloat(theme.panelBackground.blue),
-                alpha: 1
-            )
+            fill()
         }
+    }
+
+    var backgroundOpacity: Double = 1 {
+        didSet { fill() }
+    }
+
+    /// The column's body, drawn once by the scroll view and never by the rows on
+    /// top of it. See ``ChangesSurface/fill()``, which says what filling twice
+    /// costs now that the fill has an alpha.
+    private func fill() {
+        scrollView.backgroundColor = ChangesSurface.nsColor(
+            theme.background,
+            alpha: backgroundOpacity
+        )
     }
 
     /// The tree to draw. A *different* tree collapses everything below the top
@@ -53,16 +62,48 @@ final class FilesSurface: NSObject, WorkspaceSurface {
         }
     }
 
-    var hasRepository = true {
-        didSet { rows.hasRepository = hasRepository }
+    /// Whether there is a root to list at all.
+    ///
+    /// Not "is this a repository", which is what it used to be and what the name
+    /// still said after a plain anchor gained a tree of its own. Files lists a
+    /// repository through `git ls-files` and a plain directory through a walk, so
+    /// the only state with nothing to draw is a pane with no anchor.
+    var hasRoot = true {
+        didSet { rows.hasRoot = hasRoot }
     }
+
+    /// Where the pane is anchored, which the absent state names beneath its
+    /// message. The message alone says what this is not; the path says what it is.
+    var anchorPath: String? {
+        didSet { rows.anchorPath = anchorPath }
+    }
+
+    /// The same change list the Changes section is given, which the tree reduces to
+    /// one glyph per row. The two are not alternatives: a list ordered for
+    /// `git commit` answers a question a tree ordered by path cannot, and a tree
+    /// says where in the repository the work is.
+    var changes: [RepositoryFileChange] = [] {
+        didSet {
+            guard changes != oldValue else { return }
+            rows.marks = FileChangeMarks(changes)
+        }
+    }
+
+    /// None. How many files a repository contains is not a question anyone has,
+    /// and a four-digit number beside `FILES` would read as an error. Design v3
+    /// §4.1.
+    var headingCount: Int? { nil }
 
     /// Called with a repository-relative path when a row's name is clicked.
     ///
     /// The surface knows nothing about what happens next. Whether that path is
     /// quoted, sent relative or absolute, or refused outright is `PromptPath`'s
     /// business, and where it goes is the owner's.
-    var onSelect: ((String) -> Void)? {
+    /// Answers `true` when the path landed on the prompt and `false` when it was
+    /// refused, which is the one bit the row needs to know which flash to draw.
+    /// `PromptPath.Resolution` already carries that distinction, so the surface
+    /// stays as ignorant of quoting as it was. Design v3 §2.3.
+    var onSelect: ((String) -> Bool)? {
         get { rows.onSelect }
         set { rows.onSelect = newValue }
     }
@@ -90,7 +131,20 @@ final class FilesSurface: NSObject, WorkspaceSurface {
 final class FileTreeRowsView: NSView {
     var theme: PaneTheme = .darkPastel { didSet { needsDisplay = true } }
 
-    var hasRepository = true { didSet { needsDisplay = true } }
+    var hasRoot = true { didSet { needsDisplay = true } }
+
+    /// Where the pane is anchored, for the absent state to name. Nil while the
+    /// anchor is a repository, where it is never drawn.
+    var anchorPath: String? { didSet { needsDisplay = true } }
+
+    /// What each path has to say for itself, files and the directories above them.
+    /// Empty outside a repository and while nothing has changed.
+    var marks = FileChangeMarks([]) {
+        didSet {
+            guard marks != oldValue else { return }
+            needsDisplay = true
+        }
+    }
 
     var tree: [FileTreeNode] = [] { didSet { rebuild() } }
 
@@ -115,8 +169,15 @@ final class FileTreeRowsView: NSView {
 
     private func rebuild() {
         rows = []
+        // A fade in flight belongs to the row that was at that index, and after a
+        // rebuild that index is a different file.
+        feedback.reset()
         append(tree, depth: 0)
         resize()
+        // See `ChangesRowsView.changes`: a frame that does not move marks no layout
+        // pass, so the areas would stay built against the list that was there
+        // before.
+        updateTrackingAreas()
         needsDisplay = true
     }
 
@@ -131,6 +192,9 @@ final class FileTreeRowsView: NSView {
     override func layout() {
         super.layout()
         resize()
+        // See `ChangesRowsView.layout()`: areas built against an unlaid clip view
+        // cover nothing and are never rebuilt.
+        updateTrackingAreas()
     }
 
     /// The equality guard is what makes calling this from `layout()` safe:
@@ -156,11 +220,13 @@ final class FileTreeRowsView: NSView {
     }
 
     override func draw(_ dirty: NSRect) {
-        nsColor(theme.panelBackground).setFill()
-        bounds.fill()
-
-        guard hasRepository else { return draw(message: "not a repository") }
-        guard !rows.isEmpty else { return draw(message: "no files") }
+        // No fill of its own: the scroll view behind it is the column's material.
+        guard hasRoot else {
+            return SurfaceMessage.drawAbsent(path: anchorPath, in: self, theme: theme)
+        }
+        guard !rows.isEmpty else {
+            return SurfaceMessage.drawEmpty("no files", in: self, theme: theme)
+        }
 
         // Only the rows the dirty rect touches. A repository of ten thousand files
         // is ten thousand rows, and drawing them all on every scroll would make the
@@ -178,31 +244,99 @@ final class FileTreeRowsView: NSView {
         let y = Double(index) * Self.rowHeight
         let x = Self.inset + Double(row.depth) * Self.indent
 
+        if let fill = feedback.fill(index, in: theme) {
+            ChangesSurface.nsColor(fill.colour, alpha: fill.alpha).setFill()
+            NSRect(x: 0, y: y, width: bounds.width, height: Self.rowHeight).fill()
+        }
+
+        drawGuides(of: row, atIndex: index, y: y)
+
         if row.node.isDirectory {
             let chevron = expanded.contains(row.node.path) ? "▾" : "▸"
             NSAttributedString(
                 string: chevron,
                 attributes: [.font: Self.font, .foregroundColor: nsColor(theme.inkFaint)]
-            ).draw(at: NSPoint(x: x, y: y + Self.baseline))
+            ).draw(at: NSPoint(x: x, y: y + Self.textOrigin))
         }
 
+        // The trailing status, drawn before the name so the name knows what room is
+        // left. Design v3 §5.2: leading is where indentation lives, so a status
+        // column on that side would either push every name right by a quarter of
+        // the depth budget or collide with the guides. Trailing costs the name
+        // 14 pt at any depth and never moves as the tree expands.
+        let mark = marks[row.node.path]
+        if let mark {
+            NSAttributedString(
+                string: String(mark.glyph),
+                attributes: [.font: Self.font, .foregroundColor: nsColor(colour(of: mark))]
+            ).draw(at: NSPoint(
+                x: bounds.width - Self.inset - Self.statusColumn,
+                y: y + Self.textOrigin
+            ))
+        }
+
+        // A directory keeps its trailing slash whatever else it loses. A collapsed
+        // directory and a file with no extension are otherwise the same row with a
+        // chevron that may or may not be there, and the slash is what every shell
+        // prints for the same reason.
+        let nameX = x + Self.chevronColumn
+        let trailing = Self.inset + (mark == nil ? 0 : Self.statusColumn)
+        let available = max(0, bounds.width - nameX - trailing)
+        let slash = row.node.isDirectory ? "/" : ""
+        let budget = Int(available / ChangesRowsView.advance) - slash.count
+        let name = RowPath.fit(row.node.name, budget: max(0, budget)).name + slash
+
+        let rest = row.node.isDirectory ? theme.inkContext : theme.foreground
+        let refusal = feedback.ink(index, in: theme)
         NSAttributedString(
-            string: row.node.name,
+            string: name,
             attributes: [
                 .font: Self.font,
-                .foregroundColor: nsColor(row.node.isDirectory ? theme.inkContext : theme.foreground),
+                .foregroundColor: nsColor(
+                    refusal.map { rest.blended(with: $0.colour, fraction: $0.alpha) } ?? rest
+                ),
             ]
-        ).draw(at: NSPoint(x: x + Self.chevronColumn, y: y + Self.baseline))
+        ).draw(at: NSPoint(x: nameX, y: y + Self.textOrigin))
     }
 
-    private func draw(message: String) {
-        NSAttributedString(
-            string: message,
-            attributes: [.font: Self.font, .foregroundColor: nsColor(theme.inkFaint)]
-        ).draw(at: NSPoint(x: Self.inset, y: Self.baseline))
+    /// One vertical line per ancestor level, so depth is read rather than counted.
+    ///
+    /// Design v3 §5.1. Drawn in ``PaneTheme/divider``, the same colour and weight
+    /// as the line between two panes, because each nesting level is literally a
+    /// plank and that is the app's own name for itself.
+    ///
+    /// The hovered directory's own level is drawn in the focus ink across its
+    /// descendants and nowhere else, so the extent of what a click is about to
+    /// collapse is visible before it collapses. §5.3. One guide and never the
+    /// ancestors: the row fill already says which row.
+    private func drawGuides(of row: Row, atIndex index: Int, y: Double) {
+        guard row.depth > 0 else { return }
+        for depth in 0 ..< row.depth {
+            let lit = hoverGuide.map { $0.depth == depth && $0.rows.contains(index) } ?? false
+            nsColor(lit ? theme.inkFocus : theme.divider).setFill()
+            NSRect(
+                x: Self.inset + Double(depth) * Self.indent + Self.guideInset,
+                y: y,
+                width: 1,
+                height: Self.rowHeight
+            ).fill()
+        }
     }
 
-    var onSelect: ((String) -> Void)?
+    private func colour(of mark: FileChangeMark) -> RGB {
+        switch mark {
+        case .conflict: theme.alert
+        case .unstaged: theme.warn
+        case .staged: theme.staged
+        case .untracked: theme.inkFaint
+        }
+    }
+
+    var onSelect: ((String) -> Bool)?
+
+    private lazy var feedback = RowFeedback { [weak self] row in
+        self?.redraw(row)
+    }
 
     /// A directory toggles, a file sends, and neither ever asks for focus.
     ///
@@ -217,19 +351,132 @@ final class FileTreeRowsView: NSView {
     /// the hand goes to, and expanding is what a tree is *for*. A directory path
     /// is still one click away through the changes list or by clicking the file
     /// under it, and it was never the case the picker was built for.
+    /// **Held rather than fired on the way down**, so the press is a state the eye
+    /// can see and a drag off the row cancels. Design v3 §2.3.
     override func mouseDown(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        let index = Int(point.y / Self.rowHeight)
-        guard rows.indices.contains(index) else { return }
+        let row = self.row(at: event)
+        guard rows.indices.contains(row) else { return }
+        feedback.pressed = row
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let pressed = feedback.pressed else { return }
+        feedback.pressed = row(at: event) == pressed ? pressed : nil
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard let index = feedback.pressed else { return }
+        feedback.pressed = nil
+        guard rows.indices.contains(index), row(at: event) == index else { return }
         let node = rows[index].node
 
-        guard node.isDirectory else { return onSelect?(node.path) ?? () }
+        // A directory answers by opening, which is answer enough: the rows below it
+        // change. Only a send has an outcome the column has to state.
+        guard node.isDirectory else {
+            return feedback.answer(onSelect?(node.path) == true ? .landed : .refused, at: index)
+        }
 
         if expanded.contains(node.path) {
             expanded.remove(node.path)
         } else {
             expanded.insert(node.path)
         }
+    }
+
+    private func row(at event: NSEvent) -> Int {
+        Int(convert(event.locationInWindow, from: nil).y / Self.rowHeight)
+    }
+
+    private func redraw(_ row: Int) {
+        setNeedsDisplay(NSRect(
+            x: 0,
+            y: Double(row) * Self.rowHeight,
+            width: bounds.width,
+            height: Self.rowHeight
+        ))
+    }
+
+    // MARK: - Pointing
+
+    /// Rebuilt on scroll as well as on layout: the areas cover the rows the clip
+    /// view can show, and scrolling changes which rows those are without changing
+    /// this view's frame, which is the only thing AppKit calls this for by itself.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard let clip = enclosingScrollView?.contentView, scrollObserver == nil else { return }
+        clip.postsBoundsChangedNotifications = true
+        scrollObserver = NotificationCenter.default.addObserver(
+            forName: NSView.boundsDidChangeNotification,
+            object: clip,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateTrackingAreas() }
+        }
+    }
+
+    private var scrollObserver: (any NSObjectProtocol)?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+        for area in RowFeedback.trackingAreas(
+            rows: rows.count,
+            rowHeight: Self.rowHeight,
+            in: self,
+            owner: self
+        ) { addTrackingArea(area) }
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        feedback.hovered = RowFeedback.row(of: event)
+        updateHoverGuide()
+    }
+
+    /// Only when the row leaving is the row that was hovered. Areas are adjacent,
+    /// so moving down a list delivers the next row's enter before this row's exit,
+    /// and clearing unconditionally would drop the hover that had just arrived.
+    override func mouseExited(with event: NSEvent) {
+        guard feedback.hovered == RowFeedback.row(of: event) else { return }
+        feedback.hovered = nil
+        updateHoverGuide()
+    }
+
+    /// The level and the span the hovered directory owns, or nil for a file, a
+    /// collapsed directory, or an empty one: there is no extent to show for a row
+    /// with nothing under it.
+    private var hoverGuide: (depth: Int, rows: Range<Int>)?
+
+    private func updateHoverGuide() {
+        let previous = hoverGuide
+        hoverGuide = guide(for: feedback.hovered)
+        guard previous?.depth != hoverGuide?.depth || previous?.rows != hoverGuide?.rows else {
+            return
+        }
+        for span in [previous?.rows, hoverGuide?.rows].compactMap(\.self) {
+            setNeedsDisplay(NSRect(
+                x: 0,
+                y: Double(span.lowerBound) * Self.rowHeight,
+                width: bounds.width,
+                height: Double(span.count) * Self.rowHeight
+            ))
+        }
+    }
+
+    private func guide(for index: Int?) -> (depth: Int, rows: Range<Int>)? {
+        guard let index, rows.indices.contains(index) else { return nil }
+        let row = rows[index]
+        guard row.node.isDirectory, expanded.contains(row.node.path) else { return nil }
+        var end = index + 1
+        while end < rows.count, rows[end].depth > row.depth { end += 1 }
+        guard end > index + 1 else { return nil }
+        return (depth: row.depth, rows: (index + 1) ..< end)
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(
+            NSRect(x: 0, y: 0, width: bounds.width, height: Double(rows.count) * Self.rowHeight),
+            cursor: .pointingHand
+        )
     }
 
     private func nsColor(_ rgb: RGB) -> NSColor {
@@ -241,10 +488,23 @@ final class FileTreeRowsView: NSView {
         )
     }
 
-    private static let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-    private static let rowHeight: Double = 18
-    private static let baseline: Double = 3
-    private static let inset: Double = 10
+    private static let font = ChangesRowsView.font
+
+    /// Both surfaces read one set of row metrics, so a row in the tree and a row
+    /// in the changes list sit on the same baseline at the same inset when the two
+    /// are stacked. The tree used to inset at 10 against everything else's 12,
+    /// which put it 2 pt out from the heading directly above it, and it placed its
+    /// text by its own constant. Design v3 §8/02 and §8/03.
+    private static let rowHeight = ChangesRowsView.rowHeight
+    private static let textOrigin = ChangesRowsView.textOrigin
+    private static let inset = ChangesRowsView.inset
     private static let indent: Double = 12
-    private static let chevronColumn: Double = 14
+    /// One indent step, so a child's name lands under its parent's chevron. It was
+    /// 14, which put every name a fraction off the level above it. Design v3 §5.1.
+    private static let chevronColumn: Double = 12
+    /// Where the guide sits inside its level, chosen so the line runs under the
+    /// middle of the chevron above it rather than against the name.
+    private static let guideInset: Double = 5
+    /// One glyph and the gap before it, trailing. §5.2.
+    private static let statusColumn: Double = 14
 }

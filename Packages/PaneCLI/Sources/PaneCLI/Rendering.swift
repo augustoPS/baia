@@ -51,7 +51,10 @@ public enum Rendering {
                 out(pane)
             }
 
-        case .close, .focus, .resize, .equalize, .send, .revoke, .run:
+        // `cwd` prints nothing, and that is a decision rather than an
+        // omission: an agent announcing where it is wants an exit status,
+        // not a line of output in the middle of whatever it is doing.
+        case .close, .focus, .resize, .equalize, .send, .revoke, .run, .cwd:
             break
 
         case .zoom:

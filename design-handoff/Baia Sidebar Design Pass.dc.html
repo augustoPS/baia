@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/nothing-inspired-design-system-bebfd41f-b50e-430d-b025-f62ab4c136fa/tokens/fonts.css">
+<link rel="stylesheet" href="_ds/nothing-inspired-design-system-bebfd41f-b50e-430d-b025-f62ab4c136fa/tokens/colors.css">
+<link rel="stylesheet" href="_ds/nothing-inspired-design-system-bebfd41f-b50e-430d-b025-f62ab4c136fa/tokens/typography.css">
+<link rel="stylesheet" href="_ds/nothing-inspired-design-system-bebfd41f-b50e-430d-b025-f62ab4c136fa/tokens/spacing.css">
+<link rel="stylesheet" href="_ds/nothing-inspired-design-system-bebfd41f-b50e-430d-b025-f62ab4c136fa/tokens/motion.css">
+<link rel="stylesheet" href="_ds/nothing-inspired-design-system-bebfd41f-b50e-430d-b025-f62ab4c136fa/tokens/surfaces.css">
+<link rel="stylesheet" href="_ds/nothing-inspired-design-system-bebfd41f-b50e-430d-b025-f62ab4c136fa/styles.css">
+<script src="_ds/nothing-inspired-design-system-bebfd41f-b50e-430d-b025-f62ab4c136fa/_ds_bundle.js"></script>
+<style>
+  html, body { margin: 0; padding: 0; background: #000000; }
+  a { color: #C890FF; text-decoration: none; border-bottom: 1px solid #46325A; }
+  a:hover { color: #E7D4FF; border-bottom-color: #8C6FA8; }
+</style>
+</helmet>
+
+<template id="__bundler_thumbnail" data-bg-color="#141414">
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="800" fill="#141414"></rect>
+    <rect x="360" y="240" width="14" height="320" fill="#6E6E6E"></rect>
+    <rect x="374" y="384" width="466" height="14" fill="#6E6E6E"></rect>
+    <rect x="374" y="398" width="466" height="162" fill="#C890FF"></rect>
+  </svg>
+</template>
+
+<div style="background:#000000;color:#F2F2F2;font-family:var(--font-body);padding:72px 64px 160px;display:flex;flex-direction:column;gap:104px;min-width:1500px">
+
+  <header style="display:flex;flex-direction:column;gap:28px;max-width:1120px">
+    <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:0.16em;color:#8A8A8A">AUGUSTOPS/BAIA · MAIN · DESIGN V3 · THE WORKSPACE SIDEBAR</div>
+    <div style="font-family:var(--font-display);font-size:88px;line-height:0.92;font-weight:700;letter-spacing:0.02em;color:#FFFFFF">sidebar</div>
+    <p style="margin:0;font-size:19px;line-height:1.5;color:#B4B4B4;max-width:880px;text-wrap:pretty">One region beside the panes, shipped correct and unstyled. Decisions only — one treatment per problem. Every colour is a <span style="font-family:var(--font-mono);font-size:16px;color:#F2F2F2">PaneTheme</span> derivation and every dimension is in points. Nothing here takes first responder, and nothing here moves the column's width.</p>
+    <p style="margin:0;font-size:16px;line-height:1.55;color:#9A9A9A;max-width:880px;text-wrap:pretty">Drawn with <span style="font-family:var(--font-mono);font-size:14px;color:#F2F2F2">focusAccent: "midnight"</span> — <span style="font-family:var(--font-mono);font-size:14px;color:#C890FF">ansi[4].blended(ansi[5], 0.5)</span>, <span style="font-family:var(--font-mono);font-size:14px">#AA55FF</span> raw and <span style="font-family:var(--font-mono);font-size:14px;color:#C890FF">#C890FF</span> after <span style="font-family:var(--font-mono);font-size:14px">readable()</span> repairs it against the bar.</p>
+    <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:20px;max-width:1120px;margin-top:12px">
+      <x-import component-from-global-scope="NothingInspiredDesignSystem_bebfd4.Card" label="Decision 01" density="compact" hint-size="100%,140px"><div style="font-size:15px;line-height:1.35;color:#E6E6E6">The sidebar is a <em style="font-style:normal;color:#C890FF">compartment</em>, not a panel</div></x-import>
+      <x-import component-from-global-scope="NothingInspiredDesignSystem_bebfd4.Card" label="Decision 02" density="compact" hint-size="100%,140px"><div style="font-size:15px;line-height:1.35;color:#E6E6E6">A path loses its <em style="font-style:normal;color:#F2F2F2">directory</em>, never its name</div></x-import>
+      <x-import component-from-global-scope="NothingInspiredDesignSystem_bebfd4.Card" label="Decision 03" density="compact" hint-size="100%,140px"><div style="font-size:15px;line-height:1.35;color:#E6E6E6">Landing is quiet; only refusal is <em style="font-style:normal;color:#FF6A6A">alert</em></div></x-import>
+      <x-import component-from-global-scope="NothingInspiredDesignSystem_bebfd4.Card" label="Decision 04" density="compact" hint-size="100%,140px"><div style="font-size:15px;line-height:1.35;color:#E6E6E6">Lines take the accent; surfaces stay neutral</div></x-import>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;max-width:880px;margin-top:8px">
+      <x-import component-from-global-scope="NothingInspiredDesignSystem_bebfd4.StatusText" status="info" hint-size="auto,16px">checked against captures 07–13</x-import>
+      <p style="margin:0;font-size:14.5px;line-height:1.6;color:#9A9A9A">Four things the captures settled that the source alone did not. <span style="color:#F2F2F2">07</span> shows <span style="font:13px 'SF Mono',monospace"><span style="color:#45C445">A.</span></span> and <span style="font:13px 'SF Mono',monospace"><span style="color:#C4C445">.M</span></span> each in one colour, which is <a href="#row">§02</a>'s whole argument rendered. <span style="color:#F2F2F2">07</span> also carries the wrap bug on the row above the one that fits, so the cause is width and not the path. <span style="color:#F2F2F2">10</span> shows zsh's own paste highlight around the landed path, which changes how loud the row's own confirmation needs to be. <span style="color:#F2F2F2">12</span> puts <span style="font-family:var(--font-mono);font-size:13px">not a repository</span> at first-row position in both sections, which is exactly why it reads as the empty state.</p>
+    </div>
+  </header>
+
+  <section id="material" data-screen-label="01 Material" style="display:flex;flex-direction:column;gap:40px;scroll-margin-top:32px">
+    <div style="display:flex;align-items:baseline;gap:20px;border-bottom:1px solid var(--border-visible);padding-bottom:16px">
+      <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:0.16em;color:#8A8A8A">01</div>
+      <h2 style="margin:0;font-size:34px;font-weight:500;letter-spacing:-0.01em">Material — the decision everything follows from</h2>
+    </div>
+    <p style="margin:0;font-size:17px;line-height:1.55;color:#B4B4B4;max-width:880px;text-wrap:pretty">Today the column is two materials: headings fill <span style="font-family:var(--font-mono);font-size:14px;color:#F2F2F2">barBackground</span> and both bodies fill <span style="font-family:var(--font-mono);font-size:14px;color:#F2F2F2">panelBackground</span>. So the sidebar reads as a stuck-open command palette wearing footer-coloured caps.</p>
+
+    <div style="display:flex;gap:36px;align-items:flex-start;flex-wrap:wrap">
+      <div style="display:flex;gap:20px">
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div style="width:190px;border:1px solid #2A2A2A;background:#2D2535;display:flex;height:190px">
+            <div style="width:74px;background:#1C1C1C;display:flex;flex-direction:column"><div style="height:22px;background:#212121;border-bottom:1px solid #382D43;box-sizing:border-box"></div></div>
+            <div style="width:1px;background:#382D43"></div>
+            <div style="flex:1;background:rgba(20,20,20,0.85);display:flex;flex-direction:column"><div style="flex:1"></div><div style="height:18px;background:#212121;border-top:1px solid #382D43;box-sizing:border-box"></div></div>
+          </div>
+          <div style="font-family:var(--font-mono);font-size:11px;color:#5E5E5E;width:190px">NOW · panelBackground<br><span style="color:#4A4A4A">#1C1C1C body</span></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div style="width:190px;border:1px solid #2A2A2A;background:#2D2535;display:flex;height:190px">
+            <div style="width:74px;background:#212121;display:flex;flex-direction:column"><div style="height:22px;background:#212121;border-bottom:1px solid #382D43;box-sizing:border-box"></div></div>
+            <div style="width:1px;background:#382D43"></div>
+            <div style="flex:1;background:rgba(20,20,20,0.85);display:flex;flex-direction:column"><div style="flex:1"></div><div style="height:18px;background:#212121;border-top:1px solid #382D43;box-sizing:border-box"></div></div>
+          </div>
+          <div style="font-family:var(--font-mono);font-size:11px;color:#5E5E5E;width:190px">ALL CHROME<br><span style="color:#4A4A4A">#212121 throughout</span></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div style="width:190px;border:1px solid #2A2A2A;background:#2D2535;display:flex;height:190px">
+            <div style="width:74px;background:rgba(20,20,20,0.85);display:flex;flex-direction:column"><div style="height:22px;background:#212121;border-bottom:1px solid #382D43;box-sizing:border-box"></div></div>
+            <div style="width:1px;background:#382D43"></div>
+            <div style="flex:1;background:rgba(20,20,20,0.85);display:flex;flex-direction:column"><div style="flex:1"></div><div style="height:18px;background:#212121;border-top:1px solid #382D43;box-sizing:border-box"></div></div>
+          </div>
+          <div style="font-family:var(--font-mono);font-size:11px;color:#C890FF;width:190px">CHOSEN · background<br><span style="color:#4A4A4A">#141414 @ 0.85</span></div>
+        </div>
+      </div>
+      <div style="flex:1;min-width:360px;display:flex;flex-direction:column;gap:16px">
+        <p style="margin:0;font-size:15px;line-height:1.6;color:#B4B4B4"><span style="color:#F2F2F2">The sidebar is another compartment.</span> Its body takes <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">background</span> at the terminal's own <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">backgroundOpacity</span>, so it composites exactly as a pane does; its heading takes <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">barBackground</span>, opaque, exactly as a footer does. One rule for the whole window: <em style="font-style:normal;color:#F2F2F2">every compartment is the terminal's material and wears one chrome band</em>. Panes wear theirs at the bottom and report; sections wear theirs at the top and label.</p>
+        <p style="margin:0;font-size:15px;line-height:1.6;color:#B4B4B4">The argument is in <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">panelBackground</span>'s own docstring — a large surface should sit <em style="font-style:normal;color:#F2F2F2">below</em> the bar, because lifting it as far would make it the brightest object on screen by area. The sidebar is the largest non-pane surface in the window, so by that reasoning it belongs at the bottom of the ramp rather than one step up it. The panel's other justification, separation by border and shadow, is not available: the sidebar does not float.</p>
+        <p style="margin:0;font-size:15px;line-height:1.6;color:#B4B4B4">It also gives <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">panelBackground</span> back its name. The palette and the find panel keep it, and the difference between a thing that floats over the work and a thing that sits beside it becomes a material difference rather than a shadow.</p>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <x-import component-from-global-scope="NothingInspiredDesignSystem_bebfd4.StatusText" status="info" hint-size="auto,16px">what this buys</x-import>
+          <p style="margin:0;font-size:14.5px;line-height:1.6;color:#9A9A9A">The sidebar and the footers become one chrome vocabulary meeting at the window's bottom-left corner — same fill, same hairline, same ink — so nothing has to be invented to connect them, which is <a href="#column">§04</a>'s answer to the footer question. And with body and heading on different materials, the boundary between one section's rows and the next section's heading is already visible, so the split needs an affordance rather than a rule.</p>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.14em;color:#5E5E5E">LINES TAKE THE ACCENT, SURFACES STAY NEUTRAL</div>
+      <div style="display:grid;grid-template-columns:20px 148px 1fr 96px 128px;gap:14px 18px;max-width:1240px;align-items:center;font-size:14.5px;color:#B4B4B4">
+        <div style="grid-column:1 / -1;display:grid;grid-template-columns:20px 148px 1fr 96px 128px;gap:18px;font-family:var(--font-mono);font-size:10px;letter-spacing:0.14em;color:#5E5E5E;padding-bottom:4px;border-bottom:1px solid var(--border)"><div></div><div>ROLE</div><div>DERIVATION</div><div>RESOLVES</div><div>WAS</div></div>
+        <div style="width:14px;height:14px;background:#2D2535"></div><div style="font-family:var(--font-mono);font-size:12.5px;color:#F2F2F2">divider</div><div>background.blended(inkFocus, <span style="color:#F2F2F2">0.14</span>) — tree guides, pane splits</div><div style="font-family:var(--font-mono);font-size:12.5px;color:#C890FF">#2D2535</div><div style="font-family:var(--font-mono);font-size:12.5px;color:#5E5E5E">#282828 · 0.12 fg</div>
+        <div style="width:14px;height:14px;background:#382D43"></div><div style="font-family:var(--font-mono);font-size:12.5px;color:#F2F2F2">hairline</div><div>background.blended(inkFocus, <span style="color:#F2F2F2">0.20</span>) — heading bottoms, footer tops, the gutter</div><div style="font-family:var(--font-mono);font-size:12.5px;color:#C890FF">#382D43</div><div style="font-family:var(--font-mono);font-size:12.5px;color:#5E5E5E">#323232 · 0.18 fg</div>
+      </div>
+      <p style="margin:0;font-size:15px;line-height:1.6;color:#9A9A9A;max-width:880px">Both fractions are chosen so the result matches the <em style="font-style:normal;color:#F2F2F2">relative luminance</em> of the neutral it replaces: the line changes hue, never weight. Nothing gets brighter. <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">background</span>, <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">barBackground</span>, <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">panelBackground</span> and <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">selectedRowBackground</span> are untouched — the planks are tinted, the compartments they divide are not, which is the metaphor stated in colour. Under a hueless accent the tint vanishes and both resolve back to greys, which is the correct answer to choosing a hueless accent.</p>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.14em;color:#5E5E5E">THE COLUMN IN PLACE · <span style="color:#C890FF">both</span> · 1024 × 680 AT 1pt = 1px</div>
+      <div style="width:1026px;border-radius:10px;overflow:hidden;border:1px solid #2A2A2A;background:#2D2535">
+        <div style="height:28px;background:rgba(20,20,20,0.55);display:flex;align-items:center;gap:8px;padding:0 12px">
+          <div style="width:12px;height:12px;border-radius:50%;background:#FF5F57"></div><div style="width:12px;height:12px;border-radius:50%;background:#FEBC2E"></div><div style="width:12px;height:12px;border-radius:50%;background:#28C840"></div>
+          <div style="margin-left:12px;font:600 13px -apple-system,'SF Pro Text',system-ui,sans-serif;color:#DDDDDD">baia</div>
+        </div>
+        <div style="display:flex;height:652px">
+          <div style="width:260px;display:flex;flex-direction:column;flex:none">
+            <div style="height:28px;background:#212121;border-bottom:1px solid #382D43;box-sizing:border-box;display:flex;align-items:center;padding:0 12px;flex:none"><span style="font:11px 'SF Mono',ui-monospace,Menlo,monospace;letter-spacing:0.08em;color:#9D9D9D">CHANGES</span><span style="font:11px 'SF Mono',ui-monospace,Menlo,monospace;color:#898989;margin-left:6px">9</span><span style="margin-left:auto;font:600 11px -apple-system,'SF Pro Text',system-ui,sans-serif;color:#C890FF">baia</span></div>
+            <div style="height:184px;background:rgba(20,20,20,0.85);font:11px/18px 'SF Mono',ui-monospace,Menlo,monospace;white-space:pre;overflow:hidden;flex:none">
+<span style="display:block;padding:0 12px"><span style="color:#FF5555">UU</span>  <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">PaneTreeController.swift</span></span><span style="display:block;padding:0 12px"><span style="color:#45C445">M</span><span style="color:#C4C445">M</span>  <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">ChangesSurface.swift</span></span><span style="display:block;padding:0 12px"><span style="color:#45C445">M</span>   <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">SurfaceHosts.swift</span></span><span style="display:block;padding:0 12px"><span style="color:#45C445">A</span>   <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">WorkspaceSurface.swift</span></span><span style="display:block;padding:0 12px"> <span style="color:#C4C445">M</span>  <span style="color:#898989">Packages/…/</span><span style="color:#BBBBBB">PaneTheme.swift</span></span><span style="display:block;padding:0 12px"> <span style="color:#C4C445">M</span>  <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">FilesSurface.swift</span></span><span style="display:block;padding:0 12px"> <span style="color:#C4C445">D</span>  <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">PaneOverlayView.swift</span></span><span style="display:block;padding:0 12px"><span style="color:#898989">??</span>  <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">SidebarLegend.swift</span></span><span style="display:block;padding:0 12px"><span style="color:#898989">??</span>  <span style="color:#898989">docs/</span><span style="color:#BBBBBB">sidebar.md</span></span></div>
+            <div style="height:28px;background:#212121;border-bottom:1px solid #382D43;box-sizing:border-box;display:flex;align-items:center;padding:0 12px;flex:none"><span style="font:11px 'SF Mono',ui-monospace,Menlo,monospace;letter-spacing:0.08em;color:#9D9D9D">FILES</span></div>
+            <div style="flex:1;background:rgba(20,20,20,0.85);font:11px/18px 'SF Mono',ui-monospace,Menlo,monospace;white-space:pre;overflow:hidden;position:relative">
+<span style="display:block;padding:0 12px"><span style="color:#898989">▾</span> <span style="color:#9D9D9D">Packages/</span></span><span style="display:block;padding:0 12px">  <span style="color:#898989">▸</span> <span style="color:#9D9D9D">BaiaSettings/</span></span><span style="display:block;padding:0 12px">  <span style="color:#898989">▾</span> <span style="color:#9D9D9D">PaneChrome/</span></span><span style="display:block;padding:0 12px">    <span style="color:#898989">▾</span> <span style="color:#9D9D9D">Sources/</span></span><span style="display:block;padding:0 12px">      <span style="color:#898989">▾</span> <span style="color:#9D9D9D">PaneChrome/</span></span><span style="display:block;padding:0 12px">          <span style="color:#BBBBBB">PaneStatusLayout.swift</span></span><span style="display:block;padding:0 12px;position:relative">          <span style="color:#BBBBBB">PaneTheme.swift</span><span style="position:absolute;right:12px;color:#C4C445">*</span></span><span style="display:block;padding:0 12px">          <span style="color:#BBBBBB">RGB.swift</span></span><span style="display:block;padding:0 12px">  <span style="color:#898989">▸</span> <span style="color:#9D9D9D">GitWorkspace/</span></span><span style="display:block;padding:0 12px">  <span style="color:#898989">▸</span> <span style="color:#9D9D9D">WorkspaceLayout/</span></span><span style="display:block;padding:0 12px"><span style="color:#898989">▾</span> <span style="color:#9D9D9D">Sources/</span></span><span style="display:block;padding:0 12px">    <span style="color:#BBBBBB">AppDelegate.swift</span></span><span style="display:block;padding:0 12px;position:relative">    <span style="color:#BBBBBB">ChangesSurface.swift</span><span style="position:absolute;right:12px;color:#45C445">M</span></span><span style="display:block;padding:0 12px;position:relative">    <span style="color:#BBBBBB">FilesSurface.swift</span><span style="position:absolute;right:12px;color:#C4C445">*</span></span><span style="display:block;padding:0 12px">    <span style="color:#BBBBBB">PaneStatusBarView.swift</span></span><span style="display:block;padding:0 12px;position:relative">    <span style="color:#BBBBBB">PaneTreeController.swift</span><span style="position:absolute;right:12px;color:#FF5555">!</span></span><span style="display:block;padding:0 12px;position:relative">    <span style="color:#BBBBBB">SurfaceHosts.swift</span><span style="position:absolute;right:12px;color:#45C445">M</span></span><span style="display:block;padding:0 12px;position:relative">    <span style="color:#BBBBBB">WorkspaceSurface.swift</span><span style="position:absolute;right:12px;color:#45C445">A</span></span><span style="display:block;padding:0 12px"><span style="color:#898989">▸</span> <span style="color:#9D9D9D">docs/</span></span><span style="display:block;padding:0 12px">  <span style="color:#BBBBBB">Package.swift</span></span><span style="display:block;padding:0 12px">  <span style="color:#BBBBBB">README.md</span></span>
+              <div style="position:absolute;left:29px;top:0;bottom:0;width:1px;background:#2D2535"></div>
+              <div style="position:absolute;left:41px;top:36px;height:126px;width:1px;background:#2D2535"></div>
+              <div style="position:absolute;left:53px;top:54px;height:90px;width:1px;background:#2D2535"></div>
+              <div style="position:absolute;left:65px;top:72px;height:72px;width:1px;background:#2D2535"></div>
+            </div>
+          </div>
+          <div style="width:1px;background:#382D43;flex:none"></div>
+          <div style="flex:1;display:flex;flex-direction:column">
+            <div style="flex:1;background:rgba(20,20,20,0.85);display:flex;flex-direction:column"><div style="flex:1;padding:8px;font:11.5px/15px 'SF Mono',ui-monospace,Menlo,monospace;color:#BBBBBB;white-space:pre;overflow:hidden">pasqualotto@aps-mbp baia % git status --short
+UU Sources/PaneTreeController.swift
+MM Sources/ChangesSurface.swift
+M  Sources/SurfaceHosts.swift
+A  Sources/WorkspaceSurface.swift
+ M Packages/PaneChrome/Sources/PaneChrome/PaneTheme.swift
+ M Sources/FilesSurface.swift
+ D Sources/PaneOverlayView.swift
+?? Sources/SidebarLegend.swift
+?? docs/sidebar.md
+pasqualotto@aps-mbp baia % <span style="display:inline-block;width:7px;height:13px;background:#BBBBBB;vertical-align:-2px"></span></div><div style="height:22px;background:#212121;box-shadow:inset 0 0 0 2px #C890FF;display:flex;align-items:center;gap:12px;padding:0 8px;box-sizing:border-box"><span style="font:600 11px -apple-system,'SF Pro Text',system-ui,sans-serif;color:#C890FF">baia</span><span style="display:flex;gap:5px;align-items:baseline;font:10.5px 'SF Mono',ui-monospace,Menlo,monospace"><span style="color:#BBBBBB">main</span><span style="color:#C4C445">*3</span><span style="color:#898989">?2</span><span style="color:#FF5555">!1</span></span></div></div>
+            <div style="height:1px;background:#2D2535"></div>
+            <div style="flex:1;background:rgba(20,20,20,0.85);display:flex;flex-direction:column"><div style="flex:1;padding:8px;font:11.5px/15px 'SF Mono',ui-monospace,Menlo,monospace;color:#BBBBBB;white-space:pre;overflow:hidden">✻ Churned for 1m 04s
+  ↓ 4.2k tokens</div><div style="height:22px;background:#212121;border-top:1px solid #382D43;box-sizing:border-box;display:flex;align-items:center;gap:12px;padding:0 8px"><span style="font:600 11px -apple-system,'SF Pro Text',system-ui,sans-serif;color:#BBBBBB">vault</span><span style="display:flex;gap:5px;align-items:baseline;font:10.5px 'SF Mono',ui-monospace,Menlo,monospace"><span style="color:#BBBBBB">main</span><span style="color:#C4C445">*</span></span><span style="margin-left:auto;display:flex;align-items:center;gap:5px;font:10.5px -apple-system,'SF Pro Text',system-ui,sans-serif;color:#9D9D9D"><span style="width:5px;height:5px;border-radius:50%;background:#55FF55"></span>claude</span></div></div>
+          </div>
+        </div>
+      </div>
+      <p style="margin:0;font-size:15px;line-height:1.6;color:#9A9A9A;max-width:880px">The focused pane's footer says <span style="font:12px 'SF Mono',monospace"><span style="color:#C4C445">*3</span> <span style="color:#898989">?2</span> <span style="color:#FF5555">!1</span></span> and the column names all six. Same colours, same meanings, one above the other. That is the division the brief asks for, made visible by using one vocabulary rather than by drawing a connector.</p>
+    </div>
+  </section>
+
+  <section id="row" data-screen-label="02 The row" style="display:flex;flex-direction:column;gap:40px;scroll-margin-top:32px">
+    <div style="display:flex;align-items:baseline;gap:20px;border-bottom:1px solid var(--border-visible);padding-bottom:16px">
+      <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:0.16em;color:#8A8A8A">02</div>
+      <h2 style="margin:0;font-size:34px;font-weight:500;letter-spacing:-0.01em">The row — <span style="font-family:var(--font-mono);font-size:30px">XY</span> stays, and starts telling the truth</h2>
+    </div>
+    <p style="margin:0;font-size:17px;line-height:1.55;color:#B4B4B4;max-width:880px;text-wrap:pretty">Keep the letters. They are what <span style="font-family:var(--font-mono);font-size:14px;color:#F2F2F2">git status</span> prints, and a vocabulary of baia's own would be one more thing to learn for a reader who already knows this one. No legend either — a legend is an admission that the thing it explains failed to.</p>
+    <p style="margin:0;font-size:17px;line-height:1.55;color:#B4B4B4;max-width:880px;text-wrap:pretty">What is actually wrong is that the marker is coloured <em style="font-style:normal;color:#F2F2F2">once, for the whole row</em>. <span style="font-family:var(--font-mono);font-size:14px;color:#F2F2F2">X</span> is the index and <span style="font-family:var(--font-mono);font-size:14px;color:#F2F2F2">Y</span> is the working tree — two independent facts — and today a file that is staged <em style="font-style:normal;color:#F2F2F2">and</em> since modified renders <span style="font-family:var(--font-mono);font-size:14px;color:#45C445">MM</span> in one colour, throwing away the half that says "and you will lose the second M if you commit now". Colour the columns separately and the marker becomes self-teaching: <span style="color:#45C445">left is in the commit</span>, <span style="color:#C4C445">right is not</span>.</p>
+
+    <div style="display:flex;gap:40px;align-items:flex-start;flex-wrap:wrap">
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.14em;color:#5E5E5E">EVERY MARKER · 260pt COLUMN</div>
+        <div style="width:260px;background:rgba(20,20,20,0.85);border:1px solid #2A2A2A;font:11px/18px 'SF Mono',ui-monospace,Menlo,monospace;white-space:pre;padding:6px 0">
+<span style="display:block;padding:0 12px"><span style="color:#FF5555">UU</span>  <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">PaneTree…swift</span></span><span style="display:block;padding:0 12px"><span style="color:#45C445">M</span><span style="color:#C4C445">M</span>  <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">Changes.swift</span></span><span style="display:block;padding:0 12px"><span style="color:#45C445">M</span>   <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">Hosts.swift</span></span><span style="display:block;padding:0 12px"><span style="color:#45C445">A</span>   <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">Surface.swift</span></span><span style="display:block;padding:0 12px"><span style="color:#45C445">R</span>   <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">Panel.swift</span></span><span style="display:block;padding:0 12px"> <span style="color:#C4C445">M</span>  <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">Files.swift</span></span><span style="display:block;padding:0 12px"> <span style="color:#C4C445">D</span>  <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">Overlay.swift</span></span><span style="display:block;padding:0 12px"><span style="color:#898989">??</span>  <span style="color:#898989">docs/</span><span style="color:#BBBBBB">sidebar.md</span></span></div>
+      </div>
+      <div style="flex:1;min-width:420px;display:flex;flex-direction:column;gap:18px">
+        <div style="display:grid;grid-template-columns:64px 136px 1fr;gap:10px 20px;align-items:baseline;font-size:14.5px;color:#B4B4B4">
+          <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.14em;color:#5E5E5E">MARKER</div><div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.14em;color:#5E5E5E">DERIVATION</div><div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.14em;color:#5E5E5E">MEANING</div>
+          <div style="font:14px 'SF Mono',monospace;color:#45C445">X</div><div style="font-family:var(--font-mono);font-size:12.5px;color:#B4B4B4">staged · #45C445</div><div>In the index. This is what a commit right now would contain.</div>
+          <div style="font:14px 'SF Mono',monospace;color:#C4C445">Y</div><div style="font-family:var(--font-mono);font-size:12.5px;color:#B4B4B4">warn · #C4C445</div><div>In the working tree only. A commit right now would leave it behind.</div>
+          <div style="font:14px 'SF Mono',monospace;color:#898989">??</div><div style="font-family:var(--font-mono);font-size:12.5px;color:#B4B4B4">inkFaint · #898989</div><div>Untracked. Git is not watching it yet, so neither column applies.</div>
+          <div style="font:14px 'SF Mono',monospace;color:#FF5555">UU</div><div style="font-family:var(--font-mono);font-size:12.5px;color:#B4B4B4">alert · #FF5555</div><div>Unmerged. Both columns are the conflict, so both are red.</div>
+          <div style="font:14px 'SF Mono',monospace;color:#5E5E5E">·</div><div style="font-family:var(--font-mono);font-size:12.5px;color:#B4B4B4">a space</div><div>Nothing in that column. The font is monospaced, so position carries it and <span style="font-family:var(--font-mono);font-size:12.5px;color:#F2F2F2">"."</span> is ink spent on absence.</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <x-import component-from-global-scope="NothingInspiredDesignSystem_bebfd4.StatusText" status="info" hint-size="auto,16px">one new derivation</x-import>
+          <p style="margin:0;font-size:14.5px;line-height:1.6;color:#B4B4B4"><span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">staged = background.blended(ansi[2], 0.75)</span> → <span style="font-family:var(--font-mono);font-size:13px;color:#45C445">#45C445</span>, 8.0:1 on the body. Built exactly like <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">warn</span>, which is <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">background.blended(ansi[3], 0.75)</span> — same construction, adjacent slots, so the pair sits together and neither shouts. Not raw <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">ok</span>, which the row uses today: <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">ansi[2]</span> at full strength is a signal light and its own docstring says "never used for text".</p>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;padding-top:2px">
+          <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.14em;color:#5E5E5E">CAPTURE 07, THE FOUR ROWS AS SHIPPED</div>
+          <div style="width:260px;background:rgba(20,20,20,0.85);border:1px solid #2A2A2A;font:11px/18px 'SF Mono',monospace;white-space:pre;padding:5px 0"><span style="display:block;padding:0 12px"><span style="color:#FF5555">UU</span>  <span style="color:#BBBBBB">README.md</span></span><span style="display:block;padding:0 12px"><span style="color:#45C445">A.</span>  <span style="color:#898989">Sources/Workspace/</span></span><span style="display:block;padding:0 12px"><span style="color:#C4C445">.M</span>  <span style="color:#898989">Sources/Workspace/</span><span style="color:#BBBBBB">Pane.swift</span></span><span style="display:block;padding:0 12px"><span style="color:#898989">??</span>  <span style="color:#898989">docs/</span><span style="color:#BBBBBB">scratch.md</span></span></div>
+          <p style="margin:0;font-size:14.5px;line-height:1.6;color:#9A9A9A">Both halves of <span style="font:13px 'SF Mono',monospace;color:#45C445">A.</span> are staged green and both halves of <span style="font:13px 'SF Mono',monospace;color:#C4C445">.M</span> are unstaged yellow, so the <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">.</span> is coloured as though absence had a state. Under <a href="#row">§02</a> those become <span style="font:13px 'SF Mono',monospace"><span style="color:#45C445">A</span> </span> and <span style="font:13px 'SF Mono',monospace"> <span style="color:#C4C445">M</span></span> — the letter keeps its column and the empty half goes blank.</p>
+        </div>
+        <p style="margin:0;font-size:15px;line-height:1.6;color:#9A9A9A">The sort order needs nothing. Conflicts, staged, unstaged, untracked, by path within each — that is what <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">git commit</span> needs answered in the order it needs it, and it is already implemented. Capture 07 is in exactly that order.</p>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.14em;color:#5E5E5E">ROW ANATOMY · SHOWN AT 3×</div>
+      <div style="display:flex;gap:40px;align-items:flex-start;flex-wrap:wrap">
+        <div style="position:relative;width:780px;height:54px;background:rgba(20,20,20,0.85);border:1px solid #2A2A2A;font:33px/54px 'SF Mono',ui-monospace,Menlo,monospace;white-space:pre;overflow:hidden">
+          <div style="position:absolute;left:0;top:0;bottom:0;width:36px;background:#C890FF11"></div>
+          <div style="position:absolute;left:36px;top:0;bottom:0;width:78px;background:#C4C44511"></div>
+          <div style="position:absolute;left:0;right:0;top:39px;height:1px;background:#C890FF66"></div>
+          <span style="position:relative;padding-left:36px"><span style="color:#45C445">M</span><span style="color:#C4C445">M</span>  <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">Changes.swift</span></span>
+        </div>
+        <div style="flex:1;min-width:320px;display:flex;flex-direction:column;gap:9px">
+          <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.14em;color:#5E5E5E">CONSTANTS</div>
+          <div style="display:grid;grid-template-columns:118px 1fr;gap:8px 18px;font-family:var(--font-mono);font-size:12.5px;line-height:1.6;color:#B4B4B4">
+            <div style="color:#F2F2F2">rowHeight</div><div>18 <span style="color:#5E5E5E">— unchanged, and see <a href="#density">§06</a> for why</span></div>
+            <div style="color:#F2F2F2">inset</div><div>12 <span style="color:#5E5E5E">— both surfaces and the heading. Files uses 10 today</span></div>
+            <div style="color:#F2F2F2">markerColumn</div><div>26 <span style="color:#5E5E5E">— two glyphs at 6.62 plus a 12.8 gap</span></div>
+            <div style="color:#F2F2F2">rowBaseline</div><div>13 <span style="color:#5E5E5E">— from the row's top edge, cap-centred: (18 + 7.8) / 2</span></div>
+            <div style="color:#F2F2F2">draw origin</div><div>rowTop + rowBaseline − font.ascender <span style="color:#5E5E5E">— one rule for every string in the row, the same one the footer uses at baseline 15 in a 22pt bar</span></div>
+          </div>
+          <p style="margin:0;font-size:14.5px;line-height:1.6;color:#9A9A9A;padding-top:4px">Today the marker draws at <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">y + 3</span> through <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">draw(at:)</span> and the path at <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">y + 1</span> through <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">draw(in:)</span>, so the marker sits 2pt below the path it labels. One baseline is what stops that recurring — and <a href="#path">§03</a> retires the <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">draw(in:)</span> that caused it.</p>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:20px">
+      <div style="display:flex;align-items:baseline;gap:14px"><div style="font-family:var(--font-mono);font-size:11px;letter-spacing:0.14em;color:#C890FF">THE ROW IS A TARGET NOW</div><div style="font-size:16px;color:#E6E6E6">Five states, no layout change in any of them</div></div>
+      <p style="margin:0;font-size:16px;line-height:1.6;color:#B4B4B4;max-width:880px;text-wrap:pretty">Clicking writes the path onto the focused pane's prompt, unrun. That is a real action with a real refusal, so the row owes four answers it does not currently give: that it can be clicked, that it is being clicked, that the click landed, and that it did not.</p>
+      <div style="display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start">
+        <div style="display:flex;flex-direction:column;gap:11px;width:260px">
+          <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.12em;color:#5E5E5E">REST</div>
+          <div style="width:260px;background:rgba(20,20,20,0.85);border:1px solid #2A2A2A;font:11px/18px 'SF Mono',monospace;white-space:pre;padding:6px 0"><span style="display:block;padding:0 12px"><span style="color:#45C445">M</span><span style="color:#C4C445">M</span>  <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">Changes.swift</span></span><span style="display:block;padding:0 12px"><span style="color:#45C445">M</span>   <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">Hosts.swift</span></span><span style="display:block;padding:0 12px"> <span style="color:#C4C445">M</span>  <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">Files.swift</span></span></div>
+          <div style="font-family:var(--font-mono);font-size:12px;line-height:1.75;color:#9A9A9A">no fill<br>cursor <span style="color:#F2F2F2">.pointingHand</span> over the body</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:11px;width:260px">
+          <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.12em;color:#C890FF">HOVER</div>
+          <div style="width:260px;background:rgba(20,20,20,0.85);border:1px solid #2A2A2A;font:11px/18px 'SF Mono',monospace;white-space:pre;padding:6px 0"><span style="display:block;padding:0 12px"><span style="color:#45C445">M</span><span style="color:#C4C445">M</span>  <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">Changes.swift</span></span><span style="display:block;padding:0 12px;background:#282828"><span style="color:#45C445">M</span>   <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">Hosts.swift</span></span><span style="display:block;padding:0 12px"> <span style="color:#C4C445">M</span>  <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">Files.swift</span></span></div>
+          <div style="font-family:var(--font-mono);font-size:12px;line-height:1.75;color:#9A9A9A">fill <span style="color:#F2F2F2">selectedRowBackground</span> #282828<br>full width, 150ms</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:11px;width:260px">
+          <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.12em;color:#C890FF">PRESSED</div>
+          <div style="width:260px;background:rgba(20,20,20,0.85);border:1px solid #2A2A2A;font:11px/18px 'SF Mono',monospace;white-space:pre;padding:6px 0"><span style="display:block;padding:0 12px"><span style="color:#45C445">M</span><span style="color:#C4C445">M</span>  <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">Changes.swift</span></span><span style="display:block;padding:0 12px;background:#31313B"><span style="color:#45C445">M</span>   <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">Hosts.swift</span></span><span style="display:block;padding:0 12px"> <span style="color:#C4C445">M</span>  <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">Files.swift</span></span></div>
+          <div style="font-family:var(--font-mono);font-size:12px;line-height:1.75;color:#9A9A9A">fill <span style="color:#F2F2F2">bg.blended(inkFocus, 0.16)</span> #31313B<br>no transition — while held</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:11px;width:260px">
+          <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.12em;color:#C890FF">LANDED</div>
+          <div style="width:260px;background:rgba(20,20,20,0.85);border:1px solid #2A2A2A;font:11px/18px 'SF Mono',monospace;white-space:pre;padding:6px 0"><span style="display:block;padding:0 12px"><span style="color:#45C445">M</span><span style="color:#C4C445">M</span>  <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">Changes.swift</span></span><span style="display:block;padding:0 12px;background:#31313B"><span style="color:#45C445">M</span>   <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">Hosts.swift</span></span><span style="display:block;padding:0 12px"> <span style="color:#C4C445">M</span>  <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">Files.swift</span></span></div>
+          <div style="font-family:var(--font-mono);font-size:12px;line-height:1.75;color:#9A9A9A">fill <span style="color:#F2F2F2">bg.blended(inkFocus, 0.16)</span> #31313B<br>ink unchanged · 90ms in / 220ms out<br><span style="color:#5E5E5E">the pressed fill, held and released</span></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:11px;width:260px">
+          <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.12em;color:#FF6A6A">REFUSED</div>
+          <div style="width:260px;background:rgba(20,20,20,0.85);border:1px solid #2A2A2A;font:11px/18px 'SF Mono',monospace;white-space:pre;padding:6px 0"><span style="display:block;padding:0 12px"><span style="color:#45C445">M</span><span style="color:#C4C445">M</span>  <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">Changes.swift</span></span><span style="display:block;padding:0 12px;background:#3D1E1E"><span style="color:#45C445">M</span>   <span style="color:#C08585">Sources/</span><span style="color:#FF5555">ctrl?TAB?.txt</span></span><span style="display:block;padding:0 12px"> <span style="color:#C4C445">M</span>  <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">Files.swift</span></span></div>
+          <div style="font-family:var(--font-mono);font-size:12px;line-height:1.75;color:#9A9A9A">fill <span style="color:#F2F2F2">bg.blended(alert, 0.24)</span> #3D1E1E<br>path → <span style="color:#FF5555">alert</span>, same 90 / 220<br>plus the beep it already makes</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:1330px">
+        <x-import component-from-global-scope="NothingInspiredDesignSystem_bebfd4.Card" label="Why landed is quiet and refused is not" hint-size="100%,240px">
+          <p style="margin:0;font-size:15px;line-height:1.55;color:#B4B4B4"><span style="color:#F2F2F2">They are deliberately not symmetric, and capture 10 is why.</span> A landed click already has a loud confirmation: zsh brackets the inserted path and draws it highlighted on the prompt line, which is the largest thing on screen and exactly where the owner's next keystroke goes. A second announcement in the sidebar would be the app saying the same thing twice, so landing is just the pressed fill fading out — enough to mark <em style="font-style:normal;color:#F2F2F2">which row</em> was hit, which is the only part the pane cannot answer.</p>
+          <p style="margin:0;font-size:15px;line-height:1.55;color:#B4B4B4"><span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">alert</span> carries the refusal alone, because nothing else happens at all: the prompt does not move, and today the only signal is a beep, which is inaudible on a muted machine and indistinguishable from every other beep on an audible one. Same 90 / 220 shape as the release, so the two read as one gesture with two outcomes.</p>
+          <p style="margin:0;font-size:15px;line-height:1.55;color:#9A9A9A">A refusal is rare and unrepeatable — the path will not become sendable — so it needs to be legible once rather than persistent. It beats an inline error line, which would need a row's worth of height the layout cannot give.</p>
+        </x-import>
+        <x-import component-from-global-scope="NothingInspiredDesignSystem_bebfd4.Card" label="Constraint work, all four" hint-size="100%,240px">
+          <div style="display:grid;grid-template-columns:96px 1fr;gap:9px 16px;font-size:14.5px;line-height:1.5;color:#B4B4B4">
+            <div style="font-family:var(--font-mono);font-size:12px;color:#F2F2F2">responder</div><div>A tracking area and a redraw. No control, no selection, nothing that can become first responder.</div>
+            <div style="font-family:var(--font-mono);font-size:12px;color:#F2F2F2">width</div><div>Every state is a fill and an ink. No geometry moves, so no grid is resized.</div>
+            <div style="font-family:var(--font-mono);font-size:12px;color:#F2F2F2">theme</div><div>Four fills, all <span style="font-family:var(--font-mono);font-size:12px">background.blended(…)</span>. Nothing reads <span style="font-family:var(--font-mono);font-size:12px">NSAppearance</span>.</div>
+            <div style="font-family:var(--font-mono);font-size:12px;color:#F2F2F2">motion</div><div>Opacity only, one curve: <span style="font-family:var(--font-mono);font-size:12px">cubic-bezier(0.25, 0.1, 0.25, 1)</span>. Skips to the final frame under reduce-motion.</div>
+          </div>
+        </x-import>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;max-width:880px">
+        <x-import component-from-global-scope="NothingInspiredDesignSystem_bebfd4.StatusText" status="info" hint-size="auto,16px">one thing to add to PromptPath's caller</x-import>
+        <p style="margin:0;font-size:14.5px;line-height:1.6;color:#B4B4B4"><span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">onSelect</span> hands over a <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">String</span> and hears nothing back, so the row cannot know which flash to draw. Make it <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">((String) -&gt; Bool)?</span> — landed or refused — and the surface stays as ignorant of quoting as it is now while gaining the one bit it needs. <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">PromptPath.Resolution</span> already carries exactly that distinction.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="path" data-screen-label="03 The path" style="display:flex;flex-direction:column;gap:40px;scroll-margin-top:32px">
+    <div style="display:flex;align-items:baseline;gap:20px;border-bottom:1px solid var(--border-visible);padding-bottom:16px">
+      <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:0.16em;color:#8A8A8A">03</div>
+      <h2 style="margin:0;font-size:34px;font-weight:500;letter-spacing:-0.01em">The path that does not fit</h2>
+    </div>
+    <p style="margin:0;font-size:17px;line-height:1.55;color:#B4B4B4;max-width:880px;text-wrap:pretty">The live bug in captures 07 and 09, and the one design question underneath it. <span style="font-family:var(--font-mono);font-size:14px;color:#F2F2F2">ChangesRowsView</span> draws the path with <span style="font-family:var(--font-mono);font-size:14px;color:#F2F2F2">draw(in:)</span> into a rect one row tall. <span style="font-family:var(--font-mono);font-size:14px;color:#F2F2F2">draw(in:)</span> <em style="font-style:normal;color:#F2F2F2">wraps</em>, and a slash is a break opportunity — so a path too wide breaks after a directory, the second line falls outside an 18pt rect, and what gets clipped is the file name the row exists to show.</p>
+
+    <div style="display:flex;gap:40px;align-items:flex-start;flex-wrap:wrap">
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.12em;color:#FF6A6A">NOW · THE BUG, AT 260pt</div>
+        <div style="width:260px;background:rgba(20,20,20,0.85);border:1px solid #2A2A2A;font:11px/18px 'SF Mono',monospace;white-space:pre;padding:6px 0;overflow:hidden">
+<span style="display:block;padding:0 12px"><span style="color:#45C445">M</span>   <span style="color:#898989">Sources/</span><span style="color:#BBBBBB">SurfaceHosts.swift</span></span><span style="display:block;padding:0 12px"><span style="color:#45C445">A</span>   <span style="color:#898989">Sources/Workspace/</span></span><span style="display:block;padding:0 12px"> <span style="color:#C4C445">M</span>  <span style="color:#898989">Packages/PaneChrome/</span></span><span style="display:block;padding:0 12px"><span style="color:#898989">??</span>  <span style="color:#898989">docs/</span><span style="color:#BBBBBB">sidebar.md</span></span></div>
+        <div style="font-size:14px;line-height:1.55;color:#9A9A9A;width:260px">Two rows name a directory and no file. They are not directories — they are files whose names were clipped onto a second line nobody can see.</div>
+      </div>
+      <div style="flex:1;min-width:460px;display:flex;flex-direction:column;gap:18px">
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.14em;color:#5E5E5E">THE BUDGET, EXACTLY</div>
+          <div style="font-family:var(--font-mono);font-size:12.5px;line-height:1.9;color:#B4B4B4">column&nbsp;&nbsp;&nbsp;&nbsp;260<br>− inset&nbsp;&nbsp;&nbsp;&nbsp;12 leading&nbsp;&nbsp;+ 12 trailing<br>− marker&nbsp;&nbsp;&nbsp;26<br>= path&nbsp;&nbsp;&nbsp;&nbsp;<span style="color:#F2F2F2">210pt</span> ÷ 6.62 advance = <span style="color:#F2F2F2">31 characters</span><br><br>at the 120 minimum&nbsp;&nbsp;70pt = <span style="color:#F2F2F2">10 characters</span></div>
+        </div>
+        <p style="margin:0;font-size:15px;line-height:1.6;color:#B4B4B4"><span style="color:#F2F2F2">The decision: a path loses its directory, never its name.</span> Draw one line with <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">draw(at:)</span>, and elide the <em style="font-style:normal;color:#F2F2F2">directory</em> ourselves before drawing, measuring as we go. The file name is the answer to "which file"; the directory is context for it. Any scheme that shortens them together — a trailing ellipsis, a middle ellipsis over the whole string, an <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">NSLineBreakMode</span> on the attributed string — spends the width on the half that matters less.</p>
+        <p style="margin:0;font-size:15px;line-height:1.6;color:#B4B4B4">Name-first ordering was the alternative and it loses. It breaks the column's alignment, so the eye can no longer run down a fixed left edge of names, which is the whole reason the directory is faint and the name is not. Reading order stays as git prints it.</p>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:baseline;gap:14px"><div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.14em;color:#C890FF">THE LADDER</div><div style="font-size:15px;color:#9A9A9A">one path, four widths, drawn at 1pt = 1px</div></div>
+      <div style="display:flex;flex-direction:column;gap:12px;max-width:1330px">
+        <div style="display:flex;gap:20px;align-items:center">
+          <div style="width:96px;font-family:var(--font-mono);font-size:11px;color:#5E5E5E;flex:none">260pt · 31ch</div>
+          <div style="width:260px;height:18px;background:rgba(20,20,20,0.85);border:1px solid #2A2A2A;box-sizing:border-box;font:11px/16px 'SF Mono',monospace;white-space:pre;padding:0 12px;flex:none;overflow:hidden"><span style="color:#C4C445">M</span>  <span style="color:#898989">Packages/…/</span><span style="color:#BBBBBB">PaneTheme.swift</span></div>
+          <div style="font-size:14px;color:#9A9A9A">The middle directories go first. Keep the last one when it fits, since <span style="font-family:var(--font-mono);font-size:12.5px">PaneChrome/</span> disambiguates more than <span style="font-family:var(--font-mono);font-size:12.5px">Packages/</span> does.</div>
+        </div>
+        <div style="display:flex;gap:20px;align-items:center">
+          <div style="width:96px;font-family:var(--font-mono);font-size:11px;color:#5E5E5E;flex:none">200pt · 22ch</div>
+          <div style="width:200px;height:18px;background:rgba(20,20,20,0.85);border:1px solid #2A2A2A;box-sizing:border-box;font:11px/16px 'SF Mono',monospace;white-space:pre;padding:0 12px;flex:none;overflow:hidden"><span style="color:#C4C445">M</span>  <span style="color:#898989">…/</span><span style="color:#BBBBBB">PaneTheme.swift</span></div>
+          <div style="font-size:14px;color:#9A9A9A">All directories collapse to one <span style="font-family:var(--font-mono);font-size:12.5px">…/</span>. It still says "this file is not at the root", which is the last useful thing the directory was carrying.</div>
+        </div>
+        <div style="display:flex;gap:20px;align-items:center">
+          <div style="width:96px;font-family:var(--font-mono);font-size:11px;color:#5E5E5E;flex:none">160pt · 14ch</div>
+          <div style="width:160px;height:18px;background:rgba(20,20,20,0.85);border:1px solid #2A2A2A;box-sizing:border-box;font:11px/16px 'SF Mono',monospace;white-space:pre;padding:0 12px;flex:none;overflow:hidden"><span style="color:#C4C445">M</span>  <span style="color:#BBBBBB">PaneTheme.swift</span></div>
+          <div style="font-size:14px;color:#9A9A9A">The directory goes entirely. The name is whole, which is the invariant.</div>
+        </div>
+        <div style="display:flex;gap:20px;align-items:center">
+          <div style="width:96px;font-family:var(--font-mono);font-size:11px;color:#5E5E5E;flex:none">120pt · 10ch</div>
+          <div style="width:120px;height:18px;background:rgba(20,20,20,0.85);border:1px solid #2A2A2A;box-sizing:border-box;font:11px/16px 'SF Mono',monospace;white-space:pre;padding:0 12px;flex:none;overflow:hidden"><span style="color:#C4C445">M</span>  <span style="color:#BBBBBB">PaneT….swift</span></div>
+          <div style="font-size:14px;color:#9A9A9A">Only at the <span style="font-family:var(--font-mono);font-size:12.5px">minimumWidth</span> floor: middle-truncate the <em style="font-style:normal;color:#F2F2F2">stem</em> and keep the extension. A <span style="font-family:var(--font-mono);font-size:12.5px">.swift</span> and a <span style="font-family:var(--font-mono);font-size:12.5px">.md</span> with the same stem are different files, and tail-truncation would make them one row twice.</div>
+        </div>
+      </div>
+      <p style="margin:0;font-size:15px;line-height:1.6;color:#9A9A9A;max-width:880px">The marker never truncates and never moves. It is 26pt of fixed column, it is two glyphs, and it is the only thing on the row that cannot be recovered by widening the sidebar.</p>
+      <div style="display:flex;flex-direction:column;gap:8px;max-width:880px">
+        <x-import component-from-global-scope="NothingInspiredDesignSystem_bebfd4.StatusText" status="info" hint-size="auto,16px">why this is the answer to a width that cannot move</x-import>
+        <p style="margin:0;font-size:14.5px;line-height:1.6;color:#B4B4B4">The ladder degrades over 140pt of width without ever losing the identifying fact, so the column stays useful at every width the drag allows and the owner is never pushed toward widening it to read a row. That is the point: the fix has to make the <em style="font-style:normal;color:#F2F2F2">current</em> width sufficient, because the alternative costs every pane a <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">SIGWINCH</span>. The tree gets the same ladder for its names, which is what makes <a href="#tree">§05</a>'s depth budget work.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="column" data-screen-label="04 The column" style="display:flex;flex-direction:column;gap:40px;scroll-margin-top:32px">
+    <div style="display:flex;align-items:baseline;gap:20px;border-bottom:1px solid var(--border-visible);padding-bottom:16px">
+      <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:0.16em;color:#8A8A8A">04</div>
+      <h2 style="margin:0;font-size:34px;font-weight:500;letter-spacing:-0.01em">The column — headings, the footer, and the split</h2>
+    </div>
+    <p style="margin:0;font-size:17px;line-height:1.55;color:#B4B4B4;max-width:880px;text-wrap:pretty">28pt currently spends itself on a static word the config already chose. It can carry three things without growing, and it must not grow.</p>
+
+    <div style="display:flex;gap:40px;align-items:flex-start;flex-wrap:wrap">
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.14em;color:#5E5E5E">FIRST HEADING · 260 × 28</div>
+          <div style="width:260px;height:28px;background:#212121;border-bottom:1px solid #382D43;box-sizing:border-box;display:flex;align-items:center;padding:0 12px"><span style="font:11px 'SF Mono',ui-monospace,Menlo,monospace;letter-spacing:0.08em;color:#9D9D9D">CHANGES</span><span style="font:11px 'SF Mono',ui-monospace,Menlo,monospace;color:#898989;margin-left:6px">9</span><span style="margin-left:auto;font:600 11px -apple-system,'SF Pro Text',system-ui,sans-serif;color:#C890FF">baia</span></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.14em;color:#5E5E5E">SECOND HEADING</div>
+          <div style="width:260px;height:28px;background:#212121;border-bottom:1px solid #382D43;box-sizing:border-box;display:flex;align-items:center;padding:0 12px"><span style="font:11px 'SF Mono',ui-monospace,Menlo,monospace;letter-spacing:0.08em;color:#9D9D9D">FILES</span></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.14em;color:#5E5E5E">A PLAIN DIRECTORY</div>
+          <div style="width:260px;height:28px;background:#212121;border-bottom:1px solid #382D43;box-sizing:border-box;display:flex;align-items:center;padding:0 12px"><span style="font:11px 'SF Mono',ui-monospace,Menlo,monospace;letter-spacing:0.08em;color:#9D9D9D">CHANGES</span><span style="margin-left:auto;font:600 11px -apple-system,'SF Pro Text',system-ui,sans-serif;color:#C890FF">Projects</span></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.14em;color:#5E5E5E">UNFOCUSED WINDOW</div>
+          <div style="width:260px;height:28px;background:#212121;border-bottom:1px solid #382D43;box-sizing:border-box;display:flex;align-items:center;padding:0 12px"><span style="font:11px 'SF Mono',ui-monospace,Menlo,monospace;letter-spacing:0.08em;color:#9D9D9D">CHANGES</span><span style="font:11px 'SF Mono',ui-monospace,Menlo,monospace;color:#898989;margin-left:6px">9</span><span style="margin-left:auto;font:600 11px -apple-system,'SF Pro Text',system-ui,sans-serif;color:#BBBBBB">baia</span></div>
+        </div>
+      </div>
+      <div style="flex:1;min-width:400px;display:flex;flex-direction:column;gap:16px">
+        <div style="display:grid;grid-template-columns:110px 1fr;gap:10px 18px;font-family:var(--font-mono);font-size:12.5px;line-height:1.6;color:#B4B4B4">
+          <div style="color:#F2F2F2">label</div><div>mono 11 <span style="color:#F2F2F2">regular</span>, ALL CAPS, +0.08em tracking, inkContext<div style="color:#5E5E5E">caps and tracking make it a label rather than a title, so it stops competing with the row text below it at the same size. Regular, not the <span style="color:#B4B4B4">.medium</span> it uses today — weight is the row's tier signal, not the heading's.</div></div>
+          <div style="color:#F2F2F2">count</div><div>mono 11, inkFaint, 6pt after the label<div style="color:#5E5E5E">Changes only. A repository's total file count is not a fact anyone needs, so Files has none.</div></div>
+          <div style="color:#F2F2F2">anchor</div><div>system 11 semibold, <span style="color:#C890FF">inkFocus</span> / foreground, trailing<div style="color:#5E5E5E">the footer's Tier 1 exactly — same font, same weight, same ink. Drawn on bar material, so it takes the same repaired #C890FF the footer does.</div></div>
+          <div style="color:#F2F2F2">baseline</div><div>18 from the heading's top, cap-centred in 28<div style="color:#5E5E5E">replaces <span style="color:#B4B4B4">(bounds.height − size.height) / 2 + 1</span>, whose <span style="color:#B4B4B4">+ 1</span> exists because the view is not flipped</div></div>
+          <div style="color:#F2F2F2">height</div><div>28, unconditional — nothing above depends on state</div>
+        </div>
+        <p style="margin:0;font-size:15px;line-height:1.6;color:#B4B4B4"><span style="color:#F2F2F2">The anchor name is the answer to the footer question.</span> The same string, in the same treatment, appears in the focused pane's footer and at the top of the column, and that repetition <em style="font-style:normal;color:#F2F2F2">is</em> the connection. Anything else would be a connector drawn between two things that could simply agree. The footer stands nothing down: it reports <span style="font-family:var(--font-mono);font-size:13px">*3 ?2 !1</span> on one line and the column names which.</p>
+        <p style="margin:0;font-size:15px;line-height:1.6;color:#B4B4B4">Only the <em style="font-style:normal;color:#F2F2F2">first</em> heading carries it. In <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">both</span> the two sections are the same repository, and printing it twice would say there were two.</p>
+        <p style="margin:0;font-size:15px;line-height:1.6;color:#9A9A9A">The count also earns the heading its keep at the 48pt minimum: two rows under <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">CHANGES 41</span> is still a useful section. Two rows under <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">CHANGES</span> is a broken one.</p>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:40px;align-items:flex-start;flex-wrap:wrap">
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.14em;color:#5E5E5E">THE SPLIT · REST · HOVER · DRAG</div>
+        <div style="display:flex;gap:16px">
+          <div style="width:190px;background:rgba(20,20,20,0.85);border:1px solid #2A2A2A">
+            <div style="height:36px;font:11px/18px 'SF Mono',monospace;white-space:pre;color:#BBBBBB;padding:0 12px">?? docs/x.md
+</div>
+            <div style="height:28px;background:#212121;border-bottom:1px solid #382D43;box-sizing:border-box;display:flex;align-items:center;padding:0 12px"><span style="font:11px 'SF Mono',monospace;letter-spacing:0.08em;color:#9D9D9D">FILES</span></div>
+            <div style="height:36px;font:11px/18px 'SF Mono',monospace;white-space:pre;color:#9D9D9D;padding:0 12px">▸ Sources/
+</div>
+          </div>
+          <div style="width:190px;background:rgba(20,20,20,0.85);border:1px solid #2A2A2A">
+            <div style="height:36px;font:11px/18px 'SF Mono',monospace;white-space:pre;color:#BBBBBB;padding:0 12px">?? docs/x.md
+</div>
+            <div style="height:28px;background:#212121;border-top:2px solid #464646;border-bottom:1px solid #382D43;box-sizing:border-box;display:flex;align-items:center;padding:0 12px"><span style="font:11px 'SF Mono',monospace;letter-spacing:0.08em;color:#9D9D9D">FILES</span></div>
+            <div style="height:36px;font:11px/18px 'SF Mono',monospace;white-space:pre;color:#9D9D9D;padding:0 12px">▸ Sources/
+</div>
+          </div>
+          <div style="width:190px;background:rgba(20,20,20,0.85);border:1px solid #2A2A2A">
+            <div style="height:36px;font:11px/18px 'SF Mono',monospace;white-space:pre;color:#BBBBBB;padding:0 12px">?? docs/x.md
+</div>
+            <div style="height:28px;background:#212121;border-top:2px solid #C890FF;border-bottom:1px solid #382D43;box-sizing:border-box;display:flex;align-items:center;padding:0 12px"><span style="font:11px 'SF Mono',monospace;letter-spacing:0.08em;color:#9D9D9D">FILES</span></div>
+            <div style="height:36px;font:11px/18px 'SF Mono',monospace;white-space:pre;color:#9D9D9D;padding:0 12px">▸ Sources/
+</div>
+          </div>
+        </div>
+      </div>
+      <div style="flex:1;min-width:360px;display:flex;flex-direction:column;gap:16px">
+        <p style="margin:0;font-size:15px;line-height:1.6;color:#B4B4B4"><span style="color:#F2F2F2">At rest there is no line, and there does not need to be one.</span> <a href="#material">§01</a> put body and heading on different materials, so the boundary is already a step from <span style="font-family:var(--font-mono);font-size:13px">#141414</span> to <span style="font-family:var(--font-mono);font-size:13px">#212121</span>. What is missing is not a mark but a <em style="font-style:normal;color:#F2F2F2">reply</em>.</p>
+        <p style="margin:0;font-size:15px;line-height:1.6;color:#B4B4B4">The 7pt grab area lights a 2pt edge along the top of the heading below it on hover, and takes the accent while dragging — the same three-state vocabulary the split divider between panes already uses. Undiscoverable becomes discoverable on approach, and the column gains no permanent chrome for a control used once a session.</p>
+        <div style="display:grid;grid-template-columns:76px 1fr;gap:9px 18px;font-family:var(--font-mono);font-size:12.5px;line-height:1.6;color:#B4B4B4">
+          <div style="color:#F2F2F2">rest</div><div>nothing — the material change is the boundary</div>
+          <div style="color:#F2F2F2">hover</div><div>2pt, <span style="color:#F2F2F2">bg.blended(fg, 0.30)</span> · #464646, 150ms</div>
+          <div style="color:#F2F2F2">drag</div><div>2pt, <span style="color:#C890FF">inkFocus</span> · #C890FF</div>
+          <div style="color:#F2F2F2">grab</div><div>7pt tall, centred on the boundary, unchanged</div>
+        </div>
+        <p style="margin:0;font-size:14.5px;line-height:1.6;color:#9A9A9A">Drawn by the heading, not by the grab view. <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">DividerGrabView</span> stays transparent and hit-only; it just tells the heading below it which of the three states to draw. That keeps the 2pt inside the heading's fixed 28 and out of the layout — the same reason the width divider's own hover, on the sidebar's outer edge, is drawn by the <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">1pt</span> gutter it sits over rather than by the strip.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="tree" data-screen-label="05 The tree" style="display:flex;flex-direction:column;gap:40px;scroll-margin-top:32px">
+    <div style="display:flex;align-items:baseline;gap:20px;border-bottom:1px solid var(--border-visible);padding-bottom:16px">
+      <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:0.16em;color:#8A8A8A">05</div>
+      <h2 style="margin:0;font-size:34px;font-weight:500;letter-spacing:-0.01em">The tree — planks, and where status goes</h2>
+    </div>
+    <p style="margin:0;font-size:17px;line-height:1.55;color:#B4B4B4;max-width:880px;text-wrap:pretty">Depth is the tree's whole problem in a 260pt column: four levels in and you are counting spaces to work out where you are. Draw a 1pt vertical guide at every ancestor level, in <span style="font-family:var(--font-mono);font-size:14px;color:#F2F2F2">divider</span> — the same colour and weight as the line between two panes. Each nesting level is literally a plank, which is the app's own name for itself.</p>
+
+    <div style="display:flex;gap:40px;align-items:flex-start;flex-wrap:wrap">
+      <div style="display:flex;gap:20px">
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.14em;color:#5E5E5E">NOW</div>
+          <div style="width:260px;height:216px;background:rgba(20,20,20,0.85);border:1px solid #2A2A2A;font:11px/18px 'SF Mono',ui-monospace,Menlo,monospace;white-space:pre;overflow:hidden">
+<span style="display:block;padding:0 10px"><span style="color:#898989">▾</span> <span style="color:#9D9D9D">Packages</span></span><span style="display:block;padding:0 10px">  <span style="color:#898989">▾</span> <span style="color:#9D9D9D">PaneChrome</span></span><span style="display:block;padding:0 10px">    <span style="color:#898989">▾</span> <span style="color:#9D9D9D">Sources</span></span><span style="display:block;padding:0 10px">      <span style="color:#898989">▾</span> <span style="color:#9D9D9D">PaneChrome</span></span><span style="display:block;padding:0 10px">        <span style="color:#BBBBBB">PaneStatusLayout.swift</span></span><span style="display:block;padding:0 10px">        <span style="color:#BBBBBB">PaneTheme.swift</span></span><span style="display:block;padding:0 10px">        <span style="color:#BBBBBB">RGB.swift</span></span><span style="display:block;padding:0 10px"><span style="color:#898989">▸</span> <span style="color:#9D9D9D">Sources</span></span><span style="display:block;padding:0 10px">  <span style="color:#BBBBBB">Package.swift</span></span></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.14em;color:#C890FF">PROPOSED</div>
+          <div style="width:260px;height:216px;background:rgba(20,20,20,0.85);border:1px solid #2A2A2A;font:11px/18px 'SF Mono',ui-monospace,Menlo,monospace;white-space:pre;overflow:hidden;position:relative">
+<span style="display:block;padding:0 12px"><span style="color:#898989">▾</span> <span style="color:#9D9D9D">Packages/</span></span><span style="display:block;padding:0 12px">  <span style="color:#898989">▾</span> <span style="color:#9D9D9D">PaneChrome/</span></span><span style="display:block;padding:0 12px">    <span style="color:#898989">▾</span> <span style="color:#9D9D9D">Sources/</span></span><span style="display:block;padding:0 12px">      <span style="color:#898989">▾</span> <span style="color:#9D9D9D">PaneChrome/</span></span><span style="display:block;padding:0 12px">          <span style="color:#BBBBBB">PaneStatusLayout.swift</span></span><span style="display:block;padding:0 12px;position:relative">          <span style="color:#BBBBBB">PaneTheme.swift</span><span style="position:absolute;right:12px;color:#C4C445">*</span></span><span style="display:block;padding:0 12px">          <span style="color:#BBBBBB">RGB.swift</span></span><span style="display:block;padding:0 12px;position:relative"><span style="color:#898989">▸</span> <span style="color:#9D9D9D">Sources/</span><span style="position:absolute;right:12px;color:#45C445">M</span></span><span style="display:block;padding:0 12px">  <span style="color:#BBBBBB">Package.swift</span></span>
+            <div style="position:absolute;left:17px;top:0;height:126px;width:1px;background:#2D2535"></div>
+            <div style="position:absolute;left:29px;top:18px;height:108px;width:1px;background:#2D2535"></div>
+            <div style="position:absolute;left:41px;top:36px;height:90px;width:1px;background:#2D2535"></div>
+            <div style="position:absolute;left:53px;top:54px;height:72px;width:1px;background:#2D2535"></div>
+          </div>
+        </div>
+      </div>
+      <div style="flex:1;min-width:360px;display:flex;flex-direction:column;gap:16px">
+        <div style="display:grid;grid-template-columns:120px 1fr;gap:9px 18px;font-family:var(--font-mono);font-size:12.5px;line-height:1.6;color:#B4B4B4">
+          <div style="color:#F2F2F2">inset</div><div>12 <span style="color:#5E5E5E">— was 10; now agrees with Changes and the heading</span></div>
+          <div style="color:#F2F2F2">indent</div><div>12 per level</div>
+          <div style="color:#F2F2F2">chevronColumn</div><div>12 <span style="color:#5E5E5E">— was 14; one indent step, so a child's name lands exactly under its parent's chevron</span></div>
+          <div style="color:#F2F2F2">guide</div><div>1pt at <span style="color:#F2F2F2">inset + d × 12 + 5</span> for every d &lt; depth<div style="color:#5E5E5E">divider · #2D2535, full row height so the guides join into columns</div></div>
+          <div style="color:#F2F2F2">directory</div><div>inkContext, trailing <span style="color:#F2F2F2">/</span></div>
+          <div style="color:#F2F2F2">file</div><div>foreground</div>
+          <div style="color:#F2F2F2">status</div><div>trailing, 12 from the right edge <span style="color:#5E5E5E">— see below</span></div>
+        </div>
+        <p style="margin:0;font-size:15px;line-height:1.6;color:#B4B4B4">The trailing slash is doing real work: a collapsed directory and a file with no extension are otherwise the same row with a chevron that may or may not be there. It is also what every shell prints, which is the argument that keeps <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">XY</span>.</p>
+        <p style="margin:0;font-size:15px;line-height:1.6;color:#9A9A9A"><span style="color:#F2F2F2">Depth budget.</span> 260 − 12 inset − 12 right = 236pt at 6.62 per character. At depth 4 the name starts at 72 and has 164pt, or 24 characters, dropping to 22 once the status column is reserved. Deeper than that and <a href="#path">§03</a>'s ladder truncates the stem — the tree gets the same rule as the changes list, which is why it needs no rule of its own.</p>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:40px;align-items:flex-start;flex-wrap:wrap">
+      <div style="flex:1;min-width:440px;display:flex;flex-direction:column;gap:16px">
+        <div style="display:flex;align-items:baseline;gap:14px"><div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.14em;color:#C890FF">PER-FILE STATUS · WANTED AND UNBUILT</div></div>
+        <p style="margin:0;font-size:15px;line-height:1.6;color:#B4B4B4"><span style="color:#F2F2F2">It goes trailing, and it is one glyph, not two.</span> Leading is where indentation lives, and a status column on the left would either push every name right by 26pt — a quarter of the depth budget — or collide with the guides. Trailing costs the name 14pt at any depth and never moves as the tree expands.</p>
+        <p style="margin:0;font-size:15px;line-height:1.6;color:#B4B4B4">One glyph rather than <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">XY</span>, because the changes list is where the index-versus-worktree distinction is worth two columns. In the tree the question is "has this file changed at all, and how much should I care" — so collapse to the most urgent of the two: <span style="font:13px 'SF Mono',monospace;color:#FF5555">!</span> conflict, <span style="font:13px 'SF Mono',monospace;color:#C4C445">*</span> unstaged, <span style="font:13px 'SF Mono',monospace;color:#45C445">M</span> staged, <span style="font:13px 'SF Mono',monospace;color:#898989">?</span> untracked, nothing when clean.</p>
+        <p style="margin:0;font-size:15px;line-height:1.6;color:#B4B4B4">The vocabulary is the footer's and the marker colours are <a href="#row">§02</a>'s, so nothing new is learned. <span style="font:13px 'SF Mono',monospace;color:#C4C445">*</span> and <span style="font:13px 'SF Mono',monospace;color:#898989">?</span> are the footer's own glyphs; <span style="font:13px 'SF Mono',monospace;color:#45C445">M</span> and <span style="font:13px 'SF Mono',monospace;color:#FF5555">!</span> are git's.</p>
+        <p style="margin:0;font-size:15px;line-height:1.6;color:#9A9A9A"><span style="color:#F2F2F2">A collapsed directory carries the strongest status beneath it.</span> That is what makes the tree navigable rather than decorative: a closed <span style="font-family:var(--font-mono);font-size:13px">Sources/</span> showing <span style="font:13px 'SF Mono',monospace;color:#45C445">M</span> tells you the change is in there, which is the one thing a collapsed row can say that its rows cannot.</p>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:11px;width:260px">
+        <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.12em;color:#5E5E5E">HOVER LIGHTS ITS OWN GUIDE</div>
+        <div style="width:260px;height:126px;background:rgba(20,20,20,0.85);border:1px solid #2A2A2A;font:11px/18px 'SF Mono',ui-monospace,Menlo,monospace;white-space:pre;overflow:hidden;position:relative"><span style="display:block;padding:0 12px"><span style="color:#898989">▾</span> <span style="color:#9D9D9D">Packages/</span></span><span style="display:block;padding:0 12px;background:#282828">  <span style="color:#898989">▾</span> <span style="color:#9D9D9D">PaneChrome/</span></span><span style="display:block;padding:0 12px">    <span style="color:#898989">▾</span> <span style="color:#9D9D9D">Sources/</span></span><span style="display:block;padding:0 12px;position:relative">        <span style="color:#BBBBBB">PaneTheme.swift</span><span style="position:absolute;right:12px;color:#C4C445">*</span></span><span style="display:block;padding:0 12px">        <span style="color:#BBBBBB">RGB.swift</span></span><span style="display:block;padding:0 12px">  <span style="color:#898989">▸</span> <span style="color:#9D9D9D">GitWorkspace/</span></span><span style="display:block;padding:0 12px">  <span style="color:#898989">▸</span> <span style="color:#9D9D9D">WorkspaceLayout/</span></span><div style="position:absolute;left:17px;top:18px;height:90px;width:1px;background:#2D2535"></div><div style="position:absolute;left:29px;top:36px;height:54px;width:1px;background:#C890FF"></div><div style="position:absolute;left:41px;top:54px;height:36px;width:1px;background:#2D2535"></div></div>
+        <div style="font-family:var(--font-mono);font-size:12px;line-height:1.75;color:#9A9A9A">rest <span style="color:#F2F2F2">divider</span>, every level<br>hovered the guide at index <span style="color:#F2F2F2">d</span>, in <span style="color:#C890FF">inkFocus</span>,<br>spanning its descendant rows only<br>fade 150ms with the row fill</div>
+        <div style="font-size:14px;line-height:1.55;color:#9A9A9A">You see the extent of what you are about to collapse before you collapse it, which is the question a chevron never answers. One guide, never the ancestors — the row fill already says which row.</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="density" data-screen-label="06 Density" style="display:flex;flex-direction:column;gap:40px;scroll-margin-top:32px">
+    <div style="display:flex;align-items:baseline;gap:20px;border-bottom:1px solid var(--border-visible);padding-bottom:16px">
+      <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:0.16em;color:#8A8A8A">06</div>
+      <h2 style="margin:0;font-size:34px;font-weight:500;letter-spacing:-0.01em">Density, scroll, and the states</h2>
+    </div>
+
+    <div style="display:flex;gap:40px;align-items:flex-start;flex-wrap:wrap">
+      <div style="display:flex;gap:18px">
+        <div style="display:flex;flex-direction:column;gap:11px">
+          <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.12em;color:#5E5E5E">16pt · TIGHTER</div>
+          <div style="width:210px;background:rgba(20,20,20,0.85);border:1px solid #2A2A2A;font:11px/16px 'SF Mono',monospace;white-space:pre;padding:4px 0"><span style="display:block;padding:0 12px"><span style="color:#45C445">M</span><span style="color:#C4C445">M</span>  <span style="color:#BBBBBB">Changes.swift</span></span><span style="display:block;padding:0 12px"><span style="color:#45C445">M</span>   <span style="color:#BBBBBB">Hosts.swift</span></span><span style="display:block;padding:0 12px"> <span style="color:#C4C445">M</span>  <span style="color:#BBBBBB">Files.swift</span></span><span style="display:block;padding:0 12px"> <span style="color:#C4C445">D</span>  <span style="color:#BBBBBB">Overlay.swift</span></span><span style="display:block;padding:0 12px"><span style="color:#898989">??</span>  <span style="color:#BBBBBB">sidebar.md</span></span></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:11px">
+          <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.12em;color:#C890FF">18pt · KEPT</div>
+          <div style="width:210px;background:rgba(20,20,20,0.85);border:1px solid #2A2A2A;font:11px/18px 'SF Mono',monospace;white-space:pre;padding:4px 0"><span style="display:block;padding:0 12px"><span style="color:#45C445">M</span><span style="color:#C4C445">M</span>  <span style="color:#BBBBBB">Changes.swift</span></span><span style="display:block;padding:0 12px"><span style="color:#45C445">M</span>   <span style="color:#BBBBBB">Hosts.swift</span></span><span style="display:block;padding:0 12px"> <span style="color:#C4C445">M</span>  <span style="color:#BBBBBB">Files.swift</span></span><span style="display:block;padding:0 12px"> <span style="color:#C4C445">D</span>  <span style="color:#BBBBBB">Overlay.swift</span></span><span style="display:block;padding:0 12px"><span style="color:#898989">??</span>  <span style="color:#BBBBBB">sidebar.md</span></span></div>
+        </div>
+      </div>
+      <div style="flex:1;min-width:420px;display:flex;flex-direction:column;gap:16px">
+        <p style="margin:0;font-size:15px;line-height:1.6;color:#B4B4B4"><span style="color:#F2F2F2">18pt stays, and the reason it was chosen was wrong.</span> The source says it matches the terminal. It does not: ghostty at font size 11.5 draws a line about 15pt tall, so an 18pt row is already 20% looser than the grid beside it. The rows never lined up and cannot, because the fonts and sizes differ.</p>
+        <p style="margin:0;font-size:15px;line-height:1.6;color:#B4B4B4">Keep it anyway, for a reason that only became true when rows became clickable: <em style="font-style:normal;color:#F2F2F2">18pt is the target</em>. Tightening to 16 buys two more rows in a 220pt section and costs 11% of every hit area in a list where a misclick puts the wrong path on a live prompt. That is the wrong trade, and it is the one <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">FileTreeRowsView</span> already learned once when it split the row on x and gave the chevron a 7pt target.</p>
+        <p style="margin:0;font-size:15px;line-height:1.6;color:#9A9A9A">If more rows are ever wanted, the honest lever is the split, not the row: dragging the Changes section shorter shows more of the tree and costs no accuracy. That control already exists and <a href="#column">§04</a> makes it discoverable.</p>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <x-import component-from-global-scope="NothingInspiredDesignSystem_bebfd4.StatusText" status="info" hint-size="auto,16px">scroll</x-import>
+          <p style="margin:0;font-size:14.5px;line-height:1.6;color:#B4B4B4">Overlay scrollers, autohiding, which is what both surfaces already do. Nothing further: a legacy scroller takes 15pt of width permanently, and width is the one dimension that costs a <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">SIGWINCH</span>. The count in the heading is what tells you there is more below — a list of nine showing four is legible as partial precisely because the heading says nine.</p>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;max-width:1330px">
+      <x-import component-from-global-scope="NothingInspiredDesignSystem_bebfd4.Card" label="Empty · a good state" hint-size="100%,300px">
+        <div style="width:100%;background:rgba(20,20,20,0.85);border:1px solid var(--border)">
+          <div style="height:28px;background:#212121;border-bottom:1px solid #382D43;box-sizing:border-box;display:flex;align-items:center;padding:0 12px"><span style="font:11px 'SF Mono',monospace;letter-spacing:0.08em;color:#9D9D9D">CHANGES</span><span style="font:11px 'SF Mono',monospace;color:#898989;margin-left:6px">0</span><span style="margin-left:auto;font:600 11px -apple-system,system-ui,sans-serif;color:#C890FF">baia</span></div>
+          <div style="height:110px;padding:0 12px;font:11px/18px 'SF Mono',monospace;color:#898989">no changes</div>
+        </div>
+        <p style="margin:0;font-size:14.5px;line-height:1.6;color:#9A9A9A">First row position, <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">inkFaint</span>, lowercase. It reads as the list's own first line, which is what it is. A clean tree is not an error and should not be centred and announced.</p>
+      </x-import>
+      <x-import component-from-global-scope="NothingInspiredDesignSystem_bebfd4.Card" label="Absent · a different answer" hint-size="100%,300px">
+        <div style="width:100%;background:rgba(20,20,20,0.85);border:1px solid var(--border)">
+          <div style="height:28px;background:#212121;border-bottom:1px solid #382D43;box-sizing:border-box;display:flex;align-items:center;padding:0 12px"><span style="font:11px 'SF Mono',monospace;letter-spacing:0.08em;color:#9D9D9D">CHANGES</span><span style="margin-left:auto;font:600 11px -apple-system,system-ui,sans-serif;color:#C890FF">Projects</span></div>
+          <div style="height:110px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px"><div style="font:11px 'SF Mono',monospace;color:#9D9D9D">not a repository</div><div style="font:11px 'SF Mono',monospace;color:#898989">~/Projects</div></div>
+        </div>
+        <p style="margin:0;font-size:14.5px;line-height:1.6;color:#9A9A9A">Centred, <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">inkContext</span>, and it <em style="font-style:normal;color:#F2F2F2">names the directory</em>. Position and ink both say "this is not the empty version of the other thing", and the path answers the question the message provokes. The count vanishes; there is nothing to count.</p>
+      </x-import>
+      <x-import component-from-global-scope="NothingInspiredDesignSystem_bebfd4.Card" label="Both, in one column" hint-size="100%,300px">
+        <div style="width:100%;background:rgba(20,20,20,0.85);border:1px solid var(--border)">
+          <div style="height:28px;background:#212121;border-bottom:1px solid #382D43;box-sizing:border-box;display:flex;align-items:center;padding:0 12px"><span style="font:11px 'SF Mono',monospace;letter-spacing:0.08em;color:#9D9D9D">CHANGES</span><span style="margin-left:auto;font:600 11px -apple-system,system-ui,sans-serif;color:#C890FF">Projects</span></div>
+          <div style="height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px"><div style="font:11px 'SF Mono',monospace;color:#9D9D9D">not a repository</div><div style="font:11px 'SF Mono',monospace;color:#898989">~/Projects</div></div>
+          <div style="height:28px;background:#212121;border-bottom:1px solid #382D43;box-sizing:border-box;display:flex;align-items:center;padding:0 12px"><span style="font:11px 'SF Mono',monospace;letter-spacing:0.08em;color:#9D9D9D">FILES</span></div>
+          <div style="height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px"><div style="font:11px 'SF Mono',monospace;color:#9D9D9D">not a repository</div><div style="font:11px 'SF Mono',monospace;color:#898989">~/Projects</div></div>
+        </div>
+        <p style="margin:0;font-size:14.5px;line-height:1.6;color:#9A9A9A">Capture 12's complaint — the same sentence twice. It survives, and it should: two sections each answer for themselves, and suppressing the second would leave a heading with a blank body, which reads as broken rather than as answered. What changes is that both are <em style="font-style:normal;color:#F2F2F2">centred and carry the path</em>. Today they sit at first-row position in <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">inkFaint</span>, which is character-for-character the treatment <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">no changes</span> gets — so the two states the brief calls a real distinction are drawn identically.</p>
+      </x-import>
+    </div>
+  </section>
+
+  <section id="edges" data-screen-label="07 Edges" style="display:flex;flex-direction:column;gap:36px;scroll-margin-top:32px">
+    <div style="display:flex;align-items:baseline;gap:20px;border-bottom:1px solid var(--border-visible);padding-bottom:16px">
+      <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:0.16em;color:#8A8A8A">07</div>
+      <h2 style="margin:0;font-size:34px;font-weight:500;letter-spacing:-0.01em">Edges — the corner, and the side</h2>
+    </div>
+    <div style="display:flex;gap:40px;align-items:flex-start;flex-wrap:wrap">
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.14em;color:#C890FF">SQUARE, FLUSH, NO INSET</div>
+        <div style="width:300px;height:150px;border-radius:0 0 10px 10px;overflow:hidden;border:1px solid #2A2A2A;display:flex;background:#2D2535">
+          <div style="width:110px;background:rgba(20,20,20,0.85);font:11px/18px 'SF Mono',monospace;white-space:pre;padding-top:6px"><span style="display:block;padding:0 12px"><span style="color:#898989">▾</span> <span style="color:#9D9D9D">Sources/</span></span><span style="display:block;padding:0 12px">  <span style="color:#BBBBBB">App.swift</span></span></div>
+          <div style="width:1px;background:#382D43"></div>
+          <div style="flex:1;display:flex;flex-direction:column"><div style="flex:1;background:rgba(20,20,20,0.85);padding:6px;font:11.5px/15px 'SF Mono',monospace;color:#BBBBBB">baia %</div><div style="height:22px;background:#212121;border-top:1px solid #382D43;box-sizing:border-box;display:flex;align-items:center;padding:0 8px;font:600 11px -apple-system,system-ui,sans-serif;color:#BBBBBB">baia</div></div>
+        </div>
+        <div style="font-size:14px;line-height:1.55;color:#9A9A9A;width:300px">The sidebar owns the window's bottom-left corner and rounds with it. The leftmost pane's footer goes square, which is what <span style="font-family:var(--font-mono);font-size:12.5px;color:#F2F2F2">edgesCoveredByHost = [.left]</span> already tells it. Capture 13 confirms it: the sidebar runs flush to both edges and the focused footer's frame stops square against the gutter.</div>
+      </div>
+      <div style="flex:1;min-width:400px;display:flex;flex-direction:column;gap:16px">
+        <p style="margin:0;font-size:15px;line-height:1.6;color:#B4B4B4"><span style="color:#F2F2F2">Do not inset it and do not round it.</span> An inset sidebar would put the window's own background in a 8pt margin nothing else in this app has, and it would hand the corner back to a pane that would then have to round again — one more state for the corner logic to be wrong about. Flush is also what makes <a href="#material">§01</a> legible: the body running edge to edge is what reads as another compartment rather than as a floating panel.</p>
+        <p style="margin:0;font-size:15px;line-height:1.6;color:#B4B4B4">The <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">isHidden</span> on the gutter and the grab strip at zero width is already right, and it is the one place a design could break the corner: a 1pt gutter left visible over a closed sidebar would round nothing and cover the pane's own edge.</p>
+        <div style="display:flex;flex-direction:column;gap:8px;padding-top:4px">
+          <x-import component-from-global-scope="NothingInspiredDesignSystem_bebfd4.StatusText" status="info" hint-size="auto,16px">the open question — trailing edge</x-import>
+          <p style="margin:0;font-size:15px;line-height:1.6;color:#B4B4B4"><span style="color:#F2F2F2">No, and the reason is the icon.</span> The mark is one plank with the occupied bay on its <em style="font-style:normal;color:#F2F2F2">leading</em> side, and the sidebar reading as that shape is what decided the housing. Mirroring the column mirrors the app's own picture of itself for a preference nobody has asked for.</p>
+          <p style="margin:0;font-size:15px;line-height:1.6;color:#9A9A9A">The arithmetic being mirror-symmetric is what makes it cheap to add later, not a reason to add it now. Two things would change and both are one line: <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">edgesCoveredByHost</span> becomes <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">[.right]</span>, and the status column in <a href="#tree">§05</a> would want to move leading so it does not sit against the panes. Worth writing down; not worth building.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="fixes" data-screen-label="08 Corrections" style="display:flex;flex-direction:column;gap:32px;scroll-margin-top:32px">
+    <div style="display:flex;align-items:baseline;gap:20px;border-bottom:1px solid var(--border-visible);padding-bottom:16px">
+      <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:0.16em;color:#8A8A8A">08</div>
+      <h2 style="margin:0;font-size:34px;font-weight:500;letter-spacing:-0.01em">Corrections — read against the source, 2026-07-29</h2>
+    </div>
+    <p style="margin:0;font-size:16px;line-height:1.55;color:#9A9A9A;max-width:880px">Two of the six in the previous draft have since been fixed in the code and are struck. Four stand, and one is new.</p>
+
+    <div style="display:grid;grid-template-columns:22px 172px 1fr;gap:14px 20px;max-width:1330px;align-items:start">
+      <div style="grid-column:1 / -1;display:grid;grid-template-columns:22px 172px 1fr;gap:20px;font-family:var(--font-mono);font-size:10px;letter-spacing:0.14em;color:#5E5E5E;padding-bottom:6px;border-bottom:1px solid var(--border)"><div></div><div>WHERE</div><div>WHAT</div></div>
+
+      <div style="font-family:var(--font-mono);font-size:12px;color:#FF6A6A">01</div>
+      <div style="font-family:var(--font-mono);font-size:12.5px;color:#F2F2F2">ChangesRowsView</div>
+      <div style="font-size:14.5px;line-height:1.6;color:#B4B4B4"><span style="color:#F2F2F2">The path wraps and the file name is what gets clipped.</span> <span style="font-family:var(--font-mono);font-size:13px">line.draw(in:)</span> into a rect <span style="font-family:var(--font-mono);font-size:13px">Self.rowHeight</span> tall, and <span style="font-family:var(--font-mono);font-size:13px">draw(in:)</span> wraps at break opportunities, of which <span style="font-family:var(--font-mono);font-size:13px">/</span> is one. This is captures 07 and 09. <a href="#path">§03</a> replaces it with a measured elision and <span style="font-family:var(--font-mono);font-size:13px">draw(at:)</span>.</div>
+
+      <div style="font-family:var(--font-mono);font-size:12px;color:#FF6A6A">02</div>
+      <div style="font-family:var(--font-mono);font-size:12.5px;color:#F2F2F2">ChangesRowsView</div>
+      <div style="font-size:14.5px;line-height:1.6;color:#B4B4B4">Marker at <span style="font-family:var(--font-mono);font-size:13px">y + baseline</span> where <span style="font-family:var(--font-mono);font-size:13px">baseline = 3</span>, path at <span style="font-family:var(--font-mono);font-size:13px">y + 1</span>. Both top-origin in a flipped view, so <span style="color:#F2F2F2">the marker sits 2pt below the path it labels</span> — in the one row this whole pass is about. Fixing 01 removes the rect; one <span style="font-family:var(--font-mono);font-size:13px">rowBaseline</span> for both strings removes the disagreement.</div>
+
+      <div style="font-family:var(--font-mono);font-size:12px;color:#FF6A6A">03</div>
+      <div style="font-family:var(--font-mono);font-size:12.5px;color:#F2F2F2">both surfaces</div>
+      <div style="font-size:14.5px;line-height:1.6;color:#B4B4B4">Insets disagree: <span style="font-family:var(--font-mono);font-size:13px">ChangesRowsView.inset</span> 12, <span style="font-family:var(--font-mono);font-size:13px">FileTreeRowsView.inset</span> 10, <span style="font-family:var(--font-mono);font-size:13px">SurfaceTitleView</span> draws its title at 12. Stacked, the tree is 2pt out from everything above it. One constant, 12.</div>
+
+      <div style="font-family:var(--font-mono);font-size:12px;color:#FF6A6A">04</div>
+      <div style="font-family:var(--font-mono);font-size:12.5px;color:#F2F2F2">ChangesRowsView</div>
+      <div style="font-size:14.5px;line-height:1.6;color:#B4B4B4"><span style="font-family:var(--font-mono);font-size:13px">Marker.colour(in:)</span> returns one colour for the whole row, so <span style="font-family:var(--font-mono);font-size:13px">MM</span> renders both letters as staged and the second M's meaning is lost. Per-column colour, per <a href="#row">§02</a>. Also <span style="font-family:var(--font-mono);font-size:13px">theme.ok</span> is used as text, which its own docstring forbids — <span style="font-family:var(--font-mono);font-size:13px">staged</span> replaces it.</div>
+
+      <div style="font-family:var(--font-mono);font-size:12px;color:#C4C445">05</div>
+      <div style="font-family:var(--font-mono);font-size:12.5px;color:#F2F2F2">SurfaceTitleView</div>
+      <div style="font-size:14.5px;line-height:1.6;color:#B4B4B4">The hairline exists, and it is not where the brief says. The view is <em style="font-style:normal;color:#F2F2F2">not flipped</em>, so <span style="font-family:var(--font-mono);font-size:13px">NSRect(x: 0, y: 0, …)</span> draws along its own <span style="color:#F2F2F2">bottom</span> edge, between the heading and its own rows — correct, and worth a comment saying so, since the <span style="font-family:var(--font-mono);font-size:13px">+ 1</span> in the title's centring is there for the same unflipped reason. <span style="color:#F2F2F2">The split between two sections still has nothing on it</span>: <span style="font-family:var(--font-mono);font-size:13px">DividerGrabView</span> is transparent. <a href="#column">§04</a> answers with a hover state rather than a line.</div>
+
+      <div style="font-family:var(--font-mono);font-size:12px;color:#5E5E5E;text-decoration:line-through">06</div>
+      <div style="font-family:var(--font-mono);font-size:12.5px;color:#5E5E5E;text-decoration:line-through">FileTreeRowsView</div>
+      <div style="font-size:14.5px;line-height:1.6;color:#5E5E5E"><span style="text-decoration:line-through">No <span style="font-family:var(--font-mono);font-size:13px">resizeSubviews</span> override, so the document view only ever grows.</span> <span style="color:#9A9A9A">Fixed 2026-07-29 — both views now override <span style="font-family:var(--font-mono);font-size:13px">layout()</span> and clamp to the clip view, with a guard against the re-layout loop. The trace in that doc comment is a better account of the bug than mine was.</span></div>
+
+      <div style="font-family:var(--font-mono);font-size:12px;color:#5E5E5E;text-decoration:line-through">07</div>
+      <div style="font-family:var(--font-mono);font-size:12.5px;color:#5E5E5E;text-decoration:line-through">ChangesRowsView</div>
+      <div style="font-size:14.5px;line-height:1.6;color:#5E5E5E"><span style="text-decoration:line-through">Changes rows are inert; only the tree handles <span style="font-family:var(--font-mono);font-size:13px">mouseDown</span>.</span> <span style="color:#9A9A9A">Implemented — both surfaces carry <span style="font-family:var(--font-mono);font-size:13px">onSelect</span> and the path picker landed. That is what makes <a href="#row">§02</a>'s five states necessary rather than speculative.</span></div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:8px;max-width:1330px">
+      <x-import component-from-global-scope="NothingInspiredDesignSystem_bebfd4.StatusText" status="warning" hint-size="auto,16px">still unverified</x-import>
+      <p style="margin:0;font-size:14.5px;line-height:1.6;color:#B4B4B4;max-width:880px">The brief says <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">View → Switch Sidebar</span> "cycles all four live". <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">SidebarHost.show(_:)</span> takes a whole stack and an empty list closes the column, so the mechanism is there — but whether <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">off</span> is in the cycle, and whether the command can reopen from <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">off</span>, is worth confirming against <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">AppDelegate</span> before it is written down as behaviour. Same shape as the <span style="font-family:var(--font-mono);font-size:13px;color:#F2F2F2">focusAccent</span> no-op: a key decoded and stored while nothing read it.</p>
+    </div>
+  </section>
+
+  <section data-screen-label="09 Appendix" style="display:flex;flex-direction:column;gap:32px">
+    <div style="display:flex;align-items:baseline;gap:20px;border-bottom:1px solid var(--border-visible);padding-bottom:16px">
+      <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:0.16em;color:#8A8A8A">09</div>
+      <h2 style="margin:0;font-size:34px;font-weight:500;letter-spacing:-0.01em">Appendix — the constants, ready to type</h2>
+    </div>
+    <pre style="margin:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-card);padding:28px 30px;overflow-x:auto;font:12.5px/1.75 var(--font-mono);color:#B4B4B4;max-width:1330px">// PaneTheme — one addition
+/// A staged change. Built like `warn`, from the adjacent ANSI slot, so the pair
+/// reads as a pair. Not raw `ok`: that is a signal light and never text.
+public var staged: RGB { background.blended(with: ansiColor(2), fraction: 0.75) }  // #45c445
+
+// Lines carry the accent; surfaces do not
+/// Both fractions match the relative luminance of the neutral they replace, so the
+/// line changes hue and never weight. Under a hueless focusAccent these resolve back
+/// to greys, which is the correct answer to choosing a hueless accent.
+public var divider: RGB  { background.blended(with: inkFocus, fraction: 0.14) }  // #2d2535
+public var hairline: RGB { background.blended(with: inkFocus, fraction: 0.20) }  // #382d43
+// Unchanged and deliberately neutral: background, barBackground, panelBackground,
+// selectedRowBackground. A surface is a compartment; only the planks are tinted.
+
+// Material — the sidebar is a compartment, not a panel
+body      background @ settings.backgroundOpacity   #141414 @ 0.85, composites as a pane
+heading   barBackground, opaque                     #212121, exactly the footer
+hairline  on the heading's BOTTOM edge              #382d43, faces its own rows
+gutter    1pt, sidebar to tree                      #382d43
+// panelBackground is no longer used here. It keeps the palette and the find panel,
+// which float; the sidebar sits beside the work and takes the work's own material.
+
+// Metrics — one set for both surfaces
+rowHeight        18      // kept because it is a target, not because it matches the
+                         // terminal — ghostty at 11.5 draws a ~15pt line
+rowBaseline      13      // from the row top, cap-centred: (18 + 7.8) / 2
+inset            12      // Changes 12 already; Files was 10; heading 12 already
+markerColumn     26      // two glyphs at 6.62 plus a 12.8 gap
+indent           12      // per tree level
+chevronColumn    12      // was 14 — one indent step, so a child's name lands under
+                         // its parent's chevron
+guideInset        5      // 1pt guide at inset + d * indent + 5, for every d &lt; depth
+statusColumn     14      // trailing, one glyph, 12 from the right edge
+headingHeight    28      // unconditional
+headingBaseline  18      // from the heading top; replaces the unflipped + 1
+grabHeight        7      // unchanged
+// Every string in a row draws from one origin:
+//     y = rowTop + rowBaseline - font.ascender
+// the same rule the footer uses with baselineFromTop 15 in a 22pt bar.
+
+// The changes row
+marker   mono 11, X coloured by the index and Y by the working tree, independently
+         X present   staged      #45c445      ??   inkFaint  #898989
+         Y present   warn        #c4c445      UU   alert     #ff5555
+         empty column  a space, not "."
+path     directory inkFaint #898989 · basename foreground #bbbbbb
+         ONE line, draw(at:), never draw(in:) — see §03
+
+// The path ladder. Elide the DIRECTORY; the name is the invariant.
+fits            Packages/PaneChrome/Sources/PaneChrome/PaneTheme.swift
+elide middle    Packages/…/PaneTheme.swift          keep the last dir while it fits
+drop all dirs   …/PaneTheme.swift                   still says "not at the root"
+no dirs         PaneTheme.swift
+floor only      PaneT….swift                        middle-truncate the STEM,
+                                                    always keep the extension
+// The marker never truncates. 260pt gives the path 210pt = 31 characters;
+// the 120pt minimum gives it 70pt = 10.
+
+// Row states — a fill and an ink, never a geometry
+rest      no fill, cursor .pointingHand over the body
+hover     selectedRowBackground              #282828   150ms
+pressed   background.blended(inkFocus, 0.16) #31313b   while held, no transition
+landed    the pressed fill, released         #31313b   ink unchanged, 90ms / 220ms
+          // quiet on purpose: zsh already highlights the inserted path on the
+          // prompt line (capture 10). The row only marks WHICH row was hit.
+refused   background.blended(alert, 0.24)     #3d1e1e   path → alert, 90ms / 220ms
+          // loud on purpose: nothing else happens. The prompt does not move and
+          // the beep is inaudible muted and ambiguous audible.
+// onSelect becomes ((String) -> Bool)? so the row knows which flash to draw.
+// PromptPath.Resolution already carries exactly that distinction.
+
+// The heading
+label    mono 11 REGULAR, ALL CAPS, tracking +0.08em, inkContext
+count    mono 11, inkFaint, 6pt after the label. Changes only.
+anchor   system 11 semibold, inkFocus when key else foreground, trailing.
+         First section only — in `both` the two are one repository.
+
+// The tree
+directory  inkContext, trailing "/"        file  foreground
+guide      divider #2d2535, 1pt, full row height, at every ancestor level
+hover      row fill selectedRowBackground; the guide at index d in inkFocus,
+           spanning that directory's descendant rows only
+status     trailing, one glyph, most urgent of X and Y:
+           !  conflict   *  unstaged   M  staged   ?  untracked   (nothing when clean)
+           a collapsed directory carries the strongest status beneath it
+
+// The split between two stacked sections
+rest     nothing — body #141414 meeting heading #212121 is the boundary
+hover    2pt along the lower heading's top edge, bg.blended(fg, 0.30) #464646, 150ms
+drag     2pt, inkFocus #c890ff
+// Drawn by the heading, inside its fixed 28. DividerGrabView stays transparent and
+// hit-only, and just reports which state to draw.
+
+// States
+no changes / no files   first row, inset 12, inkFaint, lowercase
+not a repository        centred, inkContext, with the anchor path beneath it in
+                        inkFaint, tilde-abbreviated. Both sections say it; that is
+                        the honest shape, not a repeat to suppress.
+scroll                  overlay scrollers, autohiding. No legacy scroller: 15pt of
+                        permanent width is the one dimension that costs a SIGWINCH.
+
+// Edges
+sidebar owns the window's bottom-left corner and rounds with it
+leftmost pane footer goes square — <span>edgesCoveredByHost</span> = [.left], already correct
+no inset, no rounding on the column itself
+trailing edge: no. The icon puts the occupied bay leading, and the sidebar reading
+as the icon is what decided the housing. Cheap to add later; nothing asked for it.</pre>
+
+    <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:20px;max-width:1330px">
+      <x-import component-from-global-scope="NothingInspiredDesignSystem_bebfd4.Card" label="No first responder" density="compact" hint-size="100%,200px"><div style="font-size:14.5px;line-height:1.55;color:#9A9A9A">Every new state is a tracking area and a redraw. No control, no table view, no selection. Every view in the column still returns false from <span style="font-family:var(--font-mono);font-size:12.5px">acceptsFirstResponder</span>, including the ones that now flash.</div></x-import>
+      <x-import component-from-global-scope="NothingInspiredDesignSystem_bebfd4.Card" label="No width change" density="compact" hint-size="100%,200px"><div style="font-size:14.5px;line-height:1.55;color:#9A9A9A">Every value is a colour, a height, or an x-offset inside 260pt. The path ladder exists precisely so the current width is sufficient — the alternative to eliding is widening, and widening costs every pane a <span style="font-family:var(--font-mono);font-size:12.5px">SIGWINCH</span>.</div></x-import>
+      <x-import component-from-global-scope="NothingInspiredDesignSystem_bebfd4.Card" label="No conditional heading" density="compact" hint-size="100%,200px"><div style="font-size:14.5px;line-height:1.55;color:#9A9A9A">28pt regardless of content, focus, count or hover. The split's 2pt hover edge is drawn <em style="font-style:normal;color:#F2F2F2">inside</em> the heading rather than above it, for exactly this reason.</div></x-import>
+      <x-import component-from-global-scope="NothingInspiredDesignSystem_bebfd4.Card" label="No literal colour" density="compact" hint-size="100%,200px"><div style="font-size:14.5px;line-height:1.55;color:#9A9A9A">One new derivation, <span style="font-family:var(--font-mono);font-size:12.5px">staged</span>. Two retuned, <span style="font-family:var(--font-mono);font-size:12.5px">divider</span> and <span style="font-family:var(--font-mono);font-size:12.5px">hairline</span>. Four row fills, all <span style="font-family:var(--font-mono);font-size:12.5px">background.blended(…)</span>. Nothing reads <span style="font-family:var(--font-mono);font-size:12.5px">NSAppearance</span>.</div></x-import>
+    </div>
+  </section>
+
+</div>
+
+</x-dc>
+</body>
+</html>

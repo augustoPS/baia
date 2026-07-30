@@ -58,7 +58,7 @@ final class ConfigurationCenter {
     /// An unknown name falls back to the default theme rather than to whatever
     /// libghostty would do on its own, so a typo degrades to the terminal the
     /// owner already runs.
-    private var themeDefinition: GhosttyThemeDefinition? {
+    private static func themeDefinition(from settings: Settings) -> GhosttyThemeDefinition? {
         GhosttyThemeCatalog.theme(named: settings.themeName)
             ?? GhosttyThemeCatalog.theme(named: Settings.defaultSettings.themeName)
     }
@@ -70,11 +70,11 @@ final class ConfigurationCenter {
     /// for a scalar key, so a background sent through the session layer is
     /// replaced by the theme's own. The owner's `#141414` is deliberately lifted
     /// off pure black, and losing it reports nothing.
-    var terminalTheme: TerminalTheme {
-        guard let themeDefinition else { return .default }
+    private static func terminalTheme(from settings: Settings) -> TerminalTheme {
+        guard let definition = themeDefinition(from: settings) else { return .default }
         let overrides = settings.themeOverrides
         let configuration = TerminalConfiguration(
-            startingFrom: themeDefinition.toTerminalConfiguration()
+            startingFrom: definition.toTerminalConfiguration()
         ) { builder in
             for override in overrides {
                 builder.withCustom(override.key, override.value)
@@ -83,15 +83,31 @@ final class ConfigurationCenter {
         return TerminalTheme(light: configuration, dark: configuration)
     }
 
+    /// The theme currently in effect.
+    var terminalTheme: TerminalTheme { Self.terminalTheme(from: settings) }
+
     /// Everything the theme does not own, applied per pane through
     /// `setTerminalConfiguration`.
-    var terminalConfiguration: TerminalConfiguration {
+    private static func terminalConfiguration(from settings: Settings) -> TerminalConfiguration {
         let overrides = settings.sessionOverrides
         return TerminalConfiguration { builder in
             for override in overrides {
                 builder.withCustom(override.key, override.value)
             }
         }
+    }
+
+    /// The session configuration currently in effect.
+    var terminalConfiguration: TerminalConfiguration { Self.terminalConfiguration(from: settings) }
+
+    /// The configuration and theme `settings` would produce, without applying them.
+    ///
+    /// Exposed for the settings window's right-hand sample, so a draft renders
+    /// through exactly the derivation a pane gets. A second mapping written inside
+    /// the window is how a sample comes to show what the panes will not, which is
+    /// the one defect that would make the comparison worthless.
+    func derivations(for settings: Settings) -> (TerminalConfiguration, TerminalTheme) {
+        (Self.terminalConfiguration(from: settings), Self.terminalTheme(from: settings))
     }
 
     /// The chrome palette, from the same catalog entry the terminal is themed
@@ -112,16 +128,26 @@ final class ConfigurationCenter {
     /// catalog cannot produce even its own default theme, which is a broken
     /// build rather than a config the owner wrote, and there is no palette in
     /// hand at that point to resolve a choice against anyway.
-    var paneTheme: PaneTheme {
-        guard let themeDefinition else { return .darkPastel }
+    private static func paneTheme(from settings: Settings) -> PaneTheme {
+        guard let definition = themeDefinition(from: settings) else { return .darkPastel }
         return PaneTheme(
             background: settings.backgroundHex,
-            foreground: themeDefinition.foreground,
-            selectionBackground: themeDefinition.selectionBackground,
-            palette: themeDefinition.palette,
+            foreground: definition.foreground,
+            selectionBackground: definition.selectionBackground,
+            palette: definition.palette,
             focusAccent: settings.focusAccent
         )
     }
+
+    /// The chrome palette currently in effect.
+    var paneTheme: PaneTheme { Self.paneTheme(from: settings) }
+
+    /// The chrome palette `settings` would produce.
+    ///
+    /// Parameterised for the same reason the terminal derivations are: the
+    /// settings window renders a draft through it, and a second mapping written
+    /// inside the window is how a preview comes to show what the panes will not.
+    func chrome(for settings: Settings) -> PaneTheme { Self.paneTheme(from: settings) }
 
     // MARK: - Applying
 
@@ -135,6 +161,21 @@ final class ConfigurationCenter {
         for pane in panes.allObjects {
             apply(to: pane)
         }
+    }
+
+    // MARK: - Committing
+
+    /// Writes `settings` to the config file, answering whether it landed.
+    ///
+    /// Applies nothing. The write moves the file, the watcher notices, and
+    /// `reload` applies it exactly as it applies a hand-edit. So the settings
+    /// window is not a second path into the panes and cannot disagree with the
+    /// file about what is in effect.
+    ///
+    /// This exists only because `store` is private and the window has no other
+    /// way to reach the file.
+    func commit(_ settings: Settings) -> Bool {
+        store.write(settings)
     }
 
     private func apply(to pane: TerminalPaneController) {

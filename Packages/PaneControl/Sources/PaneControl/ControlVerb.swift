@@ -21,6 +21,16 @@ public enum ControlVerb: String, Sendable, Hashable, Codable, CaseIterable {
     case resize
     case equalize
 
+    /// Says where the calling pane is working now.
+    ///
+    /// Advisory, and not a pin. `PaneAnchorTracker` already reads the foreground
+    /// process's cwd once a second, so a shell that cds and an agent that chdirs
+    /// itself are both tracked without this. What no poller can see is an agent
+    /// that runs `cd /foo && cmd` in a subshell: neither its own cwd nor the
+    /// shell's ever moves, so the only thing able to report it is the agent. A
+    /// later poll that disagrees wins, because then the pane genuinely moved.
+    case cwd
+
     // Introspection, scoped to the caller, its descendants, and its peers.
     case whoami
     case list
@@ -63,7 +73,10 @@ public enum ControlVerb: String, Sendable, Hashable, Codable, CaseIterable {
         // Peering verbs that mint, list, or drain something the caller owns.
         // `connect` is here because the rendezvous token it redeems is the
         // authority for the edge, not the caller's relationship to the peer.
-        case .whoami, .publish, .connect, .peers, .recv, .subscribe:
+        // `cwd` reports about the caller and reaches nothing else, so it sits
+        // with the other self-relative verbs rather than earning a scope of its
+        // own.
+        case .whoami, .publish, .connect, .peers, .recv, .subscribe, .cwd:
             .selfOnly
         case .list:
             .scopedRead
@@ -82,7 +95,7 @@ public enum ControlVerb: String, Sendable, Hashable, Codable, CaseIterable {
         switch self {
         case .split, .close, .focus, .zoom, .resize, .equalize,
              .whoami, .list, .publish, .connect, .peers, .send, .recv, .revoke,
-             .subscribe:
+             .subscribe, .cwd:
             .channel
         case .run:
             .allowRun

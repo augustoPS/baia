@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 import PackageDescription
 
 // The CLI's decidable half, split out of the `baia-cli` tool target so
@@ -9,7 +9,7 @@ import PackageDescription
 // the stream writes stay in the tool.
 let package = Package(
     name: "PaneCLI",
-    platforms: [.macOS(.v15)],
+    platforms: [.macOS(.v26)],
     products: [
         .library(name: "PaneCLI", targets: ["PaneCLI"]),
     ],

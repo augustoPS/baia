@@ -112,6 +112,28 @@ public enum Arguments {
                 call.args.axis = .horizontal
             }
 
+        case .cwd:
+            // One positional, and required. `baia cwd` with nothing after it is
+            // almost certainly a shell that meant to print the directory, and
+            // answering that by silently announcing nothing would be worse than
+            // saying what the verb needs.
+            guard let path = tokens.take(), !path.hasPrefix("--") else {
+                return .usage("cwd needs a path")
+            }
+            call.args.cwd = path
+            // `--json` after the path, the way every other verb takes it. Without
+            // it this verb prints nothing whether it worked or not, which makes a
+            // refusal indistinguishable from success at the one moment somebody
+            // is asking why nothing moved.
+            while let token = tokens.take() {
+                switch token {
+                case "--json":
+                    call.json = true
+                default:
+                    return .usage(unexpected(token, verb))
+                }
+            }
+
         case .close, .focus, .equalize:
             if let token = tokens.take() {
                 return .usage(unexpected(token, verb))
