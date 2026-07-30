@@ -720,6 +720,9 @@ final class TerminalPaneController: NSViewController {
             // `activityLabel` is the same property `ControlAdapter.record` reads
             // for `PaneRecord.activity`, so a subscriber's bootstrap and its
             // stream speak one vocabulary.
+            // The tracker is asked for the live report on every poll as well, so
+            // an expiry reaches the chrome without a timer of its own.
+            pushReportToTracker()
             for change in publishedState.changes(
                 activity: activityTracker.activityReading,
                 isAsking: activityTracker.wantsAttention,
@@ -784,13 +787,31 @@ final class TerminalPaneController: NSViewController {
     /// path depend on the ordering rule agreeing with the comparator.
     func accept(report: PaneReport) {
         reports.accept(report)
+        pushReportToTracker()
         activityTracker.onChange?()
     }
 
     /// Hands authority back to the pollers and publishes whatever they now say.
     func releaseReport() {
         reports.release()
+        pushReportToTracker()
         activityTracker.onChange?()
+    }
+
+    /// Hands the tracker the live report, so the chrome and the channel read the
+    /// same statement.
+    ///
+    /// **Before the publish, never after.** The publish derives both the wire
+    /// event and the footer level, so a report pushed afterwards leaves the
+    /// chrome a poll behind the channel: the subscriber is told the pane is
+    /// asking and the pane the owner is looking at is still dark. That is a
+    /// smaller version of the bug this whole change exists to fix.
+    private func pushReportToTracker() {
+        let live = reports.live(at: Date())
+        activityTracker.setReportedBlock(
+            live.map { $0.state == .blocked },
+            message: live?.message
+        )
     }
 
     /// Set by `PaneTreeController` when the pane has a capability. Nil for a pane
