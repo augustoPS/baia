@@ -593,6 +593,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func refreshSidebar(of controller: WorkspaceWindowController) {
         let pane = controller.tree.focusedPane
         let anchor = pane?.anchorTracker.anchor
+        // The repository root, and nil outside one. Changes answers for a
+        // repository and has nothing to say about a plain directory, so this stays
+        // what it was.
         let root = anchor?.kind == .repository ? anchor?.url : nil
 
         // The anchor's own path, not the working directory: the absent state is
@@ -606,11 +609,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 changes.anchorPath = anchorPath
             }
             if let files = section.surface as? FilesSurface {
-                files.hasRepository = root != nil
-                files.tree = root.flatMap { fileTrees.tree(for: $0) } ?? []
+                files.hasRoot = anchor != nil
+                // Inside a repository git lists the files; outside one the
+                // directory is walked. The mode follows the anchor rather than a
+                // control, because repo-or-local has one right answer at any
+                // moment and it is a fact about the pane, not a preference.
+                //
+                // `Anchor.Kind` has said as much all along: a plain anchor exists
+                // "so a file tree always has a root". Until now this discarded it.
+                if let root {
+                    // Optional because the cache can miss: the read is async and a
+                    // first refresh arrives before it lands.
+                    files.tree = fileTrees.tree(for: root) ?? []
+                    readFileTree(at: root)
+                } else if let plain = anchor?.url {
+                    files.tree = DirectoryTree.tree(at: plain)
+                } else {
+                    files.tree = []
+                }
                 files.changes = pane?.gitStatus.changes ?? []
                 files.anchorPath = anchorPath
-                if let root { readFileTree(at: root) }
             }
         }
         // After the surfaces, not before: the count a heading prints is a property

@@ -62,8 +62,14 @@ final class FilesSurface: NSObject, WorkspaceSurface {
         }
     }
 
-    var hasRepository = true {
-        didSet { rows.hasRepository = hasRepository }
+    /// Whether there is a root to list at all.
+    ///
+    /// Not "is this a repository", which is what it used to be and what the name
+    /// still said after a plain anchor gained a tree of its own. Files lists a
+    /// repository through `git ls-files` and a plain directory through a walk, so
+    /// the only state with nothing to draw is a pane with no anchor.
+    var hasRoot = true {
+        didSet { rows.hasRoot = hasRoot }
     }
 
     /// Where the pane is anchored, which the absent state names beneath its
@@ -125,7 +131,7 @@ final class FilesSurface: NSObject, WorkspaceSurface {
 final class FileTreeRowsView: NSView {
     var theme: PaneTheme = .darkPastel { didSet { needsDisplay = true } }
 
-    var hasRepository = true { didSet { needsDisplay = true } }
+    var hasRoot = true { didSet { needsDisplay = true } }
 
     /// Where the pane is anchored, for the absent state to name. Nil while the
     /// anchor is a repository, where it is never drawn.
@@ -215,7 +221,7 @@ final class FileTreeRowsView: NSView {
 
     override func draw(_ dirty: NSRect) {
         // No fill of its own: the scroll view behind it is the column's material.
-        guard hasRepository else {
+        guard hasRoot else {
             return SurfaceMessage.drawAbsent(path: anchorPath, in: self, theme: theme)
         }
         guard !rows.isEmpty else {

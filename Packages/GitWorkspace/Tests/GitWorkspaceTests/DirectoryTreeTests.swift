@@ -75,6 +75,23 @@ import Testing
         #expect(two.children.isEmpty)
     }
 
+    @Test func theBudgetIsSpentOnBreadthBeforeDepth() throws {
+        // Found live against ~/Projects. A depth-first walk spends the whole
+        // budget descending the first subtree, so the later top-level siblings
+        // never appear at all and the owner is shown a top level that is missing
+        // most of itself. A shallow tree is a tree; an incomplete top level is a
+        // wrong one.
+        for sibling in ["a", "b", "c", "d", "e"] {
+            _ = try fixture.file("plain/\(sibling)/one/two/three/deep.txt")
+            for filler in 0 ..< 10 {
+                _ = try fixture.file("plain/\(sibling)/one/filler\(filler).txt")
+            }
+        }
+
+        let tree = DirectoryTree.tree(at: fixture.root.appending(path: "plain"), maxEntries: 12)
+        #expect(tree.map(\.name) == ["a", "b", "c", "d", "e"])
+    }
+
     @Test func theEntryCapTruncatesRatherThanRunningAway() throws {
         // The anchor outside a repository is often a home directory or a volume
         // root. An uncapped walk there is a hang, not a tree.

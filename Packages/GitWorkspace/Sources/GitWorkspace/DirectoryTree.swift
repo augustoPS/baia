@@ -34,72 +34,115 @@ public enum DirectoryTree {
     /// relative to the repository root. The click handler puts that string on the
     /// prompt, and emitting an absolute path here would put a different kind of
     /// string there depending on which side of the boundary the pane sat.
+    /// Breadth first, and that is the whole of why this is not four lines of
+    /// recursion.
+    ///
+    /// A depth-first walk spends the budget on the first subtree it meets. Run
+    /// against a directory of projects it returned the first project and nothing
+    /// else: every later sibling fell off the end, and the owner was shown a top
+    /// level missing most of itself. A shallow tree is still a tree; an incomplete
+    /// top level is a wrong one. Levels are therefore filled in order, so depth is
+    /// what gets lost when the budget runs out.
     public static func tree(
         at root: URL,
         maxDepth: Int = defaultMaxDepth,
         maxEntries: Int = defaultMaxEntries
     ) -> [FileTreeNode] {
         var budget = maxEntries
-        return walk(root, prefix: "", depth: 0, maxDepth: maxDepth, budget: &budget)
+        let top = Builder(name: "", path: "", url: root, isDirectory: true)
+        var frontier = [(node: top, depth: 0)]
+
+        while !frontier.isEmpty, budget > 0 {
+            var next: [(node: Builder, depth: Int)] = []
+            for (node, depth) in frontier {
+                guard budget > 0 else { break }
+                expand(node, depth: depth, maxDepth: maxDepth, budget: &budget)
+                for child in node.children where child.isDirectory && !child.isSymlink {
+                    next.append((child, depth + 1))
+                }
+            }
+            frontier = next
+        }
+        // Through the root's own `node` rather than mapping its children, so the
+        // top level is grouped directories-then-files like every level under it.
+        return top.node.children
     }
 
-    private static func walk(
-        _ directory: URL,
-        prefix: String,
+    /// Lists one directory into `node`, spending budget per entry.
+    private static func expand(
+        _ node: Builder,
         depth: Int,
         maxDepth: Int,
         budget: inout Int
-    ) -> [FileTreeNode] {
-        guard budget > 0 else { return [] }
+    ) {
+        guard depth < maxDepth else { return }
 
-        // `contentsOfDirectory` answers nil-ish by throwing, and an unreadable
-        // directory is an ordinary thing to meet on a walk of somebody's home
-        // folder rather than an error worth propagating. `try?` degrades to an
-        // empty level, which draws as a directory with nothing in it.
+        // `contentsOfDirectory` reports an unreadable directory by throwing, and
+        // meeting one part-way through somebody's home folder is ordinary rather
+        // than an error worth propagating. `try?` degrades to an empty level,
+        // which draws as a directory with nothing in it.
         let entries = (try? FileManager.default.contentsOfDirectory(
-            at: directory,
+            at: node.url,
             includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
             options: [.skipsHiddenFiles]
         )) ?? []
 
-        var directories: [FileTreeNode] = []
-        var files: [FileTreeNode] = []
-
-        // Sorted before the budget is spent, so a truncated walk still truncates
-        // the same way twice rather than keeping whatever the filesystem happened
-        // to hand back first.
+        // Sorted before the budget is spent, so a truncated level truncates the
+        // same way twice rather than keeping whatever the filesystem happened to
+        // hand back first.
         for entry in entries.sorted(by: { compare($0.lastPathComponent, $1.lastPathComponent) }) {
-            guard budget > 0 else { break }
+            guard budget > 0 else { return }
+            budget -= 1
             let values = try? entry.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
             let name = entry.lastPathComponent
-            let path = prefix.isEmpty ? name : prefix + "/" + name
-            budget -= 1
-
-            // A symlink is listed and not entered. Following can loop, and this
-            // tree is a picker rather than a crawler.
-            let isSymlink = values?.isSymbolicLink ?? false
-            guard values?.isDirectory == true, !isSymlink else {
-                if isSymlink, values?.isDirectory == true {
-                    directories.append(FileTreeNode(
-                        name: name, path: path, isDirectory: true, children: []
-                    ))
-                } else {
-                    files.append(FileTreeNode(
-                        name: name, path: path, isDirectory: false, children: []
-                    ))
-                }
-                continue
-            }
-
-            let children = depth + 1 >= maxDepth
-                ? []
-                : walk(entry, prefix: path, depth: depth + 1, maxDepth: maxDepth, budget: &budget)
-            directories.append(FileTreeNode(
-                name: name, path: path, isDirectory: true, children: children
+            node.children.append(Builder(
+                name: name,
+                path: node.path.isEmpty ? name : node.path + "/" + name,
+                url: entry,
+                isDirectory: values?.isDirectory ?? false,
+                // A symlink is listed and never entered. Following can loop, and
+                // this tree is a picker rather than a crawler.
+                isSymlink: values?.isSymbolicLink ?? false
             ))
         }
+    }
 
-        return directories + files
+    /// A node under construction.
+    ///
+    /// A reference type because breadth-first filling has to reach back into a
+    /// level it already produced, and ``FileTreeNode`` is immutable by design.
+    private final class Builder {
+        let name: String
+        let path: String
+        let url: URL
+        let isDirectory: Bool
+        let isSymlink: Bool
+        var children: [Builder] = []
+
+        init(
+            name: String,
+            path: String,
+            url: URL,
+            isDirectory: Bool,
+            isSymlink: Bool = false
+        ) {
+            self.name = name
+            self.path = path
+            self.url = url
+            self.isDirectory = isDirectory
+            self.isSymlink = isSymlink
+        }
+
+        /// The finished node, directories before files at every level.
+        var node: FileTreeNode {
+            let built = children.map(\.node)
+            return FileTreeNode(
+                name: name,
+                path: path,
+                isDirectory: isDirectory,
+                children: built.filter(\.isDirectory) + built.filter { !$0.isDirectory }
+            )
+        }
     }
 
     /// Case-insensitive, for the reason ``FileTree`` gives: a list where `Apple`
