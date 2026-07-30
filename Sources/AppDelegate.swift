@@ -102,6 +102,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// an empty snapshot that overwrites a good file with nothing.
     private var isTerminating = false
 
+    /// Carries the last workspace across the moment it stops existing.
+    ///
+    /// The window list empties before the terminate flush runs, so without this a
+    /// write coalesced in the final second is flushed against nothing. The rule
+    /// itself is in ``SessionFlush``, where a test can reach it.
+    private var flush = SessionFlush()
+
     func applicationDidFinishLaunching(_: Notification) {
         MainMenu.install(into: NSApp)
         PaneAnchorTracker.removeLegacyPin()
@@ -301,6 +308,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         windows.append(controller)
         controller.onClose = { [weak self, weak controller] in
             guard let self, let controller else { return }
+            // Before anything is torn down, and only for the last window: once it
+            // leaves `windows` there is nothing left to snapshot, and the flush at
+            // termination arrives after that. A change made in the final second is
+            // scheduled, coalesced, and then flushed against an empty workspace,
+            // so this is where it has to be caught.
+            if windows.count == 1 {
+                flush.hold(snapshot())
+            }
             // Before the reference goes, because the tree is the only thing that
             // knows which panes went with the window. A registration that outlived
             // its shell is a token that still works against a pane nobody can see.
@@ -861,8 +876,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func save() {
-        guard !isTerminating, !windows.isEmpty else { return }
-        _ = sessionStore.save(snapshot())
+        guard !isTerminating else { return }
+        // Nil for "no window left to snapshot", which is the case ``SessionFlush``
+        // answers: it hands back what the last window held on its way out, once,
+        // and nil after that so an empty workspace still cannot overwrite a good
+        // file.
+        guard let snapshot = flush.resolve(live: windows.isEmpty ? nil : snapshot()) else { return }
+        _ = sessionStore.save(snapshot)
     }
 
     /// Tabs in the order AppKit has them, which is the only place that order
