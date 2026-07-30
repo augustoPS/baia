@@ -318,6 +318,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return controller
     }
 
+    /// Held so the window survives being shown. An `NSWindowController` created
+    /// inside the action and not retained is released before it can appear.
+    private var settingsWindow: SettingsWindowController?
+
+    @objc func showSettings(_: Any?) {
+        // Rebuilt rather than reused, because `SettingsDraft` snapshots the
+        // committed settings at init. A controller kept from last time would open
+        // showing whatever was in effect then, which after one accept is stale.
+        settingsWindow?.close()
+        let controller = SettingsWindowController(center: configuration)
+        settingsWindow = controller
+        controller.showWindow(nil)
+        controller.window?.center()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     @objc func newTab(_: Any?) {
         // The new tab opens where the focused pane is, not at the workspace root.
         // Opening a tab is usually a second view of the project already in front.
