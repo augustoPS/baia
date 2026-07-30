@@ -39,8 +39,26 @@ public enum StdinUse {
     case messageBody
 }
 
+/// A command the CLI answers itself, without opening the socket.
+///
+/// **Deliberately not a ``ControlVerb``.** That enum is the closed set of things
+/// the *channel* can be asked, and every case in it crosses a socket and passes
+/// `PaneGraph.authorize`. `install-hooks` edits a file in the owner's home
+/// directory and never connects to anything, so putting it there would force it a
+/// scope and a setting gate that mean nothing for a filesystem write, and would
+/// put that write inside the enum whose whole job is to enumerate what a
+/// capability reaches.
+public enum LocalCommand: Sendable, Equatable {
+    /// Installs the Claude Code hook, or removes it.
+    case installHooks(uninstall: Bool)
+}
+
 public enum ParseOutcome {
     case invoke(Invocation)
+
+    /// Answered here, with no socket and no token.
+    case local(LocalCommand)
+
     case help
     case version
 
@@ -67,6 +85,23 @@ public enum Arguments {
             return .version
         default:
             break
+        }
+
+        // Before the verb lookup, because it is not one. An unknown local
+        // subcommand stays a usage error rather than becoming `unknownVerb`,
+        // which is a wire code and would claim the socket had refused something.
+        if head == "install-hooks" {
+            var uninstall = false
+            var tokens = Tokens(Array(argv.dropFirst()))
+            while let token = tokens.take() {
+                switch token {
+                case "--uninstall":
+                    uninstall = true
+                default:
+                    return .usage("baia install-hooks does not take \(clamped(token))")
+                }
+            }
+            return .local(.installHooks(uninstall: uninstall))
         }
 
         guard let verb = ControlVerb(rawValue: head) else {
