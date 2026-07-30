@@ -69,11 +69,23 @@ final class SettingsSampleSurface: NSViewController {
         terminalView.controller = controller
         terminalView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(terminalView)
+        // Edge pinning alone leaves this with no size of its own. `TerminalView`
+        // has no intrinsic content size, so the hierarchy collapses to zero width
+        // and the sidebar beside it takes the whole column. The same two
+        // constraints `TerminalPaneController` carries, at a priority the stack
+        // can override.
+        let preferredWidth = terminalView.widthAnchor.constraint(equalToConstant: 420)
+        let preferredHeight = terminalView.heightAnchor.constraint(equalToConstant: 200)
+        preferredWidth.priority = .defaultLow
+        preferredHeight.priority = .defaultLow
+
         NSLayoutConstraint.activate([
             terminalView.topAnchor.constraint(equalTo: view.topAnchor),
             terminalView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             terminalView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             terminalView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            preferredWidth,
+            preferredHeight,
         ])
     }
 

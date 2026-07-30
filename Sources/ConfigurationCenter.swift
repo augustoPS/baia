@@ -128,8 +128,8 @@ final class ConfigurationCenter {
     /// catalog cannot produce even its own default theme, which is a broken
     /// build rather than a config the owner wrote, and there is no palette in
     /// hand at that point to resolve a choice against anyway.
-    var paneTheme: PaneTheme {
-        guard let definition = Self.themeDefinition(from: settings) else { return .darkPastel }
+    private static func paneTheme(from settings: Settings) -> PaneTheme {
+        guard let definition = themeDefinition(from: settings) else { return .darkPastel }
         return PaneTheme(
             background: settings.backgroundHex,
             foreground: definition.foreground,
@@ -138,6 +138,16 @@ final class ConfigurationCenter {
             focusAccent: settings.focusAccent
         )
     }
+
+    /// The chrome palette currently in effect.
+    var paneTheme: PaneTheme { Self.paneTheme(from: settings) }
+
+    /// The chrome palette `settings` would produce.
+    ///
+    /// Parameterised for the same reason the terminal derivations are: the
+    /// settings window renders a draft through it, and a second mapping written
+    /// inside the window is how a preview comes to show what the panes will not.
+    func chrome(for settings: Settings) -> PaneTheme { Self.paneTheme(from: settings) }
 
     // MARK: - Applying
 

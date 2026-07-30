@@ -6,8 +6,10 @@ import SwiftUI
 /// The settings window: the form on the left, the committed settings and the
 /// pending draft rendered side by side on the right.
 ///
-/// Both samples are fed identical canned output, so the only difference on screen
-/// is the settings themselves. That comparison is why the window exists.
+/// Each side is a whole miniature workspace, sidebar and terminal and footer,
+/// with a focused pane above an asking one. Both are fed identical canned output
+/// and identical sample state, so the only difference on screen is the settings
+/// themselves. That comparison is why the window exists.
 ///
 /// Nothing here touches a real pane. Accept writes the file, the
 /// `ConfigurationCenter` watcher notices, and the panes are re-themed by the same
@@ -16,8 +18,8 @@ import SwiftUI
 final class SettingsWindowController: NSWindowController {
     private let center: ConfigurationCenter
     private let model: SettingsDraft
-    private let before = SettingsSampleSurface()
-    private let after = SettingsSampleSurface()
+    private let before = SettingsPreviewColumn()
+    private let after = SettingsPreviewColumn()
 
     /// Kept so the observation can be re-armed. `withObservationTracking` fires
     /// once and forgets, so each change re-registers the next one.
@@ -28,7 +30,7 @@ final class SettingsWindowController: NSWindowController {
         model = SettingsDraft(committed: center.settings)
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1120, height: 560),
+            contentRect: NSRect(x: 0, y: 0, width: 1180, height: 660),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
@@ -71,8 +73,13 @@ final class SettingsWindowController: NSWindowController {
         ])
         window.contentView = content
 
-        // The left sample never moves: it is what is in effect. Applied once.
-        before.apply(center.terminalConfiguration, theme: center.terminalTheme)
+        // The left column never moves: it is what is in effect. Applied once.
+        before.apply(
+            center.terminalConfiguration,
+            theme: center.terminalTheme,
+            chrome: center.paneTheme,
+            settings: center.settings
+        )
         applyDraftToSample()
         startObserving()
     }
@@ -104,7 +111,12 @@ final class SettingsWindowController: NSWindowController {
     /// how a sample comes to show something the panes will not.
     private func applyDraftToSample() {
         let (configuration, theme) = center.derivations(for: model.draft)
-        after.apply(configuration, theme: theme)
+        after.apply(
+            configuration,
+            theme: theme,
+            chrome: center.chrome(for: model.draft),
+            settings: model.draft
+        )
     }
 
     /// Re-themes the right sample whenever the draft moves.
