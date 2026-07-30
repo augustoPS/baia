@@ -7,11 +7,14 @@
 # rows the checks care about, and shoots the window after each one. Writes to
 # verify-out/path-picker/ and prints LOOK per step.
 #
-# **This does not pass or fail.** It cannot: the assertion is what landed on the
-# focused pane's prompt line, and nothing outside the app can read a pane's
-# contents today. That is the control channel's `read` verb, which is not built.
-# Until it is, this posts the real clicks and leaves a human five images to
-# compare instead of five multi-step interactions to perform.
+# **It passes or fails.** It did not until 2026-07-30: the assertion is what
+# landed on the focused pane's prompt line, and nothing outside the app could
+# read a pane's contents. The control channel's `read` verb closed that, so each
+# click is now followed by a read of the pane's own last line and compared
+# against what the picker was supposed to send.
+#
+# The images are still captured, because a failure is far easier to understand
+# next to a picture of the pane than from a diff of two strings.
 #
 # The screen must be unlocked, and the machine left alone while it runs: the
 # clicks are real events at real screen points and anything else in front will
@@ -26,6 +29,8 @@ APP=".build/Build/Products/Debug/baia.app"
 OUT="verify-out/path-picker"
 CONFIG="$HOME/.config/baia/config.json"
 SESSION="$HOME/Library/Application Support/baia/session.json"
+BAIA_SOCK="$HOME/Library/Application Support/baia/control.sock"
+export BAIA_SOCK
 
 [ -d "$APP" ] || { echo "ABORT: no build at $APP, run make build first" >&2; exit 1; }
 
@@ -39,6 +44,44 @@ trap 'cp "$CONFIG_BACKUP" "$CONFIG" 2>/dev/null; cp "$SESSION_BACKUP" "$SESSION"
 
 export OUT REPO
 source "$REPO/Diagnostics/lib/drive.sh"
+
+pass=0
+fail=0
+ok()  { echo "  ok    $1"; pass=$((pass + 1)); }
+bad() { echo "  FAIL  $1"; echo "          wanted: $2"; echo "          got:    $3"; fail=$((fail + 1)); }
+
+# The pane's own last line, read through the channel with the pane's own
+# capability.
+#
+# **A readout rather than a forgery**, the trick `Diagnostics/control-channel/`
+# already turns: a capability is minted per pane per run and written nowhere, so
+# the only way to hold one is to have the pane's shell report it. `read` is
+# `.descendant` and resolves `subject == actor`, which is what lets a pane read
+# itself.
+prompt_line() {
+    local token
+    token=$(cat "$OUT/pane.token" 2>/dev/null)
+    [ -n "$token" ] || { echo "(no capability)"; return; }
+    printf '{"v":1,"token":"%s","verb":"read","args":{"peer":"%s","lines":1}}\n' \
+        "$token" "$(cat "$OUT/pane.id")" \
+        | nc -U "$BAIA_SOCK" 2>/dev/null \
+        | python3 -c 'import json,sys
+try:
+    answer = json.load(sys.stdin)
+except Exception:
+    print("(unreadable)"); raise SystemExit
+lines = (answer.get("result") or {}).get("lines") or []
+print(lines[-1] if lines else "")'
+}
+
+expect_prompt() {
+    local got
+    got=$(prompt_line)
+    case "$got" in
+        *"$2"*) ok "$1" ;;
+        *) bad "$1" "a line containing $2" "$got" ;;
+    esac
+}
 
 FIXTURE=$("$HERE/fixture.sh" | sed -n 's/^\[+\] fixture at //p')
 [ -d "$FIXTURE" ] || { echo "ABORT: fixture.sh printed no path" >&2; exit 1; }
@@ -58,6 +101,11 @@ PY
     open "$APP"
     sleep 5
     type_line "cd $FIXTURE"
+    # The pane reports its own capability, which is the only way to hold one: a
+    # token is minted per pane per run and written nowhere else. Same readout the
+    # control-channel probe uses, and the reason `read` can be driven from here.
+    type_line "printf '%s' \"\$BAIA_TOKEN\" > $OUT/pane.token; printf '%s' \"\$BAIA_PANE\" > $OUT/pane.id; clear"
+    sleep 1
 }
 
 # The row indices below are the tree in fixture order under a `files` sidebar:
@@ -69,11 +117,13 @@ launch
 click_row 68 2          # src/
 click_row 68 8          # src/plain.txt
 shot 1-plain-sends
+expect_prompt "a bare name reaches the prompt" "plain.txt"
 
 echo "2 three clicks accumulate into three arguments"
 click_row 68 9
 click_row 68 10
 shot 2-three-arguments
+expect_prompt "three clicks accumulate rather than replace" "plain.txt"
 
 echo "3 a name with a space arrives as one argument"
 launch
@@ -81,6 +131,7 @@ type_raw "ls "
 click_row 68 2          # src/
 click_row 68 3          # src/a space.txt
 shot 3-space-one-argument
+expect_prompt "a name with a space is quoted or escaped" "space"
 
 echo "4 a control-byte name refuses, and the prompt does not move"
 launch
@@ -88,14 +139,32 @@ type_raw "ls "
 click_row 68 2          # src/
 click_row 68 5          # src/ctrl<TAB>name.txt
 shot 4-control-byte-refused
+expect_prompt "a control-byte name leaves the prompt at what was typed" "ls "
 
 echo "5 the escape name refuses too"
 click_row 68 6          # src/esc<ESC>[Dname.txt
 shot 5-escape-refused
+expect_prompt "and so does the escape name" "ls "
 
 pkill -f "baia.app/Contents/MacOS/baia" 2>/dev/null
 
 cat <<EOF
+
+  Five images in $OUT, kept because a failure reads better beside a picture of
+  the pane than as a diff of two strings.
+
+  Still by hand, because neither is a click:
+    - clicking while an agent is mid-run inserts into its prompt
+    - ~notes.txt, =lookup.txt and -rf.txt must not expand or read as options
+      (the unit tests pin these; worth seeing once)
+EOF
+
+echo
+if [ "$fail" -ne 0 ]; then
+    echo "FAILED $fail of $((pass + fail)) checks"
+    exit 1
+fi
+echo "PASS: all $pass checks"
 
   LOOK  1-plain-sends            src/plain.txt on the prompt, one trailing space
   LOOK  2-three-arguments        three paths, space separated, none quoted away

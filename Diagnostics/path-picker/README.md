@@ -3,27 +3,32 @@
 `./run.sh` from anywhere. Builds the fixture, drives the picker, writes five
 images to `verify-out/path-picker/` and prints `LOOK` per step.
 
-**It does not pass or fail, and that is not a gap in the script.** The question
-this probe exists to answer is what lands on the focused pane's prompt line when
-a sidebar row is clicked, and nothing outside the app can read a pane's contents
-today. Reading them is the control channel's `read` verb, which is designed and
-not built. Until it exists, the honest shape is real clicks plus a human verdict,
-which is the same `LOOK` pattern `../config-wiring/` uses for the checks a colour
-sample cannot make.
+**It passes or fails, and it did not until 2026-07-30.** The question this probe
+exists to answer is what lands on the focused pane's prompt line when a sidebar
+row is clicked, and until the control channel's `read` verb existed, nothing
+outside the app could see that. The probe posted the clicks and left a human five
+images to compare.
 
-What it does remove is the interaction. Before this, all five checks were
-performed by hand: launch, navigate, expand, click, read the prompt, repeat. Now
-the clicks are posted and the reading is five images side by side.
+`read` closed it. Each click is now followed by a read of the pane's own last
+line, compared against what the picker was supposed to send, and the script exits
+non-zero when one disagrees. The images are still captured, because a failure
+reads far better beside a picture of the pane than as a diff of two strings.
 
-## Why clicking was believed impossible
+The capability comes from the pane itself: `launch` has the shell write
+`$BAIA_TOKEN` and `$BAIA_PANE` to the output directory, which is a readout rather
+than a forgery, since a token is minted per pane per run and written nowhere
+else. `read` is `.descendant` and resolves `subject == actor`, which is what lets
+a pane read itself.
+
+## Why this was believed unassertable
 
 `fixture.sh` still carries the sentence it was written with: *"nothing here can
 drive a mouse or read `NSApp.keyWindow`"*. Half of that was never true. The
 clicker existed the whole time, in `design-captures/`, where it read as design
 tooling rather than probe tooling, and `capture.sh` had been using it to click
 sidebar rows by index for weeks. Consolidating everything into `Diagnostics/` on
-2026-07-30 is what surfaced it. The other half stands: reading the pane still
-needs `read`.
+2026-07-30 is what surfaced it. The other half stood until `read` shipped on the same
+day, and now neither does.
 
 The clicker has to post a real `CGEvent`, and this is not a detail a redesign
 removes. `System Events click at` resolves the accessibility element under the
