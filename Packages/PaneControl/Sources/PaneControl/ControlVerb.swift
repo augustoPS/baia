@@ -54,6 +54,15 @@ public enum ControlVerb: String, Sendable, Hashable, Codable, CaseIterable {
     /// Observation. Reads the ring, consumes nothing, and names no target.
     case subscribe
 
+    /// Reads a descendant pane's lines.
+    ///
+    /// **Descendant-scoped, and deliberately not peer-scoped.** Reading a pane the
+    /// caller created is inside the trust model, because the caller made it.
+    /// Reading a peer is not: peering is a communication edge, and a peer agreed
+    /// to exchange messages rather than to be read. `list` is peer-scoped and this
+    /// is not, and that asymmetry is intentional rather than an oversight.
+    case read
+
     /// Cross-pane execution. Declared in v1 and refused in v1.
     ///
     /// Present rather than absent because absence would make
@@ -88,6 +97,11 @@ public enum ControlVerb: String, Sendable, Hashable, Codable, CaseIterable {
             .selfOnly
         case .list:
             .scopedRead
+        // The first verb to exercise `.descendant` for anything. The scope has
+        // been implemented and correct since v1 with no consumer; `run` declares
+        // it and is refused by its gate.
+        case .read:
+            .descendant
         case .send, .revoke:
             .peerEdge
         case .run:
@@ -105,6 +119,8 @@ public enum ControlVerb: String, Sendable, Hashable, Codable, CaseIterable {
              .whoami, .list, .publish, .connect, .peers, .send, .recv, .revoke,
              .subscribe, .cwd, .report:
             .channel
+        case .read:
+            .allowRead
         case .run:
             .allowRun
         }
@@ -155,4 +171,14 @@ public enum ControlSettingGate: Sendable, Hashable, CaseIterable {
     /// hands a pane a shell it could already have spawned; `run` hands it
     /// execution in another pane's context. They do not share a switch.
     case allowRun
+
+    /// Gated by `controlChannelEnabled` and then by `controlAllowRead`.
+    ///
+    /// `read` is the first verb to put another pane's **content** in a response.
+    /// Every other verb returns ids, self-chosen messages, and labels the app
+    /// derived; this returns whatever is on a descendant's screen, including what
+    /// the owner typed into it. Its own key so the capability is nameable and can
+    /// be switched off, and so it is observable over the socket the way
+    /// ``allowRun`` already is.
+    case allowRead
 }

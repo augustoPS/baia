@@ -56,4 +56,18 @@ protocol ControlWorkspaceBridge: AnyObject {
         to pane: ControlPaneID,
         args: ControlArgs
     ) -> ControlResponse
+
+    /// Every logical line a pane holds, scrollback included, or nil before its
+    /// surface exists.
+    ///
+    /// **Logical lines and not screen rows.** A line wider than the pane comes
+    /// back whole, so a caller grepping the output never meets a match cut in half
+    /// by a soft wrap. `find-in-pane` reads the same way and the hub records the
+    /// trap that makes it necessary: the whole-screen read returns logical lines
+    /// while an exact-coordinate read returns rows, so a line index is not a row
+    /// index. One reader here, so there is no second one to disagree.
+    ///
+    /// Deciding which of the lines fit is not this function's job; that is
+    /// `ScreenRead.tail`, which is pure and tested.
+    func readLines(from pane: ControlPaneID) -> [String]?
 }

@@ -63,7 +63,7 @@ import PaneControl
         // answer usage rather than send an incomplete request. `subscribe` is one
         // of them because a cursor it invented would be a re-read of the ring on
         // every poll.
-        let needsAnOperand: Set<ControlVerb> = [.resize, .send, .revoke, .subscribe, .cwd, .report]
+        let needsAnOperand: Set<ControlVerb> = [.resize, .send, .revoke, .subscribe, .cwd, .report, .read]
         for verb in ControlVerb.allCases {
             let outcome = Arguments.parse([verb.rawValue])
             if needsAnOperand.contains(verb) {
@@ -86,6 +86,7 @@ import PaneControl
             .send: ["pane-1", "hello"],
             .revoke: ["pane-1"],
             .cwd: ["/tmp"],
+            .read: ["pane-1"],
             .report: ["--state", "working"],
         ]
         for verb in ControlVerb.allCases {
@@ -413,5 +414,32 @@ import PaneControl
     @Test func installHooksRefusesAFlagItDoesNotHave() {
         #expect(isUsage(Arguments.parse(["install-hooks", "--nonesuch"])))
         #expect(isUsage(Arguments.parse(["install-hooks", "stray"])))
+    }
+
+    // MARK: read
+
+    /// A `read` with no pane would be an expensive way to ask what `whoami`
+    /// answers, and a typo in an id would silently become a read of oneself.
+    @Test func readNeedsAPaneAndRefusesAFlagInsteadOfOne() {
+        #expect(isUsage(Arguments.parse(["read"])))
+        #expect(isUsage(Arguments.parse(["read", "--lines", "10"])))
+    }
+
+    @Test func readCarriesItsTargetAndCount() {
+        let call = invocation(Arguments.parse(["read", "pane-1", "--lines", "120"]))
+        #expect(call?.verb == .read)
+        #expect(call?.args.peer == "pane-1")
+        #expect(call?.args.lines == 120)
+    }
+
+    /// An absent count is nil on the wire, not a number the CLI invented, so the
+    /// default lives in one place and the server is the only thing that applies
+    /// it.
+    @Test func anAbsentCountIsLeftForTheServer() {
+        #expect(invocation(Arguments.parse(["read", "pane-1"]))?.args.lines == nil)
+    }
+
+    @Test func readRefusesANonNumericCount() {
+        #expect(isUsage(Arguments.parse(["read", "pane-1", "--lines", "lots"])))
     }
 }

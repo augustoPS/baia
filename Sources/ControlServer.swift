@@ -70,6 +70,9 @@ final class ControlServer {
     /// declared in v1.
     var isRunAllowed = false
 
+    /// `controlAllowRead`, which defaults to true unlike `controlAllowRun`.
+    var isReadAllowed = true
+
     private let socketPath: String
     private let transport: ControlTransport
 
@@ -241,8 +244,9 @@ final class ControlServer {
     /// Turning the channel off resolves every parked waiter, because a long poll
     /// against a channel that no longer answers is a shell hanging for up to a
     /// minute on a setting somebody just changed.
-    func settingsChanged(channelEnabled: Bool, allowRun: Bool) {
+    func settingsChanged(channelEnabled: Bool, allowRun: Bool, allowRead: Bool) {
         isRunAllowed = allowRun
+        isReadAllowed = allowRead
         guard channelEnabled != isChannelEnabled else { return }
         isChannelEnabled = channelEnabled
         guard channelEnabled == false else { return }
@@ -492,6 +496,9 @@ final class ControlServer {
         case .revoke:
             revoke(request, on: id)
 
+        case .read:
+            read(request, on: id)
+
         case .run:
             // Unreachable: `gate` answers `run` for both values of
             // `controlAllowRun`, which is the point of declaring the verb in v1.
@@ -512,6 +519,15 @@ final class ControlServer {
         case .channel:
             // Already answered above, for every verb, before the token was read.
             nil
+        case .allowRead:
+            isReadAllowed
+                ? nil
+                : ControlError(
+                    code: .disabled,
+                    message: "read is switched off. Set `controlAllowRead` to true in "
+                        + "~/.config/baia/config.json. It is the one verb whose answer carries "
+                        + "another pane's screen, which is why it has a key of its own."
+                )
         case .allowRun:
             isRunAllowed
                 ? ControlError(
@@ -541,6 +557,48 @@ final class ControlServer {
                 return
             }
             respond(bridge.applyLayout(request.verb, to: target, args: request.args), to: id)
+        }
+    }
+
+    /// Answers with a descendant pane's lines.
+    ///
+    /// **The target is authorised before it is read**, like everything else, and
+    /// the scope is `.descendant`, so a peer is refused. `list` is peer-scoped and
+    /// this is not: peering is a communication edge and a peer agreed to exchange
+    /// messages rather than to be read.
+    private func read(_ request: ControlRequest, on id: Int) {
+        guard let named = request.args.peer else {
+            respond(.failure(.badFrame, "read needs a pane id"), to: id)
+            return
+        }
+        // An id that is not a UUID is `unauthorized` rather than `badFrame`, the
+        // same answer a live pane out of scope gets. A caller able to tell a
+        // malformed id from an out-of-scope one could probe the shape of the
+        // namespace, which is the leak `authorize` refuses in every other verb.
+        guard let target = ControlPaneID(uuidString: named) else {
+            respond(.failure(.unauthorized, "no pane you may read"), to: id)
+            return
+        }
+        switch graph.authorize(token: request.token, verb: .read, target: target) {
+        case let .denied(error):
+            respond(ControlResponse.failure(error), to: id)
+        case let .allowed(_, subject):
+            guard let bridge else {
+                respond(.failure(.internal, "baia has no workspace to read from"), to: id)
+                return
+            }
+            guard let lines = bridge.readLines(from: subject) else {
+                // A pane whose surface is not yet in a window reads as empty
+                // rather than as an error, the same rule every tracker's first
+                // poll follows.
+                respond(.success(ControlResult(lines: [], truncated: false)), to: id)
+                return
+            }
+            let answer = ScreenRead.tail(lines, limit: request.args.lines)
+            respond(
+                .success(ControlResult(lines: answer.lines, truncated: answer.truncated)),
+                to: id
+            )
         }
     }
 

@@ -204,7 +204,8 @@ public struct SettingsStore: Sendable {
       "alertBehavior": "stock",
       "sidebar": "off",
       "controlChannelEnabled": true,
-      "controlAllowRun": false
+      "controlAllowRun": false,
+      "controlAllowRead": true
     }
 
     """

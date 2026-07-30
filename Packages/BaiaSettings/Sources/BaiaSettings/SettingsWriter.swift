@@ -53,6 +53,7 @@ enum SettingsWriter {
         "sidebar",
         "controlChannelEnabled",
         "controlAllowRun",
+        "controlAllowRead",
     ]
 
     /// The fourteen keys the settings window owns.

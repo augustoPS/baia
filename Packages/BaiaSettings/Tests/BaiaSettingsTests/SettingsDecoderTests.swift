@@ -68,7 +68,8 @@ import Testing
           "alertBehavior": "derive",
           "sidebar": "files",
           "controlChannelEnabled": false,
-          "controlAllowRun": true
+          "controlAllowRun": true,
+          "controlAllowRead": true
         }
         """#
         let result = decode(text)
@@ -96,7 +97,8 @@ import Testing
             alertBehavior: .derive,
             sidebar: .files,
             controlChannelEnabled: false,
-            controlAllowRun: true
+            controlAllowRun: true,
+            controlAllowRead: true
         ))
         #expect(result.unknownKeys.isEmpty)
         #expect(result.invalidKeys.isEmpty)

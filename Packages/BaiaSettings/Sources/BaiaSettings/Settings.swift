@@ -151,6 +151,20 @@ public struct Settings: Sendable, Equatable {
     /// Nothing reads this yet either. Same criterion as above.
     public var controlAllowRun: Bool
 
+    /// Whether `read` may answer with a descendant pane's lines.
+    ///
+    /// **Default true, unlike ``controlAllowRun``, and the difference is what the
+    /// verb hands over.** `run` gives a pane execution in another pane's context,
+    /// which is new authority. `read` gives it the screen of a pane it created and
+    /// can already see, which is convenience rather than authority, so it is on
+    /// out of the box.
+    ///
+    /// It has a key at all because it is still the one verb whose answer carries
+    /// another pane's content, including whatever the owner typed into it. A
+    /// capability that cannot be named cannot be switched off, and this one is
+    /// worth being able to switch off.
+    public var controlAllowRead: Bool
+
     /// The owner's ghostty config, field for field, transcribed from
     /// `vault/projects/ghostty/config.ghostty`.
     ///
@@ -188,7 +202,8 @@ public struct Settings: Sendable, Equatable {
         alertBehavior: .stock,
         sidebar: .off,
         controlChannelEnabled: true,
-        controlAllowRun: false
+        controlAllowRun: false,
+        controlAllowRead: true
     )
 
     /// Expands a leading `~` the way a shell would.

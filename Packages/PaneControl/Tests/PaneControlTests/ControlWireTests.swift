@@ -30,6 +30,7 @@ import Testing
         case .revoke: ControlArgs(peer: paneID)
         case .subscribe: ControlArgs(wait: 30, from: 41, kinds: ["paneClosed"])
         case .report: ControlArgs(text: "which branch?", state: .blocked, ttl: 120, seq: 7)
+        case .read: ControlArgs(lines: 50)
         case .run: ControlArgs()
         }
     }

@@ -30,6 +30,7 @@ import Testing
             .revoke: "revoke",
             .subscribe: "subscribe",
             .report: "report",
+            .read: "read",
             .run: "run",
         ]
         for verb in ControlVerb.allCases {
@@ -76,6 +77,7 @@ import Testing
             .send: .peerEdge,
             .revoke: .peerEdge,
             .run: .descendant,
+            .read: .descendant,
         ]
         for verb in ControlVerb.allCases {
             guard let expected = scopes[verb] else {
@@ -96,12 +98,20 @@ import Testing
         }
     }
 
-    /// `split` hands a pane a shell it could already have spawned. `run` hands
-    /// it execution in another pane's context. They do not share a switch, and
-    /// this is the assertion that says so.
-    @Test func onlyRunIsGatedOnTheRunKey() {
+    /// **Two verbs carry a key of their own, and the rest carry none.**
+    ///
+    /// `split` hands a pane a shell it could already have spawned; `run` hands it
+    /// execution in another pane's context. `read` hands it another pane's screen,
+    /// which every other verb's answer is not: ids, self-chosen messages, and
+    /// labels the app derived, against whatever the owner happened to type.
+    ///
+    /// Asserted as a table rather than as "everything but run", which is what this
+    /// was before `read` existed, so the next verb with a key of its own has to be
+    /// named here rather than inheriting the permissive answer.
+    @Test func onlyTheTwoWideVerbsCarryAKeyOfTheirOwn() {
+        let gates: [ControlVerb: ControlSettingGate] = [.run: .allowRun, .read: .allowRead]
         for verb in ControlVerb.allCases {
-            #expect(verb.settingGate == (verb == .run ? .allowRun : .channel))
+            #expect(verb.settingGate == (gates[verb] ?? .channel), "\(verb) has the wrong gate")
         }
     }
 

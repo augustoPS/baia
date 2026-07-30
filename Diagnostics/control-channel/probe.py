@@ -836,6 +836,59 @@ def main():
     )
 
     print()
+    print("-- a pane reading the panes it created")
+    # `read` is the first verb to exercise `.descendant` for anything. The scope
+    # has been implemented and correct since v1 with no consumer, so these are
+    # the first checks that it resolves the way the matrix says over a real
+    # socket rather than only in a fixture.
+    reader = (probe.request(live[alpha], "split", {"axis": "vertical"})
+              .get("result") or {}).get("pane")
+    reader_token = probe.await_token(reader)
+
+    probe.check(
+        "a pane reads a descendant it created",
+        probe.code(probe.request(live[alpha], "read", {"peer": reader, "lines": 5})),
+        "ok",
+    )
+    probe.check(
+        "and reads itself",
+        probe.code(probe.request(live[alpha], "read", {"peer": alpha, "lines": 5})),
+        "ok",
+    )
+    # The asymmetry the spec insists on: `list` reaches a peer and `read` does
+    # not, because peering is consent to exchange messages rather than consent to
+    # be read. Bravo is a peer of alpha by this point in the run.
+    probe.check(
+        "but a peer is refused, where list would have answered",
+        probe.code(probe.request(live[alpha], "read", {"peer": bravo})),
+        "unauthorized",
+    )
+    # A pane id that is not a UUID answers the same as a live pane out of scope,
+    # so a caller cannot tell a malformed id from one it may not have and cannot
+    # probe the shape of the namespace.
+    probe.check(
+        "a malformed pane id answers exactly as an out-of-scope one does",
+        probe.code(probe.request(live[alpha], "read", {"peer": "not-a-uuid"})),
+        "unauthorized",
+    )
+    probe.check(
+        "and a read with no pane at all is a bad frame",
+        probe.code(probe.request(live[alpha], "read")),
+        "badFrame",
+    )
+
+    # The answer's shape. `truncated` is present even when false, so a caller
+    # cannot mistake an omitted field for a complete answer.
+    answer = (probe.request(live[alpha], "read", {"peer": reader, "lines": 5})
+              .get("result") or {})
+    probe.check(
+        "the answer carries lines and says whether it was truncated",
+        [isinstance(answer.get("lines"), list), answer.get("truncated")],
+        [True, False],
+    )
+    probe.request(reader_token, "close")
+
+    print()
     print("-- close answers before the shell it kills")
     # The other item that turned out scriptable: "the response arrives before the
     # shell dies on baia close". The spec has the server flush the answer before

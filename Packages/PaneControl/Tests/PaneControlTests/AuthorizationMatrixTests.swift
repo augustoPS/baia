@@ -249,6 +249,7 @@ import Testing
         .send: peerEdgeRow,
         .revoke: peerEdgeRow,
         .run: descendantRow,
+        .read: descendantRow,
     ]
 
     // MARK: The matrix
