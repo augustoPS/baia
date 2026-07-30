@@ -92,17 +92,41 @@ public struct ControlError: Sendable, Hashable, Codable {
             + "accepted as a credential."
     )
 
-    /// The target is outside the caller's scope.
+    /// The target is outside what the verb that was sent may reach.
     ///
-    /// One value, and the same value, for a pane that is out of scope and for a
-    /// pane that does not exist at all. Two messages here would be an oracle: a
-    /// caller could walk id space and learn which panes are live without being
-    /// able to see any of them.
-    static let unauthorized = ControlError(
-        code: .unauthorized,
-        message: "that pane is outside the calling pane's scope. A pane reaches itself, the panes "
-            + "it created, and the panes it has peered with."
-    )
+    /// One sentence per ``ControlScope``, and **the same sentence for every
+    /// refusal a given verb can draw**: a live pane out of scope, a pane that
+    /// does not exist, and a string that is not a pane id at all. That identity
+    /// is what a single shared value was protecting, and it survives being split
+    /// four ways because a scope is a property of the verb the caller *chose*,
+    /// which the caller already knows. Nothing here varies with the target, so
+    /// none of the four is an oracle over id space.
+    ///
+    /// The rule this replaces was written for `scopedRead` and then recited at
+    /// every scope, which left it wrong for three of the four. `send` and
+    /// `revoke` travel a peer edge alone, so "the panes it created" names panes
+    /// they cannot reach. `read` and `run` follow parentage and explicitly do
+    /// not follow peering, so for them the same clause is wrong in the other
+    /// direction. The layout verbs reach nobody at all. A caller sent to check
+    /// its parentage by a `send` that only ever reaches peers is being sent to
+    /// debug the wrong thing.
+    static func unauthorized(_ scope: ControlScope) -> ControlError {
+        let reach = switch scope {
+        case .selfOnly:
+            "That verb acts on the calling pane and reaches no other."
+        case .scopedRead:
+            "A pane reads itself, the panes it created, and the panes it has peered with."
+        case .peerEdge:
+            "A pane reaches only the panes it has peered with."
+        case .descendant:
+            "A pane reaches itself and the panes it created, transitively. Peering is a "
+                + "communication edge and does not carry control."
+        }
+        return ControlError(
+            code: .unauthorized,
+            message: "that pane is outside the calling pane's scope. " + reach
+        )
+    }
 
     /// The ticket admits nobody.
     ///

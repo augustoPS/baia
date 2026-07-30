@@ -77,7 +77,7 @@ import Testing
             text: "hello"
         )
 
-        #expect(nonPeer == .denied(.unauthorized))
+        #expect(nonPeer == .denied(.unauthorized(ControlVerb.send.scope)))
         #expect(nonPeer == nonexistent)
         #expect(nonPeer == malformed)
         #expect(fixture.graph.waitingCount(of: fixture.stranger) == 0)
@@ -111,7 +111,7 @@ import Testing
             token: fixture.senderToken,
             peer: fixture.receiver.description,
             text: "after"
-        ) == .denied(.unauthorized))
+        ) == .denied(.unauthorized(ControlVerb.send.scope)))
         #expect(fixture.graph.waitingCount(of: fixture.receiver) == 1)
     }
 
