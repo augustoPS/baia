@@ -207,4 +207,66 @@ import Testing
         let document = SettingsWriter.patch(.object([:]), with: .defaultSettings)
         #expect(JSONValue.parse(Data(SettingsWriter.serialize(document).utf8)) == document)
     }
+
+    // MARK: - The round trip
+
+    /// `defaultSettings` with `key` moved to some other valid value.
+    ///
+    /// Parameterised over the key name rather than over a closure, because a
+    /// `@Test(arguments:)` case has to be `Sendable` and a mutating closure is
+    /// not. The switch is exhaustive over ``SettingsWriter/appearanceKeys`` and a
+    /// test below proves it.
+    private static func moved(_ key: String) -> Settings? {
+        var settings = Settings.defaultSettings
+        switch key {
+        case "themeName": settings.themeName = "Midnight"
+        case "backgroundHex": settings.backgroundHex = "#0A0B0C"
+        case "backgroundOpacity": settings.backgroundOpacity = 0.42
+        case "backgroundBlur": settings.backgroundBlur = false
+        case "windowPadding": settings.windowPadding = 17
+        case "windowPaddingBalance": settings.windowPaddingBalance = false
+        case "transparentTitlebar": settings.transparentTitlebar = false
+        case "fontFamily": settings.fontFamily = "SF Mono"
+        case "fontSize": settings.fontSize = 13.5
+        case "cursorStyle": settings.cursorStyle = .bar
+        case "focusAccent": settings.focusAccent = .bone
+        case "attentionStyle": settings.attentionStyle = .quiet
+        case "attentionAccent": settings.attentionAccent = .accent
+        case "alertBehavior": settings.alertBehavior = .derive
+        default: return nil
+        }
+        return settings
+    }
+
+    @Test(arguments: SettingsWriter.appearanceKeys.sorted())
+    func everyAppearanceKeySurvivesPatchSerializeAndDecode(key: String) {
+        // The spec's acceptance criterion. Whatever the writer drops or rewrites
+        // is the difference between the settings that were accepted and the ones
+        // that take effect, and a whole-struct comparison of the defaults would
+        // pass while one key silently reverted, because the other twenty-three
+        // carry it.
+        guard let settings = Self.moved(key) else {
+            Issue.record("no mutation defined for \(key)")
+            return
+        }
+        #expect(settings != .defaultSettings, "\(key) did not change anything")
+
+        let text = SettingsWriter.serialize(SettingsWriter.patch(.object([:]), with: settings))
+        let result = SettingsDecoder.decode(Data(text.utf8))
+
+        #expect(result.settings == settings, "\(key) did not survive the round trip")
+        #expect(result.invalidKeys.isEmpty, "\(key) produced an invalid value")
+        #expect(result.unknownKeys.isEmpty, "\(key) produced an unknown key")
+        #expect(!result.documentIsUnreadable, "\(key) produced an unreadable document")
+    }
+
+    @Test func everyAppearanceKeyHasAMutationToTestWith() {
+        // The parameterised test proves each key it is handed survives. It cannot
+        // see a key `moved` forgot, which would fall to `default` and be recorded
+        // rather than silently skipped, but only if something iterates the full
+        // set. This is that something.
+        for key in SettingsWriter.appearanceKeys {
+            #expect(Self.moved(key) != nil, "no mutation defined for \(key)")
+        }
+    }
 }
