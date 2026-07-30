@@ -27,6 +27,11 @@ cd "$REPO"
 
 APP=".build/Build/Products/Debug/baia.app"
 OUT="verify-out/path-picker"
+# Absolute, because the readout below is typed into a pane whose working
+# directory is the fixture, not the repo. A relative path there wrote into a
+# directory that does not exist and the redirect failed silently, which read as
+# the pane having no capability at all.
+READOUT="$REPO/$OUT"
 CONFIG="$HOME/.config/baia/config.json"
 SESSION="$HOME/Library/Application Support/baia/session.json"
 BAIA_SOCK="$HOME/Library/Application Support/baia/control.sock"
@@ -59,19 +64,7 @@ bad() { echo "  FAIL  $1"; echo "          wanted: $2"; echo "          got:    
 # `.descendant` and resolves `subject == actor`, which is what lets a pane read
 # itself.
 prompt_line() {
-    local token
-    token=$(cat "$OUT/pane.token" 2>/dev/null)
-    [ -n "$token" ] || { echo "(no capability)"; return; }
-    printf '{"v":1,"token":"%s","verb":"read","args":{"peer":"%s","lines":1}}\n' \
-        "$token" "$(cat "$OUT/pane.id")" \
-        | nc -U "$BAIA_SOCK" 2>/dev/null \
-        | python3 -c 'import json,sys
-try:
-    answer = json.load(sys.stdin)
-except Exception:
-    print("(unreadable)"); raise SystemExit
-lines = (answer.get("result") or {}).get("lines") or []
-print(lines[-1] if lines else "")'
+    python3 "$HERE/read-prompt.py" "$BAIA_SOCK" "$READOUT"
 }
 
 expect_prompt() {
@@ -80,6 +73,18 @@ expect_prompt() {
     case "$got" in
         *"$2"*) ok "$1" ;;
         *) bad "$1" "a line containing $2" "$got" ;;
+    esac
+}
+
+# A refusal is asserted by absence, not by the prompt merely looking familiar.
+# `expect_prompt "... " "ls "` would pass on a prompt that had gained a path
+# after the `ls `, which is exactly the failure these two rows exist to catch.
+refuse_prompt() {
+    local got
+    got=$(prompt_line)
+    case "$got" in
+        *.txt*) bad "$1" "no path appended" "$got" ;;
+        *) ok "$1" ;;
     esac
 }
 
@@ -104,47 +109,60 @@ PY
     # The pane reports its own capability, which is the only way to hold one: a
     # token is minted per pane per run and written nowhere else. Same readout the
     # control-channel probe uses, and the reason `read` can be driven from here.
-    type_line "printf '%s' \"\$BAIA_TOKEN\" > $OUT/pane.token; printf '%s' \"\$BAIA_PANE\" > $OUT/pane.id; clear"
+    type_line "printf '%s' \"\$BAIA_TOKEN\" > $READOUT/pane.token; printf '%s' \"\$BAIA_PANE\" > $READOUT/pane.id; clear"
     sleep 1
 }
 
-# The row indices below are the tree in fixture order under a `files` sidebar:
-# src/ is row 2, and its children follow once expanded. They are the one brittle
-# part of this script. If a shot shows the wrong row clicked, re-read the tree in
-# the capture and adjust rather than guessing.
-echo "1 a bare name sends, and the trailing space lands"
-launch
-click_row 68 2          # src/
-click_row 68 8          # src/plain.txt
-shot 1-plain-sends
-expect_prompt "a bare name reaches the prompt" "plain.txt"
+# The row indices are the fixture's tree as the sidebar draws it, read off
+# `2-three-arguments.png` on 2026-07-30 rather than guessed:
+#
+#    1  src/            8  ctrl<TAB>name.txt
+#    2  deeply/         9  esc<ESC>[Dname.txt
+#    3  -rf.txt        10  plain.txt
+#    4  =lookup.txt    11  quo"te.txt
+#    5  a space.txt    12  staged.txt
+#    6  apo'strophe    13  ~notes.txt
+#    7  café.txt       14  READING.md
+#
+# They are the one thing here that can silently click the wrong row. If a check
+# fails with a path nobody asked for, read the tree in the capture beside it and
+# correct the number rather than guessing: the first version of this script was
+# off by one throughout and every check failed against `READING.md`.
 
-echo "2 three clicks accumulate into three arguments"
-click_row 68 9
-click_row 68 10
+echo "1 a bare name sends"
+launch
+click_row 68 1          # src/, expands
+click_row 68 10         # src/plain.txt
+shot 1-plain-sends
+expect_prompt "a bare name reaches the prompt" "src/plain.txt"
+
+echo "2 clicks accumulate rather than replace"
+click_row 68 11         # src/quo"te.txt
+click_row 68 12         # src/staged.txt
 shot 2-three-arguments
-expect_prompt "three clicks accumulate rather than replace" "plain.txt"
+expect_prompt "the first path is still there after two more" "src/plain.txt"
+expect_prompt "and the third arrived beside it" "staged.txt"
 
 echo "3 a name with a space arrives as one argument"
 launch
 type_raw "ls "
-click_row 68 2          # src/
-click_row 68 3          # src/a space.txt
+click_row 68 1          # src/
+click_row 68 5          # src/a space.txt
 shot 3-space-one-argument
 expect_prompt "a name with a space is quoted or escaped" "space"
 
 echo "4 a control-byte name refuses, and the prompt does not move"
 launch
 type_raw "ls "
-click_row 68 2          # src/
-click_row 68 5          # src/ctrl<TAB>name.txt
+click_row 68 1          # src/
+click_row 68 8          # src/ctrl<TAB>name.txt
 shot 4-control-byte-refused
-expect_prompt "a control-byte name leaves the prompt at what was typed" "ls "
+refuse_prompt "a control-byte name appends nothing"
 
 echo "5 the escape name refuses too"
-click_row 68 6          # src/esc<ESC>[Dname.txt
+click_row 68 9          # src/esc<ESC>[Dname.txt
 shot 5-escape-refused
-expect_prompt "and so does the escape name" "ls "
+refuse_prompt "and neither does the escape name"
 
 pkill -f "baia.app/Contents/MacOS/baia" 2>/dev/null
 
