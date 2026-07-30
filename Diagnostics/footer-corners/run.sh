@@ -26,18 +26,19 @@ build_module BaiaSettings
 build_module PaneChrome -lBaiaSettings
 build_module WorkspaceLayout
 
-# The two shipped files are compiled verbatim, not sliced and not retyped, so the
-# corner this probe measures is the corner the app draws. `PaneStatusBarView`
-# reaches nothing outside these three packages and `WindowCorner`, which is what
-# makes that possible; if it ever grows a dependency on another file in `Sources/`,
-# this line is where that shows up.
+# The three shipped files are compiled verbatim, not sliced and not retyped, so
+# the corners this probe measures are the corners the app draws. `PaneStatusBarView`
+# and `PaneOverlayView` reach nothing outside these three packages and
+# `WindowCorner`, which is what makes that possible; if either ever grows a
+# dependency on another file in `Sources/`, this line is where that shows up.
 #
 # -default-isolation MainActor matches the app target's
 # SWIFT_DEFAULT_ACTOR_ISOLATION, so they compile under the rules they ship under.
 swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/cornertest" \
   -I "$LIB" -L "$LIB" -lBaiaSettings -lPaneChrome -lWorkspaceLayout \
   -Xlinker -rpath -Xlinker "$LIB" \
-  "$HERE/cornertest.swift" "$ROOT/Sources/WindowCorner.swift" "$ROOT/Sources/PaneStatusBarView.swift"
+  "$HERE/cornertest.swift" "$ROOT/Sources/WindowCorner.swift" \
+  "$ROOT/Sources/PaneStatusBarView.swift" "$ROOT/Sources/PaneOverlayView.swift"
 
 # One arm per process, each followed by its negative control. `set -e` makes the
 # passing arms the test; the controls are inverted, so a control that stops
@@ -45,7 +46,7 @@ swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/cornertest" \
 #
 # `fullscreen` is last because it is the only arm that takes over the display: it
 # activates, opens a window and drives it into full screen and back, twice.
-for arm in radius match concentric height clip fullscreen; do
+for arm in radius match concentric height clip frame fullscreen; do
   "$OUT/cornertest" "$arm"
   echo
   if "$OUT/cornertest" "$arm" break; then
@@ -56,4 +57,4 @@ for arm in radius match concentric height clip fullscreen; do
   echo
 done
 
-echo "all six arms pass and all six controls fail"
+echo "all seven arms pass and all seven controls fail"

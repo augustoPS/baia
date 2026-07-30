@@ -143,15 +143,23 @@ final class TerminalPaneController: NSViewController {
         }
     }
 
-    /// Which of the window's bottom corners this pane's footer has to curve to.
+    /// Which of the window's bottom corners this pane sits in.
     ///
-    /// Straight through to the bar rather than stored here and pushed in
-    /// ``applyPresentation()``, because unlike focus, theme and attention it moves
-    /// exactly one view and it moves for a different reason: the arrangement
+    /// Straight through to the two views that draw a shape there rather than
+    /// stored here and pushed in ``applyPresentation()``, because unlike focus,
+    /// theme and attention it moves for a different reason: the arrangement
     /// changed, not this pane's state. ``PaneTreeController`` is the only writer.
+    ///
+    /// The footer and the attention frame both reach the corner, and they overlap
+    /// there, so a value that moved one of the two would put a square frame over a
+    /// curved fill and leave the frame's own corner to the window's mask.
+    /// ``statusBar`` holds the value, since it is the view that has always had one.
     var bottomCorners: BottomCorners {
         get { statusBar.bottomCorners }
-        set { statusBar.bottomCorners = newValue }
+        set {
+            statusBar.bottomCorners = newValue
+            edgeFrame.bottomCorners = newValue
+        }
     }
 
     private(set) var isPaneFocused = false
