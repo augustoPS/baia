@@ -316,12 +316,21 @@ import Testing
     @Test func aProcessWithNoNameAndNoPathIsNotClassified() {
         // Every token empty, which is what an entry stripped of `p_comm` and
         // refused by both path reads looks like. Naming it would put an empty
-        // string in the status bar, so it drops out and the pane reads idle.
+        // string in the status bar, so it still drops out of the ranking and
+        // still draws nothing.
+        //
+        // **What changed on 2026-07-30 is where it drops to.** It used to fall
+        // through to `.idleShell`, so a pane running something unnameable
+        // reported that it was running nothing, which is a wrong answer wearing
+        // the shape of a right one. It now abstains. `label` is nil either way,
+        // so the chrome is unaffected; what gains is anything deciding whether
+        // the pane has finished.
         let blank = process(pid: 200, parent: 100, name: "")
 
         let activity = PaneActivityClassifier.classify(tree: [paneShell, blank], shellPid: 100)
 
-        #expect(activity == .idleShell)
+        #expect(activity == .unnameable)
+        #expect(activity.label == nil)
     }
 
     @Test func theNameSetsAreDisjoint() {
@@ -335,5 +344,29 @@ import Testing
         #expect(agents.isDisjoint(with: builds))
         #expect(agents.isDisjoint(with: shells))
         #expect(builds.isDisjoint(with: shells))
+    }
+
+    // MARK: Abstaining
+
+    /// **A nested shell is not abstention.** `candidate(_:)` rejects it too, but a
+    /// bare shell below the pane shell is genuinely idle, and folding the two
+    /// together would trade a silent wrong answer for a noisy one.
+    @Test func aNestedShellIsStillIdleAndNotAbstention() {
+        let nested = process(pid: 202, parent: 100, name: "zsh", path: "/bin/zsh")
+        #expect(PaneActivityClassifier.classify(tree: [paneShell, nested], shellPid: 100) == .idleShell)
+    }
+
+    /// The case abstention was carved out of, asserted beside it so neither can
+    /// quietly absorb the other again.
+    @Test func aTreeOfNothingButTheShellIsStillIdle() {
+        #expect(PaneActivityClassifier.classify(tree: [paneShell], shellPid: 100) == .idleShell)
+    }
+
+    /// A nameable process is unaffected by any of this.
+    @Test func aNamedAgentStillOutranksEverything() {
+        let agent = process(pid: 203, parent: 100, name: "claude")
+        let tokenless = process(pid: 204, parent: 203, name: "", path: nil, arguments: [])
+        let activity = PaneActivityClassifier.classify(tree: [paneShell, agent, tokenless], shellPid: 100)
+        #expect(activity.label == "claude")
     }
 }
