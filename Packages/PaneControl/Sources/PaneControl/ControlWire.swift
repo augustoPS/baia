@@ -89,6 +89,29 @@ public enum ControlWire {
         return seconds > 0 ? seconds : nil
     }
 
+    /// How long a report holds authority when it asks for nothing.
+    public static let defaultReportTTLSeconds = 300
+
+    /// The longest a report may hold authority.
+    ///
+    /// An hour rather than a day: a report outliving the session it describes is
+    /// the failure this number exists to bound, and every producer of one is a
+    /// hook that fires again within minutes.
+    public static let maxReportTTLSeconds = 3600
+
+    /// Applies the budget rather than trusting it, the same way
+    /// ``cappedWait(_:)`` does for a long poll.
+    ///
+    /// **Zero is kept where `cappedWait` folds it into nil**, because the two
+    /// verbs mean opposite things by it. A zero wait is a client asking to be
+    /// answered now; a zero TTL is a report asking to expire at once, which is
+    /// `--release` said with a number. Nil is the one that means "I did not ask",
+    /// and only nil takes the default.
+    public static func cappedReportTTL(_ requested: Int?) -> Int {
+        guard let requested else { return defaultReportTTLSeconds }
+        return min(max(requested, 0), maxReportTTLSeconds)
+    }
+
     /// Connections in the pool.
     public static let maxConnections = 16
 
