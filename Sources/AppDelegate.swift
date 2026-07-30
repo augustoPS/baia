@@ -291,9 +291,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             updateWindowTitles()
         }
         controller.onSessionChange = { [weak self] in self?.scheduleSave() }
-        controller.onFocusedPaneChange = { [weak self] in
-            self?.updateWindowTitles()
-            self?.refreshSidebar(of: controller)
+        // `weak controller` here for the reason spelled out below, which this line
+        // did not follow. The closure is stored on the controller and captured it
+        // strongly, so every window was in a retain cycle with itself: `onClose`
+        // dropped our reference and nothing else did, the controller never
+        // deallocated, and neither did its tree, its panes, or the terminal views
+        // holding the ptys. Closing a tab left its shell running, which is exactly
+        // the failure the comment under `onAttentionChange` describes.
+        //
+        // Measured before and after: a window with two tabs has two direct child
+        // processes, closing one left two, and now leaves one.
+        controller.onFocusedPaneChange = { [weak self, weak controller] in
+            guard let self, let controller else { return }
+            updateWindowTitles()
+            refreshSidebar(of: controller)
         }
         // `weak controller` is not decoration. The controller stores this
         // closure, so a strong capture is a cycle that outlives the close:
