@@ -82,6 +82,101 @@ final class Host {
     }
 }
 
+// MARK: - The host that resizes from inside a layout pass
+
+/// The column, reframed from `viewDidLayout`.
+///
+/// **What is load-bearing here was found by two drafts that failed to fail**, and
+/// it is worth naming precisely, because the natural reading of the bug is wrong.
+///
+/// The first draft reframed the scroll view from `NSView.layout()` and resized the
+/// window. Its control passed. The second moved the assignment to
+/// `viewDidLayout`, matching `SidebarHost`, and still resized the window. Its
+/// control passed too. **A window resize is what made both green**: it marks the
+/// content dirty from the top and AppKit's pass is generous about what it
+/// re-descends into, so the document view gets a layout pass whatever the host
+/// does inside one.
+///
+/// What a divider drag does is narrower than that in both senses. The window never
+/// moves. One stored width changes, the host marks itself for layout, and the only
+/// thing that ends up reframed is the scroll view. The document view's own frame
+/// is untouched, so nothing marks *it*, and `layout()` is where `resize()` lives.
+/// That is the pass it never gets.
+///
+/// `viewDidLayout` rather than `layout()` is kept because `SidebarHost` is a view
+/// controller and that is the callback it uses, not because the arm was shown to
+/// need it.
+@MainActor
+final class ColumnController: NSViewController {
+    var scroll: NSScrollView?
+
+    /// The sidebar's width, and the only thing a drag changes. The window stays
+    /// where it is, which is the half of this that was measured rather than
+    /// assumed.
+    var columnWidth: Double = 260 {
+        didSet {
+            guard columnWidth != oldValue else { return }
+            view.needsLayout = true
+        }
+    }
+
+    override func loadView() {
+        view = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        scroll?.frame = NSRect(
+            x: 0,
+            y: 0,
+            width: columnWidth,
+            height: view.bounds.height
+        )
+    }
+}
+
+/// ``Host``'s interface over a column laid out by a view controller.
+@MainActor
+final class ColumnHost {
+    let window: NSWindow
+
+    /// The window is built wider than the column on purpose: the panes live in the
+    /// rest of it, and a drag moves the divider between them without the window
+    /// changing size at all.
+    init(width: Double, height: Double = 300) {
+        window = NSWindow(
+            contentRect: NSRect(x: -10_000, y: -10_000, width: width + 400, height: height),
+            styleMask: [.titled, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentViewController = controller
+        window.setContentSize(NSSize(width: width + 400, height: height))
+        controller.columnWidth = width
+    }
+
+    func install(_ scroll: NSScrollView) {
+        controller.scroll = scroll
+        controller.view.addSubview(scroll)
+        controller.view.needsLayout = true
+        settle()
+    }
+
+    /// The drag: the column's width changes, the window does not, and nothing
+    /// reframes the scroll view but `viewDidLayout`.
+    func resize(to width: Double) {
+        controller.columnWidth = width
+        settle()
+    }
+
+    func settle() {
+        window.layoutIfNeeded()
+        window.displayIfNeeded()
+    }
+
+    private let controller = ColumnController()
+}
+
 // MARK: - What is being driven
 
 /// The two things an arm needs: a scroll view to install, and the document view to
@@ -265,6 +360,77 @@ final class StaleDrawingView: NSView {
             ]
         ).draw(in: NSRect(x: 8, y: 40, width: paintedWidth - 16, height: 60))
     }
+}
+
+/// **The 2026-07-30 sidebar instance, which is the shipped view with one line
+/// removed.**
+///
+/// Not a strawman and deliberately not damaged anywhere else: it re-derives its
+/// size in `layout()`, correctly, from the clip view, and it fits its rows to the
+/// width it has at the moment it draws, correctly, through the same ``RowPath``
+/// the column ships. The single thing it lacks is the clip observer, so the only
+/// thing that can tell it the column moved is a layout pass.
+///
+/// Under ``Host`` it is indistinguishable from the shipped view. Under
+/// ``ColumnHost`` it keeps the width the column opened at for the rest of its
+/// life, which is what drew `AVeryLongComponentFileName.tsx` as `AVeryLongCom`:
+/// `RowPath` was handed a 31-character budget it had no room for, returned the
+/// name whole because by that budget it fitted, and the clip view cut it with no
+/// ellipsis to say so.
+@MainActor
+final class StaleFittingView: NSView {
+    private var paths: [String] = []
+
+    override var isFlipped: Bool { true }
+
+    func setRows(_ paths: [String]) {
+        self.paths = paths
+        needsDisplay = true
+    }
+
+    /// Correct, and never called on a resize that happens inside a layout pass.
+    override func layout() {
+        super.layout()
+        let wanted = NSRect(
+            x: 0,
+            y: 0,
+            width: max(superview?.bounds.width ?? 0, 1),
+            height: max(Double(paths.count) * 18, superview?.bounds.height ?? 0)
+        )
+        guard frame != wanted else { return }
+        frame = wanted
+        needsDisplay = true
+    }
+
+    override func draw(_: NSRect) {
+        let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        let advance = ("0" as NSString).size(withAttributes: [.font: font]).width
+        for (index, path) in paths.enumerated() {
+            let available = max(0, bounds.width - 38 - 12)
+            let fitted = RowPath.fit(path, budget: Int(available / advance))
+            NSAttributedString(
+                string: fitted.text,
+                attributes: [.font: font, .foregroundColor: NSColor.white]
+            ).draw(at: NSPoint(x: 38, y: Double(index) * 18 + 3))
+        }
+    }
+}
+
+@MainActor
+func staleFitting() -> Subject {
+    let scroll = NSScrollView()
+    let view = StaleFittingView(frame: NSRect(x: 0, y: 0, width: 1, height: 1))
+    scroll.documentView = view
+    return Subject(
+        scroll: scroll,
+        document: view,
+        setRows: { count in
+            view.setRows((0 ..< count).map { index in
+                "Sources/AVeryLongPathThatWantsMoreColumnThanItHas\(index).swift"
+            })
+        },
+        setAbsent: {}
+    )
 }
 
 @MainActor
@@ -506,6 +672,78 @@ func reflowArm(subject: Subject) -> Bool {
     )
 }
 
+/// **The fifth instance, 2026-07-30, and the first the other four arms sat over.**
+///
+/// A row fits its path to the width the column has *now*, and on a live divider
+/// drag it was fitting to the width the column opened at. The sidebar's default is
+/// 260 pt and its floor is 120: at the floor every row was still spending a
+/// 31-character budget, so `RowPath` returned names it believed fitted whole and
+/// the clip view cut them with no ellipsis, and the file tree's status glyphs were
+/// drawn 240 pt out, past the divider, for as long as the surface lived.
+///
+/// The arm is ``reflowArm(subject:)``'s measurement under ``ColumnHost``'s
+/// sequence. Two claims, because the shape has a cause and a symptom and either
+/// alone reads as noise: the document view follows a clip that moved inside a
+/// layout pass, and what it draws is fitted to the width it ended at. The second
+/// is what the owner sees; the first is what makes it happen.
+///
+/// Rows and not the absent state, the reverse of ``reflowArm(subject:)``. That arm
+/// needed the message because a row's *repaint* never exposed a stale frame, a row
+/// drawing from a left inset that does not move. This one needs the rows, because
+/// a row's *budget* is the only thing that reads the width across a fit.
+///
+/// `ChangesRowsView` alone. `FilesSurface` carries the same two lines and the
+/// tree's own host is `PaneTreeController`, which is libghostty, a Metal device
+/// and a spawned shell away from anything a probe can build.
+@MainActor
+func fitArm(subject: Subject) -> Bool {
+    let host = ColumnHost(width: 260)
+    host.install(subject.scroll)
+    host.settle()
+    subject.setRows(13)
+    host.settle()
+
+    let wideWidth = subject.document.frame.width
+    guard let wide = render(subject.document) else {
+        return check(false, "the wide column rendered nothing")
+    }
+
+    host.resize(to: 120)
+    let narrowWidth = subject.document.frame.width
+    guard let narrow = render(subject.document) else {
+        return check(false, "the narrow column rendered nothing")
+    }
+
+    // The clip beside the document, for ``widthArm(subject:)``'s reason: if the
+    // clip itself never moved, the host is at fault and the arm is measuring
+    // nothing rather than measuring something that passed.
+    print(String(
+        format: "  clip now %.1f pt, document %.1f -> %.1f pt",
+        subject.scroll.contentView.bounds.width, wideWidth, narrowWidth
+    ))
+
+    var ok = check(
+        abs(narrowWidth - 120) < 1,
+        "the document view follows a clip resized inside a layout pass",
+        String(format: "%.1f pt against 120", narrowWidth)
+    )
+
+    let columns = min(wide.width, narrow.width)
+    let rows = min(wide.height, narrow.height)
+    print("  wide \(wide.width)x\(wide.height) px, narrow \(narrow.width)x\(narrow.height) px, "
+        + "compared over \(columns)x\(rows)")
+    let changed = corner(wide, columns: columns, rows: rows)
+        != corner(narrow, columns: columns, rows: rows)
+    ok = check(
+        changed,
+        "and the rows are fitted to the width it ended at",
+        changed
+            ? "the shared corner differs"
+            : "identical over the shared corner, so the budget never moved"
+    ) && ok
+    return ok
+}
+
 // MARK: - Entry
 
 @main
@@ -520,13 +758,21 @@ enum Probe {
         let breakIt = CommandLine.arguments.count > 2 && CommandLine.arguments[2] == "break"
         print("== \(arm)\(breakIt ? " (negative control: the bug as it was)" : "")")
 
-        // Two controls, because the shape has two halves and one stand-in cannot
-        // carry both. `stale()` never re-derives its geometry, which is where the
-        // 2026-07-29 instances lived. `staleDrawing()` has perfect geometry and
-        // paints from a width it captured once, which is where the 2026-07-30 one
-        // lived, and a control that was simply one point wide would fail `reflow`
-        // by having nothing to reflow into rather than by failing to reflow.
-        let control = arm == "reflow" ? staleDrawing() : stale()
+        // Three controls, because the shape has three halves and no stand-in
+        // carries more than one. `stale()` never re-derives its geometry, which is
+        // where the 2026-07-29 instances lived. `staleDrawing()` has perfect
+        // geometry and paints from a width it captured once, which is where the
+        // first 2026-07-30 one lived, and a control that was simply one point wide
+        // would fail `reflow` by having nothing to reflow into rather than by
+        // failing to reflow. `staleFitting()` is the shipped view with the clip
+        // observer removed and nothing else touched, which is where the second
+        // 2026-07-30 one lived: correct under every host that resizes outside a
+        // layout pass, and frozen at its opening width under the one that does not.
+        let control = switch arm {
+        case "reflow": staleDrawing()
+        case "fit": staleFitting()
+        default: stale()
+        }
         let subject = breakIt ? control : shipped()
 
         let ok: Bool
@@ -535,8 +781,9 @@ enum Probe {
         case "width": ok = widthArm(subject: subject)
         case "tracking": ok = trackingArm(subject: subject)
         case "reflow": ok = reflowArm(subject: subject)
+        case "fit": ok = fitArm(subject: subject)
         default:
-            print("usage: cliptest floor|width|tracking|reflow [break]")
+            print("usage: cliptest floor|width|tracking|reflow|fit [break]")
             ok = false
         }
 

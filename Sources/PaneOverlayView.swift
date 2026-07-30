@@ -41,6 +41,23 @@ class PaneOverlayView: NSView {
 
     override var isFlipped: Bool { true }
 
+    /// `.onSetNeedsDisplay` above buys the terminal a resize that repaints no
+    /// overlay, and charges for it here: an overlay that draws anything short of
+    /// a full-bounds fill keeps its old backing store when the pane grows. The
+    /// attention frame paid it. Dragging the sidebar in left the frame's right
+    /// edge standing at every width the drag passed through, a band of stripes
+    /// across the terminal exactly as wide as the drag was long, because each
+    /// step drew a new edge and none of them erased the last.
+    ///
+    /// Invalidating on a size change is the whole fix. The guard keeps a layout
+    /// pass that resolves to the same size from queueing a repaint, which is most
+    /// of them.
+    override func setFrameSize(_ newSize: NSSize) {
+        let resized = newSize != frame.size
+        super.setFrameSize(newSize)
+        if resized { needsDisplay = true }
+    }
+
     /// Built in explicit sRGB, so chrome and the terminal grid agree about what
     /// a hex value looks like.
     func nsColor(_ rgb: RGB, alpha: Double = 1) -> NSColor {

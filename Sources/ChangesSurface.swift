@@ -196,20 +196,49 @@ final class ChangesRowsView: NSView {
     /// Rebuilt on scroll as well as on layout: the areas cover the rows the clip
     /// view can show, and scrolling changes which rows those are without changing
     /// this view's frame, which is the only thing AppKit calls this for by itself.
+    ///
+    /// **The size follows from here too, and that is the fifth instance of the
+    /// shape `Diagnostics/clip-layout` was built for.** `layout()` calls `resize()`
+    /// and never runs on a live width drag: the host assigns the scroll view's
+    /// frame from inside `viewDidLayout`, by which point the window's pass has
+    /// already descended past this view, and nothing marks it for layout again
+    /// because its own frame is what `resize()` was going to change. So a sidebar
+    /// dragged to its 120 pt floor left every row fitting itself to the 260 pt
+    /// the column opened at: `RowPath` was handed a budget of 31 characters,
+    /// returned whole names it believed fitted, and the clip view cut them with no
+    /// ellipsis. The file tree's status glyphs went with them, drawn 240 pt out.
+    ///
+    /// Both notifications, because only one of them is guaranteed. A clip view's
+    /// bounds *size* follows its frame, and AppKit documents the bounds
+    /// notification as firing when bounds change independently of the frame, so a
+    /// resize may announce itself as one, the other, or both. `resize()` is
+    /// guarded on the frame it wants, so hearing it twice costs a comparison.
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        guard let clip = enclosingScrollView?.contentView, scrollObserver == nil else { return }
+        guard let clip = enclosingScrollView?.contentView, clipObservers.isEmpty else { return }
         clip.postsBoundsChangedNotifications = true
-        scrollObserver = NotificationCenter.default.addObserver(
-            forName: NSView.boundsDidChangeNotification,
-            object: clip,
-            queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.updateTrackingAreas() }
+        clip.postsFrameChangedNotifications = true
+        for name in [NSView.boundsDidChangeNotification, NSView.frameDidChangeNotification] {
+            // `queue: nil`, so the block runs on the posting thread rather than as
+            // an operation on the main queue. Both are the main thread, and the
+            // difference is when: an enqueued block lands a runloop turn later, so
+            // the size would follow the clip one frame behind through a drag, and
+            // the pass that just resized the clip would draw once at the old width
+            // before the new one arrived.
+            clipObservers.append(NotificationCenter.default.addObserver(
+                forName: name,
+                object: clip,
+                queue: nil
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.resize()
+                    self?.updateTrackingAreas()
+                }
+            })
         }
     }
 
-    private var scrollObserver: (any NSObjectProtocol)?
+    private var clipObservers: [any NSObjectProtocol] = []
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
