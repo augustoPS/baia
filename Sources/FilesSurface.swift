@@ -208,6 +208,18 @@ final class FileTreeRowsView: NSView {
         )
         guard frame != wanted else { return }
         frame = wanted
+        // A frame change does not repaint on its own, and the empty and absent
+        // states are drawn centred in the visible rect rather than at a row
+        // origin. So a column the owner narrowed kept the centring it had before,
+        // and the message ran on under the divider: at the 120 pt floor "not a
+        // repository" showed as "not a r". The rows themselves never exposed it,
+        // because a row draws from a left inset that does not move.
+        //
+        // Fourth of the same shape, after the document view drawn into one point,
+        // the tree that could not be hit, and the tracking areas that covered
+        // nothing. Each was a view whose size changed without the thing built
+        // from that size being rebuilt.
+        needsDisplay = true
     }
 
     private func append(_ nodes: [FileTreeNode], depth: Int) {

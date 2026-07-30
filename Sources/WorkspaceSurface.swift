@@ -68,32 +68,83 @@ enum SurfaceMessage {
     /// Centred in what the clip view can show rather than in the document view,
     /// which is as tall as its rows and would put the message off screen in a
     /// section that has been scrolled.
+    /// Both lines are drawn into a bounded rect rather than at a point, and that
+    /// is the whole of the fix.
+    ///
+    /// Drawn at a point, neither line could be told it had run out of column: at
+    /// the 120 pt width floor the message rendered as "not a r" and the path as
+    /// "~/Pr", each running under the divider with no ellipsis and nothing to say
+    /// it had been cut. A centred message that clips is a message nobody can
+    /// read, and it is the floor rather than an edge case, because
+    /// `SidebarHost.minimumWidth` is 120.
+    ///
+    /// The message wraps, because it is two words and both matter. The path
+    /// truncates at its head, keeping the tail, which is the treatment the status
+    /// bar already gives a path for the same reason: a path is informative at its
+    /// end. Rotating the text was considered and dropped. It preserves every
+    /// character and trades a horizontal clip for a vertical one, and the string
+    /// it would break is the path: a deep one needs 360 pt of vertical run against
+    /// a section whose own floor is 48 pt.
     static func drawAbsent(path: String?, in view: NSView, theme: PaneTheme) {
         let visible = view.visibleRect
+        let available = max(0, visible.width - ChangesRowsView.inset * 2)
+
+        let centred = NSMutableParagraphStyle()
+        centred.alignment = .center
+        centred.lineBreakMode = .byWordWrapping
+
         let message = NSAttributedString(
             string: "not a repository",
             attributes: [
                 .font: ChangesRowsView.font,
                 .foregroundColor: ChangesSurface.nsColor(theme.inkContext),
+                .paragraphStyle: centred,
             ]
         )
-        let size = message.size()
-        let centre = visible.midY - (path == nil ? size.height / 2 : size.height)
-        message.draw(at: NSPoint(x: visible.midX - size.width / 2, y: centre))
+        let messageHeight = message.boundingRect(
+            with: NSSize(width: available, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin]
+        ).height
 
-        guard let path else { return }
-        let abbreviated = NSAttributedString(
-            string: (path as NSString).abbreviatingWithTildeInPath,
-            attributes: [
-                .font: ChangesRowsView.font,
-                .foregroundColor: ChangesSurface.nsColor(theme.inkFaint),
-            ]
-        )
-        let width = abbreviated.size().width
-        abbreviated.draw(at: NSPoint(
-            x: max(ChangesRowsView.inset, visible.midX - width / 2),
-            y: centre + size.height + 2
-        ))
+        let pathString = path.map { (path: String) -> NSAttributedString in
+            let head = NSMutableParagraphStyle()
+            head.alignment = .center
+            head.lineBreakMode = .byTruncatingHead
+            return NSAttributedString(
+                string: (path as NSString).abbreviatingWithTildeInPath,
+                attributes: [
+                    .font: ChangesRowsView.font,
+                    .foregroundColor: ChangesSurface.nsColor(theme.inkFaint),
+                    .paragraphStyle: head,
+                ]
+            )
+        }
+        // One line, always: the head truncation is what makes a long path fit, so
+        // measuring it for wrapping would defeat its own line-break mode.
+        let pathHeight = pathString == nil ? 0 : ChangesRowsView.font.ascender
+            - ChangesRowsView.font.descender + 2
+
+        // These views are flipped, so y grows downward and the message takes the
+        // smaller y. Getting this backwards puts the path above the message,
+        // which reads as a heading over an explanation rather than the other way
+        // round, and it renders without complaint.
+        let total = messageHeight + pathHeight
+        let top = visible.midY - total / 2
+
+        message.draw(with: NSRect(
+            x: visible.minX + ChangesRowsView.inset,
+            y: top,
+            width: available,
+            height: messageHeight
+        ), options: [.usesLineFragmentOrigin])
+
+        guard let pathString else { return }
+        pathString.draw(with: NSRect(
+            x: visible.minX + ChangesRowsView.inset,
+            y: top + messageHeight,
+            width: available,
+            height: pathHeight
+        ), options: [.usesLineFragmentOrigin])
     }
 }
 
