@@ -824,6 +824,32 @@ def main():
     # event, because the pollers may well agree with the report that was in
     # force, and a check that demanded a transition would be asserting what the
     # pane happened to be doing.
+    # **The check that was missing, and the reason a live look had to find this.**
+    # `PaneRecord.attention` is populated from the controller's own
+    # `lastAttention`, which is the value the footer, the frame, the window title
+    # and the Dock badge all draw from. Nothing compared it to what `report` had
+    # just said, so a reported block published `attentionRaised` on this very
+    # socket while the pane stayed dark, and every check here passed.
+    #
+    # One assertion against a field that already shipped. It guards the class
+    # rather than the instance: any future verb claiming to change what a pane
+    # shows can be checked the same way, with no screenshot and no human.
+    # Blocked again first: by this point the sequence above has set the pane to
+    # working, and asserting the chrome against a state the pane is no longer in
+    # measures nothing.
+    probe.request(live[alpha], "report", {"state": "blocked", "text": "still asking", "seq": 20})
+    probe.check(
+        "a blocked report reaches the chrome, and not only the wire",
+        (probe.record_of(probe.request(live[alpha], "list"), alpha) or {}).get("attention"),
+        "asking",
+    )
+    probe.check(
+        "and working takes it back down",
+        [probe.code(probe.request(live[alpha], "report", {"state": "working", "seq": 21})),
+         (probe.record_of(probe.request(live[alpha], "list"), alpha) or {}).get("attention")],
+        ["ok", None],
+    )
+
     probe.check(
         "a release is accepted",
         probe.code(probe.request(live[alpha], "report", {"release": True})),

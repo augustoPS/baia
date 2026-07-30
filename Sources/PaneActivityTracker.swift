@@ -23,6 +23,22 @@ final class PaneActivityTracker {
     private let foregroundPid: () -> pid_t?
 
     private var attention = PaneAttentionState()
+
+    /// Whether the pane has said it is blocked, and what it said, or nil when it
+    /// has made no statement.
+    ///
+    /// **Here rather than only on the controller, so one place still answers
+    /// "does this pane want the owner".** That is the rule
+    /// `PaneStatus.Attention.init` states about itself, being "the only copy of
+    /// that derivation anywhere", and the bug this fixes is what happens when a
+    /// second answer exists: `report` reached the channel's comparator and not
+    /// this, so a reported block published `attentionRaised` and drew nothing.
+    ///
+    /// Set by the controller before it publishes, never polled from here. The
+    /// store that decides liveness and expiry lives with the controller beside
+    /// the rest of the pane's per-run state.
+    private var reportedBlock: Bool?
+    private var reportedMessage: String?
     private var activity: PaneActivity = .idleShell
     private var timer: Timer?
 
@@ -110,13 +126,34 @@ final class PaneActivityTracker {
         rebuild()
     }
 
-    /// What the pane asked for, when it said so through OSC 9 or OSC 777.
+    /// What the pane asked for, through OSC 9 or OSC 777 or its own report.
     var attentionMessage: String? {
-        attention.attention.message
+        resolvedAttention.message
     }
 
     var wantsAttention: Bool {
-        attention.attention.isRequesting
+        resolvedAttention.isRequesting
+    }
+
+    /// The latch once the pane's own statement is taken into account.
+    ///
+    /// Every reader of "is this pane asking" goes through here, so the footer,
+    /// the frame, the window title, the Dock badge and `PaneRecord.attention`
+    /// cannot disagree with each other or with the channel.
+    private var resolvedAttention: PaneAttention {
+        attention.attention.overridden(byReportedBlock: reportedBlock, message: reportedMessage)
+    }
+
+    /// Records what the pane says about itself. The caller publishes.
+    ///
+    /// Deliberately does not fire `onChange`: the controller sets this and then
+    /// publishes, so a single report produces one pass rather than two, and the
+    /// ordering is visible at the call site rather than buried here.
+    func setReportedBlock(_ blocked: Bool?, message: String?) {
+        reportedBlock = blocked
+        reportedMessage = message
+        // Recomputed here, announced by the caller. See ``refreshAgent()``.
+        refreshAgent()
     }
 
     // MARK: - Polling
@@ -179,10 +216,25 @@ final class PaneActivityTracker {
     }
 
     private func rebuild() {
-        let next = paneAgent()
-        guard next != agent else { return }
-        agent = next
+        guard refreshAgent() else { return }
         onChange?()
+    }
+
+    /// Recomputes ``agent`` and says whether it moved, without telling anybody.
+    ///
+    /// **Split from ``rebuild()`` because a report needs the recompute and not
+    /// the notification.** The controller sets a report and then publishes once,
+    /// deriving both the wire event and the footer level from that single pass;
+    /// if this fired `onChange` too, one report would publish twice, and if it
+    /// did not recompute at all the publish would read a stale `agent` and the
+    /// chrome would stay dark. The second is exactly the bug this file is being
+    /// changed to fix, one layer further in.
+    @discardableResult
+    private func refreshAgent() -> Bool {
+        let next = paneAgent()
+        guard next != agent else { return false }
+        agent = next
+        return true
     }
 
     /// An idle shell with nothing to say contributes no segment at all, so a pane
@@ -224,7 +276,7 @@ final class PaneActivityTracker {
         return PaneStatus.Agent(
             label: label ?? attentionLabel,
             wantsAttention: wantsAttention,
-            isAcknowledged: !attention.attention.isUnacknowledged,
+            isAcknowledged: !resolvedAttention.isUnacknowledged,
             // Busy means an agent is working, not that any command is running. A
             // build or a `sleep` is named by its label and does not earn the dot,
             // which is reserved for the thing the workspace exists to watch.
@@ -235,7 +287,7 @@ final class PaneActivityTracker {
     /// What an attention request says when nothing is running to name. A bell
     /// from a pane whose command already exited still deserves a marker.
     private var attentionLabel: String {
-        attention.attention.message ?? "!"
+        resolvedAttention.message ?? "!"
     }
 
     /// True while an agent is running in this pane.
