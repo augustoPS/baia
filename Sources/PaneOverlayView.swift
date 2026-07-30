@@ -1,5 +1,6 @@
 import AppKit
 import PaneChrome
+import WorkspaceLayout
 
 /// Common ground for anything drawn *over* a terminal surface.
 ///
@@ -118,8 +119,7 @@ final class PaneScrimView: PaneOverlayView {
     }
 }
 
-/// A 2 pt stroked rectangle inside a pane's edge, marking the pane that is
-/// asking.
+/// A 2 pt stroke just inside a pane's edge, marking the pane that is asking.
 ///
 /// The one place in the design a frame leaves the footer and takes the whole
 /// compartment. That is what makes attention rank above focus without either
@@ -145,14 +145,38 @@ final class PaneEdgeFrameView: PaneOverlayView {
         }
     }
 
-    /// Radius zero. A rounded frame inside a square pane leaves four visible
-    /// gaps at the corners where the terminal shows through.
+    /// Which of the window's bottom corners this pane sits in.
+    ///
+    /// Pushed from ``TerminalPaneController`` alongside the footer's copy, and for
+    /// the same reason the footer has one: the frame and the footer meet at that
+    /// corner, so a frame that kept its own shape there is the two disagreeing in
+    /// the one place both are visible at once. Square-cornered by default, which
+    /// is every pane away from the window's edge.
+    var bottomCorners: BottomCorners = [] {
+        didSet {
+            guard bottomCorners != oldValue else { return }
+            needsDisplay = true
+        }
+    }
+
+    /// Square wherever the pane is not against the window. A rounded frame inside
+    /// a square pane leaves visible gaps at the corners where the terminal shows
+    /// through, so only the corners the window's own mask cuts are curved and
+    /// ``WindowCorner/path(in:corners:inset:)`` draws the other two as it always
+    /// did, with straight lines meeting at a point.
     private static let thickness: Double = 2
 
     override func draw(_: NSRect) {
         guard isVisible else { return }
-        let inset = Self.thickness / 2
-        let path = NSBezierPath(rect: bounds.insetBy(dx: inset, dy: inset))
+        // Inset by half the stroke width, and the radius comes down with it, so
+        // the stroke's outer edge lands on the window's outline instead of
+        // crossing it through the corner. The same concentric rule the footer's
+        // focus frame is drawn under, and `WindowCorner` already applies it.
+        let path = WindowCorner.path(
+            in: bounds,
+            corners: bottomCorners,
+            inset: Self.thickness / 2
+        )
         path.lineWidth = Self.thickness
         nsColor(colour).setStroke()
         path.stroke()

@@ -1,12 +1,12 @@
 # Footer corners probe
 
 `./run.sh` from anywhere. It measures the window's own rounded corner, measures
-the one the footer draws, checks that rounding a corner did not move the bar or
-its text, and checks that the footer stops curving when the window does. Six
-arms, one process each, and every arm is followed by a `break` variant that
-damages the thing under test and is expected to fail. `run.sh` inverts those, so
-a control that stops failing fails the run as loudly as an arm that stops
-passing.
+the ones the footer and the attention frame draw, checks that rounding a corner
+did not move the bar or its text, and checks that the footer stops curving when
+the window does. Seven arms, one process each, and every arm is followed by a
+`break` variant that damages the thing under test and is expected to fail.
+`run.sh` inverts those, so a control that stops failing fails the run as loudly as
+an arm that stops passing.
 
 Nothing is captured from the screen. `screencapture` needs a screen-recording
 grant that a headless run cannot answer, and it is not needed: every reading here
@@ -14,18 +14,18 @@ comes either from geometry AppKit hands over or from a bitmap this process
 rasterizes itself. The phase-one investigation established that the two agree to
 0.002 pt.
 
-Five of the six arms run as an accessory app and never take focus. `fullscreen`
+Six of the seven arms run as an accessory app and never take focus. `fullscreen`
 cannot: an accessory app's window refuses `toggleFullScreen(_:)` outright, so
 that arm activates and drives a window into full screen and back, twice. It runs
 last for that reason, and it is why `run.sh` is not something to fire off in the
 middle of a call.
 
-`Sources/WindowCorner.swift` and `Sources/PaneStatusBarView.swift` are compiled
-verbatim by `run.sh`, not sliced and not retyped, so the shapes measured are the
-ones the app draws. That works because `PaneStatusBarView` reaches nothing outside
-`BaiaSettings`, `PaneChrome`, `WorkspaceLayout` and `WindowCorner`; if it ever
-grows a dependency on another file in `Sources/`, the `swiftc` line is where that
-shows up.
+`Sources/WindowCorner.swift`, `Sources/PaneStatusBarView.swift` and
+`Sources/PaneOverlayView.swift` are compiled verbatim by `run.sh`, not sliced and
+not retyped, so the shapes measured are the ones the app draws. That works because
+the two views reach nothing outside `BaiaSettings`, `PaneChrome`,
+`WorkspaceLayout` and `WindowCorner`; if either ever grows a dependency on another
+file in `Sources/`, the `swiftc` line is where that shows up.
 
 ## radius
 
@@ -167,6 +167,42 @@ loose enough to pass a square bar: the control renders the same bar with no
 corners, which is pixel for pixel what a `draw(_:)` with no clip produces for a
 pane in the corner, and it misses by 10.03 pt on the second row.
 
+## frame
+
+The attention frame is the one surface that reaches a window corner without being
+on the footer, and until 2026-07-30 it was the one surface that did not go through
+`WindowCorner`. `PaneEdgeFrameView` drew `NSBezierPath(rect:)`, so at a corner the
+pane shares with the window its edge carried straight past the point where the
+footer's fill curved away and the mask cut the overhang off into a spur. Found on
+a screenshot, not by any of the six arms above, because all six measure the bar.
+
+The two shapes overlap at that corner and are drawn in the same colour when a pane
+is both asking and in the corner, which is what makes a 2 pt disagreement read as
+damage rather than as a detail.
+
+A real `PaneEdgeFrameView` is rendered through `cacheDisplay(in:to:)` and profiled
+out of the alpha channel, the same way `clip` profiles a real bar, and for the same
+reason: a path that is right proves nothing about a `draw(_:)` that does not use
+it. Three things are worth naming:
+
+- What is profiled is the **outer** edge of the stroke, and the reference is the
+  window's mask with no allowance subtracted. That is the concentric rule landing:
+  a 2 pt stroke whose centreline sits 1 pt in at radius 15 puts its outer edge on
+  the window's own 16. A frame that reused 16 on the inset rectangle would read
+  1 pt outside the mask here, which `concentric` catches as a path and this catches
+  as pixels.
+- The view is 200 pt tall, so all 24.46 pt of the corner is in the bitmap. The
+  footer can only ever show 22 of it. The arm still reads 22, because the last of
+  the curve is nearly vertical and a pixel row there spans several points of shape.
+- The bottom stroke's own rows, the bottom 2 pt, are dropped for the reason `clip`
+  drops the hairline's: down there the curve is nearly horizontal and the coverage
+  saturates well outside the path it came from.
+
+The tolerances are `clip`'s, 0.04 inward and 0.07 outward. The shipped frame
+measures 0.004 inward and 0.035 outward. The control is the square path that
+shipped until 2026-07-30, which is the regression this arm exists to catch, and it
+misses by 7.88 pt.
+
 ## fullscreen
 
 A window in full screen is masked to the display, not to a 16 pt corner. A footer
@@ -206,9 +242,15 @@ round. It is the bug itself.
 libghostty, a Metal device and a spawned shell. So the push path,
 `pushBottomCorners()` reading `displayedTree` and the window and assigning to each
 pane, is not run here. Both ends of it are: the query is unit-tested in
-`WorkspaceLayout` (`PaneTreeCornerTests`) and read by `clip`, the drawing is
-measured by `clip`, and the fact the window half depends on is measured by
-`fullscreen`. The wire itself is still only read.
+`WorkspaceLayout` (`PaneTreeCornerTests`) and read by `clip` and `frame`, the
+drawing is measured by `clip` and `frame`, and the fact the window half depends on
+is measured by `fullscreen`. The wire itself is still only read.
+
+That gap has cost something once. `TerminalPaneController.bottomCorners` reached
+the footer and not the attention frame for four days, and no arm here could have
+seen it, because the value both views need is assigned on the far side of a
+controller this probe cannot build. A third view that draws into a corner would
+fail the same way: the arm below it would pass on a value nothing pushed.
 
 The window is never made key and nothing is captured. **The last step, that the
 corner on screen is the one measured here, cannot be proven without looking.**

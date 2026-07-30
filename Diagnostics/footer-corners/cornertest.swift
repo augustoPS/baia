@@ -165,11 +165,11 @@ func compare(
         return false
     }
     guard worstInward.delta <= inward else {
-        print("  FAIL \(label): the footer stops \(worstInward.delta) pt short of the window, which shows as a gap")
+        print("  FAIL \(label): it stops \(worstInward.delta) pt short of the window, which shows as a gap")
         return false
     }
     guard worstOutward.delta <= outward else {
-        print("  FAIL \(label): the footer overhangs the window by \(worstOutward.delta) pt, so it is the wrong shape")
+        print("  FAIL \(label): it overhangs the window by \(worstOutward.delta) pt, so it is the wrong shape")
         return false
     }
     return true
@@ -902,6 +902,104 @@ func clipArm(breakIt: Bool) -> Bool {
     )
 }
 
+// MARK: - The frame arm
+
+/// A real ``PaneEdgeFrameView`` at pane size, rendered the way the `clip` arm
+/// renders a real bar.
+///
+/// Taller than the corner is long, so the whole 24.46 pt of it is in the bitmap
+/// rather than the 22 pt the footer can show. The frame is the one surface that
+/// gets all of it.
+func renderFrame(corners: BottomCorners) -> Render? {
+    let frame = PaneEdgeFrameView(frame: NSRect(x: 0, y: 0, width: 300, height: 200))
+    frame.colour = PaneTheme.darkPastel.alert
+    frame.bottomCorners = corners
+    frame.isVisible = true
+    frame.layoutSubtreeIfNeeded()
+    frame.displayIfNeeded()
+    guard let rep = frame.bitmapImageRepForCachingDisplay(in: frame.bounds) else { return nil }
+    frame.cacheDisplay(in: frame.bounds, to: rep)
+    guard let data = rep.bitmapData else { return nil }
+    let count = rep.bytesPerRow * rep.pixelsHigh
+    return (
+        pixels: Array(UnsafeBufferPointer(start: data, count: count)),
+        width: rep.pixelsWide,
+        height: rep.pixelsHigh
+    )
+}
+
+/// Does the attention frame turn the corner with the footer, or run square into it?
+///
+/// The bug this arm exists for, found on a screenshot on 2026-07-29 and fixed on
+/// 2026-07-30: every surface on the footer went through ``WindowCorner`` and the
+/// frame around the whole pane did not, so at a corner the pane shares with the
+/// window the frame's edge carried straight on past the point where the fill
+/// curved away, and the window's mask cut the overhang off into a spur. The two
+/// shapes are visible at the same time and in the same colour, which is what made
+/// a 2 pt disagreement read as damage rather than as a detail.
+///
+/// Measured as pixels rather than as a path, for the reason the `clip` arm gives:
+/// a path that is right proves nothing about a `draw(_:)` that does not use it.
+/// What is profiled is the *outer* edge of the stroke, which is where the
+/// concentric rule lands it: a 2 pt stroke whose centreline sits 1 pt in at radius
+/// 15 has its outer edge on the window's own 16, so the reference is the mask
+/// itself with no allowance for the inset.
+///
+/// The control is the shape that shipped until 2026-07-30, a square rectangle,
+/// which is the regression this is here to catch.
+func frameArm(breakIt: Bool) -> Bool {
+    guard let system = windowCornerPath() else { return false }
+
+    let grid = Grid2x3()
+    let corners = grid.tree.bottomCorners()[grid.bottomLeft] ?? []
+    print("PaneTree.bottomCorners gives the bottom-left pane of a 2x3 grid: \(name(corners))")
+    guard corners == .left else {
+        print("  FAIL: the layout is not naming the bottom-left pane's left corner, so nothing below means anything")
+        return false
+    }
+
+    guard let render = renderFrame(corners: breakIt ? [] : corners) else {
+        print("  FAIL: the frame rendered nothing, so nothing was measured")
+        return false
+    }
+
+    let renderScale = CGFloat(render.width) / 300
+    // Two points short of the corner's full 24.46 pt. The last of it is where the
+    // curve is nearly vertical and a row spans several points of shape, which is a
+    // rasterizer reading rather than a shape one.
+    let rows = Int(22 * Double(renderScale))
+    print(breakIt
+        ? "frame rendered with NO corners (negative control: the square path that shipped before)"
+        : "frame rendered by PaneEdgeFrameView, as shipped")
+    print(String(format: "  %dx%d px, %.1f px per point", render.width, render.height, renderScale))
+
+    var drawn = insets(renderedCorner(render), side: patch, rows: rows, at: renderScale)
+    var reference = insets(systemCorner(system, at: renderScale), side: patch, rows: rows, at: renderScale)
+    table([("window", reference), ("frame", drawn)], rows: rows, at: renderScale)
+
+    // The bottom stroke's own rows, dropped for the reason the `clip` arm drops the
+    // hairline's: down there the curve is nearly horizontal, so a single pixel row
+    // spans several points of shape and the coverage saturates well outside the
+    // path it came from. Everything above them is a stroke crossed at an angle the
+    // reading can resolve.
+    for row in 0 ..< Int(2 * Double(renderScale)) {
+        drawn[row] = nil
+        reference[row] = nil
+    }
+
+    // The `clip` arm's tolerances, for the same reasons: a rasterized, antialiased
+    // edge against a path. Nowhere near loose enough to pass the control, which is
+    // a square corner and misses by more than 10 pt.
+    return compare(
+        drawn,
+        reference,
+        label: "the rendered attention frame against the window's own mask",
+        inward: 0.04,
+        outward: 0.07,
+        at: renderScale
+    )
+}
+
 // MARK: - The full-screen arm
 
 /// Runs the main run loop until `done` or the deadline, dispatching AppKit events
@@ -1067,10 +1165,12 @@ enum Probe {
             ok = heightArm(breakIt: breakIt)
         case "clip":
             ok = clipArm(breakIt: breakIt)
+        case "frame":
+            ok = frameArm(breakIt: breakIt)
         case "fullscreen":
             ok = fullscreenArm(breakIt: breakIt)
         default:
-            print("usage: cornertest radius|match|concentric|height|clip|fullscreen [break]")
+            print("usage: cornertest radius|match|concentric|height|clip|frame|fullscreen [break]")
             ok = false
         }
 
