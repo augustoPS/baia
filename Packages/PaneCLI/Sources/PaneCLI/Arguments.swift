@@ -121,8 +121,17 @@ public enum Arguments {
                 return .usage("cwd needs a path")
             }
             call.args.cwd = path
-            if let extra = tokens.take() {
-                return .usage(unexpected(extra, verb))
+            // `--json` after the path, the way every other verb takes it. Without
+            // it this verb prints nothing whether it worked or not, which makes a
+            // refusal indistinguishable from success at the one moment somebody
+            // is asking why nothing moved.
+            while let token = tokens.take() {
+                switch token {
+                case "--json":
+                    call.json = true
+                default:
+                    return .usage(unexpected(token, verb))
+                }
             }
 
         case .close, .focus, .equalize:
