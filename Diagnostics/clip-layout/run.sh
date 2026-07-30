@@ -49,7 +49,7 @@ swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/cliptest" \
 #
 # Every arm runs as an accessory app and none takes focus: the window is built
 # off-screen and never ordered front.
-for arm in floor width tracking reflow; do
+for arm in floor width tracking reflow fit; do
   "$OUT/cliptest" "$arm"
   echo
   if "$OUT/cliptest" "$arm" break; then
@@ -60,4 +60,4 @@ for arm in floor width tracking reflow; do
   echo
 done
 
-echo "all four arms pass and all four controls fail"
+echo "all five arms pass and all five controls fail"

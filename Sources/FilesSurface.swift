@@ -413,20 +413,32 @@ final class FileTreeRowsView: NSView {
     /// Rebuilt on scroll as well as on layout: the areas cover the rows the clip
     /// view can show, and scrolling changes which rows those are without changing
     /// this view's frame, which is the only thing AppKit calls this for by itself.
+    /// Both notifications, and `resize()` alongside the areas. See
+    /// ``ChangesRowsView/viewDidMoveToWindow()``: `layout()` does not run on a live
+    /// width drag, so without this the tree fitted every name to the width the
+    /// column opened at and drew its status glyphs past the divider.
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        guard let clip = enclosingScrollView?.contentView, scrollObserver == nil else { return }
+        guard let clip = enclosingScrollView?.contentView, clipObservers.isEmpty else { return }
         clip.postsBoundsChangedNotifications = true
-        scrollObserver = NotificationCenter.default.addObserver(
-            forName: NSView.boundsDidChangeNotification,
-            object: clip,
-            queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.updateTrackingAreas() }
+        clip.postsFrameChangedNotifications = true
+        for name in [NSView.boundsDidChangeNotification, NSView.frameDidChangeNotification] {
+            // `queue: nil` for the reason ``ChangesRowsView`` records: an enqueued
+            // block follows the clip a runloop turn late.
+            clipObservers.append(NotificationCenter.default.addObserver(
+                forName: name,
+                object: clip,
+                queue: nil
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.resize()
+                    self?.updateTrackingAreas()
+                }
+            })
         }
     }
 
-    private var scrollObserver: (any NSObjectProtocol)?
+    private var clipObservers: [any NSObjectProtocol] = []
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
