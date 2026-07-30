@@ -31,6 +31,14 @@ public enum ControlVerb: String, Sendable, Hashable, Codable, CaseIterable {
     /// later poll that disagrees wins, because then the pane genuinely moved.
     case cwd
 
+    /// Says what the calling pane is doing, overriding both pollers until it is
+    /// released or lapses.
+    ///
+    /// Self-relative like `cwd`, and for the same reason: it is a statement about
+    /// the caller and reaches nothing else. What it overrides is a conclusion the
+    /// app drew about that same pane, which the pane is better placed to make.
+    case report
+
     // Introspection, scoped to the caller, its descendants, and its peers.
     case whoami
     case list
@@ -76,7 +84,7 @@ public enum ControlVerb: String, Sendable, Hashable, Codable, CaseIterable {
         // `cwd` reports about the caller and reaches nothing else, so it sits
         // with the other self-relative verbs rather than earning a scope of its
         // own.
-        case .whoami, .publish, .connect, .peers, .recv, .subscribe, .cwd:
+        case .whoami, .publish, .connect, .peers, .recv, .subscribe, .cwd, .report:
             .selfOnly
         case .list:
             .scopedRead
@@ -95,7 +103,7 @@ public enum ControlVerb: String, Sendable, Hashable, Codable, CaseIterable {
         switch self {
         case .split, .close, .focus, .zoom, .resize, .equalize,
              .whoami, .list, .publish, .connect, .peers, .send, .recv, .revoke,
-             .subscribe, .cwd:
+             .subscribe, .cwd, .report:
             .channel
         case .run:
             .allowRun

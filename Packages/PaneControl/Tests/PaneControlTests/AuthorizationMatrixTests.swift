@@ -238,6 +238,7 @@ import Testing
         .resize: selfOnlyRow,
         .equalize: selfOnlyRow,
         .cwd: selfOnlyRow,
+        .report: selfOnlyRow,
         .whoami: selfOnlyRow,
         .publish: selfOnlyRow,
         .connect: selfOnlyRow,
