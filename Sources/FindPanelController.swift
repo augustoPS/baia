@@ -394,9 +394,18 @@ final class FindPanelController: NSObject, NSTextFieldDelegate {
     /// second of blocked main thread and 175 MB to draw nothing.
     private static let resultLimit = 200
 
-    private static let hints: [(key: String, label: String)] = [
-        ("\u{21A9}", "go"),
-        ("\u{21E7}\u{21A9}", "all panes"),
-        ("esc", "close"),
+    /// The find panel's own vocabulary, and deliberately not routed through
+    /// ``PaneChrome/PaletteHints/palette(hasResults:)``.
+    ///
+    /// The palette drops both its actions on an empty result set because both
+    /// return immediately. This panel's do not agree with each other there: `go`
+    /// is dead with no hits, and ⇧⏎ widening to every pane is *the* case the
+    /// gesture exists for, so a rule copied across would hide the one action worth
+    /// offering. Left alone until that state is looked at rather than reasoned
+    /// about.
+    private static let hints: [PaletteHint] = [
+        PaletteHint(key: "\u{21A9}", label: "go"),
+        PaletteHint(key: "\u{21E7}\u{21A9}", label: "all panes"),
+        PaletteHints.close,
     ]
 }

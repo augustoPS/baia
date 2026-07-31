@@ -236,6 +236,9 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
     private func refilter() {
         let query = queryView.field.stringValue
         results = ProjectRanker.rank(projects, query: query, recency: recency)
+        // The row follows the result set, because both actions it can name return
+        // immediately when there is nothing matched.
+        hintsView.hints = PaletteHints.palette(hasResults: !results.isEmpty)
 
         // Matched against `relativePath`, which is also what the row draws, so
         // the offsets `FuzzyMatcher` reports land on the characters the reader is
