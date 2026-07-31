@@ -31,6 +31,19 @@ import Testing
         case .subscribe: ControlArgs(wait: 30, from: 41, kinds: ["paneClosed"])
         case .report: ControlArgs(text: "which branch?", state: .blocked, ttl: 120, seq: 7)
         case .read: ControlArgs(lines: 50)
+        // Export sends nothing; the window it describes is the caller's own.
+        case .layoutExport: ControlArgs()
+        // A nested tree with a directory on one leaf and none on the other, which
+        // is what a redacted export looks like coming back in.
+        case .layoutApply: ControlArgs(layout: ControlLayout(tabs: [
+            .split(
+                axis: .horizontal,
+                ratio: 0.4,
+                first: .pane(cwd: "/Users/x/Projects/baia"),
+                second: .pane(cwd: nil)
+            ),
+            .pane(cwd: nil),
+        ]))
         case .run: ControlArgs()
         }
     }

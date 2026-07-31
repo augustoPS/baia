@@ -96,7 +96,18 @@ import Testing
         // everything else: whatever a pane printed must not be able to look like a
         // capability on the way back out.
         lines: ["a line the pane printed", "and another"],
-        truncated: true
+        truncated: true,
+        // A document describing panes the caller may not be able to see, which is
+        // exactly why it goes through the walk: it must carry no capability, and
+        // its own rule is stronger still, that it carries no identity at all.
+        layout: ControlLayout(tabs: [
+            .split(
+                axis: .horizontal,
+                ratio: 0.4,
+                first: .pane(cwd: "/Users/x/Projects/baia"),
+                second: .pane(cwd: nil)
+            ),
+        ])
     )
 
     static let error = ControlError(code: .refused, message: "why it failed")
@@ -113,6 +124,15 @@ import Testing
         "ControlMessage",
         "ControlEvent",
         "ControlError",
+        "ControlLayout",
+        "ControlLayoutNode",
+        // How reflection spells an enum case's associated values: the payload of
+        // `.pane` and of `.split`. Listed rather than filtered out, because they
+        // are where the layout document's own field names live, and a walk that
+        // stopped at `ControlLayoutNode` would examine the box and not the
+        // contents. If these two rows ever disappear, the descent broke.
+        "(cwd: Optional<String>)",
+        "(axis: ControlAxis, ratio: Double, first: ControlLayoutNode, second: ControlLayoutNode)",
     ]
 
     // MARK: Reflection

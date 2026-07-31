@@ -125,6 +125,16 @@ public struct ControlArgs: Sendable, Equatable, Codable {
     /// ``wait`` and ``ttl`` get.
     public var lines: Int?
 
+    /// `layout apply`: the document to open a window from, read from stdin by the
+    /// CLI the way `connect` reads its ticket.
+    ///
+    /// A decoded value rather than the file's text. The CLI has to parse it anyway
+    /// to refuse a malformed file before opening the socket, and re-encoding a
+    /// string inside a string is one more layer for a hand-written frame to get
+    /// wrong. ``ControlLayout/refusal()`` runs on both sides, and the server's is
+    /// the one that counts.
+    public var layout: ControlLayout?
+
     public init(
         axis: ControlAxis? = nil,
         cwd: String? = nil,
@@ -143,7 +153,8 @@ public struct ControlArgs: Sendable, Equatable, Codable {
         ttl: Int? = nil,
         seq: UInt64? = nil,
         release: Bool? = nil,
-        lines: Int? = nil
+        lines: Int? = nil,
+        layout: ControlLayout? = nil
     ) {
         self.axis = axis
         self.cwd = cwd
@@ -163,6 +174,7 @@ public struct ControlArgs: Sendable, Equatable, Codable {
         self.seq = seq
         self.release = release
         self.lines = lines
+        self.layout = layout
     }
 }
 

@@ -33,12 +33,24 @@ final class ControlAdapter: ControlWorkspaceBridge {
     /// something outside the workspace.
     private let keyWindow: () -> NSWindow?
 
+    /// Opens one detached window per snapshot, joining them into one tab group in
+    /// the order given, which is what `layout apply` is.
+    ///
+    /// A closure for the reason the two above are: this type holds no reference to
+    /// the delegate, and reaching for a singleton to open a window would be the
+    /// one place it did. The delegate owns the window list, the wiring every
+    /// window needs, and the default working directory a bare leaf falls back to,
+    /// so the snapshots go there and the windows come back from there.
+    private let openWindows: ([SessionSnapshot]) -> Void
+
     init(
         windows: @escaping () -> [WorkspaceWindowController],
-        keyWindow: @escaping () -> NSWindow? = { NSApp.keyWindow }
+        keyWindow: @escaping () -> NSWindow? = { NSApp.keyWindow },
+        openWindows: @escaping ([SessionSnapshot]) -> Void
     ) {
         self.windows = windows
         self.keyWindow = keyWindow
+        self.openWindows = openWindows
     }
 
     // MARK: The pane-to-window index
@@ -207,12 +219,13 @@ final class ControlAdapter: ControlWorkspaceBridge {
             return accept(report: args, on: placed)
 
         case .whoami, .list, .peers, .publish, .connect, .send, .recv, .subscribe, .revoke, .run,
-             .read:
-            // Unreachable: the server routes these to the graph and never here.
-            // The arm exists because the switch has no `default:` and never will.
+             .read, .layoutExport, .layoutApply:
+            // Unreachable: the server routes these to the graph, or to one of the
+            // bridge's other methods, and never here. The arm exists because the
+            // switch has no `default:` and never will.
             return .failure(
                 .internal,
-                "\(verb.rawValue) is answered by the graph and never by the workspace"
+                "\(verb.rawValue) is not a layout verb and never reaches this switch"
             )
         }
     }
@@ -406,6 +419,170 @@ final class ControlAdapter: ControlWorkspaceBridge {
             )
         }
         return .success()
+    }
+
+    // MARK: Layout documents
+
+    /// Every workspace window in one window's tab group, in tab order.
+    ///
+    /// Read off `tabGroup` for the reason ``placements()`` does: that is the only
+    /// place tab order exists, and a detached window is a group of one.
+    private func group(around placed: Placement) -> [WorkspaceWindowController] {
+        let controllers = windows()
+        let group = placed.controller.window.tabGroup?.windows ?? [placed.controller.window]
+        return group.compactMap { window in controllers.first { $0.window === window } }
+    }
+
+    /// Describes the caller's whole window and discloses directories for the panes
+    /// the server said were visible.
+    ///
+    /// The scope decision is not made here. `visible` arrives already resolved, so
+    /// what this does is a walk and a lookup: shape for every leaf, and a working
+    /// directory for a leaf whose pane is in the set. Doing the scoping here as
+    /// well would put half the rule somewhere the package tests cannot reach.
+    func layout(
+        of pane: ControlPaneID,
+        disclosingDirectoriesFor visible: Set<ControlPaneID>
+    ) -> ControlLayout? {
+        guard let placed = placement(of: pane) else { return nil }
+        let tabs = group(around: placed).flatMap { controller in
+            controller.tree.tabTrees.map { tree in
+                Self.describe(tree, in: controller, disclosingDirectoriesFor: visible)
+            }
+        }
+        return ControlLayout(tabs: tabs)
+    }
+
+    /// One tree, as a document node.
+    ///
+    /// No `default:` on the axis, so a third `SplitAxis` has to be spelled for the
+    /// wire rather than silently exported as `horizontal`. The two enums name the
+    /// same idea the same way: `horizontal` is side by side.
+    ///
+    /// The path is not flattened to one line the way ``PaneRecord`` flattens
+    /// every field it carries, and the difference is the destination rather than
+    /// an oversight. A record is printed one field per line, where a newline
+    /// forges a row; this goes out as JSON, where a newline is `\n` inside a
+    /// string and can forge nothing. Flattening here would corrupt the one path
+    /// that legitimately contains one.
+    private static func describe(
+        _ tree: PaneTree,
+        in controller: WorkspaceWindowController,
+        disclosingDirectoriesFor visible: Set<ControlPaneID>
+    ) -> ControlLayoutNode {
+        switch tree {
+        case let .leaf(id):
+            guard visible.contains(id.control) else { return .pane(cwd: nil) }
+            return .pane(
+                cwd: controller.tree.pane(id)?.anchorTracker.workingDirectory?
+                    .path(percentEncoded: false)
+            )
+        case let .split(axis, ratio, first, second):
+            return .split(
+                axis: axis == .vertical ? .vertical : .horizontal,
+                ratio: ratio,
+                first: describe(first, in: controller, disclosingDirectoriesFor: visible),
+                second: describe(second, in: controller, disclosingDirectoriesFor: visible)
+            )
+        }
+    }
+
+    /// Opens a new window from a document, and touches nothing that already exists.
+    ///
+    /// One snapshot per tab, which is the shape ``AppDelegate`` already restores a
+    /// session in: a baia tab is its own `NSWindow` joined into a group, so a
+    /// two-tab document is two windows and one group.
+    ///
+    /// **Every pane is created by the caller**, so `baia list --tree` shows what
+    /// this opened and `subscribe` carries a `paneOpened` for each, exactly as a
+    /// `split` would. Nothing else about the caller changes: its window is not
+    /// raised, resized, re-split, or reordered.
+    ///
+    /// Success is returned before the windows exist, because opening them is the
+    /// delegate's turn of the main loop and the caller's shell is waiting on this
+    /// frame. There is nothing to report back: the panes are reachable through
+    /// `list` and the failure this could have had, a document that means nothing,
+    /// was answered before we got here.
+    func applyLayout(_ layout: ControlLayout, createdBy pane: ControlPaneID) -> ControlResponse {
+        // Refused again rather than trusted, matching every other cap on this
+        // wire. The CLI checks it so a typo costs no round trip and the server
+        // checks it because a frame can arrive with no CLI in front of it; this
+        // is the server's check, spent where the document is finally read.
+        if let refusal = layout.refusal() {
+            return .failure(.refused, refusal)
+        }
+
+        var pieces: [SessionSnapshot] = []
+        for tab in layout.tabs {
+            var states: [PaneState] = []
+            let tree = Self.build(tab, createdBy: pane.layout, into: &states)
+            guard let focused = tree.paneIDs.first else { continue }
+            pieces.append(
+                SessionSnapshot(
+                    workspace: Workspace(
+                        tabs: [Tab(id: UUID(), tree: tree, focusedPane: focused, zoomedPane: nil)],
+                        focusedTabIndex: 0
+                    ),
+                    panes: states,
+                    // Both nil: a document carries no geometry, so the window takes
+                    // whatever AppKit gives it and the sidebar opens at its default.
+                    // A frame invented here would be one more thing the file claims
+                    // and does not hold.
+                    windowFrame: nil,
+                    sidebar: nil
+                )
+            )
+        }
+        guard pieces.isEmpty == false else {
+            return .failure(.refused, "this layout describes no panes, so there is nothing to open")
+        }
+
+        openWindows(pieces)
+        return .success()
+    }
+
+    /// One document node, as a tree of fresh panes.
+    ///
+    /// **Fresh ids on every apply**, which is what makes a layout a template: the
+    /// document holds none, so applying the same file twice opens two independent
+    /// windows rather than two claims on one set of panes.
+    ///
+    /// A directory that is not a directory becomes nil, and a nil opens at the
+    /// default. That is the rule `SessionStore.reconciled` follows for a restore,
+    /// except that this drops the *directory* and never the pane: the owner asked
+    /// for five panes, and answering with four because one repository moved is a
+    /// worse answer than five with one of them at home.
+    private static func build(
+        _ node: ControlLayoutNode,
+        createdBy: PaneID,
+        into states: inout [PaneState]
+    ) -> PaneTree {
+        switch node {
+        case let .pane(cwd):
+            let id = PaneID()
+            states.append(
+                PaneState(
+                    id: id,
+                    workingDirectory: cwd.flatMap(Self.existingDirectory),
+                    pinnedDirectory: nil,
+                    createdBy: createdBy
+                )
+            )
+            return .leaf(id)
+        case let .split(axis, ratio, first, second):
+            return .split(
+                axis: axis == .vertical ? .vertical : .horizontal,
+                ratio: ControlLayout.clampedRatio(ratio),
+                first: build(first, createdBy: createdBy, into: &states),
+                second: build(second, createdBy: createdBy, into: &states)
+            )
+        }
+    }
+
+    private static func existingDirectory(_ path: String) -> String? {
+        var isDirectory: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+        return exists && isDirectory.boolValue ? path : nil
     }
 
     /// The wire's spelling of a direction onto the layout package's.

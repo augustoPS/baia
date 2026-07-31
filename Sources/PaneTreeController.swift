@@ -445,6 +445,14 @@ final class PaneTreeController: NSViewController {
     /// tree this question to find the one that owns a pane.
     func pane(_ id: PaneID) -> TerminalPaneController? { panes[id] }
 
+    /// Every tab's tree, in tab order.
+    ///
+    /// Exposed for `layout export`, which describes a window rather than acting on
+    /// one. The trees and not the `Workspace`: focus and zoom are the two things
+    /// the document deliberately does not carry, and handing them over would put
+    /// the decision not to export them somewhere other than where it is made.
+    var tabTrees: [PaneTree] { workspace.tabs.map(\.tree) }
+
     /// Whether `pane` holds this window's keyboard focus in the model.
     ///
     /// The model rather than the responder chain, because a pane in a background

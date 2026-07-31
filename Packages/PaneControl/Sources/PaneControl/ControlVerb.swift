@@ -63,6 +63,62 @@ public enum ControlVerb: String, Sendable, Hashable, Codable, CaseIterable {
     /// is not, and that asymmetry is intentional rather than an oversight.
     case read
 
+    /// Prints the arrangement of the window the calling pane is in, as a document
+    /// `layoutApply` can open.
+    ///
+    /// **Why this is `.scopedRead` and not something narrower.** A tab's layout
+    /// carries the working directories of panes the caller never created, and the
+    /// channel's rule is self, descendants, and peers. The answer is split along
+    /// that line rather than withheld or granted whole:
+    ///
+    /// - **The shape goes out unconditionally**: the tree, the ratios, and the tab
+    ///   order of the caller's own window. What is left after the split below is
+    ///   structure with nothing in it to act on. No pane id, so the document is no
+    ///   use as reconnaissance; no directory, so it names nothing the caller could
+    ///   not name already; no focus and no zoom, so it says nothing about what the
+    ///   owner is doing. A pane can already infer some of this without asking: a
+    ///   sibling splitting resizes the caller's own grid and its shell hears
+    ///   `SIGWINCH`. The tabs beside it are the part that is genuinely new, and
+    ///   that widening is bought deliberately, because a layout that stops at one
+    ///   tab cannot express the setup the verb exists to capture.
+    /// - **A working directory goes out only where `list` would already show it.**
+    ///   Same set, same resolver, computed by the server the way `list` computes
+    ///   it: the caller, its descendants, and its peers. Every other pane exports
+    ///   as a leaf with no directory, and `layoutApply` opens those at the default
+    ///   one. So `make dev` still opens five panes in five repositories for the
+    ///   owner who exported it, and a pane that created none of them learns the
+    ///   window has five panes and not where any of them is working.
+    ///
+    /// Gated on the channel alone, with no key of its own, for the same reason:
+    /// nothing in the answer exceeds what `list` already returns, and `list` is
+    /// gated on the channel. `read` has a key because its answer carries another
+    /// pane's screen. This one carries a shape.
+    ///
+    /// The two spellings are one verb. On the wire it is `layout-export`, because
+    /// a verb is one string there; at the prompt it is `baia layout export`, which
+    /// is what the CLI documents and what a Makefile will hold. The hyphenated
+    /// form parses too, since the wire spelling is the CLI's head lookup, and
+    /// there is no reason to add a rejection for a spelling that means the same
+    /// thing.
+    case layoutExport = "layout-export"
+
+    /// Opens a **new** window from a layout document.
+    ///
+    /// `.selfOnly`, and the reason is that it never touches a pane it did not
+    /// make. It creates; it does not reshape the caller's window, or any other.
+    /// That is what keeps it inside v1: cross-pane mutation is deferred to v2, and
+    /// a verb that re-split the caller's tab would be that, arriving early and
+    /// under a different name.
+    ///
+    /// The new window is detached rather than joined to the caller's tab group.
+    /// Joining would reorder a tab bar the owner arranged, which is a change to
+    /// something the caller does not own even though no pane moves.
+    ///
+    /// Every pane it opens is recorded as created by the caller, so they appear in
+    /// the caller's `list --tree` and their `paneOpened` events reach its
+    /// `subscribe`, exactly like a pane from `split`.
+    case layoutApply = "layout-apply"
+
     /// Cross-pane execution. Declared in v1 and refused in v1.
     ///
     /// Present rather than absent because absence would make
@@ -95,7 +151,15 @@ public enum ControlVerb: String, Sendable, Hashable, Codable, CaseIterable {
         // own.
         case .whoami, .publish, .connect, .peers, .recv, .subscribe, .cwd, .report:
             .selfOnly
-        case .list:
+        // Creates a window and reaches no existing pane, so it sits with the
+        // layout verbs rather than earning a scope for the panes it makes.
+        case .layoutApply:
+            .selfOnly
+        // Read-only, and scoped exactly like `list` because half its answer *is*
+        // `list`'s: a working directory goes out only for a pane `list` would
+        // already name. The other half is the window's shape, which carries no id
+        // and no directory. Argued in full on the case itself.
+        case .list, .layoutExport:
             .scopedRead
         // The first verb to exercise `.descendant` for anything. The scope has
         // been implemented and correct since v1 with no consumer; `run` declares
@@ -117,7 +181,7 @@ public enum ControlVerb: String, Sendable, Hashable, Codable, CaseIterable {
         switch self {
         case .split, .close, .focus, .zoom, .resize, .equalize,
              .whoami, .list, .publish, .connect, .peers, .send, .recv, .revoke,
-             .subscribe, .cwd, .report:
+             .subscribe, .cwd, .report, .layoutExport, .layoutApply:
             .channel
         case .read:
             .allowRead

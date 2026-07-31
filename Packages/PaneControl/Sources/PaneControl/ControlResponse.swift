@@ -117,6 +117,15 @@ public struct ControlResult: Sendable, Equatable, Codable {
     /// an omitted field for a complete answer.
     public var truncated: Bool?
 
+    /// `layout export`: the caller's window, as a document `layout apply` reads.
+    ///
+    /// Carries no pane id, which is what keeps it inside rule 2 while describing
+    /// panes the caller cannot otherwise see. The directories in it are the ones
+    /// `list` would already show, filtered by the server against the same visible
+    /// set `PaneRecord.redacted(toVisible:)` uses; every other pane is a leaf with
+    /// no directory on it.
+    public var layout: ControlLayout?
+
     public init(
         pane: String? = nil,
         name: String? = nil,
@@ -130,7 +139,8 @@ public struct ControlResult: Sendable, Equatable, Codable {
         gap: Bool? = nil,
         seq: UInt64? = nil,
         lines: [String]? = nil,
-        truncated: Bool? = nil
+        truncated: Bool? = nil,
+        layout: ControlLayout? = nil
     ) {
         self.pane = pane
         self.name = name
@@ -145,6 +155,7 @@ public struct ControlResult: Sendable, Equatable, Codable {
         self.seq = seq
         self.lines = lines
         self.truncated = truncated
+        self.layout = layout
     }
 }
 

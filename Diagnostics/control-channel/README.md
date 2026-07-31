@@ -2,7 +2,7 @@
 
 `./run.sh` from anywhere. It builds baia, launches it, exercises the control
 channel over the real socket, and exits non-zero naming any check that failed.
-Sixty-seven checks, each printing `ok` or `FAIL`, ending in `PASS` or
+Ninety-six checks, each printing `ok` or `FAIL`, ending in `PASS` or
 `FAILED n of m`.
 
 **This probe caught a real bug on 2026-07-30 by being unable to pass.** "the
@@ -93,6 +93,31 @@ one pane after that pane has created another. `send` to a live pane that is not 
 peer is `unauthorized`, and `send` to a pane that does not exist answers the same
 code, so a caller cannot enumerate the workspace one id at a time.
 
+**A layout document says the shape and withholds the directories.** Run first,
+and the position is the assertion: alpha has created nothing at that point, so
+its visible set is itself alone and the three-pane seeded window is exactly the
+case the scope decision was made for. The export names all three panes and one
+directory, and no display id appears anywhere in it, which is what makes a shape
+describing panes the caller cannot see safe to hand over. Then the rule as a
+difference, which a count alone cannot show: alpha splits, and exactly one more
+directory crosses. Delete the `visible.contains` guard in `ControlAdapter.describe`
+and both go red at three of three and four of four, which is the negative control
+for this feature and the one to run when it changes.
+
+**A layout applies into a new window and reshapes nothing.** A three-pane
+document is applied and its panes join the caller's scope naming the caller as
+their creator, which is what a `split`'s pane does. One of them is asked to
+describe the window it is now in, and that has to be the document that opened it:
+the strongest available form of "the new window matches the file", and it is
+answered by a pane rather than by a screenshot. The caller's own window is
+exported before and after and must not have moved. Two of the three directories
+exist and are honoured; the third does not, and that pane opens at the default
+rather than being dropped, because the owner asked for three panes. A document
+with no tabs, one from another version, and one past the pane cap are each
+refused with nothing opened, and every one of those frames reached the socket
+without the CLI in front of it, which is the half of the check that matters:
+`ControlLayout.refusal()` runs in both places and only this one is the rule.
+
 **What a supervising pane hears.** A parked `subscribe` is woken by a descendant
 opening and names the pane that created it. A parent hears the close of a child
 after that child is gone, which is the case the audience-at-emit design exists
@@ -106,9 +131,11 @@ string `list` reports for that pane, which is the live half of the rule that a
 subscriber's bootstrap and its stream speak one vocabulary.
 
 **The two settings keys have consumers.** `controlChannelEnabled` is flipped to
-false live and every one of the fifteen verbs v1 shipped must answer `disabled`,
-then flipped back and `whoami` must work again. `subscribe` is the sixteenth verb
-and is not in that list, so its gate is held only by the package's verb table.
+false live and every one of the eighteen verbs in the probe's own list must answer
+`disabled`, then flipped back and `whoami` must work again. The list is
+hand-maintained and now carries `subscribe` and both layout verbs; `read` is not
+in it, because its gate is a key of its own and the package's verb table holds
+that one.
 `controlAllowRun` is flipped and `run`'s code must move from `disabled` to
 `refused` and back. Each flip is waited on by polling the channel rather than by
 sleeping, so a key with no consumer fails on the deadline instead of passing on a

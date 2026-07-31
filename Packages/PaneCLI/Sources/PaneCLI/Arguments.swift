@@ -37,6 +37,14 @@ public enum StdinUse {
 
     /// `send --stdin`: the message body.
     case messageBody
+
+    /// `layout apply`: the document, which is a file rather than a secret.
+    ///
+    /// Stdin and not a path, so `baia layout apply < dev.json`, a heredoc, and a
+    /// generator piping into it all work the same way, and so the CLI never opens
+    /// a file on a caller's behalf. Reading a path would put a filesystem read
+    /// inside a tool whose whole other job is talking to one socket.
+    case layoutDocument
 }
 
 /// A command the CLI answers itself, without opening the socket.
@@ -102,6 +110,26 @@ public enum Arguments {
                 }
             }
             return .local(.installHooks(uninstall: uninstall))
+        }
+
+        // `baia layout export` is two tokens at the prompt and one verb on the
+        // wire. Rewritten into the wire spelling and parsed again rather than
+        // given an arm of its own, so its flags reach the same switch every other
+        // verb's do and there is no second place for a flag rule to live.
+        if head == "layout" {
+            let rest = Array(argv.dropFirst())
+            if rest.contains("--help") || rest.contains("-h") {
+                return .help
+            }
+            guard let sub = rest.first, sub.hasPrefix("-") == false else {
+                return .usage("layout needs a command: export or apply.")
+            }
+            guard ControlVerb(rawValue: "layout-\(sub)") != nil else {
+                return .usage(
+                    "no layout command named \(clamped(sub)). There are two: export and apply."
+                )
+            }
+            return parse(["layout-\(sub)"] + rest.dropFirst())
         }
 
         guard let verb = ControlVerb(rawValue: head) else {
@@ -243,6 +271,27 @@ public enum Arguments {
             if let token = tokens.take() {
                 return .usage(unexpected(token, verb))
             }
+
+        case .layoutExport:
+            // No `--json`, and the refusal says so rather than accepting it. The
+            // plain output *is* the document, which is what `> dev.json` catches
+            // and what `layout apply` reads back. A `--json` that wrapped the same
+            // thing in a response envelope would hand somebody a file that looks
+            // right and applies to nothing.
+            if let token = tokens.take() {
+                return .usage(
+                    token == "--json"
+                        ? "layout export already prints JSON. Its output is the document itself, "
+                            + "which is what layout apply reads."
+                        : unexpected(token, verb)
+                )
+            }
+
+        case .layoutApply:
+            if let token = tokens.take() {
+                return .usage(unexpected(token, verb))
+            }
+            call.stdin = .layoutDocument
 
         case .zoom:
             while let token = tokens.take() {
@@ -487,7 +536,16 @@ public enum Arguments {
     }
 
     private static func unexpected(_ token: String, _ verb: ControlVerb) -> String {
-        "baia \(verb.rawValue) does not take \(clamped(token))"
+        "baia \(spelling(of: verb)) does not take \(clamped(token))"
+    }
+
+    /// A verb as a person types it, which for `layout-export` is `layout export`.
+    ///
+    /// Derived from the wire spelling rather than tabulated beside it. A second
+    /// table would be a second thing to keep in step, and the rule is small enough
+    /// to state: a hyphen on the wire is a space at the prompt.
+    static func spelling(of verb: ControlVerb) -> String {
+        verb.rawValue.replacingOccurrences(of: "-", with: " ")
     }
 
     /// The tokens after the verb, walked once, left to right.

@@ -24,6 +24,7 @@ all is the over-cap frame, whose assertion is that there were none.
 import glob
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -42,10 +43,19 @@ SETTLE_TIMEOUT = 15.0
 # somebody notices.
 CHURN_SPLITS = 340
 
+# A display pane id is a UUID string and nothing else on this wire is, so this is
+# how a layout document is asked whether it carries an identity. Written against
+# the encoded document rather than against its fields, because the way an id gets
+# in is somebody adding a field for one, and a walk over the fields we know about
+# would keep passing when they did.
+UUID_PATTERN = re.compile(
+    r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"
+)
+
 VERBS = [
     "split", "close", "focus", "zoom", "resize", "equalize",
     "whoami", "list", "publish", "connect", "peers", "send", "recv", "revoke", "run",
-    "subscribe",
+    "subscribe", "layout-export", "layout-apply",
 ]
 
 
@@ -205,6 +215,128 @@ class Probe:
             if record.get("pane") == pane:
                 return record
         return None
+
+    # MARK: layout documents
+
+    @staticmethod
+    def layout_of(response):
+        """The document a `layout-export` answered with, or None."""
+        return (response.get("result") or {}).get("layout")
+
+    @staticmethod
+    def same_path(reported, asked):
+        """Whether two spellings name one directory.
+
+        Three things move a path between the probe and the app, all of them
+        recorded in the hub. `$TMPDIR` is `/var/folders/…`, which the kernel
+        reports back as the `/private/var/folders/…` vnode path; a `URL` built
+        with a directory hint carries a trailing slash into its path string; and
+        `${TMPDIR:-/tmp}/x` doubles a separator. None is a difference in which
+        directory was opened, and comparing the strings would report all three as
+        one.
+        """
+        if not reported or not asked:
+            return False
+        return (os.path.realpath(reported.rstrip("/"))
+                == os.path.realpath(asked.rstrip("/")))
+
+    @staticmethod
+    def leaves(node):
+        """Every pane of one node, in the order the document writes them."""
+        if "pane" in node:
+            return [node["pane"] or {}]
+        split = node["split"]
+        return Probe.leaves(split["first"]) + Probe.leaves(split["second"])
+
+    @staticmethod
+    def shape(node):
+        """One node with every working directory taken out of it.
+
+        What two arrangements have to agree on for one to be the other applied.
+        The directories are deliberately not compared: an exported document
+        carries them only for the panes the exporter could see, so a pane
+        describing a window it did not create has fewer of them than the file
+        that opened it, by design.
+        """
+        if "pane" in node:
+            return "pane"
+        split = node["split"]
+        return {
+            "axis": split["axis"],
+            # Six places, because the ratio crosses JSON twice and a divider is
+            # not asked to be exact to the last bit.
+            "ratio": round(float(split["ratio"]), 6),
+            "first": Probe.shape(split["first"]),
+            "second": Probe.shape(split["second"]),
+        }
+
+    def await_layout(self, token, panes, limit=SETTLE_TIMEOUT):
+        """Polls `layout-export` until the window holds `panes` of them.
+
+        A window opens on a later turn of the main loop than the response that
+        asked for it, so the wait is the assertion: a document that opened
+        nothing never reaches the count and the check fails on the deadline.
+        """
+        deadline = time.time() + limit
+        last = None
+        while time.time() < deadline:
+            last = self.layout_of(self.request(token, "layout-export"))
+            if last and sum(len(Probe.leaves(tab)) for tab in last["tabs"]) == panes:
+                return last
+            time.sleep(0.2)
+        return last
+
+    def await_directories(self, token, panes, limit=SETTLE_TIMEOUT):
+        """Polls `list` until every named pane reports a working directory.
+
+        The anchor tracker reads the foreground process's cwd once a second, so a
+        pane that opened a moment ago legitimately has none yet. Waiting is what
+        keeps this an assertion about where the panes opened rather than about
+        how fast they were asked: a pane that opened somewhere else reports that
+        somewhere else straight away and fails the comparison, not the deadline.
+        """
+        deadline = time.time() + limit
+        found = {}
+        while time.time() < deadline:
+            for record in (self.request(token, "list").get("result") or {}).get("panes") or []:
+                if record.get("pane") in panes and record.get("workingDirectory"):
+                    found[record["pane"]] = record["workingDirectory"]
+            if len(found) == len(panes):
+                break
+            time.sleep(0.2)
+        return sorted(found.get(pane, "") for pane in panes)
+
+    def await_disclosure(self, token, panes, disclosed, limit=SETTLE_TIMEOUT):
+        """Polls `layout-export` until the window holds `panes` leaves, `disclosed`
+        of them carrying a directory, and answers with what it last saw.
+
+        Two things arrive late and neither is the scope rule: a window opens on a
+        later turn of the main loop than the response asking for it, and the
+        anchor tracker reads a pane's directory once a second. An export that
+        withheld a directory it should have disclosed never reaches the pair and
+        fails on the deadline with the counts it did reach.
+        """
+        deadline = time.time() + limit
+        last = [0, 0]
+        while time.time() < deadline:
+            document = self.layout_of(self.request(token, "layout-export")) or {"tabs": []}
+            leaves = [leaf for tab in document["tabs"] for leaf in self.leaves(tab)]
+            last = [len(leaves), len([leaf for leaf in leaves if leaf.get("cwd")])]
+            if last == [panes, disclosed]:
+                return last
+            time.sleep(0.2)
+        return last
+
+    def await_scope(self, token, panes, limit=SETTLE_TIMEOUT):
+        """Polls `list` until it names `panes` records."""
+        deadline = time.time() + limit
+        last = None
+        while time.time() < deadline:
+            last = self.request(token, "list")
+            if len(self.named_panes(last) or []) == panes:
+                return last
+            time.sleep(0.2)
+        return last
 
     # MARK: what the app told the panes
 
@@ -426,6 +558,70 @@ def main():
         "whoami through nc names the calling pane and nothing else",
         probe.named_panes(probe.request_through_nc(live[alpha], "whoami")),
         [alpha],
+    )
+
+    print()
+    print("-- layout export describes the window and withholds the directories")
+    # **First, and the position is the assertion.** Alpha has created nothing at
+    # this point in the run and has no peers, so its visible set is itself alone.
+    # The seeded tab holds three panes, which makes this exactly the case the
+    # scope decision was made for: the shape of all three goes out, and one
+    # directory does. Anything later in this file would run against an alpha that
+    # had acquired descendants, where a count proves nothing.
+    exported = probe.layout_of(probe.request(live[alpha], "layout-export"))
+    probe.check(
+        "export answers a document this build writes",
+        (exported or {}).get("version"),
+        1,
+    )
+    tabs = (exported or {}).get("tabs") or []
+    panes_in_document = [leaf for tab in tabs for leaf in probe.leaves(tab)]
+    probe.check(
+        "it describes every pane of the window, including the two alpha cannot see",
+        len(panes_in_document),
+        3,
+    )
+    # The scope decision, stated as a count rather than as a path. The three
+    # seeded panes are the owner's and share one directory, so what separates a
+    # correct export from a leaking one here is how many leaves carry it.
+    probe.check(
+        "and exactly one of them carries a working directory, which is alpha's own",
+        [
+            len([leaf for leaf in panes_in_document if leaf.get("cwd")]),
+            probe.same_path(
+                next(leaf["cwd"] for leaf in panes_in_document if leaf.get("cwd")),
+                probe.scratch,
+            ),
+        ],
+        [1, True],
+    )
+    # The other half of what makes the shape safe to widen. A document that
+    # carried ids would hand alpha the display id of two panes it may not see,
+    # which is the reconnaissance every record on this wire is redacted against.
+    probe.check(
+        "no display id appears anywhere in the document",
+        bool(UUID_PATTERN.search(json.dumps(exported))),
+        False,
+    )
+    # **The rule as a difference, which a count alone cannot show.** Alpha splits,
+    # which gives it one descendant `list` would name, and exactly one more
+    # directory crosses. A build that exported every directory passes the check
+    # above only by accident of alpha being alone; it cannot pass this one. The
+    # pane is closed again so the sections below start where they expect to.
+    child = (probe.request(live[alpha], "split").get("result") or {}).get("pane")
+    probe.check(
+        "a pane the caller created is one more directory the export discloses",
+        probe.await_disclosure(live[alpha], 4, 2),
+        [4, 2],
+    )
+    child_token = probe.await_token(child) if child else None
+    if child_token:
+        probe.request(child_token, "close")
+    probe.check(
+        "and the window is back to three once it closes",
+        len([leaf for tab in (probe.await_layout(live[alpha], 3) or {"tabs": []})["tabs"]
+             for leaf in probe.leaves(tab)]),
+        3,
     )
 
     print()
@@ -913,6 +1109,140 @@ def main():
         [True, False],
     )
     probe.request(reader_token, "close")
+
+    print()
+    print("-- layout apply opens a window and touches nothing that exists")
+    # Two directories that exist and one that does not, because the third is the
+    # fallback rule: a pane whose directory has gone opens at the default rather
+    # than being dropped, since the owner asked for three panes.
+    document = {
+        "version": 1,
+        "tabs": [{
+            "split": {
+                "axis": "horizontal",
+                "ratio": 0.35,
+                "first": {"pane": {"cwd": probe.scratch}},
+                "second": {
+                    "split": {
+                        "axis": "vertical",
+                        "ratio": 0.6,
+                        "first": {"pane": {"cwd": probe.token_dir}},
+                        "second": {"pane": {"cwd": probe.scratch + "/gone-by-now"}},
+                    },
+                },
+            },
+        }],
+    }
+    # Measured against what alpha's scope holds now rather than against one,
+    # because the sections above created and closed panes of their own and this
+    # check is about the three that arrive next.
+    before = set(probe.named_panes(probe.request(live[alpha], "list")) or [])
+    # Read now rather than reused from the section at the top of this file. The
+    # sections between have split alpha's window and left panes in it, so the
+    # claim worth checking is that *this* apply changes nothing, not that the
+    # window is what a document from six sections ago described.
+    was = probe.shape(
+        (probe.layout_of(probe.request(live[alpha], "layout-export"))
+         or {"tabs": [None]})["tabs"][0]
+    )
+    probe.check(
+        "a well-formed document is applied",
+        probe.code(probe.request(live[alpha], "layout-apply", {"layout": document})),
+        "ok",
+    )
+    # The panes are alpha's, the way a `split`'s pane is, so they arrive in
+    # alpha's own scope rather than nowhere.
+    scoped = probe.await_scope(live[alpha], len(before) + 3)
+    probe.check(
+        "the three panes it opened join the caller's scope",
+        len(probe.named_panes(scoped) or []),
+        len(before) + 3,
+    )
+    opened = sorted(set(probe.named_panes(scoped) or []) - before)
+    probe.check(
+        "and every one of them names the caller as its creator",
+        sorted(
+            record.get("createdBy")
+            for record in (scoped.get("result") or {}).get("panes") or []
+            if record.get("pane") in opened
+        ),
+        [alpha, alpha, alpha],
+    )
+    # **The claim that keeps this verb inside v1**, read after the three panes have
+    # landed so it is not asking the question before there was anything to break:
+    # apply created a window and touched nothing in the caller's.
+    probe.check(
+        "the caller's own window is the shape it was",
+        probe.shape(
+            (probe.layout_of(probe.request(live[alpha], "layout-export"))
+             or {"tabs": [None]})["tabs"][0]
+        ),
+        was,
+    )
+
+    # The strongest form of "the new window matches the file": ask one of the
+    # panes it opened to describe the window it is in, and compare that against
+    # the document that opened it. The applied panes report their own
+    # capabilities through the same plant every other pane does.
+    newcomer = probe.await_token(opened[0]) if opened else None
+    if newcomer is None:
+        probe.check("a pane the layout opened reported its own capability", False, True)
+    else:
+        probe.check(
+            "the window it opened has the shape the document asked for",
+            probe.shape((probe.await_layout(newcomer, 3) or {"tabs": [None]})["tabs"][0]),
+            probe.shape(document["tabs"][0]),
+        )
+        # The fallback, seen from inside. Two of the three directories existed
+        # and were honoured; the third did not, and that pane opened at the
+        # default rather than not opening at all.
+        directories = probe.await_directories(live[alpha], opened)
+        probe.check(
+            "a directory that exists is honoured and one that does not falls back",
+            [
+                any(probe.same_path(seen, probe.scratch) for seen in directories),
+                any(probe.same_path(seen, probe.token_dir) for seen in directories),
+                any(
+                    probe.same_path(seen, probe.scratch + "/gone-by-now")
+                    for seen in directories
+                ),
+            ],
+            [True, True, False],
+        )
+
+    print()
+    print("-- and a document that means nothing is refused before it opens anything")
+    probe.check(
+        "an apply with no document at all is a bad frame",
+        probe.code(probe.request(live[alpha], "layout-apply")),
+        "badFrame",
+    )
+    probe.check(
+        "a document from another version is refused rather than guessed at",
+        probe.code(probe.request(
+            live[alpha], "layout-apply",
+            {"layout": {"version": 99, "tabs": [{"pane": {}}]}},
+        )),
+        "refused",
+    )
+    probe.check(
+        "a document with no tabs is refused",
+        probe.code(probe.request(
+            live[alpha], "layout-apply", {"layout": {"version": 1, "tabs": []}},
+        )),
+        "refused",
+    )
+    # Every leaf is a real shell, so the cap is on processes rather than on
+    # drawing, and it is the server's cap and not the CLI's: this frame never
+    # went near the CLI.
+    probe.check(
+        "a document past the pane cap is refused, and no shells are spawned for it",
+        probe.code(probe.request(
+            live[alpha], "layout-apply",
+            {"layout": {"version": 1, "tabs": [{"pane": {}}] * 64}},
+        )),
+        "refused",
+    )
 
     print()
     print("-- close answers before the shell it kills")

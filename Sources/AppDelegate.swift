@@ -41,9 +41,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ///
     /// Built with closures over this delegate's own state rather than a reference
     /// to it, so the adapter can be read without knowing what an `AppDelegate` is
-    /// and cannot reach anything but the window list and the key window.
+    /// and cannot reach anything but the window list, the key window, and the one
+    /// door that opens a window.
     private lazy var controlAdapter = ControlAdapter(
-        windows: { [weak self] in self?.windows ?? [] }
+        windows: { [weak self] in self?.windows ?? [] },
+        openWindows: { [weak self] pieces in
+            guard let self else { return }
+            openWindows(restoring: pieces)
+        }
     )
 
     private lazy var palette: CommandPaletteController = {
@@ -988,6 +993,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             windows[index].tree.focusedPane?.takeFocus()
         }
         updateWindowTitles()
+    }
+
+    /// Opens one window per snapshot, joined into a group of their own.
+    ///
+    /// What `baia layout apply` lands on. The join order is `restoreSession`'s and
+    /// for its reason: `addTabbedWindow` inserts *after* the window it is given,
+    /// so each tab joins the one before it rather than all of them joining the
+    /// first, which builds the group in reverse from the third tab on.
+    ///
+    /// **Detached from every existing window**, which is `.disallowed` on the
+    /// first and `joining: nil` with it. A layout arriving in the caller's tab
+    /// group would reorder a tab bar the owner arranged: no pane moves, and the
+    /// window they were looking at is not the window they are looking at now.
+    ///
+    /// Scheduled rather than run now, because the caller's shell is waiting on the
+    /// response frame and this opens shells. The server hands that frame to the
+    /// transport on the way out of the adapter, inside the current turn, so it is
+    /// queued before any of this runs.
+    func openWindows(restoring pieces: [SessionSnapshot]) {
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                var previous: NSWindow?
+                for piece in pieces {
+                    let controller = self.openWindow(
+                        tree: PaneTreeController(
+                            restoring: piece,
+                            defaultWorkingDirectory: Self.defaultWorkingDirectory,
+                            configuration: self.configuration,
+                            channel: self.control
+                        ),
+                        joining: previous,
+                        tabbing: previous == nil ? .disallowed : .preferred
+                    )
+                    previous = controller.window
+                }
+                self.scheduleSave()
+            }
+        }
     }
 
     private func openFresh() {

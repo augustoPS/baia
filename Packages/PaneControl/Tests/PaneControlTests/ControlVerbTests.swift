@@ -31,6 +31,12 @@ import Testing
             .subscribe: "subscribe",
             .report: "report",
             .read: "read",
+            // Hyphenated because a verb is one string on the wire and two tokens
+            // at the prompt. The CLI rewrites `baia layout export` into this, so a
+            // change here is a change to what a Makefile written against an older
+            // baia sends.
+            .layoutExport: "layout-export",
+            .layoutApply: "layout-apply",
             .run: "run",
         ]
         for verb in ControlVerb.allCases {
@@ -73,7 +79,13 @@ import Testing
             .recv: .selfOnly,
             .subscribe: .selfOnly,
             .report: .selfOnly,
+            // Creates a window and reaches no pane that already exists, which is
+            // what keeps it out of the cross-pane mutation v1 defers.
+            .layoutApply: .selfOnly,
             .list: .scopedRead,
+            // Scoped exactly like `list` because half its answer is `list`'s: a
+            // working directory goes out only for a pane `list` would name.
+            .layoutExport: .scopedRead,
             .send: .peerEdge,
             .revoke: .peerEdge,
             .run: .descendant,
@@ -113,6 +125,30 @@ import Testing
         for verb in ControlVerb.allCases {
             #expect(verb.settingGate == (gates[verb] ?? .channel), "\(verb) has the wrong gate")
         }
+    }
+
+    /// **`layout apply` never reaches a pane it did not make, and this is where
+    /// that is asserted rather than described.**
+    ///
+    /// `.selfOnly` is the mechanism: `PaneGraph.authorize` refuses a named target
+    /// for that scope outright, so a later wiring mistake that passed one cannot
+    /// pass silently. A verb that reshaped the caller's window would need a wider
+    /// scope to name the panes it moved, and would fail this line first.
+    @Test func applyCreatesAndCannotNameAnExistingPane() {
+        #expect(ControlVerb.layoutApply.scope == .selfOnly)
+        #expect(ControlVerb.layoutApply.settingGate == .channel)
+    }
+
+    /// Export carries no pane's content, which is what separates it from `read`.
+    ///
+    /// The shape is structure and the directories are `list`'s, so the channel key
+    /// is the only key it needs. Stated here because the tempting change is to
+    /// give it `allowRead` "since it is a read", which would put the layout verb
+    /// behind a key named for something else and leave a reader guessing which
+    /// switch turned their Makefile off.
+    @Test func exportIsGatedOnTheChannelAloneBecauseItCarriesNoScreen() {
+        #expect(ControlVerb.layoutExport.settingGate == .channel)
+        #expect(ControlVerb.read.settingGate == .allowRead)
     }
 
     @Test func subscribeIsSelfOnlyAndSpelledForTheWire() {
