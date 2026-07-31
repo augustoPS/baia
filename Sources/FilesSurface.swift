@@ -45,19 +45,23 @@ final class FilesSurface: NSObject, WorkspaceSurface {
         )
     }
 
-    /// The tree to draw. A *different* tree collapses everything below the top
-    /// level, because an expansion set from one repository means nothing in the
-    /// next.
+    /// The tree to draw.
     ///
-    /// **An equal tree is not a different one, and the guard is what makes the
-    /// surface usable.** `refreshSidebar(of:)` assigns on every focus change and
-    /// every git poll that reports something new, so without it a command run in
-    /// the pane collapsed whatever the owner had opened, several times a minute.
-    /// Caught on 2026-07-29, in the first live check of the path picker.
+    /// **A new tree no longer collapses anything.** It used to clear the open set,
+    /// on the argument that an expansion set from one repository means nothing in
+    /// the next, and that argument is right about repositories and wrong about
+    /// trees: a tree also changes when a file is added to the repository already
+    /// showing. What the set belongs to is the anchor, so ``anchorPath`` is where
+    /// it is now switched, and this assigns the rows and nothing else.
+    ///
+    /// **An equal tree is still not a different one.** `refreshSidebar(of:)`
+    /// assigns on every focus change and every git poll that reports something
+    /// new, and a rebuild resets the press feedback and the tracking areas, so the
+    /// guard keeps a command run in the pane from doing that several times a
+    /// minute. Caught on 2026-07-29, in the first live check of the path picker.
     var tree: [FileTreeNode] = [] {
         didSet {
             guard tree != oldValue else { return }
-            rows.expanded = []
             rows.tree = tree
         }
     }
@@ -74,9 +78,29 @@ final class FilesSurface: NSObject, WorkspaceSurface {
 
     /// Where the pane is anchored, which the absent state names beneath its
     /// message. The message alone says what this is not; the path says what it is.
+    ///
+    /// **Also the key the open directories are remembered under**, because the
+    /// anchor is what an expansion set means anything relative to: every path in
+    /// the set is a path under this one. Moving the sidebar to another repository
+    /// puts the current set away and brings back that repository's, so a glance at
+    /// a second pane and back returns the tree the way it was left.
+    ///
+    /// The order this arrives in relative to ``tree`` does not matter. Both land
+    /// in one pass of `refreshSidebar(of:)` before anything is drawn, and whichever
+    /// is second leaves the rows correct: the set is put away under the anchor it
+    /// was open in either way, since ``tree`` no longer touches it.
     var anchorPath: String? {
-        didSet { rows.anchorPath = anchorPath }
+        didSet {
+            rows.anchorPath = anchorPath
+            rows.expanded = expansions.retarget(to: anchorPath, keeping: rows.expanded)
+        }
     }
+
+    /// What each anchor was left showing. Session-scoped by construction: it lives
+    /// on the surface, and the surface dies with its window. Carrying it across a
+    /// relaunch would mean a field in `SessionSnapshot` and a rule for pruning it,
+    /// which is a larger question than the loss this fixes.
+    private var expansions = FileTreeExpansions()
 
     /// The same change list the Changes section is given, which the tree reduces to
     /// one glyph per row. The two are not alternatives: a list ordered for
@@ -153,7 +177,17 @@ final class FileTreeRowsView: NSView {
     /// Paths rather than node references, so the set survives the tree being read
     /// again: a poll that returns an equal tree must not collapse what the owner
     /// opened, and node identity would not survive it.
-    var expanded: Set<String> = [] { didSet { rebuild() } }
+    ///
+    /// Guarded on equality like `tree` and `marks`, and for the same reason.
+    /// `FilesSurface` re-asserts this set every time the sidebar is repointed,
+    /// which is several times a second while someone arrows across a grid, and a
+    /// rebuild throws away the press feedback and the tracking areas.
+    var expanded: Set<String> = [] {
+        didSet {
+            guard expanded != oldValue else { return }
+            rebuild()
+        }
+    }
 
     override var acceptsFirstResponder: Bool { false }
 
