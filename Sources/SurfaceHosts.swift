@@ -265,6 +265,27 @@ final class SidebarHost: NSViewController {
             view.addSubview(section.surface.view)
             view.addSubview(section.heading)
         }
+        raiseGrabStrips()
+    }
+
+    /// **Both strips go back on top every time a section is installed.**
+    ///
+    /// `viewDidLoad` adds them before any section exists, so every `install()`
+    /// buried them under a scroll view and a heading. Cursor rects do not consult
+    /// the view order and hit testing does, which is the whole signature this was
+    /// found by: the pointer turned into a resize arrow over a strip that could not
+    /// be clicked.
+    ///
+    /// The sidebar's own edge hid it by half. Its right half lies over `tree.view`,
+    /// which is added before it and stays below, so dragging the column worked as
+    /// long as the grab started on the pane's side of the hairline and did nothing
+    /// on the sidebar's. The split between the two sections has no such half: the
+    /// changes list is above it on one side and the files heading on the other, so
+    /// all seven points of it were dead.
+    private func raiseGrabStrips() {
+        for strip in [sectionDivider, widthDivider] {
+            view.addSubview(strip, positioned: .above, relativeTo: nil)
+        }
     }
 
     /// Laid out by hand rather than with constraints, the way the panel's three

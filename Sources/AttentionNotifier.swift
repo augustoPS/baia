@@ -9,11 +9,16 @@ import UserNotifications
 /// is to look at each pane in turn. A notification that names the project answers
 /// it directly.
 ///
-/// The dock badge and the bounce are the load-bearing part, not the banner.
-/// `UNUserNotificationCenter` needs authorization the user can refuse, and a
-/// refused or undetermined state means the banner never appears with no error at
-/// the call site. So the indicator that cannot fail is applied first and the
-/// banner is posted on top of it.
+/// **The bounce is the load-bearing part, and the window title carries the
+/// count.** Not the badge, which does not work in this app and is not attempted;
+/// the block on ``requestAuthorizationIfNeeded()`` records that investigation and
+/// this line used to contradict it, which cost a live pass on 2026-07-30 looking
+/// for a badge that was never going to appear.
+///
+/// Not the banner either. `UNUserNotificationCenter` needs authorization the user
+/// can refuse, and a refused or undetermined state means the banner never appears.
+/// So the indicator that cannot fail is applied first and the banner is posted on
+/// top of it.
 @MainActor
 final class AttentionNotifier {
     /// From `notificationsEnabled`. Gates the banner only: the per-pane footer
@@ -31,7 +36,20 @@ final class AttentionNotifier {
         guard !hasRequested, Bundle.main.bundleIdentifier != nil else { return }
         hasRequested = true
         UNUserNotificationCenter.current()
-            .requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            .requestAuthorization(options: [.alert, .sound]) { granted, error in
+                // Reported rather than dropped. A refusal at the system level and a
+                // request that never reached the system read identically from here,
+                // and the second is what a development build does: run ad-hoc
+                // signed out of `.build`, `gutons.baia` is absent from
+                // `com.apple.ncprefs` entirely, so it never appears in System
+                // Settings to be granted and the banner cannot fire. Found
+                // 2026-07-30, by a live pass that could only report "no banner".
+                if let error {
+                    FileHandle.standardError.write(Data(
+                        "baia: notification authorization failed: \(error.localizedDescription)\n"
+                            .utf8
+                    ))
+                }
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated {
                         self.isAuthorized = granted
