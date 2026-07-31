@@ -513,4 +513,72 @@ import Testing
             }
         }
     }
+
+    // MARK: - Whether the key does anything at all
+
+    /// **The predicate the settings window hides its Alert picker on.**
+    ///
+    /// The owner asked for the picker to be hidden unless `attentionAccent` is
+    /// `accent`. That rule is wrong in the direction that matters, and this suite
+    /// is where the counterexample already lives: `collided` and `fillIsTheBar`
+    /// collide under `alert` too, and 124 of the 463 catalog themes do. Keying the
+    /// picker to the enum would hide a live control on every one of them.
+    ///
+    /// What the picker is really for is a theme where the three behaviours would
+    /// answer differently, which is exactly what ``PaneTheme/alertBehaviorMatters(for:)``
+    /// reports.
+    @Test func theKeyMattersExactlyWhenTheBehavioursDisagree() {
+        for theme in everyTheme {
+            for accent in AttentionAccent.allCases {
+                let answers = AlertBehavior.allCases.map {
+                    theme.attentionColour(accent, behavior: $0)
+                }
+                let disagree = answers.contains { $0 != answers[0] }
+                let reported = theme.alertBehaviorMatters(for: accent)
+                #expect(
+                    reported == disagree,
+                    Comment(rawValue: "\(theme.background.hexString) under \(accent) "
+                        + "reported \(reported) against \(disagree)")
+                )
+            }
+        }
+    }
+
+    /// The case that kills the owner's first rule, stated as its own test so it
+    /// cannot be lost in the loop above.
+    @Test func aThemeCollidingUnderAlertStillNeedsTheKey() {
+        // `collided`'s `ansi[1]` is its selection colour, so `alert` resolves onto
+        // focus and the repairs have work to do. A picker hidden on
+        // `attentionAccent != accent` would be hidden here, on a theme where the
+        // key is doing something.
+        #expect(collided.alertBehaviorMatters(for: .alert))
+    }
+
+    /// **`accent` always needs the key, on every theme, by construction.**
+    ///
+    /// This is the half that overturns the rule the picker was going to be hidden
+    /// on. Under ``AttentionAccent/accent`` the attention colour *is* the focus
+    /// colour, so its distance to focus is zero and it collides on any theme
+    /// whatsoever. The key is what decides whether that matters, which is what
+    /// `AttentionAccent`'s own doc says and what a rule keyed to the enum would
+    /// have been silently agreeing with in one direction and contradicting in the
+    /// other.
+    @Test func theAccentValueAlwaysNeedsTheKey() {
+        for theme in everyTheme {
+            #expect(theme.alertBehaviorMatters(for: .accent))
+        }
+    }
+
+    /// So the picker is inert in exactly one place, and it is the shipped one:
+    /// `alert` on a theme with room to spare. That is `Settings.defaultSettings`
+    /// and it is what most people will open the window on.
+    @Test func theKeyIsInertOnlyUnderAlertWithNoCollision() {
+        #expect(!PaneTheme.darkPastel.alertBehaviorMatters(for: .alert))
+        #expect(Settings.defaultSettings.attentionAccent == .alert)
+        // And it stops being inert the moment the theme is one whose `ansi[1]`
+        // lands on its own focus colour or its own bar. `fillIsTheBar` is not that
+        // theme under `alert`, despite the name: its fill collides under `accent`,
+        // where the fill is the focus colour, and its `ansi[1]` has room.
+        #expect(collided.alertBehaviorMatters(for: .alert))
+    }
 }

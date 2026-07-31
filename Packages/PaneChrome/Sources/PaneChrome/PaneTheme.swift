@@ -236,6 +236,35 @@ public struct PaneTheme: Sendable, Equatable {
         }
     }
 
+    /// Whether ``AlertBehavior`` changes anything on this theme under `accent`.
+    ///
+    /// **Derived from ``attentionColour(_:behavior:)`` rather than from the
+    /// collision test it uses**, so it cannot come to disagree with the thing it
+    /// describes. The rule already has one home and a predicate that re-tested
+    /// `collides` would be a second copy of it, which is the failure this file
+    /// warns about two doc comments above: a floor met in one place and missed in
+    /// the other.
+    ///
+    /// Written for the settings window, which hides the Alert picker when this is
+    /// false. It answers true in two places and the second is easy to miss.
+    ///
+    /// Under ``AttentionAccent/accent`` it is true on *every* theme, because the
+    /// attention colour is the focus colour by construction, so its distance to
+    /// focus is zero and it always collides. Under ``AttentionAccent/alert`` it is
+    /// true only where the theme's own `ansi[1]` lands on its focus colour or its
+    /// bar, which 124 of the 463 catalog themes do.
+    ///
+    /// So this is a **superset** of the rule it replaces, not a narrower one. The
+    /// first draft was to hide the picker unless `attentionAccent` is `accent`;
+    /// that agrees here on the `accent` half and hides a live control on the 124.
+    /// The one place the key is inert is `alert` on a theme with room, which is
+    /// exactly `Settings.defaultSettings` and so is what most people open the
+    /// window on.
+    public func alertBehaviorMatters(for accent: AttentionAccent) -> Bool {
+        let answers = AlertBehavior.allCases.map { attentionColour(accent, behavior: $0) }
+        return answers.contains { $0 != answers[0] }
+    }
+
     /// Whether `colour` would be read as something other than the attention signal.
     ///
     /// Two ways for that to happen, and only the first was checked at first. The
