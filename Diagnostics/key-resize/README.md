@@ -1,6 +1,6 @@
 # Keyboard resize probe
 
-`./run.sh` from anywhere. Four cases, one process each, all under `set -e`.
+`./run.sh` from anywhere. Five cases, one process each, all under `set -e`.
 
 The question this exists to answer is not "does the key work". It is whether a key
 that writes ratios many times a second can reach the layout loop that used to kill
@@ -51,6 +51,23 @@ one more level of nesting, and the answer there is to hold the key. The number i
 printed on every run so it cannot quietly become zero. It *is* zero at the same
 divider when a previous hold has pinned it to its own 96 point minimum, which is
 why the block equalizes first and says so.
+
+`flood` is the case that did not work, kept because what it rules out is worth
+keeping. It equalizes spines of 4 to 24 panes, grids from 2x4 to 3x10, a spine
+squeezed into 400 points, the layout reported on 2026-07-31 by hand, and finally
+the nine-pane tree lifted out of the session file the app was aborting on at every
+launch. All of them survive, and they survived before the guard that fixed the
+crash existed: run with `PaneSplitController.refusalLimit` at `Int.max` this case
+still passes. So the harness does not reproduce what the app does, and the reason
+is still unaccounted for.
+
+What found the bug instead was instrumenting the shipped app: a line on stderr
+whenever `setPosition` did not land. It printed 3,560 identical refusals, split
+`[1, 0]` at thickness 671 asking for 335.5, and then AppKit gave up on the
+update-constraints pass count. Three attempts at computing what `NSSplitView`
+would accept were all wrong before the guard stopped trying to and bounded the
+asks instead. If this class bites again, instrument first: five headless cases
+cost an afternoon and answered nothing.
 
 `starve` is the crash class. Four window sizes per axis, down to one where three
 panes on a spine cannot all have their 96pt minimum, and at each size 160 presses
