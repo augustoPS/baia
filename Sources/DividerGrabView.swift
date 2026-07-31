@@ -62,8 +62,26 @@ final class DividerGrabView: NSView {
 
     override var acceptsFirstResponder: Bool { false }
 
-    override func resetCursorRects() {
-        addCursorRect(bounds, cursor: axis == .vertical ? .resizeUpDown : .resizeLeftRight)
+    /// The cursor comes off the tracking area rather than off a cursor rect.
+    ///
+    /// **They are two separate books and they were not agreeing.** A cursor rect is
+    /// registered once from `resetCursorRects` and is not rebuilt when the view
+    /// moves; the strip is laid out after that, so the rect stayed where the strip
+    /// used to be and the pointer changed shape about half a strip above where the
+    /// strip actually was. Invalidating on every frame change improved it and did
+    /// not fix it.
+    ///
+    /// A tracking area has none of that: AppKit rebuilds it on a frame change,
+    /// which `Diagnostics/clip-layout`'s `tracking` arm holds it to, and this view
+    /// already keeps one for the hover reply. Putting the cursor on the same area
+    /// makes the shape change and the colour change the same event, so they cannot
+    /// drift apart again.
+    private var resizeCursor: NSCursor {
+        axis == .vertical ? .resizeUpDown : .resizeLeftRight
+    }
+
+    override func cursorUpdate(with _: NSEvent) {
+        resizeCursor.set()
     }
 
     override func updateTrackingAreas() {
@@ -71,7 +89,7 @@ final class DividerGrabView: NSView {
         for area in trackingAreas { removeTrackingArea(area) }
         addTrackingArea(NSTrackingArea(
             rect: bounds,
-            options: [.mouseEnteredAndExited, .activeInKeyWindow],
+            options: [.mouseEnteredAndExited, .cursorUpdate, .activeInKeyWindow],
             owner: self
         ))
     }
