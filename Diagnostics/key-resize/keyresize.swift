@@ -274,6 +274,18 @@ func storedRatios(_ tree: PaneTree) -> [Double] {
 
 /// Three splits on one spine nesting into the second child, which is the shape
 /// repeated ⌘D produces and the one that starves first.
+/// A spine of any length, nested to the right the way repeated splitting builds it.
+func spine(axis: SplitAxis, panes: [PaneID], count: Int) -> PaneTree {
+    precondition(count >= 1 && count <= panes.count)
+    guard count > 1 else { return .leaf(panes[0]) }
+    return .split(
+        axis: axis,
+        ratio: 0.5,
+        first: .leaf(panes[0]),
+        second: spine(axis: axis, panes: Array(panes.dropFirst()), count: count - 1)
+    )
+}
+
 func spine(axis: SplitAxis, panes: [PaneID]) -> PaneTree {
     .split(
         axis: axis,
@@ -301,6 +313,7 @@ enum Probe {
         case "starve": starve()
         case "push": push()
         case "ramp": ramp()
+        case "flood": flood()
         default: print("unknown case"); exit(2)
         }
         print(failures == 0 ? "PASS" : "FAILED \(failures)")
@@ -613,6 +626,218 @@ enum Probe {
               "the four panes came out the same width, to within the dividers between them")
     }
 
+    // MARK: - equalize under a pane count that does not fit
+
+    /// Equalizing a window with more panes than it can seat.
+    ///
+    /// Reported 2026-07-31: baia died on ⌥⌘= with more than ten panes open, with
+    /// the crash this whole probe exists for. `_postWindowNeedsUpdateConstraints`
+    /// raising on the pass count is the same abort the `starve` case hammers for
+    /// through the keyboard, arriving here through a single command instead.
+    ///
+    /// Assertion by survival, like `starve`: an unbounded layout pass aborts the
+    /// process, so reaching the exit is the pass. The counts climb past what a
+    /// 1400 point window can seat at 96 points a pane, which is fourteen, because
+    /// the reported window had more panes than fit and that is the whole point.
+    @MainActor static func flood() {
+        let panes = (0 ..< 64).map { _ in PaneID() }
+        for count in [4, 8, 10, 11, 12, 16, 24] {
+            let harness = Harness(
+                tree: spine(axis: .horizontal, panes: panes, count: count),
+                focused: panes[0],
+                size: NSSize(width: 1400, height: 900)
+            )
+            harness.settle()
+            harness.equalizePanes()
+            harness.settle()
+            // A second one, because the reported gesture is a key someone presses
+            // again when the first press did not look right.
+            harness.equalizePanes()
+            harness.settle()
+
+            let widths = harness.leaves.map { $0.frame.width }
+            print(String(format: "  %2d panes  survived  widths %.0f to %.0f  (96 pt each needs %d)",
+                         count, widths.min() ?? -1, widths.max() ?? -1, count * 96))
+        }
+
+        // Grids, which is what the reported window was. A column is bounded by the
+        // window's height rather than its width, and 900 points seats nine panes at
+        // the 96 point minimum, so a column past that has no legal position for its
+        // dividers at all. The pane area is 1110 wide because the sidebar takes the
+        // rest.
+        print("=== equalize on a grid whose columns run out of height ===")
+        for (columns, rows) in [(2, 4), (3, 4), (2, 6), (3, 6), (2, 8), (3, 8), (2, 10), (3, 10)] {
+            var next = 0
+            let built = (0 ..< columns).map { _ -> PaneTree in
+                let column = spine(axis: .vertical, panes: Array(panes[next...]), count: rows)
+                next += rows
+                return column
+            }
+            let harness = Harness(
+                tree: built.dropLast().reversed().reduce(built[built.count - 1]) { rest, column in
+                    .split(axis: .horizontal, ratio: 0.5, first: column, second: rest)
+                },
+                focused: panes[0],
+                size: NSSize(width: 1110, height: 900)
+            )
+            harness.settle()
+            harness.equalizePanes()
+            harness.settle()
+            harness.equalizePanes()
+            harness.settle()
+
+            let heights = harness.leaves.map { $0.frame.height }
+            print(String(format: "  %d x %d = %2d panes  survived  heights %.0f to %.0f  (a column of %d needs %d of 900)",
+                         columns, rows, columns * rows, heights.min() ?? -1, heights.max() ?? -1,
+                         rows, rows * 96))
+        }
+        // The reported window, pane for pane: a column of three, two single panes,
+        // a column of four, in the pane area a full-width window leaves beside the
+        // sidebar. Every ratio is dragged off centre first, because the layout that
+        // died had been worked on rather than freshly split, and the crash class
+        // needs a divider already sitting somewhere awkward.
+        print("=== the reported layout: 3 | 1 | 1 | 4 ===")
+        var next = 0
+        func column(_ rows: Int) -> PaneTree {
+            defer { next += rows }
+            return spine(axis: .vertical, panes: Array(panes[next...]), count: rows)
+        }
+        let reported = PaneTree.split(
+            axis: .horizontal,
+            ratio: 0.44,
+            first: column(3),
+            second: .split(
+                axis: .horizontal,
+                ratio: 0.3,
+                first: column(1),
+                second: .split(axis: .horizontal, ratio: 0.33, first: column(1), second: column(4))
+            )
+        )
+        let harness = Harness(
+            tree: reported,
+            focused: panes[0],
+            size: NSSize(width: 1331, height: 874)
+        )
+        harness.settle()
+        // Dragged, not built: every divider put somewhere a hand would put it,
+        // including two hard against their stops.
+        for (path, ratio) in [
+            (SplitPath([0]), 0.62), (SplitPath([0, 1]), 0.51),
+            (SplitPath([1, 1, 1]), 0.28), (SplitPath([1, 1, 1, 1]), 0.95),
+            (SplitPath([1, 1, 1, 1, 1]), 0.05),
+        ] {
+            harness.setRatio(at: path, to: ratio)
+        }
+        harness.settle()
+        harness.equalizePanes()
+        harness.settle()
+        harness.equalizePanes()
+        harness.settle()
+        let widths = harness.leaves.map { $0.frame.width }
+        print(String(format: "  9 panes  survived  widths %.0f to %.0f", widths.min() ?? -1, widths.max() ?? -1))
+
+        check(true, "equalize survived every pane count")
+
+        // The reported crash, which is none of the above. Instrumenting the app on
+        // 2026-07-31 caught 16,769 identical refusals and no push at all: split
+        // `[0, 0, 1]`, thickness 290, ratio 0.5, asked 145, given 115.5, over and
+        // over until AppKit gave up. No key was pressed and no equalize ran. The
+        // loop is inside the layout pass.
+        //
+        // `reachablePosition(in:)` takes each side's minimum to be one pane's 96
+        // points. When a side is a *subtree* along the same axis its real minimum is
+        // several times that, so the position it calls reachable is one
+        // `NSSplitView` refuses, `current` never reaches `target`, and every pass
+        // asks again. A narrow window and a spine is all it takes.
+        print("=== a split whose child subtree cannot fit its own minimums ===")
+        let narrow = Harness(
+            tree: spine(axis: .horizontal, panes: panes, count: 4),
+            focused: panes[0],
+            size: NSSize(width: 400, height: 800)
+        )
+        narrow.settle()
+        narrow.setRatio(at: SplitPath(), to: 0.5)
+        narrow.settle()
+        narrow.settle()
+        let narrowWidths = narrow.leaves.map { $0.frame.width }
+        print(String(format: "  4 panes in 400 points  survived  widths %.0f to %.0f",
+                     narrowWidths.min() ?? -1, narrowWidths.max() ?? -1))
+        check(true, "a squeezed spine did not spin the layout pass")
+
+        // **The session file the app died on, tree for tree.** Every case above is
+        // a shape someone thought might crash; this one is the shape that did, taken
+        // out of `~/Library/Application Support/baia/session.json` after a force
+        // quit on 2026-07-31 left the app aborting on every launch. Nine panes, both
+        // axes, and one divider dragged to 0.115 of its split. The window is the
+        // 1800 x 1078 the file records, less the 215 point sidebar it also records.
+        //
+        // **It does not reproduce the crash, and the negative control says so.**
+        // Run with `PaneSplitController.refusalLimit` at `Int.max`, which is the
+        // guard removed, this case still passes. So it is coverage of a real
+        // nine-pane mixed-axis tree and nothing stronger: the difference between
+        // this harness and the app is still unaccounted for, after the harness also
+        // failed to reproduce it from spines, grids, a squeezed spine and the
+        // reported layout by hand.
+        //
+        // What the guard rests on instead is construction: `applyRatio()` can reach
+        // `setPosition` at most three times per split per thickness, so the pass
+        // cannot be re-dirtied from this path without something deliberate in
+        // between. That is an argument, not a test, and it is written down here
+        // rather than left implied.
+        print("=== the session file the app died on ===")
+        let died = Harness(
+            tree: .split(
+            axis: .horizontal,
+            ratio: 0.3333333333333333,
+            first: .split(
+                axis: .vertical,
+                ratio: 0.11520076481835564,
+                first: .leaf(panes[0]),
+                second: .split(
+                    axis: .vertical,
+                    ratio: 0.5,
+                    first: .leaf(panes[1]),
+                    second: .leaf(panes[2])
+                )
+            ),
+            second: .split(
+                axis: .horizontal,
+                ratio: 0.5,
+                first: .split(
+                    axis: .horizontal,
+                    ratio: 0.5,
+                    first: .leaf(panes[3]),
+                    second: .leaf(panes[4])
+                ),
+                second: .split(
+                    axis: .vertical,
+                    ratio: 0.25,
+                    first: .leaf(panes[5]),
+                    second: .split(
+                        axis: .vertical,
+                        ratio: 0.5335035098915124,
+                        first: .leaf(panes[6]),
+                        second: .split(
+                            axis: .vertical,
+                            ratio: 0.5,
+                            first: .leaf(panes[7]),
+                            second: .leaf(panes[8])
+                        )
+                    )
+                )
+            )
+        ),
+            focused: panes[0],
+            size: NSSize(width: 1585, height: 1026)
+        )
+        died.settle()
+        died.settle()
+        let diedWidths = died.leaves.map { $0.frame.width }
+        print(String(format: "  9 panes restored  survived  widths %.0f to %.0f",
+                     diedWidths.min() ?? -1, diedWidths.max() ?? -1))
+        check(true, "the crashing session laid out without spinning the pass")
+    }
+
     // MARK: - the ramp
 
     /// How far a press actually moves the divider, now that it depends on how long
@@ -695,6 +920,12 @@ enum Probe {
         // The divider's own thickness comes off too. The minimum belongs to the
         // second child and `position` is the first child's width, so the three add
         // up to the split rather than two of them.
+        //
+        // This is what `reachablePosition(in:)` computes, not what `NSSplitView`
+        // grants: the second child here holds two panes and needs more than the one
+        // minimum taken off below. Asking for what it will not grant is allowed and
+        // is not the crash; asking *twice* is, and `PaneSplitController.refused` is
+        // what stops that.
         let furthest = thickness(inner)
             - PaneSplitController.minimumPaneThickness
             - inner.splitView.dividerThickness
