@@ -159,6 +159,59 @@ import PaneControl
         #expect(isUsage(Arguments.parse(["resize", "up", "--by", "inf"])))
     }
 
+    // MARK: Layout documents
+
+    /// Two tokens at the prompt, one verb on the wire.
+    @Test func layoutTakesItsSubcommandAsASecondToken() {
+        #expect(invocation(Arguments.parse(["layout", "export"]))?.verb == .layoutExport)
+        #expect(invocation(Arguments.parse(["layout", "apply"]))?.verb == .layoutApply)
+    }
+
+    /// The wire spelling parses too, because it *is* the head lookup every other
+    /// verb goes through. Asserted rather than left to be discovered, so nobody
+    /// adds a rejection for a spelling that means exactly the same thing.
+    @Test func theHyphenatedWireSpellingParsesToTheSameVerb() {
+        #expect(invocation(Arguments.parse(["layout-export"]))?.verb == .layoutExport)
+        #expect(invocation(Arguments.parse(["layout-apply"]))?.verb == .layoutApply)
+    }
+
+    @Test func layoutWithNoSubcommandOrAnUnknownOneIsAUsageFailure() {
+        #expect(isUsage(Arguments.parse(["layout"])))
+        #expect(isUsage(Arguments.parse(["layout", "reshape"])))
+        #expect(usageMessage(Arguments.parse(["layout", "reshape"]))?.contains("export") == true)
+    }
+
+    @Test func layoutTakesItsHelpUnderEitherSpelling() {
+        #expect(isHelp(Arguments.parse(["layout", "--help"])))
+        #expect(isHelp(Arguments.parse(["layout", "export", "--help"])))
+        #expect(isHelp(Arguments.parse(["layout-apply", "-h"])))
+    }
+
+    /// `--json` is refused rather than accepted, and the refusal says why: the
+    /// plain output already *is* the document, and a second JSON shape would hand
+    /// somebody a file that looks right and applies to nothing.
+    @Test func exportRefusesJsonAndSaysWhy() {
+        let outcome = Arguments.parse(["layout", "export", "--json"])
+        #expect(isUsage(outcome))
+        #expect(usageMessage(outcome)?.contains("already prints JSON") == true)
+    }
+
+    /// The refusal names the verb the way it was typed. A message reading
+    /// "baia layout-export does not take" would name a spelling nobody used.
+    @Test func aRefusalNamesTheVerbTheWayAPersonTypesIt() {
+        let outcome = Arguments.parse(["layout", "export", "--nonesuch"])
+        #expect(usageMessage(outcome)?.contains("baia layout export") == true)
+    }
+
+    /// The document comes off stdin, and parsing does no I/O, so it is nil here
+    /// and filled in after the environment has been checked.
+    @Test func applyReadsItsDocumentFromStdinAndNotFromArgv() {
+        let call = invocation(Arguments.parse(["layout", "apply"]))
+        #expect(call?.stdin == .layoutDocument)
+        #expect(call?.args.layout == nil)
+        #expect(isUsage(Arguments.parse(["layout", "apply", "dev.json"])))
+    }
+
     // MARK: Introspection
 
     @Test func whoamiAndPeersTakeOnlyJson() {

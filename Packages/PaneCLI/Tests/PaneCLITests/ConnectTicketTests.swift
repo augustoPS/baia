@@ -101,9 +101,17 @@ import Testing
             guard case let .invoke(call) = Arguments.parse([verb.rawValue] + operand) else {
                 continue
             }
-            if verb == .connect {
+            switch verb {
+            case .connect:
                 #expect(call.stdin == .rendezvousTicket)
-            } else {
+            case .layoutApply:
+                // A document, and never a secret. It arrives on stdin so a file, a
+                // heredoc and a generator all work the same way, not because argv
+                // would leak it, which is the whole reason connect's ticket is
+                // there. Named here rather than waved through by a `!=`, so a
+                // third stdin reader has to be decided in this test to exist.
+                #expect(call.stdin == .layoutDocument)
+            default:
                 #expect(call.stdin == .unused, "\(verb.rawValue) should read nothing from stdin")
             }
         }

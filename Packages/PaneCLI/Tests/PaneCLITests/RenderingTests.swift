@@ -299,6 +299,61 @@ import Testing
         #expect(Set(lines.map { $0.text.trimmingCharacters(in: .whitespaces) }) == ["pane-1", "pane-2"])
     }
 
+    // MARK: Layout documents
+
+    /// **The output of `layout export` is the document and nothing else**, which
+    /// is the whole reason `baia layout export > dev.json` produces a file
+    /// `baia layout apply` reads back. A note on stdout here would land in the
+    /// middle of somebody's committed layout.
+    @Test func exportPrintsTheDocumentAndOnlyTheDocument() throws {
+        let layout = ControlLayout(tabs: [
+            .split(
+                axis: .horizontal,
+                ratio: 0.5,
+                first: .pane(cwd: "/Users/x/Projects/baia"),
+                second: .pane(cwd: nil)
+            ),
+        ])
+        let lines = Rendering.render(
+            ControlResult(layout: layout),
+            for: try call("layout", "export")
+        )
+        #expect(lines.allSatisfy { $0.stream == .out })
+
+        let text = lines.map(\.text).joined(separator: "\n")
+        let decoded = try JSONDecoder().decode(
+            ControlLayout.self,
+            from: Data(text.utf8)
+        )
+        #expect(decoded == layout, "what export printed did not read back as the same document")
+    }
+
+    /// Slashes unescaped, because a path full of `\/` is a document nobody wants
+    /// to read in a diff.
+    @Test func anExportedPathIsWrittenTheWayItIsSpelled() throws {
+        let lines = Rendering.render(
+            ControlResult(layout: ControlLayout(tabs: [.pane(cwd: "/Users/x/Projects/baia")])),
+            for: try call("layout", "export")
+        )
+        let text = lines.map(\.text).joined(separator: "\n")
+        #expect(text.contains("/Users/x/Projects/baia"))
+        #expect(text.contains("\\/") == false)
+    }
+
+    /// An export the app could not answer prints nothing rather than an empty
+    /// document. A `{}` on stdout would be a file that applies to no panes and
+    /// looks like a successful capture.
+    @Test func exportWithNoLayoutInTheAnswerPrintsNothing() throws {
+        #expect(Rendering.render(ControlResult(), for: try call("layout", "export")).isEmpty)
+    }
+
+    /// `apply` prints nothing at all: every id it could report is in
+    /// `baia list --tree`, which is where a script has to look anyway because it
+    /// needs the records to tell the new panes apart.
+    @Test func applyPrintsNothingOnEitherStream() throws {
+        #expect(Rendering.render(ControlResult(), for: try call("layout", "apply")).isEmpty)
+    }
+
     // MARK: Fixtures
 
     private func rendered(_ verb: String, _ result: ControlResult) -> [String] {

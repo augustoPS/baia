@@ -58,8 +58,22 @@ public enum Rendering {
         // its caller is a hook running inside an agent's session, where a line of
         // output is noise in somebody else's transcript. The exit status is the
         // answer.
-        case .close, .focus, .resize, .equalize, .send, .revoke, .run, .cwd, .report:
+        // `layout apply` prints nothing, and that is a decision. Every id it could
+        // report is in `baia list --tree`, which is where a script wanting to
+        // address one of the new panes has to look anyway, because it needs the
+        // records to tell them apart. A second, order-dependent list of the same
+        // ids would be one more thing to keep truthful.
+        case .close, .focus, .resize, .equalize, .send, .revoke, .run, .cwd, .report, .layoutApply:
             break
+
+        // The document and nothing else, so `baia layout export > dev.json`
+        // produces a file `baia layout apply` reads back. Pretty-printed with
+        // sorted keys and unescaped slashes, because it is meant to be edited by
+        // hand and to diff cleanly when it is committed.
+        case .layoutExport:
+            if let layout = result.layout {
+                out(encoded(layout))
+            }
 
         // One line per line, which is what makes `baia read` pipe into grep. The
         // truncation flag is deliberately not printed here: a caller who needs it
@@ -192,9 +206,16 @@ public enum Rendering {
     /// the machine format and a scope leak shows up in it verbatim rather than
     /// being tidied away by a renderer.
     private static func json(_ result: ControlResult) -> String {
+        encoded(result)
+    }
+
+    /// One encoder for both the result envelope and the layout document, so a
+    /// document read out of `--json` and one read off `layout export` are the same
+    /// bytes rather than two formattings of the same value.
+    static func encoded(_ value: some Encodable) -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        guard let data = try? encoder.encode(result), let text = String(data: data, encoding: .utf8)
+        guard let data = try? encoder.encode(value), let text = String(data: data, encoding: .utf8)
         else {
             return "{}"
         }

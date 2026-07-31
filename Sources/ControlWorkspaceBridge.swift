@@ -11,8 +11,8 @@ import PaneControl
 /// said yes, the settings gate has already run, and the pane named is one the
 /// caller is allowed to touch.
 ///
-/// Two methods and no more, because the two things the channel cannot do without
-/// the app are describing a pane and moving one.
+/// Describing a pane, moving one, reading one, and the two layout-document verbs.
+/// Everything here needs a window; nothing here decides anything.
 ///
 /// Implemented by `ControlAdapter` in the app, which holds the pane-to-window
 /// index. Main-actor isolated because everything it touches is.
@@ -70,4 +70,37 @@ protocol ControlWorkspaceBridge: AnyObject {
     /// Deciding which of the lines fit is not this function's job; that is
     /// `ScreenRead.tail`, which is pure and tested.
     func readLines(from pane: ControlPaneID) -> [String]?
+
+    /// The arrangement of the window `pane` sits in, or nil when no window holds
+    /// it any more.
+    ///
+    /// **`disclosing` is the scope rule and it arrives decided.** The server
+    /// computes it the way `list` computes its own subjects, through the one
+    /// resolver, and an implementation puts a working directory on a leaf only
+    /// when that leaf's pane is in the set. Every other leaf exports bare, and
+    /// `applyLayout(_:createdBy:)` opens those at the default directory.
+    ///
+    /// The *shape* is not filtered, and that is deliberate rather than an
+    /// omission: the document carries no pane ids, so what crosses for a pane the
+    /// caller cannot see is a divider and a fraction. The argument is on
+    /// ``ControlVerb/layoutExport``.
+    func layout(
+        of pane: ControlPaneID,
+        disclosingDirectoriesFor visible: Set<ControlPaneID>
+    ) -> ControlLayout?
+
+    /// Opens a new window from a document, and answers with the caller's frame.
+    ///
+    /// **Never touches an existing pane**, which is what keeps this verb inside
+    /// v1: it creates, and cross-pane mutation is v2. An implementation that
+    /// reshaped the caller's window would be that verb under this name.
+    ///
+    /// Every pane it opens records `pane` as its creator, so they land in the
+    /// caller's scope the same way a `split` does and their `paneOpened` events
+    /// reach the caller's `subscribe`.
+    ///
+    /// The document has already been through ``ControlLayout/refusal()`` twice, at
+    /// the CLI and again at the server, so an implementation may treat its caps
+    /// and its version as settled. What is left is translation.
+    func applyLayout(_ layout: ControlLayout, createdBy pane: ControlPaneID) -> ControlResponse
 }

@@ -499,6 +499,12 @@ final class ControlServer {
         case .read:
             read(request, on: id)
 
+        case .layoutExport:
+            exportLayout(request, on: id)
+
+        case .layoutApply:
+            applyLayout(request, on: id)
+
         case .run:
             // Unreachable: `gate` answers `run` for both values of
             // `controlAllowRun`, which is the point of declaring the verb in v1.
@@ -602,6 +608,82 @@ final class ControlServer {
         }
     }
 
+    /// Describes the caller's window as a document.
+    ///
+    /// **The disclosure rule is `list`'s, run through `list`'s own resolver.** The
+    /// shape of the window goes out whole and a working directory goes out only
+    /// for a pane in ``permitted(_:token:)``, which is the identical call
+    /// ``introspect(_:on:subjects:)`` makes. One set builder, so the two answers
+    /// cannot drift into disagreeing about who is visible. The argument for why
+    /// the shape is not filtered the same way is on `ControlVerb.layoutExport`.
+    private func exportLayout(_ request: ControlRequest, on id: Int) {
+        switch graph.authorize(token: request.token, verb: .layoutExport, target: nil) {
+        case let .denied(error):
+            respond(ControlResponse.failure(error), to: id)
+        case let .allowed(actor, _):
+            guard let bridge else {
+                respond(.failure(.internal, "baia has no workspace to describe"), to: id)
+                return
+            }
+            let visible = Set(permitted(scope(of: actor), token: request.token))
+            guard let layout = bridge.layout(of: actor, disclosingDirectoriesFor: visible) else {
+                // The caller's own pane, since this verb names no target, so
+                // there is nothing to withhold: its window closed under it.
+                respond(
+                    .failure(
+                        .notFound,
+                        "baia no longer has that pane. Its window may have closed while this "
+                            + "request was in flight."
+                    ),
+                    to: id
+                )
+                return
+            }
+            respond(.success(ControlResult(layout: layout)), to: id)
+        }
+    }
+
+    /// Opens a new window from a document.
+    ///
+    /// `.selfOnly`, and it names no target, because it reaches no existing pane.
+    /// The panes it creates are the caller's, the way a `split`'s is.
+    private func applyLayout(_ request: ControlRequest, on id: Int) {
+        guard let layout = request.args.layout else {
+            respond(
+                .failure(
+                    .badFrame,
+                    "layout apply needs a layout document, which the CLI reads from stdin"
+                ),
+                to: id
+            )
+            return
+        }
+        switch graph.authorize(token: request.token, verb: .layoutApply, target: nil) {
+        case let .denied(error):
+            respond(ControlResponse.failure(error), to: id)
+        case let .allowed(actor, _):
+            guard let bridge else {
+                respond(.failure(.internal, "baia has no workspace to open a window in"), to: id)
+                return
+            }
+            respond(bridge.applyLayout(layout, createdBy: actor), to: id)
+        }
+    }
+
+    /// The panes out of `subjects` this caller may see.
+    ///
+    /// Every one is run past the resolver rather than trusted from the set
+    /// builder that produced it. The builders are ordinary code that could be
+    /// wrong; `authorize` is the function whose job is to be right, so it gets the
+    /// last word. Order is preserved, because `list` renders in it.
+    private func permitted(_ subjects: [ControlPaneID], token: String) -> [ControlPaneID] {
+        subjects.filter { subject in
+            guard case .allowed = graph.authorize(token: token, verb: .list, target: subject)
+            else { return false }
+            return true
+        }
+    }
+
     /// `whoami`, `list`, and `peers`, which differ only in which panes they name.
     ///
     /// One implementation for all three, because a second renderer is a second
@@ -636,14 +718,7 @@ final class ControlServer {
             // caller may see has to be settled before any record is built:
             // filtering as we went would leave the first record redacted against
             // a set that had not finished growing.
-            let permitted = subjects(actor).filter { subject in
-                guard case .allowed = graph.authorize(
-                    token: request.token,
-                    verb: .list,
-                    target: subject
-                ) else { return false }
-                return true
-            }
+            let permitted = permitted(subjects(actor), token: request.token)
             let visible = Set(permitted.map(\.description))
 
             var records: [PaneRecord] = []

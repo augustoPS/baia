@@ -79,6 +79,32 @@ enum Run {
                 body.removeLast()
             }
             call.args.text = body
+
+        case .layoutDocument:
+            let data = StandardStreams.readAllOfStdin()
+            guard data.isEmpty == false else {
+                StandardStreams.err(
+                    "nothing arrived on stdin. layout apply reads a document from there, for "
+                        + "instance `baia layout apply < dev.json`, which baia layout export wrote."
+                )
+                exit(ExitStatus.usage)
+            }
+            guard let document = try? JSONDecoder().decode(ControlLayout.self, from: data) else {
+                StandardStreams.err(
+                    "that is not a baia layout document. baia layout export writes one; a file "
+                        + "edited by hand has to keep its version, its tabs, and a cwd or a split "
+                        + "at every node."
+                )
+                exit(ExitStatus.usage)
+            }
+            // Refused here so a bad file costs no round trip, and refused again by
+            // the server, which is the check that counts: a frame can arrive with
+            // no CLI in front of it. The same division `--kinds` follows.
+            if let refusal = document.refusal() {
+                StandardStreams.err(refusal)
+                exit(ExitStatus.usage)
+            }
+            call.args.layout = document
         }
 
         if let wait = call.args.wait, wait > ControlWire.maxWaitSeconds {
