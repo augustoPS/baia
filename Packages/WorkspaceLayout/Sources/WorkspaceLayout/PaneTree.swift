@@ -191,14 +191,65 @@ public indirect enum PaneTree: Sendable, Equatable, Codable {
         return replacingRatio(at: path, with: current + direction.growth.sign * delta)
     }
 
-    /// The same tree with every split back at a half.
+    /// The same tree with every pane given the same share of the window.
+    ///
+    /// **Not every split at a half, which is what this did until 2026-07-31 and is
+    /// not the same thing.** A tree is binary and a row of three panes is not: three
+    /// on a spine nest as `a | (b | c)`, so halving every split gave a half, a
+    /// quarter and a quarter. The owner pressed the key on exactly that arrangement
+    /// and got back the shape it was meant to undo.
+    ///
+    /// Each split takes the share of the *slots along its own axis* that sit in the
+    /// first child, where a subtree that splits the other way is one slot however
+    /// many panes it holds. Three side by side come out at a third and then a half,
+    /// so every column is a third wide.
+    ///
+    /// **Slots, not leaves, and the difference is the whole rule.** Weighting by
+    /// leaves gives every pane the same area, which sounds like the same thing and
+    /// looks nothing like it: a column of three beside two single panes comes out
+    /// three times as wide as either of them, since its area has to cover three
+    /// panes. Tried on 2026-07-31 and rejected on sight. What the key is for is
+    /// evening out siblings, and a column is one sibling.
+    ///
+    /// So a tall pane beside a column of two is halves, and the column divides its
+    /// own half between its two. Every row divides evenly among the things in that
+    /// row, and every column among the things in that column, which is the grid a
+    /// window of panes reads as.
     ///
     /// Axes and pane order are untouched: this is the "put it back" key, not a
     /// reshuffle, and a user who presses it expects the panes to stay where they
     /// are and only the dividers to move.
+    ///
+    /// A ratio outside ``clampedRatio(_:)``'s range needs nineteen slots on one side
+    /// of a split to reach, and ``layout(in:)`` clamps on the way to pixels like it
+    /// does for every other ratio. What that costs is the pane on the short side
+    /// keeping a twentieth rather than shrinking further, which is the clamp doing
+    /// its job rather than this rule failing.
     public var equalized: PaneTree {
         guard case let .split(axis, _, first, second) = self else { return self }
-        return .split(axis: axis, ratio: 0.5, first: first.equalized, second: second.equalized)
+        let head = first.slotCount(along: axis)
+        let share = Double(head) / Double(head + second.slotCount(along: axis))
+        return .split(axis: axis, ratio: share, first: first.equalized, second: second.equalized)
+    }
+
+    /// How many things this subtree contributes to a row or column running `axis`.
+    ///
+    /// A leaf is one. A split the same way is however many its two sides
+    /// contribute, since its own divider is another divider in that same row. A
+    /// split the *other* way is one, however deep it goes: it is a column sitting in
+    /// a row, and what is inside it is that column's business.
+    ///
+    /// That last case is what makes ``equalized`` even out siblings rather than
+    /// panes, and it is the only place in this type where an axis decides how far a
+    /// walk goes.
+    func slotCount(along axis: SplitAxis) -> Int {
+        switch self {
+        case .leaf:
+            return 1
+        case let .split(own, _, first, second):
+            guard own == axis else { return 1 }
+            return first.slotCount(along: axis) + second.slotCount(along: axis)
+        }
     }
 
     /// How far a divider moves at full speed, as a fraction of that split's own

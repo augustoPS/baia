@@ -174,7 +174,7 @@ public struct Workspace: Sendable, Equatable, Codable {
         return resize(pane: pane, direction: direction, by: delta)
     }
 
-    /// Puts every divider in the focused tab back to the middle.
+    /// Gives every pane in the focused tab the same share of the window.
     ///
     /// False when the tab is already even, so the escape hatch from a layout that
     /// got away from the user costs nothing when it was not needed. False when
@@ -307,7 +307,7 @@ public struct Workspace: Sendable, Equatable, Codable {
         }
     }
 
-    /// Puts every divider in `pane`'s tab back to the middle, wherever that tab is.
+    /// Gives every pane in `pane`'s tab the same share, wherever that tab is.
     ///
     /// Takes a pane rather than a tab index because the control channel's caller
     /// knows which pane it is and nothing else. False when no tab holds `pane`, and

@@ -395,7 +395,7 @@ final class PaneTreeController: NSViewController {
     /// is a fact about the keyboard and the window under it.
     private var resizeRamp = KeyboardResizeRamp()
 
-    /// Puts every divider in this window back to the middle.
+    /// Gives every pane in this window the same share of it.
     func equalizePanes() {
         guard workspace.equalizeFocusedTab() else { return }
         pushRatios()
@@ -574,7 +574,7 @@ final class PaneTreeController: NSViewController {
         return true
     }
 
-    /// Puts every divider in `pane`'s tab back to the middle.
+    /// Gives every pane in `pane`'s tab the same share of the window.
     func equalize(tabContaining pane: PaneID) -> Bool {
         guard workspace.equalize(tabContaining: pane) else { return false }
         pushRatios()

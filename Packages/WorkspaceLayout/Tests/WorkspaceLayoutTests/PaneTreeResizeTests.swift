@@ -214,7 +214,68 @@ import Testing
         #expect(PaneTree.leaf(panes.a).adjustingRatio(forPane: panes.a, direction: .right, by: 0.05) == nil)
     }
 
-    @Test func equalizedSetsEverySplitToHalfAtEveryDepth() {
+    /// The rule stated where it is visible, and the case that rejected weighting by
+    /// leaves.
+    ///
+    /// A column of three between two single panes. Weighting by leaves gives every
+    /// pane the same area and makes that middle column three times as wide as its
+    /// neighbours, which is what shipped for about an hour on 2026-07-31 and was
+    /// rejected on sight. Evening out siblings makes all three columns a third.
+    @Test func equalizedEvensColumnsRatherThanPanes() {
+        let tall = PaneID()
+        let stacked = (top: PaneID(), middle: PaneID(), bottom: PaneID())
+        let other = PaneID()
+        let column = PaneTree.split(
+            axis: .vertical,
+            ratio: 0.8,
+            first: .leaf(stacked.top),
+            second: .split(axis: .vertical, ratio: 0.1, first: .leaf(stacked.middle), second: .leaf(stacked.bottom))
+        )
+        let tree = PaneTree.split(
+            axis: .horizontal,
+            ratio: 0.2,
+            first: .leaf(tall),
+            second: .split(axis: .horizontal, ratio: 0.9, first: column, second: .leaf(other))
+        )
+
+        let laid = tree.equalized.layout(in: LayoutRect(x: 0, y: 0, width: 900, height: 900))
+        let width = Dictionary(uniqueKeysWithValues: laid.map { ($0.pane, $0.rect.width) })
+        let height = Dictionary(uniqueKeysWithValues: laid.map { ($0.pane, $0.rect.height) })
+
+        // Three columns of the same width, whatever is inside them.
+        #expect(width[tall] == 300)
+        #expect(width[stacked.top] == 300)
+        #expect(width[other] == 300)
+        // And the column divides its own third between its three.
+        #expect(height[tall] == 900)
+        #expect(height[stacked.top] == 300)
+        #expect(height[stacked.middle] == 300)
+        #expect(height[stacked.bottom] == 300)
+    }
+
+    /// Three side by side, which is the arrangement that made this a defect. They
+    /// nest as `a | (b | c)`, so halving every split gave a half and two quarters
+    /// and the key handed back the shape it was pressed to undo.
+    @Test func equalizedMakesThreeSideBySideThirds() {
+        let tree = PaneTree.split(
+            axis: .horizontal,
+            ratio: 0.5,
+            first: .leaf(PaneID()),
+            second: .split(axis: .horizontal, ratio: 0.5, first: .leaf(PaneID()), second: .leaf(PaneID()))
+        )
+
+        let widths = tree.equalized
+            .layout(in: LayoutRect(x: 0, y: 0, width: 900, height: 900))
+            .map { $0.rect.width }
+
+        #expect(widths == [300, 300, 300])
+    }
+
+    /// A tree where the answer is halves all the way down, and it is worth pinning
+    /// because it is the answer the old rule gave for the wrong reason. Every split
+    /// here has one slot on each side: a pane against a column, then a pane against
+    /// a row, then a pane against a pane.
+    @Test func equalizedIsHalvesWhenEverySplitHasOneSlotEachSide() {
         let a = PaneID()
         let b = PaneID()
         let c = PaneID()
@@ -248,10 +309,28 @@ import Testing
         #expect(even.paneIDs == tree.paneIDs)
     }
 
+    /// Idempotent, which is what makes the second press a refusal.
+    ///
+    /// Stated as equalizing twice rather than against a hand-written tree, because
+    /// "already even" is the rule's own output and writing it out again here would
+    /// only assert that two copies of the arithmetic agree.
     @Test func equalizingAnAlreadyEvenTreeChangesNothing() {
         let panes = Grid()
+        // A pane beside a column is already even at halves, so this one is
+        // untouched outright.
         #expect(panes.tree.equalized == panes.tree)
         #expect(PaneTree.leaf(panes.a).equalized == .leaf(panes.a))
+
+        // Idempotence on a tree that does move, so the line above is not the only
+        // evidence: three side by side even to thirds and stay there.
+        let spine = PaneTree.split(
+            axis: .horizontal,
+            ratio: 0.5,
+            first: .leaf(PaneID()),
+            second: .split(axis: .horizontal, ratio: 0.5, first: .leaf(PaneID()), second: .leaf(PaneID()))
+        )
+        #expect(spine.equalized != spine)
+        #expect(spine.equalized.equalized == spine.equalized)
     }
 
     @Test func theKeyboardStepDividesTheClampRangeWithNothingLeftOver() {

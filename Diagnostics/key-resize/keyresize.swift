@@ -162,6 +162,17 @@ final class Harness {
         pushRatios()
     }
 
+    /// Puts one divider where a finished drag would leave it.
+    ///
+    /// The `ramp` case needs a split at a known half to count presses from, and
+    /// equalize stopped being a way to get one on 2026-07-31: it gives each split
+    /// the share of its own leaves, so the middle split of a four-pane spine evens
+    /// to a third.
+    func setRatio(at path: SplitPath, to ratio: Double) {
+        guard workspace.setRatio(at: path, to: ratio) else { return }
+        pushRatios()
+    }
+
     private func pushRatios() {
         guard let tree = workspace.focusedTab?.tree else { return }
         PaneSplitController.applyRatios(of: tree, to: root)
@@ -577,18 +588,29 @@ enum Probe {
         check(harness.window.firstResponder === responder, "the first responder never moved")
         check(harness.sessionWrites > 0, "presses actually reached the model")
 
-        // Equalize puts every divider back at once, which is the one command that
+        // Equalize gives every pane the same share, which is the one command that
         // has to reach more than a single split.
-        print("=== equalize reaches every divider ===")
+        //
+        // Not every divider at the middle. Four panes on a spine nest as
+        // `a | (b | (c | d))`, so the shares are a quarter, a third and a half, and
+        // halving all three was the defect this key had until 2026-07-31: it handed
+        // back an eighth, an eighth, a quarter and a half.
+        print("=== equalize gives every pane the same share ===")
         harness.equalizePanes()
         harness.settle()
-        for path in [SplitPath(), SplitPath([1]), SplitPath([1, 1])] {
+        for (path, share) in [(SplitPath(), 0.25), (SplitPath([1]), 1.0 / 3.0), (SplitPath([1, 1]), 0.5)] {
             guard let controller = harness.controllers[path] else { continue }
             let drawn = Double(position(controller) / thickness(controller))
-            check(harness.modelRatio(at: path) == 0.5 && abs(drawn - 0.5) < 0.01,
-                  String(format: "%@ is back at the middle, drawn %.4f",
-                         path.indices.isEmpty ? "[]" : "\(path.indices)", drawn))
+            check(harness.modelRatio(at: path) == share && abs(drawn - share) < 0.01,
+                  String(format: "%@ is at %.4f of its split, drawn %.4f",
+                         path.indices.isEmpty ? "[]" : "\(path.indices)", share, drawn))
         }
+
+        // The point of the shares, measured where it is visible: four equal panes.
+        let widths = harness.leaves.map { $0.frame.width }
+        print("  pane widths " + widths.map { String(format: "%.0f", $0) }.joined(separator: ", "))
+        check((widths.max() ?? 0) - (widths.min() ?? 0) < 4,
+              "the four panes came out the same width, to within the dividers between them")
     }
 
     // MARK: - the ramp
@@ -646,7 +668,7 @@ enum Probe {
         // from the middle where the old constant took eighteen, and the last one
         // lands on the stop rather than short of it.
         print("=== a held key climbs and lands on the stop ===")
-        harness.equalizePanes()
+        harness.setRatio(at: SplitPath([1]), to: 0.5)
         harness.focus(panes[1])
         harness.settle()
         var presses = 0
