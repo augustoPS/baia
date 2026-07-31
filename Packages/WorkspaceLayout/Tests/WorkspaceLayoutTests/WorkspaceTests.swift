@@ -391,7 +391,7 @@ import Testing
         #expect(workspace.focusedPane == panes.a)
     }
 
-    @Test func equalizingPutsEveryDividerBackToTheMiddle() {
+    @Test func equalizingEvensASplitOutOfShape() {
         let panes = NestedSplits()
         var workspace = panes.workspace
         _ = workspace.setRatio(at: SplitPath(), to: 0.2)
@@ -399,6 +399,10 @@ import Testing
 
         let evened = workspace.equalizeFocusedTab()
 
+        // Back to the fixture, which is halves. A pane beside a column is one slot
+        // against one slot, and the column's own two are one against one again, so
+        // this arrangement is the case where evening siblings and halving every
+        // split agree. `equalizedEvensColumnsRatherThanPanes` is where they part.
         #expect(evened)
         #expect(workspace.focusedTab?.tree == panes.workspace.focusedTab?.tree)
     }
