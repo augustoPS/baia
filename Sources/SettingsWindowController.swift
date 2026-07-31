@@ -41,7 +41,8 @@ final class SettingsWindowController: NSWindowController {
         let form = NSHostingView(rootView: SettingsView(
             model: model,
             onAccept: { [weak self] in self?.accept() },
-            onCancel: { [weak self] in self?.close() }
+            onCancel: { [weak self] in self?.close() },
+            chrome: { center.chrome(for: $0) }
         ))
         form.translatesAutoresizingMaskIntoConstraints = false
         // The form is the fixed side. The samples take whatever the window has

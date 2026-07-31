@@ -1,6 +1,7 @@
 import AppKit
 import BaiaSettings
 import GhosttyTheme
+import PaneChrome
 import SwiftUI
 
 /// The settings window's own copy of the settings.
@@ -52,6 +53,15 @@ struct SettingsView: View {
     @Bindable var model: SettingsDraft
     let onAccept: () -> Void
     let onCancel: () -> Void
+
+    /// The chrome palette a draft would produce, which decides whether the Alert
+    /// picker is worth showing.
+    ///
+    /// A closure through `ConfigurationCenter` rather than a derivation written
+    /// here, for the reason that file already records: a second mapping inside the
+    /// window is how a preview comes to show what the panes will not, and this one
+    /// would decide what the owner is even offered.
+    let chrome: (BaiaSettings.Settings) -> PaneTheme
 
     /// A section heading with its restore control.
     ///
@@ -171,9 +181,19 @@ struct SettingsView: View {
                             Text(value.rawValue.capitalized).tag(value)
                         }
                     }
-                    Picker("Alert", selection: $model.draft.alertBehavior) {
-                        ForEach(AlertBehavior.allCases, id: \.self) { value in
-                            Text(value.rawValue.capitalized).tag(value)
+                    // Shown only where it changes something. Under `accent` that
+                    // is every theme, since the attention colour is the focus
+                    // colour by construction and the three behaviours always
+                    // differ. Under `alert` it is the themes whose own `ansi[1]`
+                    // lands on their focus colour or their bar, which is 124 of
+                    // the 463 in the catalog. The remaining case is the shipped
+                    // default, where all three answer the same thing and the
+                    // picker would be a control that does nothing.
+                    if chrome(model.draft).alertBehaviorMatters(for: model.draft.attentionAccent) {
+                        Picker("Alert", selection: $model.draft.alertBehavior) {
+                            ForEach(AlertBehavior.allCases, id: \.self) { value in
+                                Text(value.rawValue.capitalized).tag(value)
+                            }
                         }
                     }
                 } header: {
