@@ -371,10 +371,29 @@ final class PaneTreeController: NSViewController {
     /// at all, with nothing on screen to say why. Under key repeat that would
     /// happen many times a second, reparenting the live surface each time. This
     /// takes the same push path a finished drag does instead.
+    ///
+    /// **How far it moves depends on how long the key has been down**, which
+    /// ``KeyboardResizeRamp`` decides and this only feeds. A tap is one cell and a
+    /// hold reaches the old constant in four repeats, because a fixed 0.025 read as
+    /// four-column steps rather than as a resize.
+    ///
+    /// The continuation window comes from the system rather than from a number
+    /// here. `keyRepeatDelay` is macOS's own definition of when a key is being
+    /// held, and someone who set a slow initial delay would otherwise have every
+    /// first repeat read as a fresh tap and never reach the plateau.
     func resizeFocusedPane(_ direction: FocusDirection) {
-        guard workspace.resizeFocusedPane(direction, by: PaneTree.keyboardResizeStep) else { return }
+        let delta = resizeRamp.step(
+            growing: direction,
+            at: ProcessInfo.processInfo.systemUptime,
+            continuingWithin: NSEvent.keyRepeatDelay + NSEvent.keyRepeatInterval
+        )
+        guard workspace.resizeFocusedPane(direction, by: delta) else { return }
         pushRatios()
     }
+
+    /// How far the next grow key moves the divider. One per window, because a hold
+    /// is a fact about the keyboard and the window under it.
+    private var resizeRamp = KeyboardResizeRamp()
 
     /// Puts every divider in this window back to the middle.
     func equalizePanes() {
@@ -408,6 +427,10 @@ final class PaneTreeController: NSViewController {
 
     private func focusPane(_ id: PaneID) {
         guard let pane = panes[id] else { return }
+        // Whatever grow key was down is not down any more: reaching here took
+        // another chord or a click. The divider at the new pane starts where every
+        // first press starts.
+        resizeRamp.release()
         pane.takeFocus()
         syncPanePresentation()
         onFocusedPaneChange?()

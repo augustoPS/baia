@@ -52,7 +52,7 @@ swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/keyresize" \
 # reaching its own exit at all: an unbounded layout loop aborts the process under
 # an uncaught NSGenericException, so `set -e` and the exit status are the
 # assertion.
-for case in model push starve; do
+for case in model push ramp starve; do
   "$OUT/keyresize" "$case"
   echo
 done
