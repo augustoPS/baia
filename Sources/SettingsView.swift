@@ -53,10 +53,38 @@ struct SettingsView: View {
     let onAccept: () -> Void
     let onCancel: () -> Void
 
+    /// A section heading with its restore control.
+    ///
+    /// Per section rather than one button for the window, which is the shape the
+    /// owner chose: judging a shipped default means putting one band back to stock
+    /// without losing the other three. The draft is what moves, so Cancel still
+    /// backs the restore out and Accept still commits it, and a restore is an edit
+    /// like any other rather than a fifth way to write the file.
+    ///
+    /// Disabled when the section is already at the default, because a control that
+    /// does nothing when pressed is the fault the command palette's hint row still
+    /// carries. `title` comes off ``SettingsSection`` so the heading and the help
+    /// string cannot drift from the section they restore.
+    private func heading(_ section: SettingsSection) -> some View {
+        HStack {
+            Text(section.title)
+            Spacer()
+            Button {
+                model.draft = model.draft.restoring(section)
+            } label: {
+                Image(systemName: "arrow.counterclockwise")
+            }
+            .buttonStyle(.borderless)
+            .disabled(model.draft.isDefault(section))
+            .help("Restore \(section.title) to its default")
+            .accessibilityLabel("Restore \(section.title) to its default")
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             Form {
-                Section("Theme") {
+                Section {
                     Picker("Theme", selection: $model.draft.themeName) {
                         ForEach(SettingsDraft.themeNames, id: \.self) { name in
                             Text(name).tag(name)
@@ -80,9 +108,11 @@ struct SettingsView: View {
                         }
                     }
                     Toggle("Blur behind window", isOn: $model.draft.backgroundBlur)
+                } header: {
+                    heading(.theme)
                 }
 
-                Section("Text") {
+                Section {
                     TextField(
                         "Font",
                         text: Binding(
@@ -106,9 +136,11 @@ struct SettingsView: View {
                             Text(style.rawValue.capitalized).tag(style)
                         }
                     }
+                } header: {
+                    heading(.text)
                 }
 
-                Section("Window") {
+                Section {
                     LabeledContent("Padding") {
                         HStack {
                             Slider(value: $model.draft.windowPadding, in: 0 ... 32, step: 1)
@@ -119,9 +151,11 @@ struct SettingsView: View {
                     }
                     Toggle("Balance padding", isOn: $model.draft.windowPaddingBalance)
                     Toggle("Transparent titlebar", isOn: $model.draft.transparentTitlebar)
+                } header: {
+                    heading(.window)
                 }
 
-                Section("Signals") {
+                Section {
                     Picker("Focus accent", selection: $model.draft.focusAccent) {
                         ForEach(FocusAccent.allCases, id: \.self) { value in
                             Text(value.rawValue.capitalized).tag(value)
@@ -142,6 +176,8 @@ struct SettingsView: View {
                             Text(value.rawValue.capitalized).tag(value)
                         }
                     }
+                } header: {
+                    heading(.signals)
                 }
             }
             .formStyle(.grouped)
