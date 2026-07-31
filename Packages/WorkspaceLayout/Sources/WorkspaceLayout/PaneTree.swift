@@ -201,8 +201,18 @@ public indirect enum PaneTree: Sendable, Equatable, Codable {
         return .split(axis: axis, ratio: 0.5, first: first.equalized, second: second.equalized)
     }
 
-    /// How far one press of a grow key moves a divider, as a fraction of that
-    /// split's own thickness.
+    /// How far a divider moves at full speed, as a fraction of that split's own
+    /// thickness.
+    ///
+    /// **No longer what one press of a grow key moves.** ``KeyboardResizeRamp``
+    /// makes the arrow keys start at a cell and reach this in four repeats, because
+    /// a constant this size read as four-column steps rather than as a resize. What
+    /// still moves by exactly this is `baia resize`, which takes it as the verb's
+    /// default and as the floor under a caller's `--by`: a channel client sends one
+    /// message per move and has no key to hold.
+    ///
+    /// The reasoning below is what the ramp's plateau was chosen to keep, and it is
+    /// left as it was written.
     ///
     /// Chosen against two failures at once. Too large and a single tap is
     /// unusable: at 0.05 one press moves the root divider of a 1400 point window

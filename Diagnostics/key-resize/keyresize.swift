@@ -119,15 +119,41 @@ final class Harness {
         }
     }
 
-    /// `PaneTreeController.resizeFocusedPane(_:)`, line for line.
+    /// `PaneTreeController.resizeFocusedPane(_:)`, line for line, with ``clock``
+    /// standing in for `ProcessInfo.systemUptime` and ``continuationGap`` for
+    /// `NSEvent.keyRepeatDelay + keyRepeatInterval`.
+    ///
+    /// The clock is driven rather than read so a case can state what it is doing:
+    /// ``held()`` between presses is a key down at the system repeat rate,
+    /// ``paused()`` is a finger lifted. Reading the real clock would make the
+    /// distinction depend on how fast the probe happens to run.
     func resizeFocusedPane(_ direction: FocusDirection) {
-        guard workspace.resizeFocusedPane(direction, by: PaneTree.keyboardResizeStep) else { return }
+        let delta = ramp.step(growing: direction, at: clock, continuingWithin: Self.continuationGap)
+        guard workspace.resizeFocusedPane(direction, by: delta) else { return }
         pushRatios()
     }
 
+    /// The macOS defaults: a 90ms repeat interval and a continuation window of the
+    /// 375ms initial delay plus one interval.
+    static let repeatInterval = 0.09
+    static let continuationGap = 0.375 + repeatInterval
+
+    private var ramp = KeyboardResizeRamp()
+    private var clock = 0.0
+
+    /// The key stayed down: the next press is the next repeat.
+    func held() { clock += Self.repeatInterval }
+
+    /// The finger came off. Long enough that the next press is a fresh tap.
+    func paused() { clock += Self.continuationGap * 2 }
+
     /// A click into another pane, which is all the keys need from focus.
+    ///
+    /// Releases the ramp for the reason `PaneTreeController.focusPane(_:)` does:
+    /// reaching another pane took a different chord, so whatever was held is not.
     func focus(_ pane: PaneID) {
         _ = workspace.focusPane(pane)
+        ramp.release()
     }
 
     /// `PaneTreeController.equalizePanes()`, line for line.
@@ -167,6 +193,17 @@ final class Harness {
     guard let first = controller.splitViewItems.first?.viewController.view else { return -1 }
     return controller.splitView.isVertical ? first.frame.width : first.frame.height
 }
+
+/// One cell, asked of a fresh ramp rather than written down a second time here.
+///
+/// The first press of a run is the smallest the ramp ever moves a divider, and it
+/// is what a tap gets. Every expectation below that says "a tap" is built from
+/// this, so a change to the ladder shows up as a probe that still passes rather
+/// than one that has to be edited to agree with it.
+let cell: Double = {
+    var ramp = KeyboardResizeRamp()
+    return ramp.step(growing: .right, at: 0, continuingWithin: 1)
+}()
 
 @MainActor func thickness(_ controller: PaneSplitController) -> CGFloat {
     let split = controller.splitView
@@ -252,6 +289,7 @@ enum Probe {
         case "model": model()
         case "starve": starve()
         case "push": push()
+        case "ramp": ramp()
         default: print("unknown case"); exit(2)
         }
         print(failures == 0 ? "PASS" : "FAILED \(failures)")
@@ -508,13 +546,15 @@ enum Probe {
         harness.resizeFocusedPane(.right)
         harness.settle()
 
+        // One press of a fresh ramp is a tap, so the move is one cell rather than
+        // the plateau step this used to expect.
         let after = position(inner)
-        let expected = thickness(inner) * (0.5 + PaneTree.keyboardResizeStep)
+        let expected = thickness(inner) * (0.5 + cell)
         print(String(format: "  divider %.1f -> %.1f, the model's %.4f of %.1f is %.1f",
                      before, after, harness.modelRatio(at: SplitPath([1])) ?? -1,
                      thickness(inner), expected))
         check(abs(after - expected) < 1, "the divider landed where the model says")
-        check(harness.modelRatio(at: SplitPath([1])) == 0.5 + PaneTree.keyboardResizeStep,
+        check(harness.modelRatio(at: SplitPath([1])) == 0.5 + cell,
               "the session snapshot carries the new ratio")
         check(abs((harness.controllers[SplitPath()].map { position($0) } ?? -1) - rootBefore) < 0.5,
               "the divider the pane does not touch did not move")
@@ -549,5 +589,114 @@ enum Probe {
                   String(format: "%@ is back at the middle, drawn %.4f",
                          path.indices.isEmpty ? "[]" : "\(path.indices)", drawn))
         }
+    }
+
+    // MARK: - the ramp
+
+    /// How far a press actually moves the divider, now that it depends on how long
+    /// the key has been down.
+    ///
+    /// The other three cases ask whether the key can reach the layout loop. This
+    /// one asks whether it moves the amount ``KeyboardResizeRamp`` says, measured
+    /// on the drawn divider rather than in the model, which is where a step small
+    /// enough to be swallowed would show up.
+    ///
+    /// The fourth check is the one worth the case. A step is a fraction of its own
+    /// split, so one cell in a nested split is a fraction of a fraction, and the
+    /// failure the ramp was meant to fix is a press that moves nothing readable. At
+    /// the innermost divider of a four-pane spine in a 1400 point window that is
+    /// under two points, which is printed rather than merely asserted: the number
+    /// is the thing to look at when the ladder is next touched.
+    @MainActor static func ramp() {
+        let panes = [PaneID(), PaneID(), PaneID(), PaneID()]
+        let harness = Harness(
+            tree: spine(axis: .horizontal, panes: panes),
+            focused: panes[1],
+            size: NSSize(width: 1400, height: 900)
+        )
+        guard let inner = harness.controllers[SplitPath([1])],
+              let deep = harness.controllers[SplitPath([1, 1])]
+        else { return }
+
+        print("=== a tap is one cell ===")
+        let before = position(inner)
+        harness.resizeFocusedPane(.right)
+        harness.settle()
+        let tapped = position(inner) - before
+        print(String(format: "  one cell is %.4f of a %.0f point split, %.1f points",
+                     cell, thickness(inner), thickness(inner) * cell))
+        check(abs(tapped - thickness(inner) * cell) < 1, "the divider moved one cell, drawn")
+
+        // Four deliberate presses are four cells. A ramp that read repeated taps as
+        // a hold would take back the precision it was added for, and this is the
+        // half of the behaviour a held key cannot show.
+        print("=== taps do not climb ===")
+        for _ in 0 ..< 4 {
+            harness.paused()
+            harness.resizeFocusedPane(.right)
+            harness.tick()
+        }
+        harness.settle()
+        let afterTaps = harness.modelRatio(at: SplitPath([1])) ?? -1
+        print(String(format: "  five taps from the middle reached %.4f, five cells is %.4f",
+                     afterTaps, 0.5 + 5 * cell))
+        check(abs(afterTaps - (0.5 + 5 * cell)) < 1e-9, "five taps moved five cells and no more")
+
+        // Held, it climbs the ladder and spends the range exactly. Twenty presses
+        // from the middle where the old constant took eighteen, and the last one
+        // lands on the stop rather than short of it.
+        print("=== a held key climbs and lands on the stop ===")
+        harness.equalizePanes()
+        harness.focus(panes[1])
+        harness.settle()
+        var presses = 0
+        while presses < 100 {
+            harness.held()
+            let was = harness.modelRatio(at: SplitPath([1]))
+            harness.resizeFocusedPane(.right)
+            guard harness.modelRatio(at: SplitPath([1])) != was else { break }
+            presses += 1
+            harness.tick()
+        }
+        harness.settle()
+        let stop = PaneTree.clampedRatio(1)
+        print(String(format: "  %d presses from the middle to %.4f", presses,
+                     harness.modelRatio(at: SplitPath([1])) ?? -1))
+        check(presses == 20, "it crossed in the twenty presses the ladder implies")
+        check(harness.modelRatio(at: SplitPath([1])) == stop, "it stopped exactly on the stop")
+        // **Not `thickness * stop`.** The model's stop is 0.95 and the drawn one is
+        // wherever `NSSplitViewItem.minimumThickness` lets the divider rest, which
+        // on a 699 point split is 96 points from the end rather than 35. The two
+        // disagreeing is the arrangement `reachablePosition(in:)` exists for and
+        // the `starve` case hammers; what matters here is that the divider went as
+        // far that way as the view layer allows and stayed there.
+        // The divider's own thickness comes off too. The minimum belongs to the
+        // second child and `position` is the first child's width, so the three add
+        // up to the split rather than two of them.
+        let furthest = thickness(inner)
+            - PaneSplitController.minimumPaneThickness
+            - inner.splitView.dividerThickness
+        check(abs(position(inner) - furthest) < 1,
+              String(format: "the divider is drawn as far as it can go, %.1f of %.1f",
+                     position(inner), thickness(inner)))
+
+        // One cell at a nested split, which is the smallest move the ramp can ask
+        // for. Equalized first: the walk above left the innermost split pinned at
+        // its own 96 point minimum, where one cell is half a point and nothing
+        // moves at all. That is a true reading of a squeezed layout and a
+        // misleading one of the case this is asking about.
+        print("=== the smallest step still moves a nested divider ===")
+        harness.equalizePanes()
+        harness.focus(panes[3])
+        harness.paused()
+        harness.settle()
+        let deepBefore = position(deep)
+        harness.resizeFocusedPane(.left)
+        harness.settle()
+        let deepMoved = deepBefore - position(deep)
+        print(String(format: "  the innermost split is %.0f points, one cell of it is %.2f, drawn move %.2f",
+                     thickness(deep), thickness(deep) * cell, deepMoved))
+        check(deepMoved > 0, "the divider moved at all")
+        check(abs(deepMoved - thickness(deep) * cell) < 1, "it moved one cell of its own split")
     }
 }
