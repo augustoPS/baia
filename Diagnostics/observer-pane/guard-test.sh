@@ -31,6 +31,21 @@ check 2 'osascript -e '"'"'quit app "baia"'"'"''
 check 2 'open .build/Build/Products/Debug/baia.app'
 check 2 'echo hi; pkill -x baia'
 
+# Denied behind an rtk prefix. `rtk hook claude` rewrites commands before the
+# permission check, so the executors' allowlist carries `Bash(rtk:*)`, and
+# `rtk proxy` runs its argument raw with no filtering at all.
+#
+# Every line here was ALLOWED on 2026-08-01 while its bare form was denied, which
+# is the whole deny list bypassed by a nine-character prefix. The bare forms above
+# passed the entire time, so this arm is what the guard was missing rather than
+# what it had.
+check 2 'rtk proxy pkill -x baia'
+check 2 'rtk proxy make run'
+check 2 'rtk proxy open .build/Build/Products/Debug/baia.app'
+check 2 'rtk proxy osascript -e '"'"'quit app "baia"'"'"''
+check 2 'rtk make run'
+check 2 'echo hi; rtk proxy pkill baia'
+
 # Allowed: the whole verification loop, and things that merely mention the word.
 check 0 'make test'
 check 0 'swift test --package-path Packages/WorkspaceLayout'
@@ -38,6 +53,14 @@ check 0 'git -C . status --short'
 check 0 'grep -rn "baia" Sources/'
 check 0 'cat Diagnostics/control-channel/README.md'
 check 0 'baia list --tree'
+
+# The rewritten forms the executors actually run, measured with `rtk rewrite` on
+# 2026-08-01. The prefix arm above must not make ordinary work look dangerous.
+check 0 'rtk make test'
+check 0 'rtk git status'
+check 0 'rtk read Diagnostics/observer-pane/README.md'
+check 0 'rtk grep -rn "baia" Sources/'
+check 0 'rtk swift test'
 
 if [ "$fails" -gt 0 ]; then printf '\n%d check(s) failed\n' "$fails"; exit 1; fi
 

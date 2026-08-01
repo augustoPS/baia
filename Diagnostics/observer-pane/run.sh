@@ -41,6 +41,13 @@ done
 "$OBS/trust-worktrees.sh" \
   "$WT/baia--tree-expansions" "$WT/baia--utf8-filenames" "$WT/baia--app-target-rules"
 
+# Surfaces 2 and 4, closed 2026-08-01: the executors' allowlist and guard hook.
+# Seeded rather than assumed present. The settings existed for run 2 and were
+# hand-written and untracked, so they lived in three directories that get deleted
+# and remade, and a fresh worktree met both surfaces again.
+"$OBS/seed-worktree-settings.sh" \
+  "$WT/baia--tree-expansions" "$WT/baia--utf8-filenames" "$WT/baia--app-target-rules"
+
 mkdir -p "$OBS/verdicts"
 mkdir -p "$LOG"
 : > "$LOG/verdicts.jsonl"

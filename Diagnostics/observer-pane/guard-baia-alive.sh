@@ -24,9 +24,25 @@ INPUT=$(cat)
 COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
 [ -z "$COMMAND" ] && exit 0
 
+# Where a command can begin: the start of the line, after a shell separator, or
+# behind an `rtk` prefix.
+#
+# **The rtk arm is not defensive padding.** The `rtk hook claude` PreToolUse hook
+# rewrites commands before the permission check, so the executors' allowlist
+# carries `Bash(rtk:*)` to stop every rewritten verb prompting, and `rtk proxy`
+# runs its argument raw with no filtering. Measured 2026-08-01: `pkill -x baia`
+# was denied here and `rtk proxy pkill -x baia` was allowed, which is the whole
+# deny list bypassed by a nine-character prefix.
+#
+# The allowlist now denies `Bash(rtk proxy:*)` as well, and this is the backstop
+# rather than the fix: a hook that only holds while the settings file is right is
+# not a guard, and the settings file is the thing most likely to be edited by
+# whoever is in a hurry.
+START='(^|[;&|()]+[[:space:]]*)(rtk[[:space:]]+(proxy[[:space:]]+)?)?'
+
 has() { printf '%s' "$COMMAND" | grep -qE "$1"; }
 
-if has '(^|[;&|()]+[[:space:]]*)pkill([[:space:]]+-[a-zA-Z]+)*[[:space:]]+baia'; then
+if has "${START}"'pkill([[:space:]]+-[a-zA-Z]+)*[[:space:]]+baia'; then
   emit_deny "Blocked: pkill baia would kill the app hosting this pane, the orchestrator, and every sibling executor."
 fi
 
@@ -34,16 +50,16 @@ if has 'Diagnostics/[a-zA-Z0-9_-]+/run\.sh'; then
   emit_deny "Blocked: a Diagnostics probe quits any running baia and launches its own. It would end this run. Use 'make test' to verify package work."
 fi
 
-if has '(^|[;&|()]+[[:space:]]*)make[[:space:]]+run([[:space:]]|$)' \
-   || has '(^|[;&|()]+[[:space:]]*)make[[:space:]]+run-attached([[:space:]]|$)'; then
+if has "${START}"'make[[:space:]]+run([[:space:]]|$)' \
+   || has "${START}"'make[[:space:]]+run-attached([[:space:]]|$)'; then
   emit_deny "Blocked: make run launches a second baia, and 'open' may resolve to the installed copy through LaunchServices. Verify with 'make test'."
 fi
 
-if has 'osascript.*quit[[:space:]]+app[[:space:]]*"?baia'; then
+if has "${START}"'osascript.*quit[[:space:]]+app[[:space:]]*"?baia'; then
   emit_deny "Blocked: quitting baia would end this run."
 fi
 
-if has '(^|[;&|()]+[[:space:]]*)open[[:space:]]+[^;&|]*baia\.app'; then
+if has "${START}"'open[[:space:]]+[^;&|]*baia\.app'; then
   emit_deny "Blocked: opening baia.app launches a second instance. Verify with 'make test'."
 fi
 

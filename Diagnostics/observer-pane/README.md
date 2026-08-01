@@ -16,8 +16,11 @@ prompt.
 
 | file | what it is |
 |---|---|
-| `guard-baia-alive.sh` | PreToolUse hook. Refuses the commands that would kill the app hosting the run |
-| `guard-test.sh` | 16 checks over the guard, including a negative control |
+| `guard-baia-alive.sh` | PreToolUse hook. Refuses the commands that would kill the app hosting the run, including behind an `rtk` prefix |
+| `guard-test.sh` | 26 checks over the guard, including a negative control |
+| `executor-settings.json` | the tracked original of each executor's `.claude/settings.json`. `__REPO__` is substituted on seeding |
+| `seed-worktree-settings.sh` | writes it into each worktree. Closes surfaces 2 and 4 |
+| `trust-worktrees.sh` | pre-accepts the workspace-trust dialog. Closes surface 1 |
 | `briefs/*.md` | one per executor. Each carries the item verbatim and its own first-step discipline |
 | `orchestrator.md` | the observer's prompt. Four placeholders are filled in by hand after the splits |
 | `run.sh` | spawns the three executors from the calling pane, then writes the launcher and prints the by-hand steps |
@@ -169,3 +172,29 @@ failed**: the log holds no `off-brief` verdict because no drift could occur.
 Fixing 1 to 4 is the difference between this being a demo and being usable. Close
 1 first, since it fires before any work starts, and 3 next, since it halts the
 observer on every attempt to write the log the run exists to produce.
+
+## All four are closed, and 2 was closed twice
+
+1 and 3 were closed before run 2: `trust-worktrees.sh` pre-seeds the trust flag,
+and the observer records verdicts with the Write tool rather than through a
+heredoc. 2 and 4 slowed run 2 without halting it and are closed now.
+
+**The settings for 2 and 4 existed during run 2 and were not reproducible**,
+which is the finding rather than the fix. Each worktree's `.claude/settings.json`
+was written by hand mid-run and is untracked, so it lived in three directories
+that get deleted and remade. Nothing in the harness wrote it, so a fresh worktree
+met both surfaces again while the notes recorded them as understood.
+`executor-settings.json` is the tracked original and `run.sh` seeds it beside the
+trust flag.
+
+**`Bash(rtk:*)` closes surface 2 and opens a hole.** `rtk proxy <cmd>` runs its
+argument raw with no filtering, so `rtk proxy pkill -x baia` was **allowed** on
+2026-08-01 while the bare `pkill -x baia` was denied. Six commands, one per deny
+rule, all bypassed by a nine-character prefix. Closed in the allowlist with
+`Bash(rtk proxy:*)` and again in `guard-baia-alive.sh`, which now reads through an
+`rtk` or `rtk proxy` prefix. Twice on purpose: a deny list that only holds while a
+settings file is right is not a deny list, and the settings file is the thing most
+likely to be edited by whoever is in a hurry.
+
+This is acceptance criterion 5 answered before it was tested. No executor killed
+the app across two runs, and the deny list was short by an entry the whole time.

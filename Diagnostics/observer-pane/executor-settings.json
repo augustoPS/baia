@@ -1,0 +1,54 @@
+{
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Bash(make test)",
+      "Bash(make test:*)",
+      "Bash(swift test:*)",
+      "Bash(swift build:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(find:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
+      "Bash(mkdir:*)",
+      "Bash(touch:*)",
+      "Bash(printf:*)",
+      "Bash(echo:*)",
+      "Bash(rtk:*)",
+      "Bash(baia:*)",
+      "Read(/__REPO__/**)"
+    ],
+    "deny": [
+      "Bash(pkill:*)",
+      "Bash(rtk proxy:*)",
+      "Bash(make run)",
+      "Bash(make run-attached)",
+      "Bash(open:*)",
+      "Bash(osascript:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash __REPO__/Diagnostics/observer-pane/guard-baia-alive.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
