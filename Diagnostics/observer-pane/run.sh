@@ -31,7 +31,7 @@ if ! baia --help 2>/dev/null | grep -q -- '--command'; then
   exit 2
 fi
 
-for w in tree-expansions utf8-filenames app-target-rules; do
+for w in activity-rules control-scope layout-translation; do
   [ -d "$WT/baia--$w" ] || { echo "missing worktree: $WT/baia--$w" >&2; exit 2; }
 done
 
@@ -39,10 +39,10 @@ done
 # three briefs could not reach their own goals and both said so in writing, so the
 # observer spent a wave judging adherence to instructions that could not arrive.
 #
-# **It will refuse until the briefs are rewritten, and that is correct.** The list
-# above is the wave definition, and the wave it currently describes is one that
-# already ran with two known-defective briefs. Refusing to spawn it again is the
-# whole point; planning the next wave means replacing these files.
+# The list above is the wave definition, so replacing those three names is what
+# planning a wave means, and the gate runs against whatever they now point at. It
+# refused on the 2026-08-01 briefs until they were retired to `briefs/spent/`,
+# which is the behaviour to expect from it rather than a fault to work around.
 if ! "$REPO/Diagnostics/brief-check/run.sh"; then
   echo >&2
   echo "refusing to spawn: fix the briefs above first." >&2
@@ -55,14 +55,14 @@ fi
 # worktree. Without this every executor halts before its first tool call, and the
 # acceptance does not survive a killed session.
 "$OBS/trust-worktrees.sh" \
-  "$WT/baia--tree-expansions" "$WT/baia--utf8-filenames" "$WT/baia--app-target-rules"
+  "$WT/baia--activity-rules" "$WT/baia--control-scope" "$WT/baia--layout-translation"
 
 # Surfaces 2 and 4, closed 2026-08-01: the executors' allowlist and guard hook.
 # Seeded rather than assumed present. The settings existed for run 2 and were
 # hand-written and untracked, so they lived in three directories that get deleted
 # and remade, and a fresh worktree met both surfaces again.
 "$OBS/seed-worktree-settings.sh" \
-  "$WT/baia--tree-expansions" "$WT/baia--utf8-filenames" "$WT/baia--app-target-rules"
+  "$WT/baia--activity-rules" "$WT/baia--control-scope" "$WT/baia--layout-translation"
 
 mkdir -p "$OBS/verdicts"
 mkdir -p "$LOG"
@@ -76,9 +76,9 @@ spawn() {                       # spawn <dir> <brief> <model>
 }
 
 echo "spawning executors..."
-spawn "$WT/baia--tree-expansions"  "$OBS/briefs/tree-expansions.md"  claude-sonnet-5
-spawn "$WT/baia--utf8-filenames"   "$OBS/briefs/utf8-filenames.md"   claude-opus-5
-spawn "$WT/baia--app-target-rules" "$OBS/briefs/app-target-rules.md" claude-sonnet-5
+spawn "$WT/baia--activity-rules"     "$OBS/briefs/activity-rules.md"     claude-sonnet-5
+spawn "$WT/baia--control-scope"      "$OBS/briefs/control-scope.md"      claude-opus-5
+spawn "$WT/baia--layout-translation" "$OBS/briefs/layout-translation.md" claude-sonnet-5
 
 echo
 echo "panes now in scope:"
@@ -123,9 +123,9 @@ fi
 # The other silent failure, and the reason step 3 is by hand: an unsubstituted
 # placeholder binds no pane to any brief, and every verdict after it is about
 # nothing while reading exactly like a working run.
-if grep -qE '\\\$(PANE_TREE|PANE_UTF8|PANE_RULES|START_SEQ)' "\$PROMPT"; then
+if grep -qE '\\\$(PANE_ACTIVITY|PANE_CONTROL|PANE_LAYOUT|START_SEQ)' "\$PROMPT"; then
   echo "refusing: \$PROMPT still holds unsubstituted placeholders:" >&2
-  grep -oE '\\\$(PANE_TREE|PANE_UTF8|PANE_RULES|START_SEQ)' "\$PROMPT" | sort -u >&2
+  grep -oE '\\\$(PANE_ACTIVITY|PANE_CONTROL|PANE_LAYOUT|START_SEQ)' "\$PROMPT" | sort -u >&2
   exit 2
 fi
 
@@ -138,7 +138,7 @@ cat <<EOF
 Next, by hand:
   1. Read the three pane ids:            baia list --json
   2. Note the starting seq:              baia list --json | grep seq
-  3. Substitute the ids and the seq for \$PANE_TREE, \$PANE_UTF8, \$PANE_RULES and
+  3. Substitute the ids and the seq for \$PANE_ACTIVITY, \$PANE_CONTROL, \$PANE_LAYOUT and
      \$START_SEQ in $OBS/orchestrator.md, writing the result to
      $LOG/orchestrator.md
   4. Run the observer IN THIS PANE:

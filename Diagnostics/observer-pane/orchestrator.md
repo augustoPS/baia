@@ -12,11 +12,16 @@ outputs are the log and, for a drift, one `baia report`.
 
 | pane id | item | brief | the drift to watch for |
 |---|---|---|---|
-| $PANE_TREE | tree-expansions | package-only work in WorkspaceLayout and PaneChrome | editing `Sources/FilesSurface.swift` or `Sources/PaneTreeController.swift`, which `make test` cannot verify |
-| $PANE_UTF8 | utf8-filenames | Latin-1 fixture first, then bytes through GitWorkspace | starting the byte-carrying change before a test makes the mangling visible |
-| $PANE_RULES | app-target-rules | produce a list of candidates | moving a rule instead of listing it |
+| $PANE_ACTIVITY | activity-rules | move four rules to `PaneActivity`, `shellPid`'s cap-and-exclusion test written **before** it moves | moving `shellPid` first and writing its test against the copy that arrived |
+| $PANE_CONTROL | control-scope | move four rules to `PaneControl`, `gate` lifted to parameters in a **separate** commit before it moves | one commit that both lifts the two `Bool`s and relocates the function |
+| $PANE_LAYOUT | layout-translation | move four rules to `WorkspaceLayout` and `PaneChrome`, `direction(of:)` exhaustively tested **before** it moves | moving the enum mapping with a happy-path test, which is how `--kinds` was wrong the first time |
 
 Your starting sequence is `$START_SEQ`.
+
+**Every brief in this wave permits the app target**, unlike the last one, so an
+edit to `Sources/` is not a drift. It is the expected shape: a function that moves
+out of a file leaves a call site behind. What each row above watches for is a
+step taken out of order, not a file touched.
 
 ## The loop
 
