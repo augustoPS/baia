@@ -236,17 +236,23 @@ import Testing
         #expect(files.map(\.name).contains("caf\u{FFFD}.txt"))
     }
 
-    /// The same byte on the surface the path picker reads. A click sends what this
-    /// carries, so a replaced byte here is a path handed to the shell that no
-    /// command can find.
-    @Test func aChangedPathThatIsNotUTF8ArrivesWithTheByteReplaced() throws {
+    /// The same byte on the surface the path picker reads, through the whole path
+    /// from git's pipe: a click sends what this carries, so a replaced byte here is
+    /// a path handed to the shell that no command can find.
+    ///
+    /// The entry is reported deleted because the file cannot exist on APFS, which is
+    /// the same shape a Mac sees for any repository holding a path this filesystem
+    /// could not have made. `git checkout --` against that path is the command the
+    /// bytes are for.
+    @Test func aChangedPathThatIsNotUTF8KeepsItsBytes() throws {
         let root = try repository("proj")
         try indexEntry(named: Self.latin1Name, in: "proj")
 
         let changes = git.read(ofRepositoryRoot: root).changes
 
+        #expect(changes.map(\.rawPath) == [RepositoryPath(Self.latin1Name)])
         #expect(changes.map(\.path) == ["caf\u{FFFD}.txt"])
-        #expect(changes.contains { Array($0.path.utf8) == Self.latin1Name } == false)
+        #expect(changes.map(\.worktree) == [.deleted])
     }
 
     /// A real rename, so the two-entry layout `-z` gives a `2` record is read from

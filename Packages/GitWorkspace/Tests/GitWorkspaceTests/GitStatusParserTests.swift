@@ -8,7 +8,7 @@ import Testing
 /// a real tab in it, which is the field the grammar is easiest to get wrong on.
 @Suite struct GitStatusParserTests {
     @Test func returnsNilForEmptyOutput() {
-        #expect(GitStatusParser.parse("") == nil)
+        #expect(GitStatusParser.parse([]) == nil)
     }
 
     @Test func returnsNilWhenThereIsNoBranchHeader() {
@@ -16,13 +16,13 @@ import Testing
         // must be able to tell that from a clean repository. A zeroed status would
         // render an empty branch name with no indicators, which looks like a clean
         // repository rather than like no repository.
-        #expect(GitStatusParser.parse("? notes.txt\0") == nil)
+        #expect(GitStatusParser.parse(PorcelainFixture.bytes("? notes.txt\0")) == nil)
     }
 
     @Test func returnsNilWhenTheHeadHeaderIsMissing() {
         // The oid alone cannot say whether the head is a branch or detached, and
         // guessing would name every truncated capture detached.
-        #expect(GitStatusParser.parse("# branch.oid ed1d41d\0") == nil)
+        #expect(GitStatusParser.parse(PorcelainFixture.bytes("# branch.oid ed1d41d\0")) == nil)
     }
 
     @Test func readsACleanBranchWithNoUpstream() {
@@ -236,7 +236,9 @@ import Testing
         // newline or a return inside a path is part of the path. Splitting on
         // either would turn one file into two records, and the first of them names
         // a file that does not exist.
-        let status = GitStatusParser.parse("# branch.oid ed1d41d\0# branch.head main\0? two\nlines.txt\0")
+        let status = GitStatusParser.parse(
+            PorcelainFixture.bytes("# branch.oid ed1d41d\0# branch.head main\0? two\nlines.txt\0")
+        )
         #expect(status?.head == .branch("main"))
         #expect(status?.untracked == 1)
     }

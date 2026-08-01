@@ -11,13 +11,23 @@ import Foundation
 /// trailing field, so it appears in these listings as the line after the record
 /// it belongs to. That is git's layout, not a convenience of this helper.
 enum PorcelainFixture {
-    /// The listing with every newline replaced by a NUL.
+    /// The listing with every newline replaced by a NUL, as bytes.
     ///
     /// Empty subsequences are kept, so a listing ending in a newline produces the
     /// trailing NUL git writes after its last record.
-    static func zeroed(_ listing: String) -> String {
-        listing
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            .joined(separator: "\0")
+    ///
+    /// Bytes rather than a `String`, because that is what the parser now reads and
+    /// what git actually writes. A listing that can be typed is UTF-8 by
+    /// construction; a path that is not has to be appended as bytes, which is what
+    /// ``bytes(_:)`` is for.
+    static func zeroed(_ listing: String) -> [UInt8] {
+        Array(
+            listing
+                .split(separator: "\n", omittingEmptySubsequences: false)
+                .joined(separator: "\0")
+                .utf8
+        )
     }
+
+    static func bytes(_ text: String) -> [UInt8] { Array(text.utf8) }
 }

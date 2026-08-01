@@ -211,7 +211,7 @@ public struct GitCommand: Sendable {
     public func read(
         ofRepositoryRoot root: URL
     ) -> (status: RepositoryStatus?, changes: [RepositoryFileChange]) {
-        guard let output = output(
+        guard let output = bytes(
             of: [
                 "--no-optional-locks",
                 "status",

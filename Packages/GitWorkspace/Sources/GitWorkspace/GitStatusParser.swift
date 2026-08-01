@@ -18,9 +18,39 @@ import Foundation
 /// below: a newline is a path character rather than a separator, and a rename's
 /// original path is an entry of its own rather than a field after a tab.
 ///
+/// **Bytes rather than a `String`, which is the other half of `-z`.** The flag
+/// stops the quoting and hands over whatever the filesystem holds, and a
+/// repository cloned from a filesystem that allowed a name APFS would refuse
+/// carries paths that are not UTF-8. Decoding the capture before parsing it
+/// replaces those bytes with U+FFFD, irreversibly, before this grammar ever sees
+/// them. So the split, the field boundaries and the markers are all byte work, and
+/// only the fields git spells itself, a branch name or an oid, become text.
+///
 /// Kept free of any process running so the whole grammar can be tested on
-/// fixture strings. ``GitCommand`` composes the two.
+/// fixture bytes. ``GitCommand`` composes the two.
 public enum GitStatusParser {
+    /// The first byte of a record, which is what says how to read the rest.
+    private enum Marker {
+        static let header = UInt8(ascii: "#")
+        static let ordinary = UInt8(ascii: "1")
+        static let renamedOrCopied = UInt8(ascii: "2")
+        static let unmerged = UInt8(ascii: "u")
+        static let untracked = UInt8(ascii: "?")
+        static let ignored = UInt8(ascii: "!")
+    }
+
+    private static let separator = UInt8(ascii: " ")
+    private static let terminator: UInt8 = 0
+    private static let unmodified = UInt8(ascii: ".")
+
+    /// A field git wrote itself, as text.
+    ///
+    /// Only ever called on a field that is git's own vocabulary: a header name, an
+    /// oid, a branch name, a pair of status columns. A path never goes through here,
+    /// which is the whole point of the type it goes into instead.
+    private static func text(_ field: ArraySlice<UInt8>) -> String {
+        String(decoding: field, as: UTF8.self)
+    }
     /// Parses `git status --porcelain=v2 --branch --untracked-files=all`.
     ///
     /// Nil when the output carries no branch header, which is what `git status`
@@ -28,7 +58,7 @@ public enum GitStatusParser {
     /// nil should show no git information at all rather than a zeroed status,
     /// since a repository that is genuinely clean and a directory that is not a
     /// repository render identically otherwise.
-    public static func parse(_ output: String) -> RepositoryStatus? {
+    public static func parse(_ output: [UInt8]) -> RepositoryStatus? {
         var oid: String?
         var headName: String?
         var upstream: String?
@@ -47,21 +77,21 @@ public enum GitStatusParser {
             guard let marker = record.first else { continue }
 
             switch marker {
-            case "#":
+            case Marker.header:
                 guard let header = fields(record, count: 3) else { continue }
-                switch header[1] {
+                switch text(header[1]) {
                 case "branch.oid":
-                    oid = String(header[2])
+                    oid = text(header[2])
                 case "branch.head":
-                    headName = String(header[2])
+                    headName = text(header[2])
                 case "branch.upstream":
-                    upstream = String(header[2])
+                    upstream = text(header[2])
                 case "branch.ab":
                     // Read by sign rather than by position, so a future git that
                     // emits them the other way round does not silently swap
                     // ahead with behind. The two look the same on a clean
                     // branch, which is where such a swap would go unnoticed.
-                    for token in header[2].split(separator: " ") {
+                    for token in text(header[2]).split(separator: " ") {
                         if token.hasPrefix("+") { ahead = Int(token.dropFirst()) ?? 0 }
                         if token.hasPrefix("-") { behind = Int(token.dropFirst()) ?? 0 }
                     }
@@ -71,13 +101,13 @@ public enum GitStatusParser {
                     // failure.
                     continue
                 }
-            case "1":
+            case Marker.ordinary:
                 guard let entry = fields(record, count: 9) else { continue }
                 count(statusColumns: entry[1], staged: &staged, unstaged: &unstaged)
-            case "2":
+            case Marker.renamedOrCopied:
                 guard let entry = fields(record, count: 10) else { continue }
                 count(statusColumns: entry[1], staged: &staged, unstaged: &unstaged)
-            case "u":
+            case Marker.unmerged:
                 guard fields(record, count: 11) != nil else { continue }
                 // Unmerged paths land in `conflicted` and nowhere else. Their XY
                 // is `UU`, `AA`, `DU` and friends, so reading the two columns
@@ -85,10 +115,10 @@ public enum GitStatusParser {
                 // file as staged and unstaged as well, and the counts would
                 // claim three problems where there is one.
                 conflicted += 1
-            case "?":
+            case Marker.untracked:
                 guard fields(record, count: 2) != nil else { continue }
                 untracked += 1
-            case "!":
+            case Marker.ignored:
                 // An ignored path counts as nothing. It only appears with
                 // `--ignored`, which this command does not pass, and counting it
                 // as untracked would put a permanent `?` on any repository with
@@ -152,7 +182,7 @@ public enum GitStatusParser {
     /// list has already asked for the status and learned which it has.
     ///
     /// Order is git's own, which is by path within each record type.
-    public static func changes(_ output: String) -> [RepositoryFileChange] {
+    public static func changes(_ output: [UInt8]) -> [RepositoryFileChange] {
         var changes: [RepositoryFileChange] = []
 
         for entry in records(output) {
@@ -160,16 +190,16 @@ public enum GitStatusParser {
             guard let marker = record.first else { continue }
 
             switch marker {
-            case "1":
+            case Marker.ordinary:
                 guard let fields = fields(record, count: 9) else { continue }
                 let (index, worktree) = states(fields[1])
                 changes.append(RepositoryFileChange(
-                    path: String(fields[8]),
+                    path: RepositoryPath(fields[8]),
                     index: index,
                     worktree: worktree,
                     kind: .ordinary
                 ))
-            case "2":
+            case Marker.renamedOrCopied:
                 guard let fields = fields(record, count: 10) else { continue }
                 let (index, worktree) = states(fields[1])
                 // The tenth field is the path alone. The original path was taken
@@ -177,24 +207,27 @@ public enum GitStatusParser {
                 // NUL terminated entry of its own rather than a field after a
                 // tab, and a path may contain a tab.
                 changes.append(RepositoryFileChange(
-                    path: String(fields[9]),
-                    originalPath: entry.originalPath.map(String.init),
+                    path: RepositoryPath(fields[9]),
+                    originalPath: entry.originalPath.map(RepositoryPath.init),
                     index: index,
                     worktree: worktree,
                     kind: .renamedOrCopied
                 ))
-            case "u":
+            case Marker.unmerged:
                 guard let fields = fields(record, count: 11) else { continue }
                 let (index, worktree) = states(fields[1])
                 changes.append(RepositoryFileChange(
-                    path: String(fields[10]),
+                    path: RepositoryPath(fields[10]),
                     index: index,
                     worktree: worktree,
                     kind: .unmerged
                 ))
-            case "?":
+            case Marker.untracked:
                 guard let fields = fields(record, count: 2) else { continue }
-                changes.append(RepositoryFileChange(path: String(fields[1]), kind: .untracked))
+                changes.append(RepositoryFileChange(
+                    path: RepositoryPath(fields[1]),
+                    kind: .untracked
+                ))
             default:
                 // Headers and `!` ignored records both land here. An ignored path
                 // is not a change, for the reason the counting pass gives: it
@@ -209,9 +242,9 @@ public enum GitStatusParser {
 
     /// One record, with the original path a rename or a copy carries.
     private struct Record {
-        let text: Substring
+        let text: ArraySlice<UInt8>
         /// The entry that followed a `2` record, and nil for every other kind.
-        let originalPath: Substring?
+        let originalPath: ArraySlice<UInt8>?
     }
 
     /// The capture split into records at its NUL bytes, with a rename's original
@@ -229,8 +262,8 @@ public enum GitStatusParser {
     /// carries no marker, so both passes skip it. An empty entry standing where a
     /// rename's original path should be is that terminator rather than a path,
     /// which is why it becomes nil rather than "".
-    private static func records(_ output: String) -> [Record] {
-        let entries = output.split(separator: "\0", omittingEmptySubsequences: false)
+    private static func records(_ output: [UInt8]) -> [Record] {
+        let entries = output.split(separator: terminator, omittingEmptySubsequences: false)
         var records: [Record] = []
         var index = entries.startIndex
 
@@ -240,7 +273,7 @@ public enum GitStatusParser {
             // Taken off the stream even when the record turns out to be malformed
             // below. git wrote the pair, so the entry after a `2` belongs to it
             // whatever shape the record is in.
-            guard entry.first == "2", index < entries.endIndex else {
+            guard entry.first == Marker.renamedOrCopied, index < entries.endIndex else {
                 records.append(Record(text: entry, originalPath: nil))
                 continue
             }
@@ -257,16 +290,18 @@ public enum GitStatusParser {
     /// Nil rather than a case, because an unmodified column is the absence of a
     /// change and a named value for it is a value someone will draw.
     private static func states(
-        _ columns: Substring
+        _ columns: ArraySlice<UInt8>
     ) -> (index: RepositoryFileChange.State?, worktree: RepositoryFileChange.State?) {
         guard columns.count == 2 else { return (nil, nil) }
-        var characters = columns.makeIterator()
-        guard let index = characters.next(), let worktree = characters.next() else {
+        var bytes = columns.makeIterator()
+        guard let index = bytes.next(), let worktree = bytes.next() else {
             return (nil, nil)
         }
+        // The columns are git's own alphabet and every letter in it is ASCII, so a
+        // byte is a character here and the conversion cannot lose anything.
         return (
-            RepositoryFileChange.State(rawValue: index),
-            RepositoryFileChange.State(rawValue: worktree)
+            RepositoryFileChange.State(rawValue: Character(UnicodeScalar(index))),
+            RepositoryFileChange.State(rawValue: Character(UnicodeScalar(worktree)))
         )
     }
 
@@ -279,15 +314,15 @@ public enum GitStatusParser {
     /// under-reports exactly the state the owner most needs to see before
     /// committing.
     private static func count(
-        statusColumns columns: Substring,
+        statusColumns columns: ArraySlice<UInt8>,
         staged: inout Int,
         unstaged: inout Int
     ) {
         guard columns.count == 2 else { return }
-        var characters = columns.makeIterator()
-        guard let index = characters.next(), let worktree = characters.next() else { return }
-        if index != "." { staged += 1 }
-        if worktree != "." { unstaged += 1 }
+        var bytes = columns.makeIterator()
+        guard let index = bytes.next(), let worktree = bytes.next() else { return }
+        if index != unmodified { staged += 1 }
+        if worktree != unmodified { unstaged += 1 }
     }
 
     /// Splits a record into exactly `count` space separated fields, or nil when
@@ -306,9 +341,9 @@ public enum GitStatusParser {
     /// split forgiving of a record with a missing field, and a malformed record
     /// should be ignored rather than counted from whatever fields happened to
     /// line up.
-    private static func fields(_ record: Substring, count: Int) -> [Substring]? {
+    private static func fields(_ record: ArraySlice<UInt8>, count: Int) -> [ArraySlice<UInt8>]? {
         let parts = record.split(
-            separator: " ",
+            separator: separator,
             maxSplits: count - 1,
             omittingEmptySubsequences: false
         )

@@ -43,8 +43,49 @@ import Testing
 
     """)
 
+    /// A header and nothing else, so a record built from bytes can be appended to
+    /// it. `? café.txt` above is the same name spelled in UTF-8, which a fixture can
+    /// hold; this one is the Latin-1 spelling, which no `String` can.
+    private let headerOnly = PorcelainFixture.zeroed("""
+    # branch.oid 362d6fae33462c0809e46d9d4514979cb13fe847
+    # branch.head main
+
+    """)
+
+    /// `café.txt` as a filesystem that is not APFS may hold it: eight bytes, the
+    /// fourth of which is not a UTF-8 sequence.
+    private let latin1 = PorcelainFixture.bytes("caf") + [0xE9] + PorcelainFixture.bytes(".txt")
+
     @Test func emptyOutputHasNoChanges() {
-        #expect(GitStatusParser.changes("").isEmpty)
+        #expect(GitStatusParser.changes([]).isEmpty)
+    }
+
+    /// The path the picker sends, for a name with no text spelling. `rawPath` is
+    /// what the file is called and `path` is what the row draws, and the second
+    /// cannot name the file: every byte that is not UTF-8 draws as the same
+    /// replacement character.
+    @Test func aPathThatIsNotUTF8KeepsItsBytes() {
+        let output = headerOnly + PorcelainFixture.bytes("? ") + latin1 + [0]
+
+        let changes = GitStatusParser.changes(output)
+
+        #expect(changes.map(\.rawPath) == [RepositoryPath(latin1)])
+        #expect(changes.map(\.path) == ["caf\u{FFFD}.txt"])
+    }
+
+    /// The same for the entry a rename carries, which is a whole path of its own
+    /// under `-z` rather than a field after a tab. A rename *out of* a name the
+    /// filesystem holds and Swift cannot spell is exactly the case a caller needs
+    /// the bytes for: it is the path `git checkout --` would be given.
+    @Test func aRenameOutOfAPathThatIsNotUTF8KeepsItsBytes() {
+        let record = "2 R. N... 100644 100644 100644 4156d35 4156d35 R100 renamed.txt"
+        let output = headerOnly + PorcelainFixture.bytes(record) + [0] + latin1 + [0]
+
+        let changes = GitStatusParser.changes(output)
+
+        #expect(changes.map(\.rawPath) == ["renamed.txt"])
+        #expect(changes.map(\.rawOriginalPath) == [RepositoryPath(latin1)])
+        #expect(changes.map(\.originalPath) == ["caf\u{FFFD}.txt"])
     }
 
     /// A clean repository is not the same as no repository here, unlike
@@ -98,7 +139,7 @@ import Testing
         // Written out rather than through `PorcelainFixture.zeroed`, because this
         // is the one fixture whose path contains the character that helper treats
         // as a line break.
-        let output = "# branch.oid 4fd88ea\0# branch.head main\0? two\nlines.txt\0"
+        let output = PorcelainFixture.bytes("# branch.oid 4fd88ea\0# branch.head main\0? two\nlines.txt\0")
         let changes = GitStatusParser.changes(output)
         #expect(changes.map(\.path) == ["two\nlines.txt"])
     }
@@ -190,7 +231,7 @@ import Testing
     /// An ignored path appears only under `--ignored`, which the shipped command
     /// does not pass, and it must not arrive as untracked if it ever does.
     @Test func anIgnoredRecordIsNotAChange() {
-        let output = everyShape + "! build/artifact.o\0"
+        let output = everyShape + PorcelainFixture.bytes("! build/artifact.o\0")
         #expect(GitStatusParser.changes(output).contains { $0.path == "build/artifact.o" } == false)
     }
 
