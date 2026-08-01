@@ -34,6 +34,13 @@ for w in tree-expansions utf8-filenames app-target-rules; do
   [ -d "$WT/baia--$w" ] || { echo "missing worktree: $WT/baia--$w" >&2; exit 2; }
 done
 
+# Surface 1, closed 2026-08-01: pre-accept the workspace-trust dialog for each
+# worktree. Without this every executor halts before its first tool call, and the
+# acceptance does not survive a killed session.
+"$OBS/trust-worktrees.sh" \
+  "$WT/baia--tree-expansions" "$WT/baia--utf8-filenames" "$WT/baia--app-target-rules"
+
+mkdir -p "$OBS/verdicts"
 mkdir -p "$LOG"
 : > "$LOG/verdicts.jsonl"
 
