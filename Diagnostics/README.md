@@ -40,6 +40,7 @@ responder inside a pane's window and silently kill every ghostty binding" is.
 | `config-wiring/` | Task 6 of the config-wiring plan: every appearance key round-tripping into the running app. Colour checks are automated, the ones marked `LOOK` need a human |
 | `control-channel/` | Sixty-seven checks over the real socket: scopes, statuses, event kinds, backfill, and a pane reporting on itself |
 | `find-in-pane/` | Whether the find panel breaks a responder inside a pane's window, or keeps a dead pane's shell alive |
+| `split-command/` | What ghostty actually does with the `command` config key, which its own documentation gets wrong, and therefore what `baia split --command` has to be given. Also the refusals, which need no app |
 | `footer-corners/` | The footer's corner geometry, including full screen |
 | `fullscreen-strip/` | The strip that appears along the top in full screen |
 | `key-resize/` | ⌃⌘arrow divider steps under key repeat |

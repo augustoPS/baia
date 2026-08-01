@@ -90,6 +90,14 @@ final class TerminalPaneController: NSViewController {
 
     private let workingDirectory: String
 
+    /// What this pane runs instead of a login shell, or nil for the login shell.
+    ///
+    /// Read once, by the lazy `controller`, and never again. It is not in
+    /// ``paneState`` on purpose: a session file that carried it would restore a
+    /// pane by re-running a command the owner already watched finish, and the
+    /// pane's own directory is the part of it worth keeping.
+    private let command: String?
+
     let statusBar = PaneStatusBarView(frame: .zero)
 
     /// Covers the terminal and the footer both, which is the point: a background
@@ -432,45 +440,69 @@ final class TerminalPaneController: NSViewController {
         frame: NSRect(x: 0, y: 0, width: 1024, height: 680)
     )
 
-    private lazy var controller = TerminalController { builder in
-        // Terminal-driven clipboard access is denied. Attacker-controlled output
-        // (a compromised SSH host, a malicious build script) can issue OSC 52 to
-        // read the host clipboard and receive the reply back through the PTY.
-        // kero shipped with these set to `allow` and it was reported as a
-        // vulnerability within a day (egoist/kero#8). Keyboard copy and paste are
-        // unaffected by these settings.
-        builder.withCustom("clipboard-read", "deny")
-        builder.withCustom("clipboard-write", "deny")
-        builder.withCustom("clipboard-paste-protection", "true")
+    private lazy var controller: TerminalController = {
+        // Lifted out of the closure so the closure captures a string rather than
+        // the controller, and read exactly once: the pane's command is decided
+        // when the pane is made and a surface rebuilt later is still this pane.
+        let command = self.command
+        return TerminalController { builder in
+            // What the pane runs instead of a login shell, before the denials below
+            // rather than after them, and the ordering is not cosmetic. These lines
+            // are rendered into a ghostty config file, so a value carrying a newline
+            // would write a config key of the caller's choosing.
+            // `ControlWire.refusalForCommand` is what makes that unrepresentable and
+            // is the lock that counts; putting the caller's line first is the cheap
+            // second one, so that under any parser where a later key wins, the
+            // denials are the last word on clipboard access rather than the first.
+            //
+            // Verbatim, so ghostty's own reading of it holds: a bare value with
+            // arguments goes through `/bin/sh -c`, `direct:` execs, `shell:` forces
+            // the wrap. The pane closes when the command exits, which is ghostty's
+            // behaviour and not baia's, and a caller who wants a shell to survive
+            // ends its command with one.
+            if let command { builder.withCustom("command", command) }
 
-        // Give every key baia's menu bar claims back to AppKit.
-        //
-        // AppTerminalView.performKeyEquivalent turns any key ghostty has a
-        // binding for into a surface keyDown and returns true. AppKit reads that
-        // as handled and never consults the main menu, so a claimed key works
-        // when the item is clicked while the shortcut does nothing at all, with
-        // no error. Ghostty's own split and tab actions are unreachable from
-        // Swift as well, so the key is not merely stolen, it is inert.
-        //
-        // The list is derived from the menu itself rather than written out here.
-        // Maintaining two lists by hand is what killed super+q and
-        // super+shift+p, and WorkspaceMenu's tests fail if a claimed key is
-        // missing from ghostty's default table or if a key declared
-        // conflict-free turns out to be bound.
-        for line in GhosttyDefaultKeybinds.unbindLines(for: MenuBarLayout.menus) {
-            builder.withCustom("keybind", line)
+            // Terminal-driven clipboard access is denied. Attacker-controlled output
+            // (a compromised SSH host, a malicious build script) can issue OSC 52 to
+            // read the host clipboard and receive the reply back through the PTY.
+            // kero shipped with these set to `allow` and it was reported as a
+            // vulnerability within a day (egoist/kero#8). Keyboard copy and paste are
+            // unaffected by these settings.
+            builder.withCustom("clipboard-read", "deny")
+            builder.withCustom("clipboard-write", "deny")
+            builder.withCustom("clipboard-paste-protection", "true")
+
+            // Give every key baia's menu bar claims back to AppKit.
+            //
+            // AppTerminalView.performKeyEquivalent turns any key ghostty has a
+            // binding for into a surface keyDown and returns true. AppKit reads that
+            // as handled and never consults the main menu, so a claimed key works
+            // when the item is clicked while the shortcut does nothing at all, with
+            // no error. Ghostty's own split and tab actions are unreachable from
+            // Swift as well, so the key is not merely stolen, it is inert.
+            //
+            // The list is derived from the menu itself rather than written out here.
+            // Maintaining two lists by hand is what killed super+q and
+            // super+shift+p, and WorkspaceMenu's tests fail if a claimed key is
+            // missing from ghostty's default table or if a key declared
+            // conflict-free turns out to be bound.
+            for line in GhosttyDefaultKeybinds.unbindLines(for: MenuBarLayout.menus) {
+                builder.withCustom("keybind", line)
+            }
         }
-    }
+    }()
 
     init(
         paneID: PaneID,
         workingDirectory: String,
         pinnedDirectory: URL? = nil,
+        command: String? = nil,
         createdBy: PaneID?,
         controlSocketPath: String?
     ) {
         self.paneID = paneID
         self.workingDirectory = workingDirectory
+        self.command = command
         restoredPin = pinnedDirectory
         self.createdBy = createdBy
         self.controlSocketPath = controlSocketPath

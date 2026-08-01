@@ -11,6 +11,9 @@ LOG         := $(DERIVED)/xcodebuild.log
 # Every local package, discovered rather than listed, so adding one under
 # Packages/ needs no edit here and cannot be silently left out of `make test`.
 PACKAGES    := $(wildcard Packages/*)
+# Files a package embeds into the binary rather than copies beside it. Discovered
+# rather than listed, for the reason PACKAGES is: see the guard in `build`.
+EMBEDDED    := $(wildcard Packages/*/Sources/*/Resources/*)
 
 .DEFAULT_GOAL := help
 # `upstream` is here because a directory of that name exists: without it make
@@ -77,6 +80,20 @@ gen: upstream ## Regenerate baia.xcodeproj from project.yml
 
 build: gen ## Build Debug. Full log at .build/xcodebuild.log, only errors on stdout
 	@mkdir -p $(DERIVED)
+	@# A resource a local package carries with `.embedInCode` is not tracked as a
+	@# build input. Editing one alone leaves xcodebuild reporting success while
+	@# the app ships the previous bytes, which for baia-agent-state.sh means an
+	@# installed hook that is not the hook in the tree, and a probe that passes
+	@# against a script nobody wrote. Measured 2026-08-01: neither touching a
+	@# Swift file in the package nor deleting the generated embedded_resources.swift
+	@# dislodges it, and dropping the build directory does, for about ten seconds.
+	@for resource in $(EMBEDDED); do \
+		if [[ -e "$(APP)" && "$$resource" -nt "$(APP)" ]]; then \
+			echo "re-embedding $$resource"; \
+			rm -rf $(DERIVED)/Build; \
+			break; \
+		fi; \
+	done
 	@set +e; \
 	xcodebuild \
 		-project $(PROJECT) \

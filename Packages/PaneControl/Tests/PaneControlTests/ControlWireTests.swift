@@ -13,7 +13,11 @@ import Testing
     /// in this test as well as in ``ControlVerb/scope``.
     static func representativeArgs(for verb: ControlVerb) -> ControlArgs {
         switch verb {
-        case .split: ControlArgs(axis: .vertical, cwd: "/Users/x/Projects/vault")
+        case .split: ControlArgs(
+            axis: .vertical,
+            cwd: "/Users/x/Projects/vault",
+            command: "exec '/bin/zsh' -lc 'claude --resume a-session; exec \"$SHELL\" -l'"
+        )
         case .close: ControlArgs()
         case .focus: ControlArgs()
         case .zoom: ControlArgs(on: true)
@@ -375,6 +379,58 @@ import Testing
     /// The cap the budget table has claimed since v1 and nothing exercised. It
     /// was one line in the app target, which has no test target, so "60 s
     /// maximum" was a number in a document rather than a number under test.
+    // MARK: What a split may be told to run
+
+    /// **The rule that matters.** The value is rendered into a ghostty config file
+    /// as `command = <value>` and that file is parsed line by line, so a value
+    /// carrying a newline writes a second key of the caller's choosing.
+    /// `clipboard-read = allow` is one line long and undoes the OSC 52 denial
+    /// every pane is built with, which is the one setting this project has a
+    /// standing rule never to relax.
+    @Test func aCommandCarryingANewlineIsRefused() {
+        #expect(ControlWire.refusalForCommand("claude\nclipboard-read = allow") != nil)
+        #expect(ControlWire.refusalForCommand("claude\rclipboard-read = allow") != nil)
+        #expect(ControlWire.refusalForCommand("claude\r\nclipboard-read = allow") != nil)
+        // The Unicode line separators, because `isNewline` counts them and a
+        // config parser splitting on them would be a second way in.
+        #expect(ControlWire.refusalForCommand("claude\u{2028}x") != nil)
+        #expect(ControlWire.refusalForCommand("claude\u{0085}x") != nil)
+    }
+
+    /// Everything a caller genuinely needs is still spellable, including the two
+    /// forms the fork hook writes.
+    @Test func anOrdinaryCommandIsAllowed() {
+        #expect(ControlWire.refusalForCommand("claude --resume x; exec /bin/zsh -l") == nil)
+        #expect(ControlWire.refusalForCommand("direct:nvim") == nil)
+        #expect(ControlWire.refusalForCommand("shell:ls | wc -l") == nil)
+        #expect(ControlWire.refusalForCommand(
+            "exec '/bin/zsh' -lc 'claude --resume a; exec \"$SHELL\" -l'"
+        ) == nil)
+    }
+
+    /// Omitting `--command` is how a caller asks for a login shell. An empty string
+    /// is a variable that did not expand, and honouring it as a login shell would
+    /// hide that from the only person who could fix it.
+    @Test func anEmptyCommandIsRefusedRatherThanTreatedAsAbsent() {
+        #expect(ControlWire.refusalForCommand("") != nil)
+    }
+
+    /// Refused rather than truncated. A command cut in half is a different command,
+    /// and running one is worse than running none.
+    @Test func aCommandOverTheCapIsRefused() {
+        #expect(ControlWire.refusalForCommand(
+            String(repeating: "x", count: ControlWire.maxCommandBytes)
+        ) == nil)
+        #expect(ControlWire.refusalForCommand(
+            String(repeating: "x", count: ControlWire.maxCommandBytes + 1)
+        ) != nil)
+        // Bytes and not characters, so a command of multibyte text is measured the
+        // way the frame will measure it.
+        #expect(ControlWire.refusalForCommand(
+            String(repeating: "é", count: ControlWire.maxCommandBytes / 2 + 1)
+        ) != nil)
+    }
+
     @Test func aWaitIsCappedRatherThanTrusted() {
         #expect(ControlWire.cappedWait(3600) == ControlWire.maxWaitSeconds)
         #expect(ControlWire.cappedWait(30) == 30)

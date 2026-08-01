@@ -164,6 +164,18 @@ public enum Arguments {
                         return .usage("--cwd needs a path")
                     }
                     call.args.cwd = path
+                case "--command":
+                    guard let command = tokens.take() else {
+                        return .usage("--command needs a command")
+                    }
+                    // The same rule the server applies, applied here so a typo is
+                    // answered at the prompt rather than over the socket. See
+                    // `ControlWire.refusalForCommand`: the newline half of it is a
+                    // security boundary and this copy is the convenience one.
+                    if let refusal = ControlWire.refusalForCommand(command) {
+                        return .usage(refusal)
+                    }
+                    call.args.command = command
                 default:
                     return .usage(unexpected(token, verb))
                 }

@@ -473,10 +473,16 @@ final class PaneTreeController: NSViewController {
     /// where the owner left it and hands the new id back for the caller to use.
     /// This is why the method does not reuse ``splitFocusedPane(axis:workingDirectory:)``,
     /// which focuses unconditionally because ⌘D always should.
+    /// - Parameter command: what the new pane runs instead of a login shell, or
+    ///   nil for the login shell every pane opened by hand gets. Only this entry
+    ///   point takes one: ⌘D and a restored session both mean a shell, and a
+    ///   command that survived a relaunch would be a pane re-running something the
+    ///   owner watched finish.
     func split(
         pane: PaneID,
         axis: SplitAxis,
         workingDirectory requested: String?,
+        command: String? = nil,
         createdBy: PaneID
     ) -> PaneID? {
         let new = PaneID()
@@ -488,7 +494,9 @@ final class PaneTreeController: NSViewController {
             ?? panes[pane]?.anchorTracker.workingDirectory?.path(percentEncoded: false)
             ?? workingDirectory
         guard workspace.split(pane: pane, axis: axis, newPane: new, ratio: 0.5) else { return nil }
-        panes[new] = makePane(id: new, workingDirectory: directory, createdBy: createdBy)
+        panes[new] = makePane(
+            id: new, workingDirectory: directory, command: command, createdBy: createdBy
+        )
         rebuild()
         if focusedPaneID == new { focusPane(new) }
         onSessionChange?()
@@ -608,12 +616,14 @@ final class PaneTreeController: NSViewController {
         id: PaneID,
         workingDirectory: String,
         pinnedDirectory: URL? = nil,
+        command: String? = nil,
         createdBy: PaneID?
     ) -> TerminalPaneController {
         let pane = TerminalPaneController(
             paneID: id,
             workingDirectory: workingDirectory,
             pinnedDirectory: pinnedDirectory,
+            command: command,
             createdBy: createdBy,
             controlSocketPath: channel?.boundSocketPath
         )

@@ -78,4 +78,29 @@ import Testing
             #expect(code.contains("> /dev/null 2>&1"), "a baia call can speak: \(code)")
         }
     }
+
+    /// **The python is the body of a single-quoted shell string**, so one
+    /// apostrophe anywhere in it ends the string and the script dies at parse.
+    ///
+    /// That is the one failure this file cannot absorb. Every other rule here
+    /// fails closed and silent; a syntax error fails loud, on every hook event, in
+    /// somebody's session. Written on 2026-08-01, when a comment containing the
+    /// word "fork" with a possessive did exactly that to a work-in-progress arm.
+    @Test func thePythonBlockCarriesNoApostrophe() {
+        let lines = HookScript.body.split(separator: "\n", omittingEmptySubsequences: false)
+        guard let open = lines.firstIndex(where: { $0.contains("python3 -c '") }) else {
+            Issue.record("the python block is gone")
+            return
+        }
+        guard let close = lines[(open + 1)...].firstIndex(where: { $0.hasPrefix("'") }) else {
+            Issue.record("the python block is never closed")
+            return
+        }
+        for index in (open + 1) ..< close {
+            #expect(
+                lines[index].contains("'") == false,
+                "an apostrophe on line \(index + 1) ends the shell string: \(lines[index])"
+            )
+        }
+    }
 }
