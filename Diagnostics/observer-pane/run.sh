@@ -13,6 +13,7 @@ OBS="$REPO/Diagnostics/observer-pane"
 LOG=/tmp/baia-observer
 
 [ -n "${BAIA_SOCK:-}" ] || { echo "no BAIA_SOCK: run this from inside a baia pane" >&2; exit 2; }
+[ -n "${BAIA_PANE:-}" ] || { echo "no BAIA_PANE: run this from inside a baia pane" >&2; exit 2; }
 
 # The running app must be new enough to have `split --command`. The pane's baia
 # CLI comes from the *running* app's bundle, so an installed copy makes the whole
@@ -60,6 +61,55 @@ echo
 echo "panes now in scope:"
 baia list --tree
 
+# The launcher, written here because this is the only moment the answer exists:
+# the pane that created the executors is the pane running this line, and after
+# this script exits nothing else knows which one that was.
+#
+# **Printing the rule was not enough.** Runs 1, 2 and 3 all typed the observer
+# command into the wrong pane, and all three were caught by `baia whoami` after
+# the fact rather than by the instruction before it. An observer in a sibling
+# pane does not fail: it sees exactly one pane, itself, and loops on an empty
+# scope looking like it works. So the check moved to where the mistake is made.
+cat > "$LOG/observe.sh" <<LAUNCHER
+#!/usr/bin/env bash
+# Launches the observer, and refuses from any pane but the one that spawned the
+# executors. Written by run.sh on $(date -u +%Y-%m-%dT%H:%M:%SZ). Do not edit.
+set -euo pipefail
+
+CREATOR=$BAIA_PANE
+PROMPT=$LOG/orchestrator.md
+
+here=\${BAIA_PANE:-}
+if [ -z "\$here" ]; then
+  echo "refusing: no \\\$BAIA_PANE, so this is not a baia pane at all." >&2
+  exit 2
+fi
+if [ "\$here" != "\$CREATOR" ]; then
+  echo "refusing: this is pane \$here." >&2
+  echo "The executors were created by \$CREATOR, and scope is sibling-blind: a" >&2
+  echo "pane sees itself, what it created, and its peers. From here the observer" >&2
+  echo "would see one pane, itself, and loop on an empty scope looking like it" >&2
+  echo "works. Run this from the pane that ran run.sh." >&2
+  exit 2
+fi
+if [ ! -s "\$PROMPT" ]; then
+  echo "refusing: \$PROMPT is missing or empty. Substitute the pane ids and the" >&2
+  echo "starting seq into it first (step 3)." >&2
+  exit 2
+fi
+# The other silent failure, and the reason step 3 is by hand: an unsubstituted
+# placeholder binds no pane to any brief, and every verdict after it is about
+# nothing while reading exactly like a working run.
+if grep -qE '\\\$(PANE_TREE|PANE_UTF8|PANE_RULES|START_SEQ)' "\$PROMPT"; then
+  echo "refusing: \$PROMPT still holds unsubstituted placeholders:" >&2
+  grep -oE '\\\$(PANE_TREE|PANE_UTF8|PANE_RULES|START_SEQ)' "\$PROMPT" | sort -u >&2
+  exit 2
+fi
+
+exec claude --model claude-fable-5 "\$(cat "\$PROMPT")"
+LAUNCHER
+chmod +x "$LOG/observe.sh"
+
 cat <<EOF
 
 Next, by hand:
@@ -68,9 +118,9 @@ Next, by hand:
   3. Substitute the ids and the seq for \$PANE_TREE, \$PANE_UTF8, \$PANE_RULES and
      \$START_SEQ in $OBS/orchestrator.md, writing the result to
      $LOG/orchestrator.md
-  4. Run the observer IN THIS PANE. Do not split for it:
+  4. Run the observer IN THIS PANE:
 
-     claude --model claude-fable-5 "\\\$(cat $LOG/orchestrator.md)"
+     $LOG/observe.sh
 
 **The observer must be this pane, and that is not a preference.** Scope is
 sibling-blind: baia --help says a pane sees itself, the panes it created, and its
@@ -82,7 +132,9 @@ loop forever on an empty scope and look like it was working.
 Found 2026-08-01 by nearly doing it. The earlier version of this message told you
 to split for the observer.
 
-The substitution is by hand on purpose: the ids only exist after the splits, and
-a wrong binding is the one failure that makes every verdict meaningless while
-looking exactly like a working run.
+$LOG/observe.sh enforces both of the failures this step has, rather than
+describing them: it refuses from any pane but this one ($BAIA_PANE), and it
+refuses a prompt still holding an unsubstituted placeholder. The substitution
+stays by hand because the ids only exist after the splits; what does not stay by
+hand is noticing that it was skipped.
 EOF

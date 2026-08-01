@@ -20,7 +20,25 @@ prompt.
 | `guard-test.sh` | 16 checks over the guard, including a negative control |
 | `briefs/*.md` | one per executor. Each carries the item verbatim and its own first-step discipline |
 | `orchestrator.md` | the observer's prompt. Four placeholders are filled in by hand after the splits |
-| `run.sh` | spawns the three executors from the calling pane, then prints the by-hand steps |
+| `run.sh` | spawns the three executors from the calling pane, then writes the launcher and prints the by-hand steps |
+| `/tmp/baia-observer/observe.sh` | written by `run.sh`. Launches the observer, and refuses from any pane but the one that spawned the executors |
+
+## The launcher refuses rather than instructs
+
+Runs 1, 2 and 3 all typed the observer command into the wrong pane, and all three
+were caught by `baia whoami` afterwards rather than by the instruction beforehand.
+An observer in a sibling pane does not fail visibly: scope is sibling-blind, so it
+sees exactly one pane, itself, and loops on an empty scope looking like it works.
+
+`run.sh` now writes `observe.sh` carrying the id of the pane that ran it, which is
+the only moment that answer exists. It refuses on four conditions: no `$BAIA_PANE`
+at all, a `$BAIA_PANE` that is not the creator's, a missing or empty prompt, and a
+prompt still holding `$PANE_TREE`, `$PANE_UTF8`, `$PANE_RULES` or `$START_SEQ`.
+
+The last one is the same class of failure as the first. The substitution stays by
+hand because the ids only exist after the splits; what does not stay by hand is
+noticing it was skipped, since an unbound placeholder makes every verdict after it
+a verdict about nothing.
 
 ## How to score it
 
