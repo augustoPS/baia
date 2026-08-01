@@ -451,7 +451,7 @@ final class PaneStatusBarView: NSView {
             // merely covered, it is gone: `quiet` has no arrival pulse either,
             // by construction, so nothing else would have said the pane asked.
             let y = framesForFocus ? PaneStatusBarMetrics.focusFrameWidth : 0
-            NSRect(x: 0, y: y, width: rect.width, height: Self.quietAttentionLine).fill()
+            NSRect(x: 0, y: y, width: rect.width, height: PaneStatusBarMetrics.attentionLine).fill()
         }
 
         // The acknowledged mark. The smallest thing on the bar that is not grey,
@@ -465,6 +465,39 @@ final class PaneStatusBarView: NSView {
                 width: Self.markSize,
                 height: Self.markSize
             ).fill()
+        }
+
+        // The acknowledged line, along the bottom edge.
+        //
+        // The square above is what the level looks like on the bar it sits in;
+        // this is what carries it across a window. Added 2026-07-31, after a live
+        // look at three panes could not tell an acknowledged one from a pane
+        // asking nothing, which is the distance the level exists to survive.
+        //
+        // The bottom edge rather than the top, because the quiet treatment already
+        // spends the top one. Two lines on the same edge would read as one signal
+        // at two volumes rather than as the two different questions they answer,
+        // "how loudly is this pane asking" and "have I been here since it asked".
+        //
+        // Clipped, unlike everything else in this method. `drawContent` renders
+        // into its own view with no clip of its own, which costs nothing while the
+        // marks sit inside the bar, and this is the first thing here to reach the
+        // corner the pane shares with the window.
+        if attention == .acknowledged {
+            NSGraphicsContext.saveGraphicsState()
+            cornerPath(in: rect).addClip()
+            nsColor(attentionColour).setFill()
+            // Inside the focus frame, for the reason the quiet line is pushed
+            // inside it: the frame is stroked over this view, so a line on the
+            // extreme edge is not covered on a focused pane, it is gone.
+            let inset = framesForFocus ? PaneStatusBarMetrics.focusFrameWidth : 0
+            NSRect(
+                x: 0,
+                y: rect.maxY - inset - PaneStatusBarMetrics.attentionLine,
+                width: rect.width,
+                height: PaneStatusBarMetrics.attentionLine
+            ).fill()
+            NSGraphicsContext.restoreGraphicsState()
         }
 
         guard let status else { return }
@@ -668,7 +701,6 @@ final class PaneStatusBarView: NSView {
     private static let dotGap: Double = 5
     private static let markSize: Double = 6
     private static let markGap: Double = 6
-    private static let quietAttentionLine: Double = 2
 
     /// Proportional for the name, monospaced for machine data.
     ///

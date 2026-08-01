@@ -587,7 +587,8 @@ func renderBar(
     corners: BottomCorners,
     height: Double,
     anchorName: String = "baia",
-    focused: Bool = true
+    focused: Bool = true,
+    attention: PaneStatus.Attention = .none
 ) -> (pixels: [UInt8], width: Int, height: Int)? {
     let width = 300.0
     let bar = PaneStatusBarView(frame: NSRect(x: 0, y: 0, width: width, height: height))
@@ -611,7 +612,11 @@ func renderBar(
             operation: nil,
             isLinkedWorktree: false
         ),
-        agent: PaneStatus.Agent(label: "claude", wantsAttention: false)
+        agent: PaneStatus.Agent(
+            label: "claude",
+            wantsAttention: attention != .none,
+            isAcknowledged: attention == .acknowledged
+        )
     )
     bar.layoutSubtreeIfNeeded()
     bar.displayIfNeeded()
@@ -837,6 +842,111 @@ func renderedCorner(_ render: Render) -> [Double] {
 ///
 /// The control renders the same bar with no corners, which is pixel for pixel what
 /// a `draw(_:)` with its clip removed produces for a pane in the corner.
+/// Is one pixel different between two renders of the same bar?
+///
+/// Indexed from the bottom because that is the edge under test, while row 0 of an
+/// `NSBitmapImageRep` is the top one.
+func differs(_ one: Render, _ other: Render, column: Int, fromBottom: Int) -> Bool {
+    let bytesPerRow = one.pixels.count / one.height
+    let offset = (one.height - 1 - fromBottom) * bytesPerRow + column * 4
+    for channel in 0 ..< 4 where one.pixels[offset + channel] != other.pixels[offset + channel] {
+        return true
+    }
+    return false
+}
+
+/// Does an acknowledged pane draw a line along the bottom edge, inside the corner
+/// and inside the focus frame?
+///
+/// The level's whole justification is being findable across a window while
+/// staying quiet enough to work beside, and until this line the only thing
+/// carrying it was a 6 pt square at the far left of one footer, which a live look
+/// on 2026-07-31 could not pick out from a pane that was asking nothing.
+///
+/// Measured as a difference against the same bar rendered at `.none`, so the arm
+/// answers "these pixels are here because the pane is acknowledged" rather than
+/// "something is coloured down there", which the hairline satisfies on every bar
+/// in the app.
+///
+/// Three claims, because three separate things silently take the line away. It
+/// has to be drawn at all. It has to be clipped to the corner, or a pane in the
+/// window's corner grows a square one. And it has to sit inside the focus frame,
+/// which is stroked over this view by `drawBarFrame(in:)` and would otherwise
+/// swallow the line on the focused pane, which is the pane most likely to be
+/// acknowledged.
+///
+/// The control renders the acknowledged bar as an ordinary one, which is pixel for
+/// pixel what deleting the draw produces.
+func ackLineArm(breakIt: Bool) -> Bool {
+    let corners: BottomCorners = .left
+    let height = PaneStatusBarMetrics.height
+    guard
+        let plain = renderBar(corners: corners, height: height, focused: false, attention: .none),
+        let acked = renderBar(
+            corners: corners,
+            height: height,
+            focused: false,
+            attention: breakIt ? .none : .acknowledged
+        ),
+        let plainFocused = renderBar(corners: corners, height: height, focused: true, attention: .none),
+        let ackedFocused = renderBar(
+            corners: corners,
+            height: height,
+            focused: true,
+            attention: breakIt ? .none : .acknowledged
+        )
+    else {
+        print("  FAIL: the bar rendered nothing, so nothing was measured")
+        return false
+    }
+
+    let renderScale = Double(plain.width) / 300
+    let rows = max(1, Int((PaneStatusBarMetrics.attentionLine * renderScale).rounded()))
+    let inset = Int((PaneStatusBarMetrics.focusFrameWidth * renderScale).rounded())
+    let middle = plain.width / 2
+    print(breakIt
+        ? "bar rendered NOT acknowledged (negative control: the level's draw removed)"
+        : "bar rendered acknowledged by PaneStatusBarView, as shipped")
+    print(String(format: "  %dx%d px, %.1f px per point, line is %d row(s)",
+                 plain.width, plain.height, renderScale, rows))
+
+    var ok = true
+
+    // 1. Drawn at all, across the flat middle where no curve can be blamed.
+    let drawnRows = (0 ..< rows).filter { differs(plain, acked, column: middle, fromBottom: $0) }
+    if drawnRows.count == rows {
+        print("  the unfocused bar differs on all \(rows) bottom row(s) at mid-width")
+    } else {
+        print("  FAIL: only \(drawnRows.count) of \(rows) bottom row(s) differ at mid-width,")
+        print("        so an acknowledged pane is drawing no line along its bottom edge")
+        ok = false
+    }
+
+    // 2. Clipped to the corner. An unclipped rect paints the outermost column of
+    //    the bottom row, which is outside the curve and outside the window's mask.
+    if differs(plain, acked, column: 0, fromBottom: 0) {
+        print("  FAIL: the bottom-left pixel changed, so the line is a full-width rect")
+        print("        rather than a fill clipped to the corner it shares with the window")
+        ok = false
+    } else {
+        print("  the bottom-left pixel is untouched, so the line is inside the corner")
+    }
+
+    // 3. Inside the focus frame, which is stroked over this view.
+    let focusedRows = (0 ..< rows).filter {
+        differs(plainFocused, ackedFocused, column: middle, fromBottom: inset + $0)
+    }
+    if focusedRows.count == rows {
+        print("  the focused bar differs on all \(rows) row(s) just inside the frame")
+    } else {
+        print("  FAIL: only \(focusedRows.count) of \(rows) row(s) differ inside the focus frame,")
+        print("        so the frame is swallowing the line on the focused pane")
+        ok = false
+    }
+
+    return ok
+}
+
 func clipArm(breakIt: Bool) -> Bool {
     guard let system = windowCornerPath() else { return false }
 
@@ -1165,12 +1275,14 @@ enum Probe {
             ok = heightArm(breakIt: breakIt)
         case "clip":
             ok = clipArm(breakIt: breakIt)
+        case "ackline":
+            ok = ackLineArm(breakIt: breakIt)
         case "frame":
             ok = frameArm(breakIt: breakIt)
         case "fullscreen":
             ok = fullscreenArm(breakIt: breakIt)
         default:
-            print("usage: cornertest radius|match|concentric|height|clip|frame|fullscreen [break]")
+            print("usage: cornertest radius|match|concentric|height|clip|ackline|frame|fullscreen [break]")
             ok = false
         }
 

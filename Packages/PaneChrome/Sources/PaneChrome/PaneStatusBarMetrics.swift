@@ -75,6 +75,19 @@ public struct PaneStatusBarMetrics: Sendable, Equatable {
     /// Enclosure is the fastest shape the visual system resolves.
     public static let focusFrameWidth: Double = 2
 
+    /// The thickness of an attention line on the bar, at either edge.
+    ///
+    /// One value rather than one per site. The quiet treatment spends the top
+    /// edge and the acknowledged level spends the bottom one, and the two reading
+    /// as the same signal at two positions is the whole reason they are drawn as
+    /// lines rather than as two different shapes. Two constants both spelled 2 is
+    /// the arrangement that lets a later edit move one of them.
+    ///
+    /// Matched to ``focusFrameWidth`` for the same reason: on a focused pane the
+    /// line sits directly inside the frame, and a line of a different weight
+    /// beside it reads as a mistake rather than as a second signal.
+    public static let attentionLine: Double = 2
+
     /// Below this pane width the frame drops its left and right edges.
     ///
     /// A narrow frame is nearly square and reads as a chip rather than as a
