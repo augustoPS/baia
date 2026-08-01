@@ -14,16 +14,21 @@ LOG=/tmp/baia-observer
 
 [ -n "${BAIA_SOCK:-}" ] || { echo "no BAIA_SOCK: run this from inside a baia pane" >&2; exit 2; }
 
-# The running app must be the dev build. The pane's baia CLI comes from the
-# *running* app's bundle, so an installed copy makes the whole toolchain lie
-# consistently: split --command reads as missing rather than as stale.
-running=$(ps -o command= -p "$(pgrep -x baia | head -1)" 2>/dev/null || true)
-case "$running" in
-  "$REPO"/.build/*) ;;
-  *) echo "running baia is not the dev build: $running" >&2
-     echo "relaunch with: $REPO/.build/Build/Products/Debug/baia.app/Contents/MacOS/baia &" >&2
-     exit 2 ;;
-esac
+# The running app must be new enough to have `split --command`. The pane's baia
+# CLI comes from the *running* app's bundle, so an installed copy makes the whole
+# toolchain lie consistently: --command reads as missing rather than as stale.
+#
+# Test the capability, not the path. The path form was tried first and was wrong
+# twice over: `ps -o command=` reports whatever argv[0] the launch used, so a dev
+# build started with a relative path never matches an absolute prefix, and the
+# same check returned empty inside a pane. This asks the running binary what it
+# can do, which is the thing that matters.
+if ! baia --help 2>/dev/null | grep -q -- '--command'; then
+  echo "the running baia's CLI has no 'split --command'." >&2
+  echo "It is probably the installed copy. Relaunch the dev build with:" >&2
+  echo "  $REPO/.build/Build/Products/Debug/baia.app/Contents/MacOS/baia &" >&2
+  exit 2
+fi
 
 for w in tree-expansions utf8-filenames app-target-rules; do
   [ -d "$WT/baia--$w" ] || { echo "missing worktree: $WT/baia--$w" >&2; exit 2; }
