@@ -37,13 +37,17 @@ final class AttentionNotifier {
         hasRequested = true
         UNUserNotificationCenter.current()
             .requestAuthorization(options: [.alert, .sound]) { granted, error in
-                // Reported rather than dropped. A refusal at the system level and a
-                // request that never reached the system read identically from here,
-                // and the second is what a development build does: run ad-hoc
-                // signed out of `.build`, `gutons.baia` is absent from
-                // `com.apple.ncprefs` entirely, so it never appears in System
-                // Settings to be granted and the banner cannot fire. Found
-                // 2026-07-30, by a live pass that could only report "no banner".
+                // Reported rather than dropped, because the error is the only
+                // thing that separates a denial from silence. It says
+                // "Notifications are not allowed for this application", and that
+                // means the switch under System Settings > Notifications is off,
+                // not that the app never registered. Read the other way on
+                // 2026-07-30 and corrected on 2026-07-31: the app was listed
+                // there the whole time, turned off, and enabling it made this
+                // path succeed on an unchanged ad-hoc build out of `.build`.
+                // `com.apple.ncprefs` is not where to check. It gained no entry
+                // for `gutons.baia` even with the switch on and the banner
+                // arriving.
                 if let error {
                     FileHandle.standardError.write(Data(
                         "baia: notification authorization failed: \(error.localizedDescription)\n"
