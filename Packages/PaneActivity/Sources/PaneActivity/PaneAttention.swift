@@ -70,14 +70,25 @@ public extension PaneAttention {
     /// because this package imports Foundation and nothing else. The app maps one
     /// onto the other in one place, which is the call ``ActivityReading`` already
     /// makes and the reason `ControlAxis` and `SplitAxis` are separate types.
-    func overridden(byReportedBlock blocked: Bool?, message: String?) -> PaneAttention {
+    /// - Parameter seen: whether the owner has been in this pane since the request
+    ///   in force began. Load-bearing when the latch is ``none``, which is every
+    ///   pane raised by a report with no bell behind it: the latch has no request
+    ///   to have been acknowledged, so without this the volume could only ever be
+    ///   loud. That was a real defect, found live on 2026-07-31 and fixed here,
+    ///   and it covered the whole hook path while the bell path looked correct.
+    func overridden(
+        byReportedBlock blocked: Bool?,
+        message: String?,
+        seen: Bool = false
+    ) -> PaneAttention {
         guard let blocked else { return self }
         guard blocked else { return .none }
-        // Asking, at whatever volume the latch had already settled on. The
-        // report's message wins, because the report is the thing asking and the
-        // latch may be holding an hour-old bell from a build.
+        // Asking, at whatever volume the latch and the visit between them settle
+        // on. The report's message wins, because the report is the thing asking
+        // and the latch may be holding an hour-old bell from a build.
         switch self {
-        case .none, .requested: return .requested(message: message)
+        case .none, .requested:
+            return seen ? .acknowledged(message: message) : .requested(message: message)
         case .acknowledged: return .acknowledged(message: message)
         }
     }

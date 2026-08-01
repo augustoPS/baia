@@ -37,8 +37,12 @@ final class PaneActivityTracker {
     /// Set by the controller before it publishes, never polled from here. The
     /// store that decides liveness and expiry lives with the controller beside
     /// the rest of the pane's per-run state.
-    private var reportedBlock: Bool?
-    private var reportedMessage: String?
+    ///
+    /// The statement itself lives in ``PaneAttentionState`` rather than beside
+    /// this, and that move is the fix for a real defect: while the report was held
+    /// out here, a pane raised over the channel had no request in the latch for
+    /// focus to acknowledge, so it stayed loud for the report's whole TTL however
+    /// much the owner looked at it or typed in it.
     private var activity: PaneActivity = .idleShell
     private var timer: Timer?
 
@@ -141,7 +145,7 @@ final class PaneActivityTracker {
     /// the frame, the window title, the Dock badge and `PaneRecord.attention`
     /// cannot disagree with each other or with the channel.
     private var resolvedAttention: PaneAttention {
-        attention.attention.overridden(byReportedBlock: reportedBlock, message: reportedMessage)
+        attention.attention
     }
 
     /// Records what the pane says about itself. The caller publishes.
@@ -150,8 +154,7 @@ final class PaneActivityTracker {
     /// publishes, so a single report produces one pass rather than two, and the
     /// ordering is visible at the call site rather than buried here.
     func setReportedBlock(_ blocked: Bool?, message: String?) {
-        reportedBlock = blocked
-        reportedMessage = message
+        _ = attention.noteReported(blocked: blocked, message: message)
         // Recomputed here, announced by the caller. See ``refreshAgent()``.
         refreshAgent()
     }
