@@ -32,7 +32,7 @@ from `self` rather than passed in, or no single obvious package to land in.
 
 | File:line | Signature | Belongs in |
 |---|---|---|
-| `Sources/ControlServer.swift:747` | `private func scope(of actor: ControlPaneID) -> [ControlPaneID]` | `PaneControl`, beside `PaneGraph`. Walks `children(of:)` and `peers(of:)` into one ordered, deduplicated list — a graph-traversal algorithm expressed entirely in terms of `PaneGraph` calls, with no reason to sit outside the package that owns the graph. |
+| `Sources/ControlServer.swift:747` | `private func scope(of actor: ControlPaneID) -> [ControlPaneID]` | `PaneControl`, beside `PaneGraph`. Walks `children(of:)` and `peers(of:)` into one ordered, deduplicated list. A graph-traversal algorithm expressed entirely in terms of `PaneGraph` calls, with no reason to sit outside the package that owns the graph. |
 | `Sources/ControlServer.swift:523` | `private func gate(_ verb: ControlVerb) -> ControlError?` | `PaneControl`, beside `ControlVerb`/`ControlError`. A pure switch over `verb.settingGate` and two `Bool`s (`isReadAllowed`, `isRunAllowed`); the two `Bool`s are the only `self` state it reads and both could be parameters. |
 | `Sources/ControlServer.swift:1125` | `private func answer(for drain: Drain) -> ControlResponse` | `PaneControl`. Pure `Drain` → `ControlResponse` formatting, both package types. |
 | `Sources/ControlServer.swift:1129` | `private func answer(for batch: EventBatch) -> ControlResponse` | `PaneControl`. Same shape, `EventBatch` → `ControlResponse`. |
@@ -41,7 +41,7 @@ from `self` rather than passed in, or no single obvious package to land in.
 
 | File:line | Signature | Belongs in |
 |---|---|---|
-| `Sources/ControlAdapter.swift:604` | `private static func direction(of direction: ControlDirection) -> FocusDirection` | `WorkspaceLayout`, beside `FocusDirection`. Enum-to-enum mapping between two packages' own vocabularies, no `default:` arm — the exact shape the `--kinds` mapping was wrong in when it first moved. |
+| `Sources/ControlAdapter.swift:604` | `private static func direction(of direction: ControlDirection) -> FocusDirection` | `WorkspaceLayout`, beside `FocusDirection`. Enum-to-enum mapping between two packages' own vocabularies, no `default:` arm, which is the exact shape the `--kinds` mapping was wrong in when it first moved. |
 | `Sources/ControlAdapter.swift:565` | `private static func build(_ node: ControlLayoutNode, createdBy: PaneID, into states: inout [PaneState]) -> PaneTree` | `WorkspaceLayout`, beside `PaneTree`/`PaneState`. Pure recursive tree construction from a `ControlLayoutNode` (a `PaneControl` type); nothing in the body touches a window. |
 | `Sources/ControlAdapter.swift:592` | `private static func existingDirectory(_ path: String) -> String?` | `WorkspaceLayout` or `PaneControl`. Pure `FileManager` directory check, no window, no descriptor. |
 | `Sources/ControlAdapter.swift:156` | `private static func name(of attention: PaneStatus.Attention) -> String?` | `PaneChrome`, beside `PaneStatus.Attention`. Pure three-case enum-to-string mapping. |
@@ -50,7 +50,7 @@ from `self` rather than passed in, or no single obvious package to land in.
 
 | File:line | Signature | Belongs in |
 |---|---|---|
-| `Sources/ControlTransport.swift:705` | `private static func createDirectory(for socketPath: String) -> Bool` | `WorkspaceLayout`, beside `SessionStore`. Its own doc comment says it exists "the way `SessionStore` creates the one it shares with `session.json`" — two independent implementations of the same 0700-directory-walk, one of them untested in a package. |
+| `Sources/ControlTransport.swift:705` | `private static func createDirectory(for socketPath: String) -> Bool` | `WorkspaceLayout`, beside `SessionStore`. Its own doc comment says it exists "the way `SessionStore` creates the one it shares with `session.json`". Two independent implementations of the same 0700-directory-walk, one of them untested in a package. |
 | `Sources/ControlTransport.swift:719` | `private static func reason(_ code: Int32) -> String` | `PaneControl`. `strerror` wrapper, pure, `code` is an errno value rather than a descriptor. |
 
 ### Pane activity → `PaneActivity`
@@ -67,17 +67,17 @@ from `self` rather than passed in, or no single obvious package to land in.
 | File:line | Signature | Belongs in |
 |---|---|---|
 | `Sources/PaneGitStatus.swift:135` | `private func repositoryRoot(for anchor: Anchor?) -> URL?` | `ProjectAnchor`, beside `Anchor`. Pure, checks `anchor.kind == .repository`. |
-| `Sources/PaneGitStatus.swift:208` | `private func paneGit(_ status: RepositoryStatus) -> PaneStatus.Git` | `PaneChrome` or `GitWorkspace`. Pure `RepositoryStatus` → `PaneStatus.Git` field mapping (the dirty/conflicted/upstream logic lives here, not in either package). |
+| `Sources/PaneGitStatus.swift:208` | `private func paneGit(_ status: RepositoryStatus) -> PaneStatus.Git` | `PaneChrome` or `GitWorkspace`. **Needs `isLinkedWorktree` as a parameter first.** Otherwise pure `RepositoryStatus` → `PaneStatus.Git` field mapping (the dirty/conflicted/upstream logic lives here, not in either package). |
 | `Sources/PaneGitStatus.swift:228` | `private func label(for operation: RepositoryStatus.InProgress?) -> String?` | `GitWorkspace`, beside `RepositoryStatus`. Pure five-case enum-to-string mapping. |
 | `Sources/ChangesSurface.swift:431` / `:439` | `private static func sort(_ changes: [RepositoryFileChange]) -> [RepositoryFileChange]` / `private static func rank(_ change: RepositoryFileChange) -> Int` | `GitWorkspace`, beside `RepositoryFileChange`. The conflict-first, staged-before-unstaged ordering is a stated policy ("what a `git commit` needs answered, in the order it needs it"), currently untestable without instantiating the view. |
-| `Sources/FilesSurface.swift:523` | `private func guide(for index: Int?) -> (depth: Int, rows: Range<Int>)?` | `GitWorkspace`, beside `FileTree`/`DirectoryTree`. Pure descendant-range walk over tree rows (finds every row nested under a given directory row) — the same shape of problem `FileTree.swift` already solves, reimplemented here over the view's own row array. |
+| `Sources/FilesSurface.swift:523` | `private func guide(for index: Int?) -> (depth: Int, rows: Range<Int>)?` | `GitWorkspace`, beside `FileTree`/`DirectoryTree`. Pure descendant-range walk over tree rows (finds every row nested under a given directory row). The same shape of problem `FileTree.swift` already solves, reimplemented here over the view's own row array. |
 
 ### Command palette → `PaneChrome`
 
 | File:line | Signature | Belongs in |
 |---|---|---|
 | `Sources/CommandPaletteController.swift:372` | `private static func runs(for status: RepositoryStatus) -> [PaneStatusRun]` | `PaneChrome`. Pure `RepositoryStatus` → `[PaneStatusRun]`, built entirely through `PaneStatusSegments.build`, a package function; nothing here needs the controller. |
-| `Sources/CommandPaletteController.swift:268` | `private static func kind(of kind: Project.Kind) -> PaletteRowKind` | `PaneChrome` or `GitWorkspace`. Three-case enum mapping from `GitWorkspace.Project.Kind` to `PaneChrome.PaletteRowKind`, no `default:` — same risk shape as `direction(of:)` above and as the historical `--kinds` bug. |
+| `Sources/CommandPaletteController.swift:268` | `private static func kind(of kind: Project.Kind) -> PaletteRowKind` | `PaneChrome` or `GitWorkspace`. Three-case enum mapping from `GitWorkspace.Project.Kind` to `PaneChrome.PaletteRowKind`, no `default:`, the same risk shape as `direction(of:)` above and as the historical `--kinds` bug. |
 
 ### The repeated `colour`/`leading` cluster → `PaneChrome`
 
@@ -111,6 +111,23 @@ of the same kind sitting outside it.
 | `Sources/CommandPaletteController.swift:411`, `Sources/CommandPaletteView.swift:349`, `Sources/FindPanelController.swift:378` | `static func height(forRowCount count: Int) -> Double` (× 3, near-identical) | Trivial arithmetic, but written three times rather than once. Worth collapsing into `PaneChrome` more for the duplication than for any risk in the logic itself. |
 | `Sources/SettingsPreviewColumn.swift:30` | `private static func status(asking: Bool) -> PaneStatus` | Pure `PaneStatus` fixture builder, but it's sample data for a settings preview, not logic anything depends on being right. |
 | `Sources/ConfigurationCenter.swift:61-150` | `themeDefinition(from:)`, `terminalTheme(from:)`, `terminalConfiguration(from:)`, `paneTheme(from:)`, `derivations(for:)`, `chrome(for:)` | Pure `Settings` → theme/config derivations, no AppKit. Not flagged as Tier 1 because the doc comments show this was a deliberate choice, not an oversight: each one explicitly delegates real logic to already-tested package functions (`PaneTheme.accent(for:)`) and exists only to compose three packages' types (`BaiaSettings`, `PaneChrome`, and the external `GhosttyTheme`/`GhosttyTerminal` bindings) that have no fourth package in common today. Moving it means picking or creating that fourth package, not just relocating a function. |
+
+## Two corrections, from the 2026-08-01 review
+
+This survey was reviewed before being used to plan anything, and two rows overstate
+how easy a move would be. Both are the same shape the document already knows how to
+flag, and did not.
+
+- **`Sources/PaneGitStatus.swift:208` `paneGit(_:)` is not pure in its own
+  parameter.** Its body reads `isLinkedWorktree`, a stored property set from `root`
+  elsewhere in the class. Moving it means making that an explicit parameter, exactly
+  the caveat given to `gate(_:)` two rows above.
+- **The four-function colour cluster is not uniform.** Only
+  `ChangesSurface.swift:508` is a pure static taking `role` and `theme`. The other
+  three are instance methods on `NSView` subclasses reading `self.theme`, and
+  `PaneStatusBarView.swift:589` reads `isFocused`, `fillsBarForAttention` and
+  `inkBackground` as well, with the second branching to a different code path. That
+  is a state extraction, not a move.
 
 ## What was excluded, and why
 
