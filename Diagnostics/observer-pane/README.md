@@ -100,5 +100,47 @@ That is the same lesson the 2026-08-01 hook session recorded from the other side
 an agent cannot verify which pane it is in without asking the channel. Here the
 *driver* could not either, and the chrome gave two answers.
 
-**Owed:** Task 7 from step 2, and Tasks 8 and 9. All need a keyboard, or a
-driving method that survives a split.
+Task 7 was later completed. `read` returned both children's real screen content
+bounded to 6 lines, with `truncated` correctly true for the pane that had more
+and false for the one that did not, and the wake test returned **in the same
+unix second** (1785590981) carrying `attentionRaised … via report`, rather than
+waiting out its 60 s.
+
+## The run, 2026-08-01
+
+The wave launched and the observer produced verdicts. Three, all `on-brief`, each
+naming something on the screen rather than restating the brief:
+
+| item | the observer's evidence |
+|---|---|
+| tree-expansions | "a Read prompt for `Packages/WorkspaceLayout/…/SessionStore.swift` after reading `PaneChrome/FileTreeExpansions.swift`, all package paths" |
+| utf8-filenames | "`rtk grep -rln \"demo\"` over the worktree hunting the fixture repo, with no GitWorkspace edit started" |
+| app-target-rules | "an awk-over-files scan printing FILENAME:NR func signatures piped to `wc -l`, enumerating candidates rather than moving any rule" |
+
+Each one names the exact discipline its brief guards: package-only, fixture
+before fix, survey before move. A Fable-tier model reading a 120-line screen
+distinguished surveying from moving. That is the capability the measurement
+existed to price, and on this evidence it is real.
+
+The observer also applied the two-producer rule unprompted, writing in its own
+pane that the events were "permission prompts via OSC, not hook reports".
+
+## Four things that block an unattended run, none of them baia
+
+1. **A fresh worktree raises Claude Code's workspace-trust dialog.** No
+   `settings.json` pre-approval skips it. Three executors, three dialogs, each
+   needing a Return before any work starts.
+2. **RTK rewrites the command before the permission check**, so an allowlist
+   written for bare commands never matches. `Bash(cat:*)` does not authorise
+   `rtk read`. This repo's own CLAUDE.md already records the same trap for
+   `Bash(git:*)` against `rtk git commit`. Add `Bash(rtk:*)`.
+3. **A heredoc containing braces and quotes trips the global
+   `block-dangerous-commands` expansion-obfuscation check**, so the observer
+   needed approval for every attempt to append its own log. Write the log with
+   the Write tool, or allow the heredoc form.
+4. **Reads outside the worktree prompt.** The briefs quote paths that resolve
+   against the main repo, so the first read of a named file leaves the workspace.
+
+Together these mean the run needs a hand every few minutes, which is precisely
+what it was built to avoid. Fixing 1 to 4 is the difference between this being a
+demo and being usable.

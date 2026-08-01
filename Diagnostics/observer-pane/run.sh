@@ -56,15 +56,24 @@ baia list --tree
 cat <<EOF
 
 Next, by hand:
-  1. Read the three pane ids:            baia list --json | jq -r '.panes[].id'
-  2. Note the starting seq:              baia list --json | jq -r '.seq'
+  1. Read the three pane ids:            baia list --json
+  2. Note the starting seq:              baia list --json | grep seq
   3. Substitute the ids and the seq for \$PANE_TREE, \$PANE_UTF8, \$PANE_RULES and
      \$START_SEQ in $OBS/orchestrator.md, writing the result to
      $LOG/orchestrator.md
-  4. Spawn the observer:
+  4. Run the observer IN THIS PANE. Do not split for it:
 
-     baia split --cwd $REPO --command \\
-       "'/bin/zsh' -lc 'claude --model claude-fable-5 \"\\\$(cat $LOG/orchestrator.md)\"; exec \"\\\$SHELL\" -l'"
+     claude --model claude-fable-5 "\\\$(cat $LOG/orchestrator.md)"
+
+**The observer must be this pane, and that is not a preference.** Scope is
+sibling-blind: baia --help says a pane sees itself, the panes it created, and its
+peers, nothing else. This pane created the three executors, so this pane is the
+only one that can read or subscribe to them. An observer opened as a fourth
+split would be their sibling and would see exactly one pane: itself. It would
+loop forever on an empty scope and look like it was working.
+
+Found 2026-08-01 by nearly doing it. The earlier version of this message told you
+to split for the observer.
 
 The substitution is by hand on purpose: the ids only exist after the splits, and
 a wrong binding is the one failure that makes every verdict meaningless while
