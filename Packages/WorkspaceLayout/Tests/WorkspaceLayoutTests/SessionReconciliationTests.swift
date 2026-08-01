@@ -56,7 +56,7 @@ import Testing
             secondDirectory: "/gone"
         )
 
-        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/kept"))
+        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/kept"), resolveAnchor: anchoredAtItsOwnDirectory)
 
         #expect(result.droppedPanes == [gone])
         #expect(result.snapshot.workspace.tabs[0].tree == .leaf(kept))
@@ -73,7 +73,7 @@ import Testing
             secondDirectory: "/gone"
         )
 
-        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/kept"))
+        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/kept"), resolveAnchor: anchoredAtItsOwnDirectory)
 
         // The dropped pane was the focused one. Leaving focus on it would give a
         // workspace where every mutator returns false, so no key could recover it.
@@ -93,7 +93,7 @@ import Testing
         // Nil means the pane's surface had not come up when the session was written,
         // not that its directory is gone. Dropping it would make an early quit lose
         // every pane in the window.
-        let result = SessionStore.reconciled(snapshot, directoryExists: { _ in false })
+        let result = SessionStore.reconciled(snapshot, directoryExists: { _ in false }, resolveAnchor: anchoredAtItsOwnDirectory)
 
         #expect(result.droppedPanes.isEmpty)
         #expect(result.snapshot.workspace.tabs[0].tree == .leaf(never))
@@ -109,7 +109,7 @@ import Testing
             fileTreeExpansions: nil
         )
 
-        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/here"))
+        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/here"), resolveAnchor: anchoredAtItsOwnDirectory)
 
         // A pin is a preference about a pane, not its reason to exist, and
         // `AnchorResolver` already treats a stale pin as data to repair.
@@ -136,7 +136,7 @@ import Testing
             fileTreeExpansions: nil
         )
 
-        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/here"))
+        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/here"), resolveAnchor: anchoredAtItsOwnDirectory)
 
         #expect(result.snapshot.workspace.tabs.count == 1)
         #expect(result.snapshot.workspace.focusedPane == survivor)
@@ -152,7 +152,7 @@ import Testing
             secondDirectory: "/also-gone"
         )
 
-        let result = SessionStore.reconciled(snapshot, directoryExists: { _ in false })
+        let result = SessionStore.reconciled(snapshot, directoryExists: { _ in false }, resolveAnchor: anchoredAtItsOwnDirectory)
 
         // Nil would make the caller handle a second "no session" case that behaves
         // exactly like the first launch it already handles. An empty workspace with an
@@ -171,7 +171,7 @@ import Testing
             fileTreeExpansions: nil
         )
 
-        let result = SessionStore.reconciled(snapshot, directoryExists: { _ in true })
+        let result = SessionStore.reconciled(snapshot, directoryExists: { _ in true }, resolveAnchor: anchoredAtItsOwnDirectory)
 
         // Clamped to the last tab rather than reset to the first: losing a tab at the
         // end should not also move the user to the other end of the tab bar.
@@ -188,7 +188,7 @@ import Testing
             fileTreeExpansions: nil
         )
 
-        let result = SessionStore.reconciled(snapshot, directoryExists: { _ in true })
+        let result = SessionStore.reconciled(snapshot, directoryExists: { _ in true }, resolveAnchor: anchoredAtItsOwnDirectory)
 
         #expect(result.snapshot.workspace.focusedTabIndex == 0)
     }
@@ -204,7 +204,7 @@ import Testing
         )
         snapshot.workspace.tabs[0].zoomedPane = gone
 
-        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/kept"))
+        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/kept"), resolveAnchor: anchoredAtItsOwnDirectory)
 
         // A zoom pointing at a pane nothing will create renders as an empty tab, and
         // the pane that is there never gets laid out at all.
@@ -225,7 +225,7 @@ import Testing
         // the cursor somewhere else, which is the invariant Workspace keeps.
         snapshot.workspace.tabs[0].zoomedPane = kept
 
-        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/kept"))
+        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/kept"), resolveAnchor: anchoredAtItsOwnDirectory)
 
         #expect(result.snapshot.workspace.tabs[0].zoomedPane == kept)
         #expect(result.snapshot.workspace.focusedPane == kept)
@@ -245,7 +245,7 @@ import Testing
             fileTreeExpansions: nil
         )
 
-        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/here"))
+        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/here"), resolveAnchor: anchoredAtItsOwnDirectory)
 
         // Reporting it would name a pane the caller was never going to create, and the
         // caller's list of dropped panes is what it uses to tell the user what it
@@ -264,7 +264,7 @@ import Testing
             secondDirectory: "/two"
         )
 
-        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/one", "/two"))
+        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/one", "/two"), resolveAnchor: anchoredAtItsOwnDirectory)
 
         // The test that keeps every repair above honest: a reconcile that rebuilt the
         // tree, resorted the panes, or reset focus unconditionally would pass all of
@@ -288,9 +288,11 @@ import Testing
         // The predicate the app actually passes, against a real tree. A set-backed
         // closure proves the repair logic; only this proves the repair logic is being
         // handed the shape of path `FileManager` agrees with, trailing slash and all.
-        let result = SessionStore.reconciled(snapshot) {
-            FileManager.default.fileExists(atPath: $0)
-        }
+        let result = SessionStore.reconciled(
+            snapshot,
+            directoryExists: { FileManager.default.fileExists(atPath: $0) },
+            resolveAnchor: anchoredAtItsOwnDirectory
+        )
 
         #expect(result.droppedPanes == [gone])
         #expect(result.snapshot.workspace.tabs[0].tree == .leaf(kept))
@@ -307,7 +309,7 @@ import Testing
         )
         snapshot.panes[1].createdBy = parent
 
-        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/here"))
+        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/here"), resolveAnchor: anchoredAtItsOwnDirectory)
 
         // The child becomes a root. It is not re-parented to the grandparent, which
         // would silently widen whatever scope inherited it, and the edge is not left
@@ -327,7 +329,7 @@ import Testing
         )
         snapshot.panes[1].createdBy = parent
 
-        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/here"))
+        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/here"), resolveAnchor: anchoredAtItsOwnDirectory)
 
         // The other half of the rule, and the one that fails if the drop is written as
         // an unconditional clear: an owner asking where a pane came from still has an
@@ -346,7 +348,7 @@ import Testing
         )
         snapshot.fileTreeExpansions = ["/here": ["Sources", "Sources/PaneChrome"]]
 
-        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/here"))
+        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/here"), resolveAnchor: anchoredAtItsOwnDirectory)
 
         #expect(result.snapshot.fileTreeExpansions == ["/here": ["Sources", "Sources/PaneChrome"]])
     }
@@ -362,7 +364,7 @@ import Testing
         )
         snapshot.fileTreeExpansions = ["/pin": ["Sources"]]
 
-        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/here", "/pin"))
+        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/here", "/pin"), resolveAnchor: anchoredAtItsOwnDirectory)
 
         #expect(result.snapshot.fileTreeExpansions == ["/pin": ["Sources"]])
     }
@@ -381,9 +383,80 @@ import Testing
         )
         snapshot.fileTreeExpansions = ["/kept": ["Sources"], "/gone": ["Old"]]
 
-        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/kept"))
+        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/kept"), resolveAnchor: anchoredAtItsOwnDirectory)
 
         #expect(result.snapshot.fileTreeExpansions == ["/kept": ["Sources"]])
+    }
+
+    /// The defect every test above is blind to, and blind by construction: each one
+    /// keys its expansions under the same string it gave the pane as a working
+    /// directory, which is the one case where resolving and not resolving agree.
+    ///
+    /// The live feature never looks like that. A shell sitting in `/repo/Sources`
+    /// anchors the file tree at `/repo`, because the resolver walks up to the
+    /// repository root, and that root is the key the surface writes. Pruned against
+    /// the raw working directory, no pane claims `/repo`, and the expansions of the
+    /// pane looking at it are thrown away on every launch.
+    @Test func treeExpansionsKeyedUnderTheResolvedRootOfAPaneInASubdirectoryAreKept() {
+        let pane = PaneID()
+        var snapshot = SessionSnapshot(
+            workspace: Workspace(pane: pane),
+            panes: [PaneState(
+                id: pane,
+                workingDirectory: "/repo/Sources/Foo",
+                pinnedDirectory: nil,
+                createdBy: nil
+            )],
+            windowFrame: nil,
+            sidebar: nil,
+            fileTreeExpansions: nil
+        )
+        snapshot.fileTreeExpansions = ["/repo": ["Sources", "Sources/Foo"]]
+
+        // The walk, stubbed: `ProjectAnchor` is what climbs to a repository root and
+        // this package depends on nothing, so the test supplies the answer the app's
+        // resolver would give.
+        let result = SessionStore.reconciled(
+            snapshot,
+            directoryExists: existing("/repo/Sources/Foo"),
+            resolveAnchor: { _ in "/repo" }
+        )
+
+        #expect(result.snapshot.fileTreeExpansions == ["/repo": ["Sources", "Sources/Foo"]])
+    }
+
+    /// The resolver is asked about the pane that is coming back, not the one the
+    /// file described. A stale pin is cleared above, and a pane whose pin vanished
+    /// resolves at its working directory instead, so the anchor pruned against is
+    /// the one the restored sidebar will key under.
+    @Test func theAnchorIsResolvedFromThePaneAfterAStalePinIsCleared() {
+        let pane = PaneID()
+        var seen: [String?] = []
+        var snapshot = SessionSnapshot(
+            workspace: Workspace(pane: pane),
+            panes: [PaneState(
+                id: pane,
+                workingDirectory: "/here",
+                pinnedDirectory: "/gone",
+                createdBy: nil
+            )],
+            windowFrame: nil,
+            sidebar: nil,
+            fileTreeExpansions: nil
+        )
+        snapshot.fileTreeExpansions = ["/here": ["Sources"], "/gone": ["Old"]]
+
+        let result = SessionStore.reconciled(
+            snapshot,
+            directoryExists: existing("/here"),
+            resolveAnchor: { pane in
+                seen.append(pane.pinnedDirectory)
+                return anchoredAtItsOwnDirectory(pane)
+            }
+        )
+
+        #expect(seen == [nil])
+        #expect(result.snapshot.fileTreeExpansions == ["/here": ["Sources"]])
     }
 
     @Test func aNilFileTreeExpansionsStaysNilThroughReconciliation() {
@@ -396,7 +469,7 @@ import Testing
             fileTreeExpansions: nil
         )
 
-        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/here"))
+        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/here"), resolveAnchor: anchoredAtItsOwnDirectory)
 
         #expect(result.snapshot.fileTreeExpansions == nil)
     }

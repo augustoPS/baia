@@ -67,6 +67,27 @@ final class SidebarHost: NSViewController {
         }
     }
 
+    /// What the file tree was left showing, per anchor, and what a relaunch puts
+    /// back. Empty for a sidebar with no Files section, which is a real state:
+    /// the section can be switched off, and a column showing only Changes has no
+    /// expansions to report rather than none to remember.
+    ///
+    /// Read and written through the host for the reason ``geometry`` is: the
+    /// delegate writes the session file and knows what a window is, and the
+    /// sections are the host's business. Nothing outside gets to go hunting
+    /// through `sections` for a surface to cast.
+    var fileTreeExpansions: [String: [String]] {
+        get {
+            sections.lazy.compactMap { $0.surface as? FilesSurface }.first?
+                .fileTreeExpansions ?? [:]
+        }
+        set {
+            for section in sections {
+                (section.surface as? FilesSurface)?.fileTreeExpansions = newValue
+            }
+        }
+    }
+
     var theme: PaneTheme {
         didSet {
             for section in sections {

@@ -103,12 +103,22 @@ public struct SessionStore: Sendable {
     ///   answer, and a caller restoring another machine's session has to be able to
     ///   say no to everything.
     ///
+    /// - Parameter resolveAnchor: the path a surviving pane's file tree keys its
+    ///   open directories under, asked once per pane that came back. A closure for
+    ///   a second reason on top of the first: resolving an anchor walks up looking
+    ///   for a repository root, which is `AnchorResolver`'s job in `ProjectAnchor`,
+    ///   and this package depends on nothing. Answering with the pane's working
+    ///   directory is the identity version and is what a test wants; the app hands
+    ///   in the resolver it already uses to point the sidebar, so the key pruned
+    ///   against here is the key the surface writes.
+    ///
     /// The returned snapshot is always launchable, including when every pane is gone:
     /// an empty workspace, not nil. The caller then opens a pane at its default
     /// directory, which is what it already does on a first launch.
     public static func reconciled(
         _ snapshot: SessionSnapshot,
-        directoryExists: (String) -> Bool
+        directoryExists: (String) -> Bool,
+        resolveAnchor: (PaneState) -> String?
     ) -> (snapshot: SessionSnapshot, droppedPanes: [PaneID]) {
         // The ids a tab actually shows. A `PaneState` for a pane no tree holds is a
         // leftover from an earlier save, and reporting it as dropped would name a
@@ -162,11 +172,22 @@ public struct SessionStore: Sendable {
             return rerooted
         }
 
-        // Every directory a surviving pane could be anchored at: the working
-        // directory for an automatic anchor, the pin for a pinned one. An entry
-        // keyed under neither names a repository nothing in the restored window
-        // points at, and keeping it would let the file outgrow the workspace.
-        let survivingAnchors = Set(restorable.flatMap { [$0.workingDirectory, $0.pinnedDirectory].compactMap(\.self) })
+        // Every anchor a surviving pane resolves to. An entry keyed under none of
+        // them names a repository nothing in the restored window points at, and
+        // keeping it would let the file outgrow the workspace.
+        //
+        // **Resolved, not raw**, and the difference is the whole reason this takes
+        // a closure. A pane whose shell sits in `/repo/Sources/Foo` keys its open
+        // directories under `/repo`, because the file tree is anchored at the
+        // repository root the walk finds. Pruning against the working directory
+        // would find no pane claiming `/repo` and throw away the expansions of the
+        // pane that is looking at it, on every launch, while every test built from
+        // a fixture whose working directory *is* its anchor passed.
+        //
+        // Resolved after the pins are repaired, above, so a pane whose pin vanished
+        // is keyed at the anchor it will actually come back at rather than the one
+        // the stale pin named.
+        let survivingAnchors = Set(restorable.compactMap(resolveAnchor))
         let prunedExpansions = snapshot.fileTreeExpansions.map { expansions in
             expansions.filter { survivingAnchors.contains($0.key) }
         }

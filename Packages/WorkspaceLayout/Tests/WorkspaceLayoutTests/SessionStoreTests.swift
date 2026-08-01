@@ -92,7 +92,7 @@ import Testing
 
         #expect(store.save(snapshot))
         let loaded = try #require(store.load())
-        let (reconciled, _) = SessionStore.reconciled(loaded) { _ in true }
+        let (reconciled, _) = SessionStore.reconciled(loaded, directoryExists: { _ in true }, resolveAnchor: anchoredAtItsOwnDirectory)
 
         let records = Dictionary(
             reconciled.panes.map { ($0.id, $0) },
@@ -295,20 +295,20 @@ import Testing
     /// into the default, because reconciliation dropped the field on the way through
     /// while the file on disk was perfectly correct.
     @Test func theSidebarGeometrySurvivesReconciliation() {
-        let (reconciled, _) = SessionStore.reconciled(snapshot()) { _ in true }
+        let (reconciled, _) = SessionStore.reconciled(snapshot(), directoryExists: { _ in true }, resolveAnchor: anchoredAtItsOwnDirectory)
         #expect(reconciled.sidebar?.width == 462)
         #expect(reconciled.sidebar?.splitHeight == 516)
     }
 
     @Test func theWindowFrameSurvivesReconciliation() {
-        let (reconciled, _) = SessionStore.reconciled(snapshot()) { _ in true }
+        let (reconciled, _) = SessionStore.reconciled(snapshot(), directoryExists: { _ in true }, resolveAnchor: anchoredAtItsOwnDirectory)
         #expect(reconciled.windowFrame?.width == 3)
     }
 
     /// Dropping every pane must not take the geometry with it. The window is gone
     /// and the column's size is still the owner's answer for the next one.
     @Test func theGeometrySurvivesEvenWhenEveryPaneIsDropped() {
-        let (reconciled, dropped) = SessionStore.reconciled(snapshot()) { _ in false }
+        let (reconciled, dropped) = SessionStore.reconciled(snapshot(), directoryExists: { _ in false }, resolveAnchor: anchoredAtItsOwnDirectory)
         #expect(!dropped.isEmpty)
         #expect(reconciled.sidebar?.width == 462)
     }
@@ -317,7 +317,7 @@ import Testing
     /// anchor it is keyed under has to still be a surviving pane's directory, or
     /// the file would go on remembering a repository nothing restores it into.
     @Test func theTreeExpansionsSurviveReconciliationWhenTheirAnchorIsStillAPane() {
-        let (reconciled, _) = SessionStore.reconciled(snapshot()) { _ in true }
+        let (reconciled, _) = SessionStore.reconciled(snapshot(), directoryExists: { _ in true }, resolveAnchor: anchoredAtItsOwnDirectory)
         #expect(reconciled.fileTreeExpansions == ["/tmp": ["a", "b"]])
     }
 
@@ -325,7 +325,7 @@ import Testing
     /// expansions recorded under it too, which is what keeps the file from
     /// outgrowing the workspace it is next to.
     @Test func theTreeExpansionsArePrunedWhenTheirAnchorsPaneIsDropped() {
-        let (reconciled, dropped) = SessionStore.reconciled(snapshot()) { _ in false }
+        let (reconciled, dropped) = SessionStore.reconciled(snapshot(), directoryExists: { _ in false }, resolveAnchor: anchoredAtItsOwnDirectory)
         #expect(!dropped.isEmpty)
         #expect(reconciled.fileTreeExpansions == [:])
     }

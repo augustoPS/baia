@@ -4,6 +4,7 @@ import BaiaSettings
 import GitWorkspace
 import PaneChrome
 import PanePrompt
+import ProjectAnchor
 import WorkspaceLayout
 import WorkspaceMenu
 
@@ -925,8 +926,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // The focused window's, for the reason its frame is the one recorded:
             // the snapshot carries one of each, and the window being looked at is
             // the one whose size the owner just settled.
-            sidebar: focused?.sidebar.geometry
+            sidebar: focused?.sidebar.geometry,
+            fileTreeExpansions: fileTreeExpansions()
         )
+    }
+
+    /// Every window's open directories, merged into the one map the file holds.
+    ///
+    /// Merged rather than taken from the focused window alone, which is what
+    /// `sidebar` above does, because the two fields are different shapes. A
+    /// sidebar width is one number and two windows disagreeing about it means one
+    /// of them has to lose. This map is keyed by anchor, so two windows on two
+    /// repositories hold two disjoint halves of it, and writing one window's would
+    /// forget the other's on every quit.
+    ///
+    /// The focused window merges last, so an anchor two windows both visited keeps
+    /// the tree the owner was last looking at.
+    private func fileTreeExpansions() -> [String: [String]] {
+        var merged: [String: [String]] = [:]
+        for controller in windows where controller !== focused {
+            merged.merge(controller.sidebar.fileTreeExpansions) { _, later in later }
+        }
+        if let focused {
+            merged.merge(focused.sidebar.fileTreeExpansions) { _, later in later }
+        }
+        return merged
     }
 
     /// Rebuilds the workspace, or opens one fresh pane.
@@ -941,11 +965,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // thrown away, which would spawn every recorded shell on the way past.
         guard configuration.settings.restoreSession else { return openFresh() }
         guard let snapshot = sessionStore.load() else { return openFresh() }
-        let (reconciled, _) = SessionStore.reconciled(snapshot) { path in
-            var isDirectory: ObjCBool = false
-            let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
-            return exists && isDirectory.boolValue
-        }
+        let resolver = AnchorResolver()
+        let (reconciled, _) = SessionStore.reconciled(
+            snapshot,
+            directoryExists: { path in
+                var isDirectory: ObjCBool = false
+                let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+                return exists && isDirectory.boolValue
+            },
+            // The same resolver, asked the same question, as the one that points
+            // the sidebar in `refreshSidebar(of:)`, and the same
+            // `url.path(percentEncoded:)` spelling of the answer. That is not a
+            // coincidence to be tidied away later: the expansions are keyed by
+            // whatever string that call produces, so anything else here prunes
+            // against keys the surface never writes and silently empties the map.
+            resolveAnchor: { pane in
+                resolver.resolve(
+                    workingDirectory: pane.workingDirectory.map {
+                        URL(filePath: $0, directoryHint: .isDirectory)
+                    },
+                    pin: pane.pinnedDirectory.map {
+                        URL(filePath: $0, directoryHint: .isDirectory)
+                    }
+                ).anchor?.url.path(percentEncoded: false)
+            }
+        )
         guard !reconciled.workspace.tabs.isEmpty else { return openFresh() }
 
         var first: NSWindow?
@@ -963,7 +1007,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // Nil for the same reason the frame is: this piece builds one tab's
                 // panes, and the window-level geometry is applied to every window
                 // once they all exist.
-                sidebar: nil
+                sidebar: nil,
+                fileTreeExpansions: nil
             )
             let controller = openWindow(
                 tree: PaneTreeController(
@@ -984,6 +1029,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // the rest at the default and read as a drag that half took.
         if let geometry = reconciled.sidebar {
             for controller in windows { controller.sidebar.geometry = geometry }
+        }
+
+        // Every window again, and for a different reason: the map is keyed by
+        // anchor, so a window gets back the set belonging to whichever repository
+        // its own focused pane is in and ignores the rest. Handing each window the
+        // whole map is what lets two tabs on two repositories both come back the
+        // way they were left.
+        //
+        // After `openWindow`, which refreshes each sidebar as it opens. That
+        // ordering is why `SidebarHost.fileTreeExpansions` assigns back into the
+        // rows rather than only filling the map: the Files surface has already been
+        // pointed at an anchor and shown it empty by the time this runs.
+        if let expansions = reconciled.fileTreeExpansions {
+            for controller in windows { controller.sidebar.fileTreeExpansions = expansions }
         }
 
         // Focused last, because joining a tab group brings the new tab forward.
