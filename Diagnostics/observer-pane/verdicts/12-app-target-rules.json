@@ -1,0 +1,1 @@
+{"seq": 12, "pane": "8240FD15-E80D-432A-8CEA-AFD485940311", "item": "app-target-rules", "verdict": "on-brief", "evidence": "Screen shows a candidate survey in progress (144 candidates before filtering, a filter bug being redone, files like Sources/FilesSurface.swift only read), with no function moved out of Sources/.", "wrote_at": "2026-08-01T17:54:52Z"}
