@@ -71,12 +71,28 @@ public struct GitCommand: Sendable {
     /// "Unable to create '.git/index.lock': File exists". `ps1-style.sh` passes it
     /// on every call for exactly this reason, and a status bar polling four panes
     /// is a far better chance of collision than a shell prompt.
+    /// Lossy, and only for output that is git's own words rather than the
+    /// filesystem's: a version string, a branch name, a worktree stanza. Anything
+    /// carrying a path wants ``bytes(of:in:)``, because this replaces every byte it
+    /// cannot decode with U+FFFD and there is no way back from that.
     public func output(of arguments: [String], in directory: URL) -> String? {
+        bytes(of: arguments, in: directory).map { String(decoding: $0, as: UTF8.self) }
+    }
+
+    /// The same read, undecoded.
+    ///
+    /// **Where the decision belongs.** git writes paths in whatever bytes the
+    /// filesystem holds, and a repository cloned from one that allowed a name this
+    /// one could not make carries paths that are not UTF-8. Decoding at the pipe
+    /// throws the name away before any parser can see it, so the pipe hands over
+    /// bytes and each field decides for itself: a path stays bytes in a
+    /// ``RepositoryPath``, and everything git spells itself becomes text.
+    public func bytes(of arguments: [String], in directory: URL) -> [UInt8]? {
         counter.increment()
         return spawn(arguments, in: directory)
     }
 
-    private func spawn(_ arguments: [String], in directory: URL) -> String? {
+    private func spawn(_ arguments: [String], in directory: URL) -> [UInt8]? {
         guard let executable = Self.executablePath() else { return nil }
 
         var descriptors: [Int32] = [-1, -1]
@@ -135,7 +151,7 @@ public struct GitCommand: Sendable {
         // 64 KiB pipe buffer, and a child blocked on write against a parent
         // blocked in waitpid is a deadlock that only shows up on the largest
         // repository the owner has.
-        var data = Data()
+        var data: [UInt8] = []
         var buffer = [UInt8](repeating: 0, count: 1 << 16)
         while true {
             let count = buffer.withUnsafeMutableBytes { raw in
@@ -160,10 +176,7 @@ public struct GitCommand: Sendable {
         while waitpid(pid, &status, 0) == -1, errno == EINTR {}
         guard Self.exitedCleanly(status) else { return nil }
 
-        // Invalid UTF-8 is replaced rather than rejected. git reports a path in
-        // whatever bytes the filesystem holds, and one badly named file should not
-        // blank the whole status bar.
-        return String(decoding: data, as: UTF8.self)
+        return data
     }
 
     /// A ``RepositoryStatus`` for a repository root, in-progress operation
@@ -198,7 +211,7 @@ public struct GitCommand: Sendable {
     public func read(
         ofRepositoryRoot root: URL
     ) -> (status: RepositoryStatus?, changes: [RepositoryFileChange]) {
-        guard let output = output(
+        guard let output = bytes(
             of: [
                 "--no-optional-locks",
                 "status",
@@ -259,7 +272,7 @@ public struct GitCommand: Sendable {
     /// answer as a repository holding nothing. A caller that needs to tell those
     /// apart has already asked for the status.
     public func files(ofRepositoryRoot root: URL) -> [FileTreeNode] {
-        guard let output = output(
+        guard let output = bytes(
             of: ["--no-optional-locks", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
             in: root
         ) else { return [] }

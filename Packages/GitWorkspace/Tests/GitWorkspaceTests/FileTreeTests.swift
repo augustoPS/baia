@@ -94,22 +94,65 @@ import Testing
     /// `ls-files -z` separates with NUL and ends with one, so a naive split leaves a
     /// trailing empty path that would become a nameless root node.
     @Test func nulSeparatedOutputIsSplitAndTheTrailingEmptyDropped() {
-        #expect(FileTree.paths(fromNulSeparated: "a.txt\0b.txt\0") == ["a.txt", "b.txt"])
+        #expect(FileTree.paths(fromNulSeparated: bytes("a.txt\0b.txt\0")) == ["a.txt", "b.txt"])
     }
 
     @Test func emptyNulSeparatedOutputIsNoPaths() {
-        #expect(FileTree.paths(fromNulSeparated: "").isEmpty)
+        #expect(FileTree.paths(fromNulSeparated: []).isEmpty)
     }
 
     /// The reason `-z` is passed at all. Without it git quotes any path with a
     /// space, a quote or a non-ASCII byte, and the tree would show a name nobody
     /// typed. With it the bytes arrive as they are.
     @Test func nulSeparationSurvivesAPathThatWouldOtherwiseBeQuoted() {
-        let output = "old name.txt\0caf\u{e9}.txt\0say \"hi\".txt\0"
+        let output = bytes("old name.txt\0caf\u{e9}.txt\0say \"hi\".txt\0")
         #expect(FileTree.paths(fromNulSeparated: output) == [
             "old name.txt",
             "caf\u{e9}.txt",
             "say \"hi\".txt",
         ])
     }
+
+    /// The split is over bytes, so a byte that is not UTF-8 is a path character like
+    /// any other. NUL is the one byte a path cannot hold, which is what `-z` trades
+    /// on, and it is the only one this looks for.
+    @Test func aPathThatIsNotUTF8SurvivesTheSplit() {
+        let output = bytes("a.txt\0caf") + [0xE9] + bytes(".txt\0")
+
+        #expect(FileTree.paths(fromNulSeparated: output) == [
+            "a.txt",
+            RepositoryPath(bytes("caf") + [0xE9] + bytes(".txt")),
+        ])
+    }
+
+    /// What the tree draws and what the tree *is*, for a name that has no text
+    /// spelling. The row shows the replacement character because it has to show
+    /// something; the node still carries what git wrote, which is the half a caller
+    /// needs to name the file.
+    @Test func aNodeKeepsTheBytesOfANameThatIsNotUTF8() {
+        let name = RepositoryPath(bytes("caf") + [0xE9] + bytes(".txt"))
+
+        let tree = FileTree.build(paths: [name])
+
+        #expect(tree.map(\.rawName) == [name])
+        #expect(tree.map(\.rawPath) == [name])
+        #expect(tree.map(\.name) == ["caf\u{FFFD}.txt"])
+    }
+
+    /// A directory whose own name is not UTF-8, so the split on `/` and the prefix a
+    /// child's path is built from are both proved to be byte work. A child's path
+    /// carries its parent's bytes, and rebuilding it from the drawn name would put
+    /// the replacement character in the middle of a path.
+    @Test func aDirectoryComponentThatIsNotUTF8ReachesItsChildrenIntact() {
+        let directory = bytes("caf") + [0xE9]
+        let tree = FileTree.build(paths: [RepositoryPath(directory + bytes("/main.swift"))])
+
+        #expect(tree.map(\.rawName) == [RepositoryPath(directory)])
+        #expect(tree[0].isDirectory)
+        #expect(tree[0].children.map(\.rawPath) == [
+            RepositoryPath(directory + bytes("/main.swift")),
+        ])
+    }
+
+    private func bytes(_ string: String) -> [UInt8] { Array(string.utf8) }
 }

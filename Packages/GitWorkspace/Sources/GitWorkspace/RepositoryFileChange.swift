@@ -45,15 +45,33 @@ public struct RepositoryFileChange: Sendable, Equatable {
         case unmerged = "U"
     }
 
-    /// Where the file is now. For a rename, the new path.
-    public let path: String
+    /// Where the file is now, as git wrote it. For a rename, the new path.
+    ///
+    /// Bytes rather than text, because a path is bytes: see ``RepositoryPath``. This
+    /// is the only spelling that names the file, so it is what a click would have to
+    /// send.
+    ///
+    /// **Nothing sends it yet.** `Sources/ChangesSurface.swift` and
+    /// `Sources/FilesSurface.swift` still pass ``path`` into the prompt, and
+    /// `PromptPath` takes a `String`, so the picker remains lossy for a name that is
+    /// not UTF-8. This package carries the bytes; wiring the app target to use them
+    /// is a separate change.
+    public let rawPath: RepositoryPath
 
     /// Where a renamed or copied file was, and nil for everything else.
     ///
-    /// Separated from ``path`` by a tab in the record rather than by a space, which
-    /// is the detail that makes a rename vanish from any parse that splits the line
-    /// on whitespace.
-    public let originalPath: String?
+    /// Its own NUL terminated entry under `-z` rather than a field after a tab,
+    /// which is the detail that makes a rename vanish from any parse that splits the
+    /// record on whitespace.
+    public let rawOriginalPath: RepositoryPath?
+
+    /// What a row draws, which is lossy for a path that is not UTF-8.
+    ///
+    /// Derived rather than stored, so it cannot drift from ``rawPath``.
+    public var path: String { rawPath.display }
+
+    /// The drawn spelling of ``rawOriginalPath``, lossy for the same reason.
+    public var originalPath: String? { rawOriginalPath?.display }
 
     /// The `X` column: what is staged.
     public let index: State?
@@ -63,15 +81,18 @@ public struct RepositoryFileChange: Sendable, Equatable {
 
     public let kind: Kind
 
+    /// Labelled for what they are rather than for how they are spelled, so a call
+    /// site reads the same as it did when both were `String`s. A literal still
+    /// works, since a path a caller can type has a text spelling.
     public init(
-        path: String,
-        originalPath: String? = nil,
+        path: RepositoryPath,
+        originalPath: RepositoryPath? = nil,
         index: State? = nil,
         worktree: State? = nil,
         kind: Kind
     ) {
-        self.path = path
-        self.originalPath = originalPath
+        rawPath = path
+        rawOriginalPath = originalPath
         self.index = index
         self.worktree = worktree
         self.kind = kind
