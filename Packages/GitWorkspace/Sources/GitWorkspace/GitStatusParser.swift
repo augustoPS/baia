@@ -51,6 +51,7 @@ public enum GitStatusParser {
     private static func text(_ field: ArraySlice<UInt8>) -> String {
         String(decoding: field, as: UTF8.self)
     }
+
     /// Parses `git status --porcelain=v2 --branch --untracked-files=all`.
     ///
     /// Nil when the output carries no branch header, which is what `git status`
