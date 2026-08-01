@@ -237,8 +237,10 @@ import Testing
     }
 
     /// The same byte on the surface the path picker reads, through the whole path
-    /// from git's pipe: a click sends what this carries, so a replaced byte here is
-    /// a path handed to the shell that no command can find.
+    /// from git's pipe. A click would have to send what this carries, since a
+    /// replaced byte is a path handed to the shell that no command can find. This
+    /// asserts the parser's answer only; the picker still sends the lossy spelling
+    /// and no test here reaches it.
     ///
     /// The entry is reported deleted because the file cannot exist on APFS, which is
     /// the same shape a Mac sees for any repository holding a path this filesystem

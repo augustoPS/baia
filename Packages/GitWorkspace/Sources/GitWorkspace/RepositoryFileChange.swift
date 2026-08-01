@@ -48,8 +48,14 @@ public struct RepositoryFileChange: Sendable, Equatable {
     /// Where the file is now, as git wrote it. For a rename, the new path.
     ///
     /// Bytes rather than text, because a path is bytes: see ``RepositoryPath``. This
-    /// is what a click has to send, since it is the only spelling that names the
-    /// file.
+    /// is the only spelling that names the file, so it is what a click would have to
+    /// send.
+    ///
+    /// **Nothing sends it yet.** `Sources/ChangesSurface.swift` and
+    /// `Sources/FilesSurface.swift` still pass ``path`` into the prompt, and
+    /// `PromptPath` takes a `String`, so the picker remains lossy for a name that is
+    /// not UTF-8. This package carries the bytes; wiring the app target to use them
+    /// is a separate change.
     public let rawPath: RepositoryPath
 
     /// Where a renamed or copied file was, and nil for everything else.

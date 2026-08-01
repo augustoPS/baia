@@ -60,10 +60,10 @@ import Testing
         #expect(GitStatusParser.changes([]).isEmpty)
     }
 
-    /// The path the picker sends, for a name with no text spelling. `rawPath` is
-    /// what the file is called and `path` is what the row draws, and the second
-    /// cannot name the file: every byte that is not UTF-8 draws as the same
-    /// replacement character.
+    /// The path the picker would have to send, for a name with no text spelling.
+    /// `rawPath` is what the file is called and `path` is what the row draws, and
+    /// the second cannot name the file: every byte that is not UTF-8 draws as the
+    /// same replacement character. The picker still sends the second one.
     @Test func aPathThatIsNotUTF8KeepsItsBytes() {
         let output = headerOnly + PorcelainFixture.bytes("? ") + latin1 + [0]
 
