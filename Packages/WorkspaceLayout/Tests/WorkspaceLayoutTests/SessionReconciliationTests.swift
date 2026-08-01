@@ -33,7 +33,8 @@ import Testing
                 PaneState(id: second, workingDirectory: secondDirectory, pinnedDirectory: nil, createdBy: nil),
             ],
             windowFrame: nil,
-            sidebar: nil
+            sidebar: nil,
+            fileTreeExpansions: nil
         )
     }
 
@@ -85,7 +86,8 @@ import Testing
             workspace: Workspace(pane: never),
             panes: [PaneState(id: never, workingDirectory: nil, pinnedDirectory: nil, createdBy: nil)],
             windowFrame: nil,
-            sidebar: nil
+            sidebar: nil,
+            fileTreeExpansions: nil
         )
 
         // Nil means the pane's surface had not come up when the session was written,
@@ -103,7 +105,8 @@ import Testing
             workspace: Workspace(pane: pane),
             panes: [PaneState(id: pane, workingDirectory: "/here", pinnedDirectory: "/gone", createdBy: nil)],
             windowFrame: nil,
-            sidebar: nil
+            sidebar: nil,
+            fileTreeExpansions: nil
         )
 
         let result = SessionStore.reconciled(snapshot, directoryExists: existing("/here"))
@@ -129,7 +132,8 @@ import Testing
                 PaneState(id: survivor, workingDirectory: "/here", pinnedDirectory: nil, createdBy: nil),
             ],
             windowFrame: nil,
-            sidebar: nil
+            sidebar: nil,
+            fileTreeExpansions: nil
         )
 
         let result = SessionStore.reconciled(snapshot, directoryExists: existing("/here"))
@@ -163,7 +167,8 @@ import Testing
             workspace: Workspace(tabs: [Tab(pane: PaneID()), Tab(pane: PaneID())], focusedTabIndex: 9),
             panes: [],
             windowFrame: nil,
-            sidebar: nil
+            sidebar: nil,
+            fileTreeExpansions: nil
         )
 
         let result = SessionStore.reconciled(snapshot, directoryExists: { _ in true })
@@ -179,7 +184,8 @@ import Testing
             workspace: Workspace(tabs: [Tab(pane: PaneID())], focusedTabIndex: -3),
             panes: [],
             windowFrame: nil,
-            sidebar: nil
+            sidebar: nil,
+            fileTreeExpansions: nil
         )
 
         let result = SessionStore.reconciled(snapshot, directoryExists: { _ in true })
@@ -235,7 +241,8 @@ import Testing
                 PaneState(id: leftover, workingDirectory: "/gone", pinnedDirectory: nil, createdBy: nil),
             ],
             windowFrame: nil,
-            sidebar: nil
+            sidebar: nil,
+            fileTreeExpansions: nil
         )
 
         let result = SessionStore.reconciled(snapshot, directoryExists: existing("/here"))
@@ -326,5 +333,71 @@ import Testing
         // an unconditional clear: an owner asking where a pane came from still has an
         // answer after a relaunch.
         #expect(result.snapshot.panes[1].createdBy == parent)
+    }
+
+    @Test func treeExpansionsKeyedUnderASurvivingWorkingDirectoryAreKept() {
+        let pane = PaneID()
+        var snapshot = SessionSnapshot(
+            workspace: Workspace(pane: pane),
+            panes: [PaneState(id: pane, workingDirectory: "/here", pinnedDirectory: nil, createdBy: nil)],
+            windowFrame: nil,
+            sidebar: nil,
+            fileTreeExpansions: nil
+        )
+        snapshot.fileTreeExpansions = ["/here": ["Sources", "Sources/PaneChrome"]]
+
+        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/here"))
+
+        #expect(result.snapshot.fileTreeExpansions == ["/here": ["Sources", "Sources/PaneChrome"]])
+    }
+
+    @Test func treeExpansionsKeyedUnderASurvivingPinnedDirectoryAreKept() {
+        let pane = PaneID()
+        var snapshot = SessionSnapshot(
+            workspace: Workspace(pane: pane),
+            panes: [PaneState(id: pane, workingDirectory: "/here", pinnedDirectory: "/pin", createdBy: nil)],
+            windowFrame: nil,
+            sidebar: nil,
+            fileTreeExpansions: nil
+        )
+        snapshot.fileTreeExpansions = ["/pin": ["Sources"]]
+
+        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/here", "/pin"))
+
+        #expect(result.snapshot.fileTreeExpansions == ["/pin": ["Sources"]])
+    }
+
+    /// The pruning rule itself: an anchor no surviving pane names is dropped, not
+    /// merely left stale, so the file cannot go on remembering a repository the
+    /// restored workspace no longer holds.
+    @Test func treeExpansionsKeyedUnderAnAnchorNoSurvivingPaneNamesArePruned() {
+        let kept = PaneID()
+        let gone = PaneID()
+        var snapshot = twoPaneSnapshot(
+            first: kept,
+            second: gone,
+            firstDirectory: "/kept",
+            secondDirectory: "/gone"
+        )
+        snapshot.fileTreeExpansions = ["/kept": ["Sources"], "/gone": ["Old"]]
+
+        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/kept"))
+
+        #expect(result.snapshot.fileTreeExpansions == ["/kept": ["Sources"]])
+    }
+
+    @Test func aNilFileTreeExpansionsStaysNilThroughReconciliation() {
+        let pane = PaneID()
+        let snapshot = SessionSnapshot(
+            workspace: Workspace(pane: pane),
+            panes: [PaneState(id: pane, workingDirectory: "/here", pinnedDirectory: nil, createdBy: nil)],
+            windowFrame: nil,
+            sidebar: nil,
+            fileTreeExpansions: nil
+        )
+
+        let result = SessionStore.reconciled(snapshot, directoryExists: existing("/here"))
+
+        #expect(result.snapshot.fileTreeExpansions == nil)
     }
 }

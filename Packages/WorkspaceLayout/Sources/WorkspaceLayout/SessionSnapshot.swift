@@ -38,6 +38,16 @@ public struct SessionSnapshot: Sendable, Equatable, Codable {
     /// split are what a nil restores to.
     public var sidebar: SidebarGeometry?
 
+    /// Which directories the file tree was left showing, per anchor. Added without
+    /// bumping ``currentSchemaVersion`` for the same reason ``sidebar`` was: a file
+    /// written before this field existed decodes it as nil, and nil is exactly "the
+    /// previous version did not record this".
+    ///
+    /// ``SessionStore/reconciled(_:directoryExists:)`` prunes this to the anchors
+    /// still named by a surviving pane, so a quit cannot leave the file remembering
+    /// a repository the restored workspace no longer holds.
+    public var fileTreeExpansions: [String: [String]]?
+
     /// No defaulted parameters, deliberately, which is the rule ``Settings`` states
     /// and this type learned the hard way. `sidebar` shipped with a default of nil
     /// and `SessionStore.reconciled` kept compiling while silently dropping it, so a
@@ -48,12 +58,14 @@ public struct SessionSnapshot: Sendable, Equatable, Codable {
         workspace: Workspace,
         panes: [PaneState],
         windowFrame: WindowFrame?,
-        sidebar: SidebarGeometry?
+        sidebar: SidebarGeometry?,
+        fileTreeExpansions: [String: [String]]?
     ) {
         self.schemaVersion = schemaVersion
         self.workspace = workspace
         self.panes = panes
         self.windowFrame = windowFrame
         self.sidebar = sidebar
+        self.fileTreeExpansions = fileTreeExpansions
     }
 }

@@ -162,6 +162,15 @@ public struct SessionStore: Sendable {
             return rerooted
         }
 
+        // Every directory a surviving pane could be anchored at: the working
+        // directory for an automatic anchor, the pin for a pinned one. An entry
+        // keyed under neither names a repository nothing in the restored window
+        // points at, and keeping it would let the file outgrow the workspace.
+        let survivingAnchors = Set(restorable.flatMap { [$0.workingDirectory, $0.pinnedDirectory].compactMap(\.self) })
+        let prunedExpansions = snapshot.fileTreeExpansions.map { expansions in
+            expansions.filter { survivingAnchors.contains($0.key) }
+        }
+
         return (
             snapshot: SessionSnapshot(
                 schemaVersion: snapshot.schemaVersion,
@@ -172,7 +181,8 @@ public struct SessionStore: Sendable {
                 // that was not: a sidebar dragged wide came back at its default
                 // because this rebuilt the snapshot without it while the file on
                 // disk was correct the whole time.
-                sidebar: snapshot.sidebar
+                sidebar: snapshot.sidebar,
+                fileTreeExpansions: prunedExpansions
             ),
             droppedPanes: dropped
         )

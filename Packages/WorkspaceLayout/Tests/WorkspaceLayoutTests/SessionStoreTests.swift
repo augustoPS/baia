@@ -46,7 +46,8 @@ import Testing
                 ),
             ],
             windowFrame: WindowFrame(x: 8, y: 8, width: 1200, height: 800),
-            sidebar: nil
+            sidebar: nil,
+            fileTreeExpansions: nil
         )
     }
 
@@ -206,7 +207,8 @@ import Testing
             workspace: Workspace(pane: PaneID()),
             panes: [],
             windowFrame: nil,
-            sidebar: nil
+            sidebar: nil,
+            fileTreeExpansions: nil
         )
 
         #expect(store.save(large))
@@ -243,7 +245,8 @@ import Testing
             workspace: Workspace(tabs: [], focusedTabIndex: 0),
             panes: [],
             windowFrame: nil,
-            sidebar: sidebar
+            sidebar: sidebar,
+            fileTreeExpansions: nil
         )
     }
 
@@ -283,7 +286,8 @@ import Testing
             workspace: Workspace(pane: pane),
             panes: [PaneState(id: pane, workingDirectory: "/tmp", createdBy: nil)],
             windowFrame: WindowFrame(x: 1, y: 2, width: 3, height: 4),
-            sidebar: SidebarGeometry(width: 462, splitHeight: 516)
+            sidebar: SidebarGeometry(width: 462, splitHeight: 516),
+            fileTreeExpansions: ["/tmp": ["a", "b"]]
         )
     }
 
@@ -307,5 +311,22 @@ import Testing
         let (reconciled, dropped) = SessionStore.reconciled(snapshot()) { _ in false }
         #expect(!dropped.isEmpty)
         #expect(reconciled.sidebar?.width == 462)
+    }
+
+    /// Unlike the geometry above, this one is not carried unconditionally: the
+    /// anchor it is keyed under has to still be a surviving pane's directory, or
+    /// the file would go on remembering a repository nothing restores it into.
+    @Test func theTreeExpansionsSurviveReconciliationWhenTheirAnchorIsStillAPane() {
+        let (reconciled, _) = SessionStore.reconciled(snapshot()) { _ in true }
+        #expect(reconciled.fileTreeExpansions == ["/tmp": ["a", "b"]])
+    }
+
+    /// The other half: dropping the one pane that named `/tmp` drops the
+    /// expansions recorded under it too, which is what keeps the file from
+    /// outgrowing the workspace it is next to.
+    @Test func theTreeExpansionsArePrunedWhenTheirAnchorsPaneIsDropped() {
+        let (reconciled, dropped) = SessionStore.reconciled(snapshot()) { _ in false }
+        #expect(!dropped.isEmpty)
+        #expect(reconciled.fileTreeExpansions == [:])
     }
 }
