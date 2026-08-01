@@ -159,7 +159,12 @@ final class PaneTreeController: NSViewController {
             // One tree's snapshot, which is not the session's. The sidebar belongs
             // to the window and is written once by the delegate, so a per-tree
             // snapshot carrying a guess at it would fight the real one.
-            sidebar: nil
+            sidebar: nil,
+            // Nil for the same reason, and it is the sharper case of it: the open
+            // directories live on the sidebar's Files surface, which a tree cannot
+            // reach at all. A tree answering `[:]` here would be a window claiming
+            // it had nothing open.
+            fileTreeExpansions: nil
         )
     }
 

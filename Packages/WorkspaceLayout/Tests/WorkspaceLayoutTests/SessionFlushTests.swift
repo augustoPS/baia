@@ -19,7 +19,8 @@ import Testing
             workspace: Workspace(tabs: [Tab(pane: PaneID())], focusedTabIndex: 0),
             panes: [],
             windowFrame: WindowFrame(x: 0, y: 0, width: width, height: 600),
-            sidebar: nil
+            sidebar: nil,
+            fileTreeExpansions: nil
         )
     }
 

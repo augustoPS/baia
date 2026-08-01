@@ -534,12 +534,17 @@ final class ControlAdapter: ControlWorkspaceBridge {
                         focusedTabIndex: 0
                     ),
                     panes: states,
-                    // Both nil: a document carries no geometry, so the window takes
+                    // All nil: a document carries no geometry, so the window takes
                     // whatever AppKit gives it and the sidebar opens at its default.
                     // A frame invented here would be one more thing the file claims
                     // and does not hold.
                     windowFrame: nil,
-                    sidebar: nil
+                    sidebar: nil,
+                    // All three nil, and this one could not be anything else: a
+                    // layout opens fresh panes at directories the document names,
+                    // so there is no earlier run whose open directories these
+                    // would be.
+                    fileTreeExpansions: nil
                 )
             )
         }

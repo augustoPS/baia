@@ -56,7 +56,8 @@ import Testing
                 createdBy: nil
             )],
             windowFrame: WindowFrame(x: -12.5, y: 33, width: 1680, height: 1050),
-            sidebar: nil
+            sidebar: nil,
+            fileTreeExpansions: nil
         )
 
         let data = try JSONEncoder().encode(snapshot)
@@ -73,7 +74,8 @@ import Testing
             workspace: Workspace(pane: PaneID()),
             panes: [],
             windowFrame: nil,
-            sidebar: nil
+            sidebar: nil,
+            fileTreeExpansions: nil
         )
 
         let data = try JSONEncoder().encode(snapshot)
@@ -81,6 +83,33 @@ import Testing
 
         #expect(decoded == snapshot)
         #expect(decoded.windowFrame == nil)
+    }
+
+    @Test func aSnapshotWithFileTreeExpansionsSurvivesAJSONRoundTrip() throws {
+        let snapshot = SessionSnapshot(
+            workspace: Workspace(pane: PaneID()),
+            panes: [],
+            windowFrame: nil,
+            sidebar: nil,
+            fileTreeExpansions: ["/repos/baia": ["Sources", "Sources/PaneChrome"]]
+        )
+
+        let data = try JSONEncoder().encode(snapshot)
+        let decoded = try JSONDecoder().decode(SessionSnapshot.self, from: data)
+
+        #expect(decoded == snapshot)
+        #expect(decoded.fileTreeExpansions == ["/repos/baia": ["Sources", "Sources/PaneChrome"]])
+    }
+
+    /// The reason no schema bump is needed, matching ``sidebar``'s own test: a file
+    /// written before this field existed must still load, and nil is what "the
+    /// previous version did not record this" means.
+    @Test func aSessionWrittenBeforeTreeExpansionsExistedStillLoads() throws {
+        let json = """
+        {"schemaVersion":1,"workspace":{"tabs":[],"focusedTabIndex":0},"panes":[]}
+        """
+        let decoded = try JSONDecoder().decode(SessionSnapshot.self, from: Data(json.utf8))
+        #expect(decoded.fileTreeExpansions == nil)
     }
 
     @Test func theEncodedAxisIsTheWordAndNotAnEmptyObject() throws {
@@ -100,7 +129,7 @@ import Testing
     }
 
     @Test func theSchemaVersionIsWrittenIntoTheFile() throws {
-        let snapshot = SessionSnapshot(workspace: Workspace(pane: PaneID()), panes: [], windowFrame: nil, sidebar: nil)
+        let snapshot = SessionSnapshot(workspace: Workspace(pane: PaneID()), panes: [], windowFrame: nil, sidebar: nil, fileTreeExpansions: nil)
 
         let json = String(decoding: try JSONEncoder().encode(snapshot), as: UTF8.self)
 
@@ -131,7 +160,7 @@ import Testing
         let dragged = workspace.setRatio(at: SplitPath([1]), to: 0.32)
         #expect(dragged)
 
-        let snapshot = SessionSnapshot(workspace: workspace, panes: [], windowFrame: nil, sidebar: nil)
+        let snapshot = SessionSnapshot(workspace: workspace, panes: [], windowFrame: nil, sidebar: nil, fileTreeExpansions: nil)
         let decoded = try JSONDecoder().decode(SessionSnapshot.self, from: JSONEncoder().encode(snapshot))
 
         // The whole point of writing a drag into the model rather than leaving it in

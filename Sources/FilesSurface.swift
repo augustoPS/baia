@@ -96,11 +96,27 @@ final class FilesSurface: NSObject, WorkspaceSurface {
         }
     }
 
-    /// What each anchor was left showing. Session-scoped by construction: it lives
-    /// on the surface, and the surface dies with its window. Carrying it across a
-    /// relaunch would mean a field in `SessionSnapshot` and a rule for pruning it,
-    /// which is a larger question than the loss this fixes.
+    /// What each anchor was left showing.
     private var expansions = FileTreeExpansions()
+
+    /// The same, in the shape the session file carries, and the two directions a
+    /// relaunch needs it in.
+    ///
+    /// **The getter takes the live set from the rows**, which is where an
+    /// expansion actually lands: `FileTreeExpansions` is only handed a set when the
+    /// surface is repointed, so the anchor on screen at quit is the one it has
+    /// never been told about.
+    ///
+    /// **The setter assigns back into the rows** rather than only filling the map.
+    /// A window's sidebar is refreshed as it opens and the session's expansions are
+    /// applied once every window exists, so by the time this is set the surface has
+    /// usually already been pointed at an anchor and shown it empty. Seeding
+    /// without redisplaying is how a persisted field gets written, read back, and
+    /// changes nothing on screen.
+    var fileTreeExpansions: [String: [String]] {
+        get { expansions.recording(rows.expanded) }
+        set { rows.expanded = expansions.seed(newValue, showing: rows.expanded) }
+    }
 
     /// The same change list the Changes section is given, which the tree reduces to
     /// one glyph per row. The two are not alternatives: a list ordered for

@@ -64,7 +64,7 @@ bad() { echo "  FAIL  $1"; echo "          wanted: $2"; echo "          got:    
 # `.descendant` and resolves `subject == actor`, which is what lets a pane read
 # itself.
 prompt_line() {
-    python3 "$HERE/read-prompt.py" "$BAIA_SOCK" "$READOUT"
+    python3 "$REPO/Diagnostics/lib/read-prompt.py" "$BAIA_SOCK" "$READOUT"
 }
 
 expect_prompt() {
