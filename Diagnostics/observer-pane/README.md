@@ -141,6 +141,13 @@ pane that the events were "permission prompts via OSC, not hook reports".
 4. **Reads outside the worktree prompt.** The briefs quote paths that resolve
    against the main repo, so the first read of a named file leaves the workspace.
 
-Together these mean the run needs a hand every few minutes, which is precisely
-what it was built to avoid. Fixing 1 to 4 is the difference between this being a
-demo and being usable.
+These do not make the run slow. They **stop** it. On 2026-08-01 all four panes,
+the three executors and the observer, halted at their *first* permission ask and
+none resumed until a hand cleared them. The three executors ended with zero
+commits and zero modified files, so the observer's six verdicts were all
+`on-brief` about agents that never did anything, and **acceptance criterion 3
+failed**: the log holds no `off-brief` verdict because no drift could occur.
+
+Fixing 1 to 4 is the difference between this being a demo and being usable. Close
+1 first, since it fires before any work starts, and 3 next, since it halts the
+observer on every attempt to write the log the run exists to produce.
