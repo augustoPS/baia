@@ -59,6 +59,30 @@ public struct ControlArgs: Sendable, Equatable, Codable {
     /// would have started anyway.
     public var cwd: String?
 
+    /// `split`: what the new pane runs instead of a login shell. Nil is a login
+    /// shell, which is what every pane opened by hand gets.
+    ///
+    /// **Passed to ghostty verbatim**, as its `command` config key, so the
+    /// caller's string keeps ghostty's own meaning: a bare value with arguments
+    /// goes through `/bin/sh -c`, `direct:` execs without a shell, and `shell:`
+    /// forces the wrap. Nothing here wraps it, because a pane that runs something
+    /// other than what the caller wrote is a pane whose behaviour lives in two
+    /// places. The lifetime decision, whether a shell survives the command, is
+    /// the caller's and is spelled in the caller's string.
+    ///
+    /// **A newline is refused, and that refusal is load-bearing.** The value is
+    /// rendered into a ghostty config file as `command = <value>` and the file is
+    /// parsed line by line, so a value carrying a newline writes a second config
+    /// key of the caller's choosing. `clipboard-read = allow` is one line, and it
+    /// undoes the OSC 52 denial every pane is built with. Refused at
+    /// ``ControlWire/refusalForCommand(_:)``, which both the CLI and the server
+    /// call, because a hand-written frame never passes through the CLI.
+    ///
+    /// This grants no execution a caller did not already have: a pane asking for
+    /// this is a pane with a shell it can run the same command in. What it grants
+    /// is *where*, and the parentage graph already records who asked.
+    public var command: String?
+
     /// `resize`: which way the caller wants to grow.
     public var direction: ControlDirection?
 
@@ -138,6 +162,7 @@ public struct ControlArgs: Sendable, Equatable, Codable {
     public init(
         axis: ControlAxis? = nil,
         cwd: String? = nil,
+        command: String? = nil,
         direction: ControlDirection? = nil,
         by: Double? = nil,
         on: Bool? = nil,
@@ -158,6 +183,7 @@ public struct ControlArgs: Sendable, Equatable, Codable {
     ) {
         self.axis = axis
         self.cwd = cwd
+        self.command = command
         self.direction = direction
         self.by = by
         self.on = on

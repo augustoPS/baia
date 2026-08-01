@@ -291,10 +291,20 @@ final class ControlAdapter: ControlWorkspaceBridge {
         // same default is applied here rather than trusted from the frame.
         let axis: SplitAxis = args.axis == .vertical ? .vertical : .horizontal
 
+        // Decided here and not only in the CLI, because a frame written by hand
+        // never passes through the CLI, and the newline half of this rule is what
+        // stops a command from writing a second ghostty config key over the
+        // clipboard denials. `ControlWire` owns the rule so the two copies cannot
+        // drift.
+        if let command = args.command, let refusal = ControlWire.refusalForCommand(command) {
+            return .failure(.refused, refusal)
+        }
+
         guard let new = placed.tree.split(
             pane: placed.pane.paneID,
             axis: axis,
             workingDirectory: args.cwd,
+            command: args.command,
             createdBy: placed.pane.paneID
         ) else {
             return .failure(

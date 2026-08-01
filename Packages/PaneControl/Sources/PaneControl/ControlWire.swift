@@ -194,6 +194,46 @@ public enum ControlWire {
     /// disagree about which channel a bare `publish` created.
     public static let defaultChannelName = "default"
 
+    /// Bytes in a `split --command` string.
+    ///
+    /// A command is an argv line and not a document. The cap is here rather than
+    /// left to ``maxFrameBytes`` because the value is written into a file the
+    /// terminal parses, and "as much as a frame holds" is 256 KB of somebody
+    /// else's config format.
+    public static let maxCommandBytes = 4 * 1024
+
+    /// Why a `split --command` cannot be honoured, or nil for one that can.
+    ///
+    /// **The newline rule is a security boundary, not tidiness.** The value
+    /// reaches ghostty as a line of a config file it parses line by line
+    /// (`TerminalConfiguration.renderedLine` joins commands with a newline), so a
+    /// command carrying one writes a second config key. `clipboard-read = allow`
+    /// is such a key, and it undoes the OSC 52 denial every pane is built with,
+    /// which is the one setting this project has a standing rule never to relax.
+    /// A caller who wants two statements has `;`, which is the shell's separator
+    /// and not the config's.
+    ///
+    /// Called by the CLI before the socket is opened and by the server on every
+    /// frame. Both, and not either: the CLI's copy turns a typo into a message at
+    /// the prompt, and the server's is the one that counts, because
+    /// a hand-written frame never passes through the CLI.
+    ///
+    /// An empty command is refused rather than treated as absent. Omitting
+    /// `--command` is how a caller asks for a login shell, and a caller who
+    /// passed an empty string has a variable that did not expand.
+    public static func refusalForCommand(_ command: String) -> String? {
+        if command.isEmpty {
+            return "--command needs a command. Leave it out for a login shell."
+        }
+        if command.contains(where: \.isNewline) {
+            return "--command cannot contain a newline. Use ; to separate commands."
+        }
+        if command.utf8.count > maxCommandBytes {
+            return "--command is longer than \(maxCommandBytes) bytes."
+        }
+        return nil
+    }
+
     /// Whether a framed line fits the cap.
     ///
     /// Exists so the `recv` drain can frame a candidate response and ask, which

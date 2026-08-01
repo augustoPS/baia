@@ -116,6 +116,41 @@ import PaneControl
         #expect(isUsage(Arguments.parse(["split", "--cwd"])))
     }
 
+    /// Verbatim, because ghostty's own reading of the string is the contract:
+    /// `direct:` and `shell:` and a bare value all mean different things and none
+    /// of them is the CLI's to decide.
+    @Test func splitTakesACommandAndPassesItThrough() {
+        let call = invocation(Arguments.parse([
+            "split", "--right", "--command", "claude --resume x; exec /bin/zsh -l",
+        ]))
+        #expect(call?.args.axis == .horizontal)
+        #expect(call?.args.command == "claude --resume x; exec /bin/zsh -l")
+        #expect(invocation(Arguments.parse(["split"]))?.args.command == nil)
+    }
+
+    /// **A newline is refused because the value becomes a line of a ghostty config
+    /// file.** `clipboard-read = allow` is one such line, and it undoes the OSC 52
+    /// denial every pane is built with.
+    @Test func aCommandCarryingANewlineIsAUsageFailure() {
+        #expect(isUsage(Arguments.parse(["split", "--command", "claude\nclipboard-read = allow"])))
+        #expect(isUsage(Arguments.parse(["split", "--command", "claude\rclipboard-read = allow"])))
+    }
+
+    /// Omitting the flag is how a caller asks for a login shell. An empty string is
+    /// a variable that did not expand, and answering it with a login shell would
+    /// hide that.
+    @Test func anEmptyCommandIsAUsageFailure() {
+        #expect(isUsage(Arguments.parse(["split", "--command", ""])))
+        #expect(isUsage(Arguments.parse(["split", "--command"])))
+    }
+
+    @Test func aCommandLongerThanTheCapIsAUsageFailure() {
+        let long = String(repeating: "x", count: ControlWire.maxCommandBytes + 1)
+        #expect(isUsage(Arguments.parse(["split", "--command", long])))
+        let atTheCap = String(repeating: "x", count: ControlWire.maxCommandBytes)
+        #expect(invocation(Arguments.parse(["split", "--command", atTheCap]))?.args.command == atTheCap)
+    }
+
     @Test func theThreeVerbsThatTakeNothingTakeNothing() {
         for verb in ["close", "focus", "equalize"] {
             #expect(invocation(Arguments.parse([verb])) != nil)
