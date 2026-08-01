@@ -48,6 +48,50 @@ import Testing
         return root
     }
 
+    /// `café.txt` in Latin-1: eight bytes, where the fourth is `0xE9` and is not a
+    /// UTF-8 sequence at all. UTF-8 spells the same name in nine.
+    private static let latin1Name: [UInt8] = Array("caf".utf8) + [0xE9] + Array(".txt".utf8)
+
+    /// Adds an index entry named by `name`'s bytes to the repository at `path`.
+    ///
+    /// **The file cannot be written to disk, and that is not a shortcut taken here.**
+    /// APFS refuses a name that is not valid UTF-8: `open` fails with `EILSEQ`, so
+    /// no fixture on this machine can create `caf<E9>.txt`. Git's index has no such
+    /// rule and neither does a tree object, so a repository cloned from a filesystem
+    /// that allowed the name (an ext4 checkout, an NFS or SMB share, an ExFAT
+    /// volume) holds the path in exactly this shape on a Mac, with nothing on disk
+    /// to match it. `git ls-files` lists it and `git status` reports it deleted,
+    /// which is how these bytes reach the parsers in the field.
+    ///
+    /// `Process` rather than ``GitCommand``, and stdin rather than an argument,
+    /// because argv is where this stops being expressible: `posix_spawn` takes C
+    /// strings built from Swift `String`s, and a `String` cannot hold `0xE9` on its
+    /// own. On a pipe, bytes stay bytes.
+    private func indexEntry(named name: [UInt8], in path: String) throws {
+        let sha = try #require(
+            run(["rev-parse", ":c.txt"], in: path)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        let process = Process()
+        process.executableURL = URL(filePath: "/usr/bin/git")
+        process.arguments = [
+            "-C", fixture.root.appending(path: path).path(percentEncoded: false),
+            "update-index", "-z", "--index-info",
+        ]
+        let input = Pipe()
+        process.standardInput = input
+        try process.run()
+        // `mode SP sha TAB path`, and under `-z` the path is terminated by a NUL
+        // rather than by a newline, which is what lets it hold any byte but that
+        // one.
+        try input.fileHandleForWriting.write(
+            contentsOf: Data("100644 \(sha)\t".utf8) + Data(name) + Data([0])
+        )
+        try input.fileHandleForWriting.close()
+        process.waitUntilExit()
+        #expect(process.terminationStatus == 0)
+    }
+
     @Test func readsStandardOutputOfARealGitCommand() {
         // Proves the pipe is wired and drained at all. Everything below depends on
         // it, and `--version` needs no repository, so a failure here separates a
@@ -160,6 +204,38 @@ import Testing
             "two\nlines.txt",
         ])
         #expect(changes.allSatisfy { $0.kind == .untracked })
+    }
+
+    /// The mangling this branch exists to fix, made visible before anything is done
+    /// about it. `-z` stops git from quoting the name, and the bytes still do not
+    /// survive: `String(decoding:as:UTF8.self)` replaces the one byte that is not
+    /// UTF-8 with U+FFFD rather than refusing it, so the tree draws a name nobody
+    /// typed and hands it to anything downstream.
+    ///
+    /// Both halves are asserted on purpose. The first says what is drawn, the second
+    /// says the byte is *gone* rather than escaped: no name in the answer carries
+    /// what git wrote, so nothing downstream can recover the path from it.
+    @Test func aFileWhoseNameIsNotUTF8ArrivesWithTheByteReplaced() throws {
+        let root = try repository("proj")
+        try indexEntry(named: Self.latin1Name, in: "proj")
+
+        let names = git.files(ofRepositoryRoot: root).map(\.name)
+
+        #expect(names.contains("caf\u{FFFD}.txt"))
+        #expect(names.contains { Array($0.utf8) == Self.latin1Name } == false)
+    }
+
+    /// The same byte on the surface the path picker reads. A click sends what this
+    /// carries, so a replaced byte here is a path handed to the shell that no
+    /// command can find.
+    @Test func aChangedPathThatIsNotUTF8ArrivesWithTheByteReplaced() throws {
+        let root = try repository("proj")
+        try indexEntry(named: Self.latin1Name, in: "proj")
+
+        let changes = git.read(ofRepositoryRoot: root).changes
+
+        #expect(changes.map(\.path) == ["caf\u{FFFD}.txt"])
+        #expect(changes.contains { Array($0.path.utf8) == Self.latin1Name } == false)
     }
 
     /// A real rename, so the two-entry layout `-z` gives a `2` record is read from
