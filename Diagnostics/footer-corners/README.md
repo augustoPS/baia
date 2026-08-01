@@ -2,8 +2,9 @@
 
 `./run.sh` from anywhere. It measures the window's own rounded corner, measures
 the ones the footer and the attention frame draw, checks that rounding a corner
-did not move the bar or its text, and checks that the footer stops curving when
-the window does. Seven arms, one process each, and every arm is followed by a
+did not move the bar or its text, checks that the acknowledged level draws a line
+along the bottom edge, and checks that the footer stops curving when the window
+does. Eight arms, one process each, and every arm is followed by a
 `break` variant that damages the thing under test and is expected to fail.
 `run.sh` inverts those, so a control that stops failing fails the run as loudly as
 an arm that stops passing.
@@ -166,6 +167,42 @@ paths. The measured spread is 0.022 inward and 0.047 outward. That is nowhere ne
 loose enough to pass a square bar: the control renders the same bar with no
 corners, which is pixel for pixel what a `draw(_:)` with no clip produces for a
 pane in the corner, and it misses by 10.03 pt on the second row.
+
+## ackline
+
+Does an acknowledged pane draw a line along the bottom edge, inside the corner and
+inside the focus frame?
+
+The level exists to be findable across a window while staying quiet enough to work
+beside, and until 2026-07-31 the only thing carrying it was a 6 pt square at the
+far left of one footer. A live look at three panes could not tell an acknowledged
+pane from one asking nothing, which is the distance the level is for, so the bar
+gained a line along its bottom edge in the attention colour.
+
+Measured as a difference between two renders of the same bar, one at
+`.acknowledged` and one at `.none`, rather than by looking for colour near the
+bottom. The hairline is down there on every bar in the app, so "something is
+coloured at the bottom edge" is true whatever this level does; only a difference
+says the pixels arrived because the pane is acknowledged.
+
+Three claims, because three separate things take the line away without a word:
+
+- **It is drawn at all.** Every row of it differs from the plain bar at mid-width,
+  away from any curve that could be blamed for a partial row.
+- **It is clipped to the corner.** The bottom-left pixel is unchanged. A plain
+  full-width rect paints that pixel, which sits outside the curve the pane shares
+  with the window, and `drawContent` renders into a view with no clip of its own,
+  so the clip is this draw's own responsibility rather than something inherited
+  from `draw(_:)`.
+- **It survives focus.** The focus frame is stroked over this view by
+  `drawBarFrame(in:)`, so a line on the extreme edge is not covered on a focused
+  pane, it is gone. The rows are read one `focusFrameWidth` in, and the focused
+  pane is the one most likely to be acknowledged.
+
+The control renders the acknowledged bar as an ordinary one, which is pixel for
+pixel what deleting the draw produces. It fails the first and third claims and
+passes the second, which is correct: a line that is never drawn cannot break a
+corner.
 
 ## frame
 
