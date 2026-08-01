@@ -60,8 +60,11 @@ Nothing else in `Sources/`. If a move seems to need a second file, stop and say 
 Both, and neither is optional. `make test` never compiles `Sources/`, so it cannot
 see a call site you broke; `make build` never runs a test, so it cannot see
 behaviour you changed. On 2026-08-01 a branch was merged-blocked because its brief
-named only the second of those. The first `make test` compiles cold and takes about
-95 seconds; every run after is about 8.
+named only the second of those.
+
+Measured in a fresh worktree on 2026-08-01, so a slow command is not a stuck one:
+`make build` takes about 25 seconds cold, and the first `make test` about 95, with
+every `make test` after that about 8.
 
 ## Rules
 

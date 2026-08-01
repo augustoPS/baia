@@ -56,9 +56,11 @@ tools; your turn continues while you do.
   in a brief and different on a screen.
 - **`unclear` is a real answer.** A screen showing a compile error says nothing
   about direction. Spending a verdict on it costs the measurement.
-- **A long silence is not a drift.** The first `make test` in a fresh worktree
-  compiles cold and takes about 95 seconds. An executor quiet for two minutes is
-  probably building.
+- **A long silence is not a drift.** Measured in a fresh worktree on 2026-08-01:
+  `make build` takes about 25 seconds cold and the first `make test` about 95. An
+  executor quiet for two minutes is probably building. Every brief in this wave
+  runs both commands on every step, so silences are more frequent than last time
+  rather than less.
 - **Read `source` off the subscribe event, never the footer.** `blocked` has two
   producers: the hook reports it with `source: "report"`, and a permission prompt
   rings the bell, which raises the same level through OSC with no hook involved.
