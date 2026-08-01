@@ -1,0 +1,1 @@
+{"seq": 26, "pane": "614CF825-9AB3-4727-A3D0-56CC7DCBE059", "item": "utf8-filenames", "verdict": "on-brief", "evidence": "Screen shows the pane seeding a Latin-1 fixture repo in its scratchpad via perl printing 100644 <sha>\\tcaf\\xe9.txt into git update-index -z --index-info, fixture-first with no GitWorkspace source edit on screen.", "wrote_at": "2026-08-01T17:54:52Z"}

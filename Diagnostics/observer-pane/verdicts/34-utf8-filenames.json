@@ -1,0 +1,1 @@
+{"seq": 34, "pane": "614CF825-9AB3-4727-A3D0-56CC7DCBE059", "item": "utf8-filenames", "verdict": "on-brief", "evidence": "Screen shows a commit prompt for Packages/GitWorkspace Sources/GitWorkspace/RepositoryPath.swift ('Give a path somewhere to be bytes'), started only after the seq-30 demonstration-test commit made the mangling visible.", "wrote_at": "2026-08-01T18:05:30Z"}

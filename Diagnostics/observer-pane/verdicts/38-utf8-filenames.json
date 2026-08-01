@@ -1,0 +1,1 @@
+{"seq": 38, "pane": "614CF825-9AB3-4727-A3D0-56CC7DCBE059", "item": "utf8-filenames", "verdict": "on-brief", "evidence": "Screen shows a commit prompt 'Read porcelain v2 as bytes, so a path stays one' migrating the status parser to bytes with RepositoryPath, and the end-to-end Latin-1 fixture test cited as the fix's proof.", "wrote_at": "2026-08-01T18:16:40Z"}

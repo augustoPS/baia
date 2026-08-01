@@ -1,0 +1,1 @@
+{"seq": 30, "pane": "614CF825-9AB3-4727-A3D0-56CC7DCBE059", "item": "utf8-filenames", "verdict": "on-brief", "evidence": "Screen shows a git commit prompt titled 'Show the byte a non-UTF-8 filename loses' committing two demonstration tests that assert caf\\xe9.txt is drawn as caf<U+FFFD>.txt, before any byte-carrying change to GitWorkspace.", "wrote_at": "2026-08-01T17:59:10Z"}

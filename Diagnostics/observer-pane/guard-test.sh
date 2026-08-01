@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Feeds the guard PreToolUse payloads and asserts its exit code.
+# A denied command must exit 2. An allowed one must exit 0.
+set -uo pipefail
+cd "$(dirname "$0")"
+
+GUARD=./guard-baia-alive.sh
+fails=0
+
+check() {                       # check <expected-exit> <command-string>
+  local want="$1" cmd="$2" got
+  printf '{"tool_input":{"command":%s}}' "$(printf '%s' "$cmd" | jq -Rs .)" \
+    | "$GUARD" >/dev/null 2>&1
+  got=$?
+  if [ "$got" != "$want" ]; then
+    printf 'FAIL want=%s got=%s  %s\n' "$want" "$got" "$cmd"
+    fails=$((fails + 1))
+  else
+    printf 'ok   %s  %s\n' "$want" "$cmd"
+  fi
+}
+
+# Denied: every route to killing the app that hosts this run.
+check 2 './Diagnostics/control-channel/run.sh'
+check 2 'cd ~/Projects/baia && ./Diagnostics/footer-corners/run.sh'
+check 2 'make run'
+check 2 'make run-attached'
+check 2 'pkill -x baia'
+check 2 'pkill baia'
+check 2 'osascript -e '"'"'quit app "baia"'"'"''
+check 2 'open .build/Build/Products/Debug/baia.app'
+check 2 'echo hi; pkill -x baia'
+
+# Allowed: the whole verification loop, and things that merely mention the word.
+check 0 'make test'
+check 0 'swift test --package-path Packages/WorkspaceLayout'
+check 0 'git -C . status --short'
+check 0 'grep -rn "baia" Sources/'
+check 0 'cat Diagnostics/control-channel/README.md'
+check 0 'baia list --tree'
+
+if [ "$fails" -gt 0 ]; then printf '\n%d check(s) failed\n' "$fails"; exit 1; fi
+
+# ── Negative control ────────────────────────────────────────────────────
+# In the red phase every check above failed at 127, so the allow arm proved
+# nothing: a guard that denies everything would have looked identical. This
+# damages the guard in the way it is most likely to be wrong, by matching the
+# word rather than the command, and asserts the allow arm catches it.
+control=$(mktemp)
+cat > "$control" <<'EOF'
+#!/usr/bin/env bash
+set -uo pipefail
+COMMAND=$(cat | jq -r '.tool_input.command // empty')
+printf '%s' "$COMMAND" | grep -qE 'baia' && exit 2
+exit 0
+EOF
+chmod +x "$control"
+printf '{"tool_input":{"command":%s}}' "$(printf '%s' 'grep -rn "baia" Sources/' | jq -Rs .)" \
+  | "$control" >/dev/null 2>&1
+if [ "$?" != 2 ]; then
+  printf '\nnegative control did not fail: the allow arm cannot catch an over-broad guard\n'
+  rm -f "$control"; exit 1
+fi
+rm -f "$control"
+printf 'ok   ctl  an over-broad guard is caught by the allow arm\n'
+
+printf '\nall checks passed\n'
