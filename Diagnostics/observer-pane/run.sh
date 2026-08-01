@@ -35,6 +35,22 @@ for w in tree-expansions utf8-filenames app-target-rules; do
   [ -d "$WT/baia--$w" ] || { echo "missing worktree: $WT/baia--$w" >&2; exit 2; }
 done
 
+# The brief gate, and it blocks rather than warns. On 2026-08-01 two of these
+# three briefs could not reach their own goals and both said so in writing, so the
+# observer spent a wave judging adherence to instructions that could not arrive.
+#
+# **It will refuse until the briefs are rewritten, and that is correct.** The list
+# above is the wave definition, and the wave it currently describes is one that
+# already ran with two known-defective briefs. Refusing to spawn it again is the
+# whole point; planning the next wave means replacing these files.
+if ! "$REPO/Diagnostics/brief-check/run.sh"; then
+  echo >&2
+  echo "refusing to spawn: fix the briefs above first." >&2
+  echo "A brief whose verification cannot observe its own change produces work" >&2
+  echo "nobody can check, and an observer watching it judges the wrong question." >&2
+  exit 2
+fi
+
 # Surface 1, closed 2026-08-01: pre-accept the workspace-trust dialog for each
 # worktree. Without this every executor halts before its first tool call, and the
 # acceptance does not survive a killed session.

@@ -1,0 +1,11 @@
+# The three briefs the wave ran on 2026-08-01, kept verbatim as the negative
+# control. Two of them could not reach their own goals and one could, so a check
+# that answers the same for all three is not a check.
+#
+# app-target-rules must pass, and it must pass for the right reason: it names
+# `Sources/` and greps it, so a rule about naming a path would fail it. It changes
+# no package, its deliverable is a markdown file, and `make test` confirming no
+# behaviour changed is the correct verification for that.
+tree-expansions fail
+utf8-filenames fail
+app-target-rules pass
