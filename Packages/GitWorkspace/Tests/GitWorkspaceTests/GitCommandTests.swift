@@ -206,23 +206,34 @@ import Testing
         #expect(changes.allSatisfy { $0.kind == .untracked })
     }
 
-    /// The mangling this branch exists to fix, made visible before anything is done
-    /// about it. `-z` stops git from quoting the name, and the bytes still do not
-    /// survive: `String(decoding:as:UTF8.self)` replaces the one byte that is not
-    /// UTF-8 with U+FFFD rather than refusing it, so the tree draws a name nobody
-    /// typed and hands it to anything downstream.
-    ///
-    /// Both halves are asserted on purpose. The first says what is drawn, the second
-    /// says the byte is *gone* rather than escaped: no name in the answer carries
-    /// what git wrote, so nothing downstream can recover the path from it.
-    @Test func aFileWhoseNameIsNotUTF8ArrivesWithTheByteReplaced() throws {
+    /// Git's own bytes, before anything decides what they mean. The read that every
+    /// byte-carrying answer below is built on: if this decoded, nothing downstream
+    /// could undo it.
+    @Test func handsBackGitsBytesUndecoded() throws {
         let root = try repository("proj")
         try indexEntry(named: Self.latin1Name, in: "proj")
 
-        let names = git.files(ofRepositoryRoot: root).map(\.name)
+        let output = git.bytes(of: ["ls-files", "-z"], in: root)
 
-        #expect(names.contains("caf\u{FFFD}.txt"))
-        #expect(names.contains { Array($0.utf8) == Self.latin1Name } == false)
+        #expect(output == Array("c.txt\0".utf8) + Self.latin1Name + [0])
+    }
+
+    /// The mangling this branch exists to fix. `-z` stops git from quoting the name,
+    /// and the bytes still did not survive the read: `String(decoding:as:UTF8.self)`
+    /// replaces the one byte that is not UTF-8 with U+FFFD rather than refusing it.
+    ///
+    /// Both spellings are asserted on purpose, and the pair is the whole design.
+    /// ``FileTreeNode/name`` is what a row draws and is still lossy, because a row
+    /// has to draw something. ``FileTreeNode/rawName`` is what the file is called,
+    /// and it now survives the whole path from git's pipe to the node.
+    @Test func aFileWhoseNameIsNotUTF8KeepsItsBytes() throws {
+        let root = try repository("proj")
+        try indexEntry(named: Self.latin1Name, in: "proj")
+
+        let files = git.files(ofRepositoryRoot: root)
+
+        #expect(files.map(\.rawName).contains(RepositoryPath(Self.latin1Name)))
+        #expect(files.map(\.name).contains("caf\u{FFFD}.txt"))
     }
 
     /// The same byte on the surface the path picker reads. A click sends what this

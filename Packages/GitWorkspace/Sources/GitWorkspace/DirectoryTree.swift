@@ -137,8 +137,11 @@ public enum DirectoryTree {
         var node: FileTreeNode {
             let built = children.map(\.node)
             return FileTreeNode(
-                name: name,
-                path: path,
+                // A `String` from `FileManager` rather than bytes from git, and it
+                // has one by construction: a name this walk can see is a name macOS
+                // already decoded.
+                name: RepositoryPath(name),
+                path: RepositoryPath(path),
                 isDirectory: isDirectory,
                 children: built.filter(\.isDirectory) + built.filter { !$0.isDirectory }
             )
