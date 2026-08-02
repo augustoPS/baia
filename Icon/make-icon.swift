@@ -248,6 +248,9 @@ func writeIcon(_ spec: IconSpec) throws {
 
 let specs: [IconSpec] = [
     IconSpec(name: "baia", occupied: CGColor(srgbRed: 0xB5 / 255, green: 0xD5 / 255, blue: 0xFF / 255, alpha: 1)),
+    // Midnight purple, a starting point rather than a finding: change this one
+    // constant if it reads badly at 32 pt in the Dock.
+    IconSpec(name: "baia-dev", occupied: CGColor(srgbRed: 0x6B / 255, green: 0x3F / 255, blue: 0xA0 / 255, alpha: 1)),
 ]
 
 for spec in specs {
