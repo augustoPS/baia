@@ -192,7 +192,7 @@ final class PaneGitStatus {
         // this afterwards would label one poll's branch with the previous poll's
         // answer.
         isOnDefaultBranch = isDefault
-        apply(status.map(paneGit))
+        apply(status.map { paneGit($0, isLinkedWorktree: isLinkedWorktree) })
         if isStale {
             isStale = false
             refresh()
@@ -205,7 +205,13 @@ final class PaneGitStatus {
         onChange?(next)
     }
 
-    private func paneGit(_ status: RepositoryStatus) -> PaneStatus.Git {
+    /// Takes the worktree flag rather than reading it, so the mapping depends on
+    /// nothing but its arguments. `isLinkedWorktree` is resolved once per anchor
+    /// in ``setAnchor(_:)`` and is the only field here that is not in `status`.
+    private func paneGit(
+        _ status: RepositoryStatus,
+        isLinkedWorktree: Bool
+    ) -> PaneStatus.Git {
         PaneStatus.Git(
             head: status.displayHead,
             hasUpstream: status.upstream != nil,
