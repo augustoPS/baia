@@ -63,59 +63,14 @@ SPAWN_1X3_REHEARSE=1 "$HERE/spawn-1x3.sh" "$SCRATCH/run" \
 
 echo
 echo "checking the arrangement"
-baia layout export | python3 - "$SCRATCH" <<'PY'
-import json, sys
-
-scratch = sys.argv[1]
-doc = json.load(sys.stdin)
-tabs = doc.get("tabs") or []
-if len(tabs) != 1:
-    print("  FAIL  expected one tab, got %d" % len(tabs)); raise SystemExit(1)
-
-def kind(node):
-    return "split" if "split" in node else "pane"
-
-def cwd(node):
-    return (node.get("pane") or {}).get("cwd")
-
-# The shape spawn-1x3.sh promises, read outside in:
-#   h( A , v( one , v( two , three ) ) )
-root = tabs[0]
-problems = []
-
-if kind(root) != "split" or root["split"]["axis"] != "horizontal":
-    problems.append("root is not a horizontal split: %s" % kind(root))
-else:
-    left, right = root["split"]["first"], root["split"]["second"]
-    if kind(left) != "pane":
-        problems.append("the left column is not a single pane, it is a %s" % kind(left))
-    if kind(right) != "split" or right["split"]["axis"] != "vertical":
-        problems.append("the right column is not a vertical split")
-    else:
-        first = right["split"]["first"]
-        rest = right["split"]["second"]
-        if kind(rest) != "split" or rest["split"]["axis"] != "vertical":
-            problems.append("the right column is not three panes deep")
-        else:
-            rows = [first, rest["split"]["first"], rest["split"]["second"]]
-            for n, row in enumerate(rows):
-                if kind(row) != "pane":
-                    problems.append("row %d of the right column is a %s" % (n + 1, kind(row)))
-            got = [cwd(r) for r in rows if kind(r) == "pane"]
-            want = [scratch + "/" + n for n in ("one", "two", "three")]
-            # Trailing slashes and /private are the app's spelling, not a defect.
-            norm = lambda p: (p or "").rstrip("/").replace("/private/", "/", 1)
-            if [norm(g) for g in got] != [norm(w) for w in want]:
-                problems.append("the rows are in the wrong order:\n      got  %s\n      want %s"
-                                % (got, want))
-
-if problems:
-    for p in problems:
-        print("  FAIL  " + p)
-    raise SystemExit(1)
-print("  ok    the root is one pane beside a column of three")
-print("  ok    the three rows are the three worktrees, in spawn order")
-PY
+# Piped into a file rather than into `python3 -` with a heredoc. The first
+# version did the latter, which cannot work: `python3 -` reads its program from
+# stdin and the heredoc is stdin, so the pipe never reached `json.load` and the
+# check failed at char 0 against a layout that was correct.
+#
+# stderr is folded in, because a refused `layout export` writes there and prints
+# nothing to stdout, and "printed nothing" is the one answer that needs its reason.
+baia layout export 2>&1 | python3 "$HERE/check-1x3-layout.py" "$SCRATCH"
 verdict=$?
 
 echo
