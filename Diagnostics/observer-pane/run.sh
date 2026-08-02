@@ -7,6 +7,36 @@
 # it is never on disk and never in argv.
 set -euo pipefail
 
+# Superseded, and it refuses rather than half-working. `orchestrator.md`, the
+# prompt this script spawned executors for and then told you to substitute by
+# hand, was retired on 2026-08-02: its binding table named a wave that had merged,
+# and a stale table binds panes to items nobody is running and produces verdicts
+# that read exactly like a working run.
+#
+# `orchestrator-standalone.md` replaces the pair. It creates the worktrees, runs
+# the gate, spawns through `spawn-1x3.sh`, and binds panes to items by working
+# directory after the splits, so there is no table to go stale and no placeholder
+# to leave unsubstituted. Doing the setup from inside the orchestrator also
+# dissolves what this script needed its generated launcher to guard: the pane that
+# creates the executors is the only one that can see them, and it is now the
+# orchestrator by construction.
+#
+# Kept for its history rather than its use. Everything it closed lives on in
+# `spawn-1x3.sh`, `trust-worktrees.sh`, `seed-worktree-settings.sh` and
+# `brief-check/`, all of which the standalone prompt calls.
+cat >&2 <<'RETIRED'
+run.sh is retired. Its observer prompt no longer exists.
+
+Use the standalone orchestrator instead, from a baia pane at the repo root:
+
+  cd /Users/pasqualotto/Projects/baia
+  claude --model claude-fable-5 "$(cat Diagnostics/observer-pane/orchestrator-standalone.md)"
+
+It creates the worktrees, gates the briefs, spawns the executors and watches
+them, so none of this script's by-hand steps are needed.
+RETIRED
+exit 2
+
 REPO=/Users/pasqualotto/Projects/baia
 WT=/Users/pasqualotto/Projects/.worktrees
 OBS="$REPO/Diagnostics/observer-pane"

@@ -22,9 +22,9 @@ prompt.
 | `seed-worktree-settings.sh` | writes it into each worktree. Closes surfaces 2 and 4 |
 | `trust-worktrees.sh` | pre-accepts the workspace-trust dialog. Closes surface 1 |
 | `briefs/*.md` | one per executor. Each carries the item verbatim and its own first-step discipline |
-| `orchestrator.md` | the observer's prompt. Four placeholders are filled in by hand after the splits |
-| `run.sh` | spawns the three executors from the calling pane, then writes the launcher and prints the by-hand steps |
-| `/tmp/baia-observer/observe.sh` | written by `run.sh`. Launches the observer, and refuses from any pane but the one that spawned the executors |
+| `orchestrator-standalone.md` | the orchestrator's prompt, and the whole run. It creates the worktrees, gates the briefs, spawns through `spawn-1x3.sh`, binds panes to items by working directory, then watches |
+| `spawn-1x3.sh` | three splits and two moves: the caller keeps the left column, the executors stack down the right one, all three its direct children |
+| `run.sh` | retired 2026-08-02. Refuses and points at the standalone prompt. Kept for its history |
 
 ## The launcher refuses rather than instructs
 
