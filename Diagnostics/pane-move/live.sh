@@ -40,47 +40,24 @@ bad() { echo "  FAIL  $1"; echo "          wanted: $2"; echo "          got:    
 # and both halves are in the one line.
 MARKER='echo "MARKER pane=$BAIA_PANE pid=$$"; exec "$SHELL" -l'
 
-# Panes this one had made *before* this run, so a stray left by an earlier attempt
-# is subtracted rather than mistaken for one of today's. Without it a second run
-# finds four children, picks two arbitrarily, and moves a pane nobody is watching.
-children() {
-  baia list --json | python3 -c '
-import json, os, sys
-me = os.environ["BAIA_PANE"]
-for p in json.load(sys.stdin).get("panes") or []:
-    if p.get("createdBy") == me:
-        print(p["pane"])
-'
-}
-EXISTING=$(children)
-[ -n "$EXISTING" ] && echo "  note: this pane already had $(printf '%s\n' "$EXISTING" | wc -l | tr -d ' ') child pane(s); ignoring them"
-
+# `split` prints the new pane's id, so which pane is which is read rather than
+# inferred. The first version took them from `baia list` order and called them
+# RIGHT and BELOW, which was a guess: `list` is ordered by the scope walk, and
+# that walk sorts siblings by id. On the first passing run it handed back the two
+# the other way round, so the probe's closing description of the layout was wrong
+# while every assertion was right.
 echo "opening two panes"
-baia split --right --command "'/bin/zsh' -lc '$MARKER'" >/dev/null
+RIGHT=$(baia split --right --command "'/bin/zsh' -lc '$MARKER'" | tr -d '[:space:]')
 sleep 2
-baia split --down --command "'/bin/zsh' -lc '$MARKER'" >/dev/null
+BELOW=$(baia split --down --command "'/bin/zsh' -lc '$MARKER'" | tr -d '[:space:]')
 sleep 3
 
-# `while read` rather than `readarray`, which is bash 4 and this machine ships
-# 3.2. Found the hard way on the first live run, where the probe opened both panes
-# correctly and then could not name them.
-KIDS=()
-while IFS= read -r line; do
-  [ -n "$line" ] || continue
-  case "$EXISTING" in
-    *"$line"*) continue ;;
+for pane in "$RIGHT" "$BELOW"; do
+  case "$pane" in
+    ????????-????-????-????-????????????) ;;
+    *) echo "split did not answer with a pane id, got: '$pane'" >&2; exit 2 ;;
   esac
-  KIDS+=("$line")
-done <<EOF
-$(children)
-EOF
-
-if [ "${#KIDS[@]}" -ne 2 ]; then
-  echo "expected 2 new panes, got ${#KIDS[@]}. Nothing moved; close any strays by hand." >&2
-  exit 2
-fi
-RIGHT=${KIDS[0]}
-BELOW=${KIDS[1]}
+done
 
 # What each pane says about itself before anything moves.
 marker_of() { baia read "$1" --lines 40 --json 2>/dev/null | python3 -c '
@@ -100,10 +77,20 @@ esac
 MOVED_PID=$(printf '%s' "$BEFORE_BELOW" | sed -n 's/.*pid=\([0-9]*\).*/\1/p')
 
 echo "moving $BELOW beside $RIGHT"
+# Parsed, not matched. The first version tested for the substring `"ok":true` and
+# failed against the same response pretty-printed across two lines, reporting a
+# refusal on a move that had plainly worked: the four checks below it all passed.
 OUT=$(baia move "$BELOW" --beside "$RIGHT" --down --json 2>&1)
-case "$OUT" in
-  *'"ok":true'*|*'"ok": true'*) ok "the move was accepted" ;;
-  *) bad "the move was accepted" "ok:true" "$OUT" ;;
+VERDICT=$(printf '%s' "$OUT" | python3 -c '
+import json, sys
+try:
+    print("ok" if json.load(sys.stdin).get("ok") else "refused")
+except Exception:
+    print("unparseable")
+' 2>/dev/null)
+case "$VERDICT" in
+  ok) ok "the move was accepted" ;;
+  *) bad "the move was accepted" "ok" "$VERDICT: $OUT" ;;
 esac
 sleep 2
 
@@ -135,6 +122,7 @@ AFTER_RIGHT=$(marker_of "$RIGHT")
 
 echo
 echo "  $pass passed, $fail failed"
-echo "  Look at the window: the two panes should now be stacked in the right"
-echo "  column with this one alone on the left. Close them by hand when done."
+echo "  Look at the window. $BELOW has left the column it was in and now sits"
+echo "  under $RIGHT, and every pane took a SIGWINCH on the way, which is the"
+echo "  stated cost and the one thing no assertion here covers. Close them by hand."
 [ "$fail" -eq 0 ] || exit 1
