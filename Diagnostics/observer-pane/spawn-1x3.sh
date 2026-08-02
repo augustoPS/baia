@@ -67,7 +67,18 @@ done
 # `split` prints the new pane's id. Read rather than inferred: `baia list` is
 # ordered by the scope walk, which sorts siblings by id, so taking creation order
 # from it is a guess that has already been wrong twice in this directory.
+# `SPAWN_1X3_REHEARSE` swaps the agent for an echo, so the geometry can be
+# exercised without paying for three sessions. Everything else runs unchanged:
+# the same three splits, the same two moves, the same assertion. What it does not
+# rehearse is an agent's own startup, which is the slowest part of a real wave and
+# the part nothing here depends on.
 spawn() {                       # spawn <dir> <brief> <model>
+  if [ -n "${SPAWN_1X3_REHEARSE:-}" ]; then
+    baia split --right --cwd "$1" --command \
+      "'/bin/zsh' -lc 'echo \"REHEARSAL pane=\$BAIA_PANE cwd=$1\"; exec \"\$SHELL\" -l'" \
+      | tr -d '[:space:]'
+    return
+  fi
   baia split --right --cwd "$1" --command \
     "'/bin/zsh' -lc 'claude --model $3 \"\$(cat $2)\"; exec \"\$SHELL\" -l'" \
     | tr -d '[:space:]'
