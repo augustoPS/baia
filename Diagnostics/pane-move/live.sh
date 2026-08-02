@@ -40,21 +40,41 @@ bad() { echo "  FAIL  $1"; echo "          wanted: $2"; echo "          got:    
 # and both halves are in the one line.
 MARKER='echo "MARKER pane=$BAIA_PANE pid=$$"; exec "$SHELL" -l'
 
+# Panes this one had made *before* this run, so a stray left by an earlier attempt
+# is subtracted rather than mistaken for one of today's. Without it a second run
+# finds four children, picks two arbitrarily, and moves a pane nobody is watching.
+children() {
+  baia list --json | python3 -c '
+import json, os, sys
+me = os.environ["BAIA_PANE"]
+for p in json.load(sys.stdin).get("panes") or []:
+    if p.get("createdBy") == me:
+        print(p["pane"])
+'
+}
+EXISTING=$(children)
+[ -n "$EXISTING" ] && echo "  note: this pane already had $(printf '%s\n' "$EXISTING" | wc -l | tr -d ' ') child pane(s); ignoring them"
+
 echo "opening two panes"
 baia split --right --command "'/bin/zsh' -lc '$MARKER'" >/dev/null
 sleep 2
 baia split --down --command "'/bin/zsh' -lc '$MARKER'" >/dev/null
 sleep 3
 
-# The two panes this one just made, which is what `createdBy` answers and why no
-# id has to be typed here.
-readarray -t KIDS < <(baia list --json | python3 -c '
-import json, os, sys
-me = os.environ["BAIA_PANE"]
-for p in json.load(sys.stdin).get("panes") or []:
-    if p.get("createdBy") == me:
-        print(p["pane"])
-')
+# `while read` rather than `readarray`, which is bash 4 and this machine ships
+# 3.2. Found the hard way on the first live run, where the probe opened both panes
+# correctly and then could not name them.
+KIDS=()
+while IFS= read -r line; do
+  [ -n "$line" ] || continue
+  case "$EXISTING" in
+    *"$line"*) continue ;;
+  esac
+  KIDS+=("$line")
+done <<EOF
+$(children)
+EOF
+
 if [ "${#KIDS[@]}" -ne 2 ]; then
   echo "expected 2 new panes, got ${#KIDS[@]}. Nothing moved; close any strays by hand." >&2
   exit 2
