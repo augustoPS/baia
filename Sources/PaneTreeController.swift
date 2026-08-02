@@ -612,8 +612,21 @@ final class PaneTreeController: NSViewController {
     /// window, so this is safe for a window nobody is looking at.
     ///
     /// False when the workspace refused: either pane missing from this window, the
-    /// two in different tabs, the tab zoomed, or the pane already where it was
-    /// asked to go.
+    /// two in different tabs, the tab zoomed, or the move would leave the tree
+    /// exactly as it is.
+    ///
+    /// **That last one is narrower than "already where it was asked to go", and
+    /// the difference is not pedantry.** ``PaneTree/moving(_:beside:axis:before:)``
+    /// builds its new split at a half, so a pane that already sits beside its
+    /// target across a divider the owner dragged to 0.7 is *not* refused: the
+    /// answer differs from the tree it started from, by that ratio. The move
+    /// succeeds, evens the divider, and pays the rebuild. Measured by review on
+    /// 2026-08-01, which read the old wording as a promise and found it false.
+    ///
+    /// The behaviour is right and stated where it is decided: a move is take the
+    /// pane out and put it back on a fresh even split, and carrying the collapsed
+    /// ratio through was rejected there because it would let a move in one corner
+    /// change a divider the owner set in another. Only the description was wrong.
     func move(pane: PaneID, beside target: PaneID, axis: SplitAxis, before: Bool) -> Bool {
         guard workspace.move(pane: pane, beside: target, axis: axis, before: before) else {
             return false

@@ -56,7 +56,11 @@ import Testing
     /// whole reason this fixture is three panes deep.** Inserting beside `a` has
     /// to build a new split *at `a`'s leaf*; an implementation that instead adds
     /// the pane to `a`'s parent, whose axis already matches, produces a tree that
-    /// looks right on screen and never comes back. A round trip over two leaves
+    /// looks right on screen and is not this one.
+    ///
+    /// It does come back, though, which this comment claimed it would not until
+    /// review measured it on 2026-08-01. So the round trip is not the guard: the
+    /// assertion on `out`'s shape below is. A round trip over two leaves
     /// cannot tell the two apart, because with two leaves the parent split and the
     /// leaf's own split are the same node.
     ///
@@ -79,7 +83,26 @@ import Testing
             before: true
         )
         let back = out?.moving(fixture.b, beside: fixture.c, axis: .vertical, before: true)
-        #expect(out != fixture.tree)
+
+        // **The shape on the way out, not merely that it changed.** A round trip
+        // is a weaker assertion than it reads as: review on 2026-08-01 replaced
+        // the insertion with one that hangs the newcomer off the *target's
+        // parent* rather than building a split at the target's leaf, which is the
+        // exact wrong implementation the comment above names, and all 222 tests
+        // passed. Both trips still came back, because removing `b` collapses the
+        // outer split either way and the return leg asks for `.vertical`, which
+        // no longer matches the parent's axis, so the wrong branch never fires on
+        // the way home.
+        //
+        // The naive tree is `split(h, leaf(b), split(h, leaf(a), leaf(c)))`, which
+        // looks right on screen and differs from the correct one below. Pinning
+        // `out` kills it; `out != fixture.tree` did not.
+        #expect(out == .split(
+            axis: .horizontal,
+            ratio: 0.5,
+            first: .split(axis: .horizontal, ratio: 0.5, first: .leaf(fixture.b), second: .leaf(fixture.a)),
+            second: .leaf(fixture.c)
+        ))
         #expect(back == fixture.tree)
     }
 

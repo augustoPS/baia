@@ -214,7 +214,7 @@ final class ControlAdapter: ControlWorkspaceBridge {
             return .failure(
                 .refused,
                 "baia refused that move. The panes are in different tabs, the tab is zoomed and "
-                    + "shows one pane, or that pane is already where you asked for it."
+                    + "shows one pane, or the move would leave the tree exactly as it is."
             )
         }
         return .success()
