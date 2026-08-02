@@ -1,6 +1,6 @@
 #!/usr/bin/env swift
 //
-// Draws baia's app icon and writes `Icon/baia.icns`.
+// Draws baia's app icon and writes an `.icns` per configuration.
 //
 //   swift Icon/make-icon.swift
 //
@@ -37,9 +37,13 @@ let field = CGColor(srgbRed: 0x14 / 255, green: 0x14 / 255, blue: 0x14 / 255, al
 /// prompt drawn in the empty stall.
 let plank = CGColor(srgbRed: 0x6E / 255, green: 0x6E / 255, blue: 0x6E / 255, alpha: 1)
 
-/// `focusedAccent`. One per icon, never two: the occupied stall is the only
-/// thing here with a hue, which is the same rule the footer follows.
-let occupied = CGColor(srgbRed: 0xB5 / 255, green: 0xD5 / 255, blue: 0xFF / 255, alpha: 1)
+/// One rendered icon: a name (`Icon/<name>.icns`) and the accent that fills the
+/// occupied stall. `focusedAccent`. One per icon, never two: the occupied stall
+/// is the only thing here with a hue, which is the same rule the footer follows.
+struct IconSpec {
+    let name: String
+    let occupied: CGColor
+}
 
 /// The squircle, transcribed. `r = 185.4` with a control offset of 74.16, which
 /// is `k = 0.40` of the radius rather than the 0.5523 that approximates a
@@ -86,7 +90,8 @@ func squircle() -> CGPath {
 ///   size where a 56-unit stroke closes up into a smudge. The unit's right edge
 ///   and its ink baseline both hold, which is what stops the mark from shifting
 ///   between sizes; the chevron gives up the five units the thicker stroke needs.
-func drawMark(in ctx: CGContext, heavy: Bool) {
+/// - Parameter occupied: the accent for this icon's occupied stall.
+func drawMark(in ctx: CGContext, heavy: Bool, occupied: CGColor) {
     ctx.saveGState()
     ctx.addPath(squircle())
     ctx.clip()
@@ -159,7 +164,7 @@ func drawPrompt(in ctx: CGContext, heavy: Bool) {
 }
 
 /// One PNG at `pixels` square.
-func render(pixels: Int) -> Data? {
+func render(pixels: Int, occupied: CGColor) -> Data? {
     guard let ctx = CGContext(
         data: nil,
         width: pixels,
@@ -179,7 +184,7 @@ func render(pixels: Int) -> Data? {
     ctx.translateBy(x: 0, y: canvas)
     ctx.scaleBy(x: 1, y: -1)
 
-    drawMark(in: ctx, heavy: pixels <= 32)
+    drawMark(in: ctx, heavy: pixels <= 32, occupied: occupied)
 
     guard let image = ctx.makeImage() else { return nil }
     let rep = NSBitmapImageRep(cgImage: image)
@@ -190,10 +195,6 @@ func render(pixels: Int) -> Data? {
 // MARK: - Writing the iconset
 
 let root = URL(filePath: FileManager.default.currentDirectoryPath)
-let iconset = root.appending(path: "Icon/baia.iconset")
-
-try? FileManager.default.removeItem(at: iconset)
-try FileManager.default.createDirectory(at: iconset, withIntermediateDirectories: true)
 
 /// Every slice `iconutil` expects. The `@2x` entries are genuinely re-rendered
 /// rather than upscaled, which is the point of drawing them: the 16 pt slice at
@@ -207,32 +208,48 @@ let slices: [(point: Int, scale: Int)] = [
     (512, 1), (512, 2),
 ]
 
-for slice in slices {
-    let pixels = slice.point * slice.scale
-    guard let data = render(pixels: pixels) else {
-        FileHandle.standardError.write(Data("failed to render \(pixels)px\n".utf8))
+/// Renders every slice for `spec` and converts them into `Icon/<spec.name>.icns`.
+/// The iconset is an intermediate; leaving it behind would put eleven files in
+/// the repo that are all derivable from this one.
+func writeIcon(_ spec: IconSpec) throws {
+    let iconset = root.appending(path: "Icon/\(spec.name).iconset")
+
+    try? FileManager.default.removeItem(at: iconset)
+    try FileManager.default.createDirectory(at: iconset, withIntermediateDirectories: true)
+
+    for slice in slices {
+        let pixels = slice.point * slice.scale
+        guard let data = render(pixels: pixels, occupied: spec.occupied) else {
+            FileHandle.standardError.write(Data("failed to render \(pixels)px\n".utf8))
+            exit(1)
+        }
+        let suffix = slice.scale == 2 ? "@2x" : ""
+        let name = "icon_\(slice.point)x\(slice.point)\(suffix).png"
+        try data.write(to: iconset.appending(path: name))
+    }
+
+    let iconutil = Process()
+    iconutil.executableURL = URL(filePath: "/usr/bin/iconutil")
+    iconutil.arguments = [
+        "--convert", "icns",
+        "--output", root.appending(path: "Icon/\(spec.name).icns").path(percentEncoded: false),
+        iconset.path(percentEncoded: false),
+    ]
+    try iconutil.run()
+    iconutil.waitUntilExit()
+    guard iconutil.terminationStatus == 0 else {
+        FileHandle.standardError.write(Data("iconutil failed\n".utf8))
         exit(1)
     }
-    let suffix = slice.scale == 2 ? "@2x" : ""
-    let name = "icon_\(slice.point)x\(slice.point)\(suffix).png"
-    try data.write(to: iconset.appending(path: name))
+
+    try? FileManager.default.removeItem(at: iconset)
+    print("wrote Icon/\(spec.name).icns")
 }
 
-let iconutil = Process()
-iconutil.executableURL = URL(filePath: "/usr/bin/iconutil")
-iconutil.arguments = [
-    "--convert", "icns",
-    "--output", root.appending(path: "Icon/baia.icns").path(percentEncoded: false),
-    iconset.path(percentEncoded: false),
+let specs: [IconSpec] = [
+    IconSpec(name: "baia", occupied: CGColor(srgbRed: 0xB5 / 255, green: 0xD5 / 255, blue: 0xFF / 255, alpha: 1)),
 ]
-try iconutil.run()
-iconutil.waitUntilExit()
-guard iconutil.terminationStatus == 0 else {
-    FileHandle.standardError.write(Data("iconutil failed\n".utf8))
-    exit(1)
-}
 
-// The iconset is an intermediate. Leaving it behind would put eleven files in
-// the repo that are all derivable from this one.
-try? FileManager.default.removeItem(at: iconset)
-print("wrote Icon/baia.icns")
+for spec in specs {
+    try writeIcon(spec)
+}
