@@ -449,6 +449,31 @@ public struct PaneTheme: Sendable, Equatable {
     /// A conflicted tree, and an agent asking for input. Nothing else.
     public var alert: RGB { ansiColor(1) }
 
+    /// The colour ``colour(for:)`` resolves a file's change state to.
+    ///
+    /// One policy shared by the changes list's two-column marker and the file
+    /// tree's single glyph, which colour a `staged`/`unstaged` pair and a
+    /// rolled-up worst-case respectively but agree on what each state means.
+    public enum ChangeMark: Sendable, Equatable, CaseIterable {
+        case staged, unstaged, untracked, conflict
+    }
+
+    /// The colour a file's change state is drawn in, wherever it appears.
+    ///
+    /// Borrowed from the footer's own vocabulary rather than invented: the same
+    /// colours already mean the same things one line below.
+    public func colour(for mark: ChangeMark) -> RGB {
+        switch mark {
+        // Not `ok`, whose own documentation says it is never used for text.
+        // `staged` is that green given `warn`'s construction, so the pair a
+        // reader has to tell apart is one vocabulary rather than two.
+        case .staged: staged
+        case .unstaged: warn
+        case .untracked: inkFaint
+        case .conflict: alert
+        }
+    }
+
     /// A floating panel over the workspace, for example the command palette.
     ///
     /// Below ``barBackground`` rather than above it. The panel is a large surface
@@ -508,6 +533,26 @@ public struct PaneTheme: Sendable, Equatable {
     /// The colour on this pane's ordinary, unfilled bar.
     public func color(for emphasis: PaneStatusEmphasis, focused: Bool) -> RGB {
         color(for: emphasis, focused: focused, on: barBackground)
+    }
+
+    /// The colour a run is drawn in, honouring the attention-fill collapse.
+    ///
+    /// A distinct function rather than a branch inside ``color(for:focused:on:)``:
+    /// that one is the palette's own per-tier policy, exercised by every ordinary
+    /// bar, and a fill parameter folded into it would make every caller's meaning
+    /// depend on an argument most of them never vary. Unfilled, this delegates to
+    /// it unchanged.
+    ///
+    /// Filled, every tier collapses onto two inks derived from the fill, because
+    /// a fill bright enough to be worth filling a bar with reverses the direction
+    /// the repair chain pushes in, and the tier colours are all derived from the
+    /// foreground, which is the wrong end.
+    public func color(for emphasis: PaneStatusEmphasis, focused: Bool, filled: Bool, on bar: RGB) -> RGB {
+        guard filled else { return color(for: emphasis, focused: focused, on: bar) }
+        switch emphasis {
+        case .context, .faint: return mutedInk(on: bar)
+        default: return ink(on: bar)
+        }
     }
 
     /// The text colour for a bar that has been filled with `fill`, which today

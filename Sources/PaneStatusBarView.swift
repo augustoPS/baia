@@ -566,34 +566,20 @@ final class PaneStatusBarView: NSView {
         return Rendered(
             string: string,
             role: segment.role,
-            leadingOrnament: leading(for: segment.role, busy: busy),
+            leadingOrnament: PaneStatusBarMetrics.leading(
+                for: segment.role,
+                busy: busy,
+                chipPadding: Self.chipPadding,
+                busyDotAdvance: Self.dotDiameter + Self.dotGap
+            ),
             trailingOrnament: segment.role == .pin ? Self.chipPadding : 0
         )
     }
 
-    private func leading(for role: PaneStatusSegmentRole, busy: Bool) -> Double {
-        switch role {
-        case .pin: Self.chipPadding
-        case .agent: busy ? Self.dotDiameter + Self.dotGap : 0
-        default: 0
-        }
-    }
-
-    /// The colour a run is drawn in.
-    ///
-    /// On an ordinary bar this is the tier system. On a filled one every tier
-    /// collapses onto two inks derived from the terminal background, because a
-    /// fill bright enough to be worth filling a bar with reverses the direction
-    /// the repair chain pushes in, and the tier colours are all derived from the
-    /// foreground, which is the wrong end.
+    /// The colour a run is drawn in. The fill collapse itself lives in
+    /// ``PaneChrome/PaneTheme/color(for:focused:filled:on:)``, tested there.
     private func colour(for emphasis: PaneStatusEmphasis) -> RGB {
-        guard fillsBarForAttention else {
-            return theme.color(for: emphasis, focused: isFocused, on: inkBackground)
-        }
-        switch emphasis {
-        case .context, .faint: return theme.mutedInk(on: inkBackground)
-        default: return theme.ink(on: inkBackground)
-        }
+        theme.color(for: emphasis, focused: isFocused, filled: fillsBarForAttention, on: inkBackground)
     }
 
     private func draw(_ rendered: Rendered, at x: Double, width: Double, in rect: CGRect) {

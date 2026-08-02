@@ -501,20 +501,14 @@ final class ChangesRowsView: NSView {
             static let absent = Column(absent: true)
         }
 
-        enum Role { case staged, unstaged, untracked, conflict }
+        /// The theme's own vocabulary: see ``PaneChrome/PaneTheme/ChangeMark``,
+        /// which is what actually resolves a colour. Kept as a local alias
+        /// rather than named directly, so the columns above read as this
+        /// surface's own concept.
+        typealias Role = PaneTheme.ChangeMark
 
-        /// Borrowed from the footer's own vocabulary rather than invented: the same
-        /// colours already mean the same things one line below.
         static func colour(_ role: Role, in theme: PaneTheme) -> RGB {
-            switch role {
-            // Not `ok`, whose own documentation says it is never used for text.
-            // `staged` is that green given `warn`'s construction, so the pair a
-            // reader has to tell apart is one vocabulary rather than two.
-            case .staged: theme.staged
-            case .unstaged: theme.warn
-            case .untracked: theme.inkFaint
-            case .conflict: theme.alert
-            }
+            theme.colour(for: role)
         }
     }
 

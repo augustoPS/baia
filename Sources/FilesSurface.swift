@@ -386,12 +386,13 @@ final class FileTreeRowsView: NSView {
     }
 
     private func colour(of mark: FileChangeMark) -> RGB {
-        switch mark {
-        case .conflict: theme.alert
-        case .unstaged: theme.warn
-        case .staged: theme.staged
-        case .untracked: theme.inkFaint
+        let resolved: PaneTheme.ChangeMark = switch mark {
+        case .conflict: .conflict
+        case .unstaged: .unstaged
+        case .staged: .staged
+        case .untracked: .untracked
         }
+        return theme.colour(for: resolved)
     }
 
     var onSelect: ((String) -> Bool)?
