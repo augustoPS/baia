@@ -22,9 +22,13 @@ public struct RecentProjects: Sendable {
     /// opens and are worth reading and editing by hand when the ranking looks
     /// wrong, which a plist in a defaults domain is not. Deleting the file resets
     /// the ranking to alphabetical, which is a supported repair.
-    public static func defaultFileURL() -> URL {
+    /// - Parameter directoryName: the folder under Application Support, matching
+    ///   the one ``SessionStore`` uses. `baia` installed, `baia-dev` under test,
+    ///   so a test build's ranking is its own rather than a rewrite of the one in
+    ///   daily use.
+    public static func defaultFileURL(directoryName: String = "baia") -> URL {
         URL.applicationSupportDirectory
-            .appending(path: "baia", directoryHint: .isDirectory)
+            .appending(path: directoryName, directoryHint: .isDirectory)
             .appending(path: "recent-projects.tsv")
     }
 

@@ -1,7 +1,7 @@
 name: baia
 
 options:
-  bundleIdPrefix: gutons
+  bundleIdPrefix: pasqualotto
   deploymentTarget:
     macOS: "26.0"
   createIntermediateGroups: true
@@ -116,7 +116,7 @@ targets:
     settings:
       base:
         PRODUCT_NAME: baia
-        PRODUCT_BUNDLE_IDENTIFIER: gutons.baia
+        PRODUCT_BUNDLE_IDENTIFIER: pasqualotto.baia
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
 
@@ -139,6 +139,44 @@ targets:
         ALWAYS_SEARCH_USER_PATHS: NO
         CLANG_ENABLE_MODULES: YES
         ENABLE_USER_SCRIPT_SANDBOXING: NO
+
+        # Pinned rather than left to follow PRODUCT_NAME, which varies by config
+        # below. Xcode derives the module name from the product name and
+        # substitutes an underscore for the hyphen, so a Debug build would emit
+        # `baia_dev.swiftmodule` and a Release build `baia.swiftmodule` for the
+        # same sources. Nothing here imports the app target, so the drift would
+        # surface late and somewhere else.
+        PRODUCT_MODULE_NAME: baia
+
+      # Two installable copies, and they must not share state.
+      #
+      # Release is the one that lives in /Applications and gets used. Debug is the
+      # one `make run` launches to test the next change. The whole point is
+      # running both at once, so every per-instance file has to be somewhere else
+      # for each. Sharing them is not untidy, it is broken three ways: the second
+      # instance to launch finds the socket taken and runs with no channel at all,
+      # so `baia` inside its panes fails; `session.json` has one writer at a time
+      # and the loser's windows are gone; and one bundle id for two apps leaves
+      # `open -b` picking whichever LaunchServices last registered.
+      #
+      # BAIA_SUPPORT_DIRECTORY is read back through Info.plist and names the
+      # directory under Application Support holding `session.json`,
+      # `control.sock` and `recent-projects.tsv`.
+      #
+      # `~/.config/baia/config.json` is deliberately NOT split. Testing a build
+      # against settings that are not the ones in daily use tests the wrong thing,
+      # and the settings file is written atomically through a pid-suffixed
+      # temporary, so the shared writer is the safe part. Split it here too if a
+      # settings change ever needs to be tried without living with it.
+      configs:
+        Debug:
+          PRODUCT_NAME: baia-dev
+          PRODUCT_BUNDLE_IDENTIFIER: pasqualotto.baia.dev
+          BAIA_SUPPORT_DIRECTORY: baia-dev
+        Release:
+          PRODUCT_NAME: baia
+          PRODUCT_BUNDLE_IDENTIFIER: pasqualotto.baia
+          BAIA_SUPPORT_DIRECTORY: baia
 
   # The `baia` command every pane gets on its PATH.
   #
@@ -179,7 +217,7 @@ targets:
         # `baia` cannot coexist, and the app's own product is `baia.app`, so
         # nothing collides in the products directory.
         PRODUCT_NAME: baia
-        PRODUCT_BUNDLE_IDENTIFIER: gutons.baia.cli
+        PRODUCT_BUNDLE_IDENTIFIER: pasqualotto.baia.cli
 
         # The Swift module name, which otherwise follows PRODUCT_NAME and would
         # be `baia` for both targets. Two targets emitting `baia.swiftmodule`

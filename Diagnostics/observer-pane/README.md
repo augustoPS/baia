@@ -17,7 +17,7 @@ prompt.
 | file | what it is |
 |---|---|
 | `guard-baia-alive.sh` | PreToolUse hook. Refuses the commands that would kill the app hosting the run, including behind an `rtk` prefix |
-| `guard-test.sh` | 26 checks over the guard, including a negative control |
+| `guard-test.sh` | 28 checks over the guard, including a negative control and both bundle names |
 | `executor-settings.json` | the tracked original of each executor's `.claude/settings.json`. `__REPO__` is substituted on seeding |
 | `seed-worktree-settings.sh` | writes it into each worktree. Closes surfaces 2 and 4 |
 | `trust-worktrees.sh` | pre-accepts the workspace-trust dialog. Closes surface 1 |
@@ -88,7 +88,7 @@ answers `verified:false` on every call.
 
 | check | result |
 |---|---|
-| the running app is the dev build | `ps` names `.build/Build/Products/Debug/baia.app` |
+| the running app is the dev build | `ps` names `.build/Build/Products/Debug/baia-dev.app` |
 | `baia whoami --json` | exit 0, `seq: 1`, token present in the pane environment |
 | `baia read $BAIA_PANE --lines 5 --json` | exit 0, returned 2 lines with `"truncated": false`. `controlAllowRead` is on by default |
 | starting seq from `baia list --json` | `1` |

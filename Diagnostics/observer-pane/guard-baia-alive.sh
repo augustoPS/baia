@@ -59,8 +59,15 @@ if has "${START}"'osascript.*quit[[:space:]]+app[[:space:]]*"?baia'; then
   emit_deny "Blocked: quitting baia would end this run."
 fi
 
-if has "${START}"'open[[:space:]]+[^;&|]*baia\.app'; then
-  emit_deny "Blocked: opening baia.app launches a second instance. Verify with 'make test'."
+# `baia(-dev)?\.app` rather than `baia\.app`, because the Debug product was
+# renamed on 2026-08-02 so an installed copy and a build under test can run at
+# once. `baia-dev.app` does not contain the substring `baia.app`, so the narrower
+# pattern stopped matching the only bundle an executor is ever near: the one in
+# `.build/Build/Products/Debug`. The rename passed every existing check and
+# silently opened the hole, which is the second time a pattern in this file has
+# been outlived by the string it matches.
+if has "${START}"'open[[:space:]]+[^;&|]*baia(-dev)?\.app'; then
+  emit_deny "Blocked: opening a baia bundle launches a second instance. Verify with 'make test'."
 fi
 
 exit 0

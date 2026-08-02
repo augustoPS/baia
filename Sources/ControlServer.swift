@@ -33,13 +33,18 @@ final class ControlServer {
         case failed(String)
     }
 
-    /// `~/Library/Application Support/baia/control.sock`, beside `session.json`.
+    /// `~/Library/Application Support/<support directory>/control.sock`, beside
+    /// `session.json`. The directory is `baia` for the installed copy and
+    /// `baia-dev` for the build under test, which is what lets both run at once:
+    /// one socket each, so neither finds the other's already bound and falls back
+    /// to no channel at all.
     ///
     /// Derived from `SessionStore.defaultFileURL()` rather than spelled again, so
     /// the two files cannot drift apart into two directories, and so the 0700
-    /// directory `SessionStore` already creates is the one this binds in.
+    /// directory `SessionStore` already creates is the one this binds in. Passing
+    /// the same ``SupportDirectory/name`` to both is what keeps that true.
     static func defaultSocketPath() -> String {
-        SessionStore.defaultFileURL()
+        SessionStore.defaultFileURL(directoryName: SupportDirectory.name)
             .deletingLastPathComponent()
             .appending(path: "control.sock")
             .path(percentEncoded: false)

@@ -21,7 +21,7 @@ set -uo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
-BIN="$ROOT/.build/Build/Products/Debug/baia.app/Contents/Helpers/baia"
+BIN="$ROOT/.build/Build/Products/Debug/baia-dev.app/Contents/Helpers/baia"
 OUT="${TMPDIR:-/tmp}/baia-split-command"
 
 pass=0

@@ -5,8 +5,15 @@ PROJECT     := baia.xcodeproj
 SCHEME      := baia
 CONFIG      := Debug
 DERIVED     := .build
-APP         := $(DERIVED)/Build/Products/$(CONFIG)/baia.app
-BINARY      := $(APP)/Contents/MacOS/baia
+# The product name varies by configuration: `baia-dev.app` out of Debug and
+# `baia.app` out of Release, with their own bundle ids and their own directory
+# under Application Support. That is what lets the installed copy and the build
+# under test run at the same time, so neither takes the other's socket or its
+# window list. Derived here rather than written twice.
+PRODUCT     := $(if $(filter Release,$(CONFIG)),baia,baia-dev)
+APP         := $(DERIVED)/Build/Products/$(CONFIG)/$(PRODUCT).app
+BINARY      := $(APP)/Contents/MacOS/$(PRODUCT)
+INSTALLED   := /Applications/baia.app
 LOG         := $(DERIVED)/xcodebuild.log
 # Every local package, discovered rather than listed, so adding one under
 # Packages/ needs no edit here and cannot be silently left out of `make test`.
@@ -19,7 +26,7 @@ EMBEDDED    := $(wildcard Packages/*/Sources/*/Resources/*)
 # `upstream` is here because a directory of that name exists: without it make
 # treats the target as satisfied by the directory and never runs the recipe,
 # which looks exactly like a patch that silently stopped being applied.
-.PHONY: help doctor bootstrap upstream gen build test run run-attached clean distclean
+.PHONY: help doctor bootstrap upstream gen build test run run-attached install uninstall clean distclean
 
 help: ## Show available targets
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -139,6 +146,35 @@ run: build ## Build and launch detached
 
 run-attached: build ## Build and run in the foreground so stdout/stderr land here
 	$(BINARY)
+
+install: ## Build Release and install it to /Applications as the copy you use daily
+	@# Release rather than Debug, and a separate bundle id and support directory
+	@# come with it, so this cannot overwrite or be overwritten by `make run`.
+	@$(MAKE) --no-print-directory CONFIG=Release build
+	@# Removed rather than copied over. A copy into an existing bundle leaves
+	@# whatever the previous version had and the extra file is not in any
+	@# manifest, so the next launch mixes two builds with nothing to say so.
+	@if [[ -e "$(INSTALLED)" ]]; then \
+		echo "replacing $(INSTALLED)"; \
+		rm -rf "$(INSTALLED)"; \
+	fi
+	@cp -R "$(DERIVED)/Build/Products/Release/baia.app" "$(INSTALLED)"
+	@echo "installed $(INSTALLED)"
+	@echo ""
+	@echo "  version:  $$(/usr/bin/defaults read "$(INSTALLED)/Contents/Info" CFBundleShortVersionString)"
+	@echo "  bundle:   $$(/usr/bin/defaults read "$(INSTALLED)/Contents/Info" CFBundleIdentifier)"
+	@echo "  state:    ~/Library/Application Support/$$(/usr/bin/defaults read "$(INSTALLED)/Contents/Info" BAIASupportDirectory)"
+	@echo ""
+	@echo "Notifications are per bundle id: enable baia under System Settings >"
+	@echo "Notifications once, the first time you install after an id change."
+
+uninstall: ## Remove the installed copy. Leaves its Application Support directory alone
+	@if [[ -e "$(INSTALLED)" ]]; then \
+		rm -rf "$(INSTALLED)"; \
+		echo "removed $(INSTALLED)"; \
+	else \
+		echo "$(INSTALLED) is not there"; \
+	fi
 
 clean: ## Remove build products, keep resolved packages
 	rm -rf $(DERIVED)/Build

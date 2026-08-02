@@ -25,7 +25,7 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
 cd "$REPO"
 
-APP=".build/Build/Products/Debug/baia.app"
+APP=".build/Build/Products/Debug/baia-dev.app"
 OUT="verify-out/path-picker"
 # Absolute, because the readout below is typed into a pane whose working
 # directory is the fixture, not the repo. A relative path there wrote into a

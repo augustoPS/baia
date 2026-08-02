@@ -62,7 +62,7 @@ BACKUP="$OUT/backup"
 CONFIG="$HOME/.config/baia/config.json"
 SESSION="$HOME/Library/Application Support/baia/session.json"
 SOCKET="$HOME/Library/Application Support/baia/control.sock"
-BINARY="$ROOT/.build/Build/Products/Debug/baia.app/Contents/MacOS/baia"
+BINARY="$ROOT/.build/Build/Products/Debug/baia-dev.app/Contents/MacOS/baia-dev"
 
 # A second baia would own the socket, and the instance this script launches would
 # then run with no channel at all and inject no `$BAIA_TOKEN`, which surfaces as

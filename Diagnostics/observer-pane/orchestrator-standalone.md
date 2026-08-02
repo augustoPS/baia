@@ -48,7 +48,7 @@ Stop and say so if any of these fail:
   somewhere else, and the worktrees you create would be wrong.
 - no `move` line: the running baia predates 2026-08-02, or it is the installed
   copy rather than the dev build. The layout in step 4 needs `move`. Ask for a
-  relaunch of `.build/Build/Products/Debug/baia.app`; do not launch it yourself,
+  relaunch of `.build/Build/Products/Debug/baia-dev.app`; do not launch it yourself,
   because `make run` is denied to you and for good reason: you are running inside
   the app you would be replacing.
 

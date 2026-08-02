@@ -12,7 +12,7 @@
 # because "the footers moved with the surface" is not a pixel assertion.
 set -uo pipefail
 
-APP=".build/Build/Products/Debug/baia.app"
+APP=".build/Build/Products/Debug/baia-dev.app"
 BIN="$APP/Contents/MacOS/baia"
 CFG="$HOME/.config/baia/config.json"
 SESSION="$HOME/Library/Application Support/baia/session.json"

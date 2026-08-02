@@ -28,7 +28,13 @@ check 2 'make run-attached'
 check 2 'pkill -x baia'
 check 2 'pkill baia'
 check 2 'osascript -e '"'"'quit app "baia"'"'"''
-check 2 'open .build/Build/Products/Debug/baia.app'
+check 2 'open .build/Build/Products/Debug/baia-dev.app'
+# Both bundles, because there are two now. The Debug product became
+# `baia-dev.app` on 2026-08-02 so a build under test can run beside the installed
+# copy, and `baia-dev.app` does not contain the substring `baia.app`: the guard's
+# old pattern matched neither the bundle an executor is near nor the one in
+# /Applications. Opening either launches an instance that takes a socket.
+check 2 'open /Applications/baia.app'
 check 2 'echo hi; pkill -x baia'
 
 # Denied behind an rtk prefix. `rtk hook claude` rewrites commands before the
@@ -41,7 +47,7 @@ check 2 'echo hi; pkill -x baia'
 # what it had.
 check 2 'rtk proxy pkill -x baia'
 check 2 'rtk proxy make run'
-check 2 'rtk proxy open .build/Build/Products/Debug/baia.app'
+check 2 'rtk proxy open .build/Build/Products/Debug/baia-dev.app'
 check 2 'rtk proxy osascript -e '"'"'quit app "baia"'"'"''
 check 2 'rtk make run'
 check 2 'echo hi; rtk proxy pkill baia'

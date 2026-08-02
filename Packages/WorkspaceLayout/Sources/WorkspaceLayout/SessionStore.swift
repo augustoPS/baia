@@ -24,12 +24,19 @@ public struct SessionStore: Sendable {
     /// throws and creates the directory as a side effect of being asked where it
     /// is. Creating it belongs to `save`, the only writer, so a launch that only
     /// reads never leaves an empty directory behind.
-    public static func defaultFileURL() -> URL {
+    /// - Parameter directoryName: the folder under Application Support. `baia`
+    ///   for the installed copy and `baia-dev` for the build under test, so the
+    ///   two can run at once without one's window list overwriting the other's.
+    ///   The app reads it from `BAIASupportDirectory` in its own Info.plist; the
+    ///   default is here so a package test never has to know that.
+    public static func defaultFileURL(directoryName: String = "baia") -> URL {
         let support = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(filePath: NSHomeDirectory(), directoryHint: .isDirectory)
                 .appending(path: "Library/Application Support")
-        return support.appending(path: "baia/session.json")
+        return support
+            .appending(path: directoryName, directoryHint: .isDirectory)
+            .appending(path: "session.json")
     }
 
     /// The stored session, or nil when there is nothing usable to restore.

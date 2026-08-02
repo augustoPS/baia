@@ -22,7 +22,8 @@ starting anything larger than a single fix.
 | `make build` | Debug build. Errors only on stdout, full log at `.build/xcodebuild.log` |
 | `make test` | Every local package's tests. No app build, no signing, no Metal |
 | `make gen` | Regenerate `baia.xcodeproj` from `project.yml` |
-| `make run` | Build and launch detached |
+| `make run` | Build Debug and launch `baia-dev.app` detached |
+| `make install` | Build Release and install `baia.app` to `/Applications` |
 
 Never bare `xcodebuild`. Measured cold in a fresh worktree: `make build` about 25
 seconds, the first `make test` about 95 across twelve suites, every `make test`
@@ -31,6 +32,29 @@ after that about 8. A command that looks stuck is usually building.
 `make test` never compiles `Sources/`, so it cannot see a call site you broke.
 `make build` never runs a test, so it cannot see behaviour you changed. Work that
 touches a package the app target imports needs both.
+
+## Two builds, and they do not share state
+
+Release is `baia.app`, bundle id `pasqualotto.baia`, installed in `/Applications`
+and used daily. Debug is `baia-dev.app`, bundle id `pasqualotto.baia.dev`, built
+by `make run` to test the next change. They are meant to run at the same time.
+
+That only works because each owns a directory under Application Support, named by
+`BAIA_SUPPORT_DIRECTORY` per configuration in `project.yml` and read back through
+`BAIASupportDirectory` in `Info.plist` by `Sources/SupportDirectory.swift`. It
+holds `session.json`, `control.sock` and `recent-projects.tsv`. Sharing them
+breaks three ways: the second instance to launch finds the socket bound and runs
+**with no channel at all**, so `baia` inside its panes fails; `session.json` has
+one writer and the loser's windows are gone; and one bundle id for two apps leaves
+`open -b` picking whichever LaunchServices registered last.
+
+Settings are deliberately shared. Both read `~/.config/baia/config.json`, because
+testing a build against settings that are not the ones in daily use tests the
+wrong thing.
+
+Anything matching a bundle path must accept both names. `baia-dev.app` does not
+contain the substring `baia.app`, and the rename silently opened a hole in
+`guard-baia-alive.sh` that every existing check passed.
 
 ## Non-negotiables
 

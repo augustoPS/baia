@@ -26,7 +26,7 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 baia --help 2>/dev/null | grep -q '^  move ' || {
   echo "the running baia has no 'move' verb, so it predates the merge." >&2
   echo "Quit it and relaunch:" >&2
-  echo "  open $(cd "$HERE/../.." && pwd)/.build/Build/Products/Debug/baia.app" >&2
+  echo "  open $(cd "$HERE/../.." && pwd)/.build/Build/Products/Debug/baia-dev.app" >&2
   exit 2
 }
 

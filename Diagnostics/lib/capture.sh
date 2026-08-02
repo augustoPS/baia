@@ -20,7 +20,7 @@
 #     That is what `act` is for, and why every helper calls it first.
 set -uo pipefail
 
-APP=".build/Build/Products/Debug/baia.app"
+APP=".build/Build/Products/Debug/baia-dev.app"
 OUT="${1:-design/handoffs/captures}"
 SESSION="$HOME/Library/Application Support/baia/session.json"
 CONFIG="$HOME/.config/baia/config.json"

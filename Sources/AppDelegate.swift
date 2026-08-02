@@ -15,7 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// and it would drift silently.
     private var windows: [WorkspaceWindowController] = []
 
-    private let sessionStore = SessionStore(fileURL: SessionStore.defaultFileURL())
+    private let sessionStore = SessionStore(fileURL: SessionStore.defaultFileURL(directoryName: SupportDirectory.name))
 
     /// The config file, and everything derived from it. Created before any
     /// window, because a pane built before it exists would come up in
@@ -97,7 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// outlives every window.
     private var keyMonitor: Any?
 
-    private let recentProjects = RecentProjects(fileURL: RecentProjects.defaultFileURL())
+    private let recentProjects = RecentProjects(fileURL: RecentProjects.defaultFileURL(directoryName: SupportDirectory.name))
 
     /// Coalesces the writes. Every `cd` in every pane reports a session change
     /// through the one-second anchor poll, so writing on each one would rewrite
