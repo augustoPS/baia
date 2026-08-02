@@ -1,4 +1,5 @@
 import Foundation
+import GitWorkspace
 
 /// Turns a ``PaneStatus`` into the segments a bar draws, in reading order.
 public enum PaneStatusSegments {
@@ -120,6 +121,43 @@ public enum PaneStatusSegments {
         }
 
         return segments
+    }
+
+    /// The command palette's branch and markers for a selected row, built
+    /// through this table rather than formatted separately.
+    ///
+    /// Routing through the segment table is what keeps the palette and the
+    /// footer from drifting: the same dirty marker is the same colour in both,
+    /// and a change to the marker vocabulary reaches this for free. The
+    /// operation label is dropped because the palette row has no room for it
+    /// and the footer will say so the moment the project is open.
+    public static func runs(for status: RepositoryStatus) -> [PaneStatusRun] {
+        let git = PaneStatus.Git(
+            head: status.displayHead,
+            hasUpstream: status.upstream != nil,
+            ahead: status.ahead,
+            behind: status.behind,
+            dirty: status.staged > 0 || status.unstaged > 0 || status.conflicted > 0,
+            untracked: status.untracked,
+            conflicted: status.conflicted,
+            operation: nil,
+            isLinkedWorktree: false
+        )
+        let pane = PaneStatus(
+            anchorName: "",
+            anchorIsRepository: true,
+            isPinned: false,
+            workingDirectory: nil,
+            git: git,
+            agent: nil
+        )
+
+        var runs: [PaneStatusRun] = []
+        for segment in build(from: pane) where segment.role == .branch || segment.role == .indicators {
+            if !runs.isEmpty { runs.append(PaneStatusRun(text: " ", emphasis: .context)) }
+            runs.append(contentsOf: segment.runs)
+        }
+        return runs
     }
 
     /// The three git segments, in the order the table in the brief fixes:
