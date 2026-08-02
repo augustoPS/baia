@@ -90,3 +90,26 @@ found by hand, each costing a trace: something is derived from a view's size, th
 size changes, and the derived thing is never rebuilt. The document view drew into
 one point, the tree could not be hit at all, the hover tracking areas covered
 nothing, and the rows view never repainted on a column width change.
+
+## Every script here runs on the bash macOS ships
+
+`/bin/bash` is 3.2.57, from 2007, on every Mac: Apple stopped at the last version
+before bash went GPLv3 and will not move. Homebrew's bash 5 installs beside it and
+takes over `#!/usr/bin/env bash` for whoever has it on their PATH, which is the
+trap rather than the fix. A script written against 5 works here and dies on a
+stock Mac at its first bash-4 builtin.
+
+It dies badly. On 2026-08-02 `pane-move/live.sh` reached `readarray` after it had
+already opened two panes, so the failure left a half-built workspace and named a
+builtin rather than a cause.
+
+```
+./Diagnostics/lib/shell-compat.sh
+```
+
+Two arms and a negative control: every script must parse under `/bin/bash`
+specifically, none may name a construct 3.2 lacks, and the pattern is fed one line
+per banned construct so a typo in the alternation cannot report a clean sweep.
+
+Rewrite rather than reach for a newer bash. A `while read` loop replaces
+`readarray` everywhere, and 3.2 is what the next person will have.
