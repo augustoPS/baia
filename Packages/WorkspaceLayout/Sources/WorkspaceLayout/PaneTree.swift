@@ -90,6 +90,60 @@ public indirect enum PaneTree: Sendable, Equatable, Codable {
         return splittingLeaf(id, axis: axis, newPane: newPane, ratio: Self.clampedRatio(ratio))
     }
 
+    /// The tree with `id`'s pane taken out of where it sits and put back beside
+    /// `target`, or nil when that describes nothing.
+    ///
+    /// **The pane keeps its id, and that is the whole operation.** Nothing is
+    /// created and nothing is closed, so `paneIDs` holds the same set before and
+    /// after and the caller's map of id to surface still answers. Spelled as a
+    /// ``closing(_:)`` and a ``splitting(_:axis:newPane:ratio:)`` at the layer
+    /// above, the pane would come back with a fresh id, and a fresh id is a fresh
+    /// surface: the shell in it dies. Here the id is the one thing that does not
+    /// move.
+    ///
+    /// The vacated split collapses exactly as ``closing(_:)`` collapses it, ratio
+    /// and all, because it is the same walk. The new split is built at a half,
+    /// which is the ratio every split the app makes starts at; the ratio of the
+    /// split that collapsed is gone, and inventing a use for it here would make a
+    /// move somewhere else change a divider the user set.
+    ///
+    /// `before` puts the pane on the near side of `target` rather than the far
+    /// one. ``splitting(_:axis:newPane:ratio:)`` has no such choice because a
+    /// split is always the pane the caller is looking at plus a new one to its
+    /// right or below; a move names both ends, so both sides are expressible.
+    ///
+    /// Nil covers every request that cannot mean anything, and they are all one
+    /// answer because a caller spends them the same way, by changing nothing:
+    /// either pane absent from this tree, which is also how a pane in another tab
+    /// reads; the same pane named twice; and a move whose result is the tree it
+    /// started from. That last one is nil for ``replacingRatio(at:with:)``'s
+    /// reason turned up: a structural change costs a rebuild, which reparents
+    /// every live surface in the window and is a `SIGWINCH` to whatever is running
+    /// in each of them. Spending that to arrive where we already are is worse than
+    /// saying no.
+    public func moving(
+        _ id: PaneID,
+        beside target: PaneID,
+        axis: SplitAxis,
+        before: Bool
+    ) -> PaneTree? {
+        guard id != target, contains(id), contains(target) else { return nil }
+        // Non-nil by construction: `target` is in the tree and is not `id`, so
+        // something is left after the removal. The guard is here rather than a
+        // force unwrap because the alternative is trusting that argument at a
+        // call site that has no way to check it.
+        guard let vacated = removing(id) else { return nil }
+        guard let moved = vacated.splittingLeaf(
+            target,
+            axis: axis,
+            newPane: id,
+            ratio: 0.5,
+            before: before
+        ) else { return nil }
+        guard moved != self else { return nil }
+        return moved
+    }
+
     /// The tree without `id`'s pane, or nil when there would be no pane left.
     ///
     /// Nil also covers an id that is not in the tree, so both answers mean "keep
@@ -544,22 +598,39 @@ public indirect enum PaneTree: Sendable, Equatable, Codable {
 
     /// Rebuilds the spine down to `id`'s leaf, splitting it in two. Nil when no
     /// leaf on the way holds `id`.
+    ///
+    /// **At the leaf and never at its parent**, which is the rule ``moving(_:beside:axis:before:)``
+    /// leans on hardest. A pane whose parent split already runs the asked-for axis
+    /// makes it tempting to hang the newcomer off that parent instead, which reads
+    /// the same on screen for two panes and is a different tree: the pane lands
+    /// beside the parent's *other child*, a whole column rather than the one leaf
+    /// the caller named, and the move can no longer be undone by naming panes.
+    ///
+    /// - Parameter before: which side of `id` the new pane takes. False is what a
+    ///   split means, the new pane second, so `⌘D` and `baia split --right` land
+    ///   to the right and below. Only a move names the other side.
     private func splittingLeaf(
         _ id: PaneID,
         axis: SplitAxis,
         newPane: PaneID,
-        ratio: Double
+        ratio: Double,
+        before: Bool = false
     ) -> PaneTree? {
         switch self {
         case let .leaf(existing):
             guard existing == id else { return nil }
-            return .split(axis: axis, ratio: ratio, first: .leaf(existing), second: .leaf(newPane))
+            return before
+                ? .split(axis: axis, ratio: ratio, first: .leaf(newPane), second: .leaf(existing))
+                : .split(axis: axis, ratio: ratio, first: .leaf(existing), second: .leaf(newPane))
         case let .split(splitAxis, splitRatio, first, second):
-            if let replaced = first.splittingLeaf(id, axis: axis, newPane: newPane, ratio: ratio) {
+            if let replaced = first.splittingLeaf(
+                id, axis: axis, newPane: newPane, ratio: ratio, before: before
+            ) {
                 return .split(axis: splitAxis, ratio: splitRatio, first: replaced, second: second)
             }
-            guard let replaced = second.splittingLeaf(id, axis: axis, newPane: newPane, ratio: ratio)
-            else { return nil }
+            guard let replaced = second.splittingLeaf(
+                id, axis: axis, newPane: newPane, ratio: ratio, before: before
+            ) else { return nil }
             return .split(axis: splitAxis, ratio: splitRatio, first: first, second: replaced)
         }
     }
