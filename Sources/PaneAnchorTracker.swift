@@ -1,4 +1,5 @@
 import AppKit
+import PaneActivity
 import ProjectAnchor
 
 /// One pane's live anchor: polls the pane's foreground process for its working
@@ -88,7 +89,7 @@ final class PaneAnchorTracker {
     /// foreground process for a moment, and the title must not flicker.
     private func poll() {
         guard let pid = foregroundPid(),
-              let directory = ProcessWorkingDirectory.url(ofProcess: pid)
+              let directory = readWorkingDirectory(forForeground: pid)
         else { return }
         // Compared against what the *poll* last saw, not against
         // `workingDirectory`, and the difference is the whole point. An
@@ -105,6 +106,37 @@ final class PaneAnchorTracker {
         guard directory != lastPolledDirectory else { return }
         lastPolledDirectory = directory
         apply(directory)
+    }
+
+    /// The pane's working directory, asking the foreground process first and its
+    /// descendants only if that read is refused.
+    ///
+    /// The direct read answers for every interactive pane, and this returns on it
+    /// without building a process tree, so the common path costs exactly what it
+    /// did before. The walk is the `split --command` case: that command runs
+    /// under `zsh -lc`, which has no job control, so nothing gets a process group
+    /// of its own and `tcgetpgrp` names the root-owned `/usr/bin/login` ghostty
+    /// spawned. `proc_pidinfo` refuses a process this user does not own, the
+    /// guard in `poll` failed on every tick forever, and the pane never resolved
+    /// an anchor at all. `refreshStatus` nils the whole status when the anchor is
+    /// nil, so the entire footer stayed blank, including the agent label that was
+    /// being detected correctly the whole time.
+    ///
+    /// Measured 2026-08-02 on a live executor pane: leader 6347 `login` uid 0,
+    /// 6351 `zsh` uid 501, 6360 `claude` uid 501, all in group 6347.
+    ///
+    /// The snapshot is rooted at the foreground pid rather than at baia, because
+    /// the processes wanted are below it and `snapshot(under:)` walks downward.
+    private func readWorkingDirectory(forForeground pid: pid_t) -> URL? {
+        if let direct = ProcessWorkingDirectory.url(ofProcess: pid) { return direct }
+        let tree = ProcessTree.snapshot(under: pid)
+        for candidate in ProcessTree.cwdCandidates(forForeground: pid, in: tree)
+        where candidate != pid {
+            if let directory = ProcessWorkingDirectory.url(ofProcess: candidate) {
+                return directory
+            }
+        }
+        return nil
     }
 
     /// What the last successful poll read, whether or not it was applied.

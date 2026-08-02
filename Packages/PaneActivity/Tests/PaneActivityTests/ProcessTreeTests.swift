@@ -139,4 +139,63 @@ import Testing
 
         #expect(found == nil)
     }
+
+    // MARK: - cwdCandidates
+
+    @Test func theForegroundLeaderIsAlwaysTriedFirst() {
+        // The safety property. Whenever the leader's own read succeeds the
+        // caller stops there, so this function cannot change the answer for the
+        // interactive pane that already worked. Everything else it returns is
+        // reached only after a denied read.
+        let leader = process(pid: 100, parent: 1, name: "claude")
+        let child = process(pid: 200, parent: 100, name: "zsh")
+
+        let candidates = ProcessTree.cwdCandidates(forForeground: 100, in: [leader, child])
+
+        #expect(candidates.first == 100)
+    }
+
+    @Test func aDeniedLeaderFallsBackToTheShellBeneathItAndNotToWhatTheShellRuns() {
+        // The `split --command` tree, exactly as measured on 2026-08-02:
+        // /usr/bin/login is the group leader and is root, so its cwd read is
+        // denied; zsh runs under it and claude under that.
+        //
+        // The order matters more than the membership. `zsh` must outrank
+        // `claude`, because a pane's anchor follows its shell rather than a
+        // subprocess that may have cd'd somewhere of its own.
+        let login = process(pid: 6347, parent: 1, name: "login")
+        let shell = process(pid: 6351, parent: 6347, name: "-zsh")
+        let agent = process(pid: 6360, parent: 6351, name: "claude")
+
+        let candidates = ProcessTree.cwdCandidates(
+            forForeground: 6347,
+            in: [login, shell, agent]
+        )
+
+        #expect(candidates == [6347, 6351, 6360])
+    }
+
+    @Test func aCycleInTheParentPointersTerminates() {
+        // Bounded for the reason `shellPid` is: these pointers come from one
+        // kernel snapshot and should form a tree, and a loop here would hang the
+        // main thread on a poll timer rather than merely returning nonsense.
+        let first = process(pid: 100, parent: 200, name: "a")
+        let second = process(pid: 200, parent: 100, name: "b")
+
+        let candidates = ProcessTree.cwdCandidates(forForeground: 100, in: [first, second])
+
+        #expect(candidates == [100, 200])
+    }
+
+    @Test func aForegroundPidAbsentFromTheTreeIsStillReturnedAsItsOwnCandidate() {
+        // A process can exit between the `tcgetpgrp` read and the snapshot. The
+        // caller must still get to try it: the read either works or fails, and
+        // failing is what triggers the walk. Returning an empty list here would
+        // turn a transient race into a pane that never anchors.
+        let unrelated = process(pid: 999, parent: 1, name: "other")
+
+        let candidates = ProcessTree.cwdCandidates(forForeground: 100, in: [unrelated])
+
+        #expect(candidates == [100])
+    }
 }

@@ -215,6 +215,64 @@ public enum ProcessTree {
         return nil
     }
 
+    /// Pids to try when reading a working directory for `pid`, best first.
+    ///
+    /// `pid` here is what `tcgetpgrp` answered, which names a process *group*
+    /// rather than a process, and the leader is often the wrong member to ask.
+    /// In a pane opened by `split --command` the command runs under `zsh -lc`,
+    /// which is a login shell but not an interactive one, so it has no job
+    /// control and never puts its children in groups of their own. Every process
+    /// in the pane therefore stays in the group led by the `/usr/bin/login` that
+    /// ghostty spawns, and that leader is **root**. `proc_pidinfo` requires the
+    /// caller to share the target's effective uid, so the read is denied, and a
+    /// caller that gives up there never resolves an anchor at all: the poll's
+    /// guard fails on every tick forever and the whole footer stays blank.
+    ///
+    /// An interactive pane escapes it by accident. Job control gives the running
+    /// command its own group, so the leader *is* the command and it is owned by
+    /// the user. That is why this was never seen until `--command` shipped.
+    ///
+    /// **The leader comes first and that ordering is the whole safety argument.**
+    /// Whenever its read succeeds the answer is unchanged from before this
+    /// function existed, so the interactive case cannot regress. Only a denied
+    /// read walks at all.
+    ///
+    /// Descendants follow shallowest first, which puts the pane's own shell
+    /// ahead of whatever that shell is running. That is deliberate and it is the
+    /// opposite of what "foreground" suggests: a pane's anchor should follow the
+    /// shell, not a subprocess that cd'd somewhere of its own. Ordering deepest
+    /// first breaks the working case outright, because an agent's own child
+    /// shell can sit in a different directory from the agent, and that child
+    /// would then outrank the process whose cwd the pane actually means.
+    ///
+    /// Bounded like ``shellPid(above:in:)`` and for the same reason. These
+    /// pointers come from one kernel snapshot and should form a tree, and a loop
+    /// here would hang the main thread on a poll timer.
+    public static func cwdCandidates(forForeground pid: pid_t, in tree: [ProcessSnapshot]) -> [pid_t] {
+        var childrenByParent: [pid_t: [pid_t]] = [:]
+        for process in tree where process.parentPid != process.pid {
+            childrenByParent[process.parentPid, default: []].append(process.pid)
+        }
+
+        var candidates: [pid_t] = [pid]
+        var frontier: [pid_t] = [pid]
+        var seen: Set<pid_t> = [pid]
+        var generations = 0
+        while !frontier.isEmpty, generations < 64 {
+            generations += 1
+            var next: [pid_t] = []
+            for parent in frontier {
+                for child in childrenByParent[parent, default: []].sorted()
+                where seen.insert(child).inserted {
+                    next.append(child)
+                }
+            }
+            candidates += next
+            frontier = next
+        }
+        return candidates
+    }
+
     /// A login shell presents itself as `-zsh`, and the leading hyphen is a
     /// convention rather than part of the name.
     private static func normalized(_ name: String) -> String {

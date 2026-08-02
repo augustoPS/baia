@@ -10,10 +10,21 @@ import Foundation
 /// works for any program running in the pane.
 ///
 /// `proc_pidinfo` requires the caller to share the target's effective uid *or* to
-/// be privileged, so root can inspect any process. Immaterial for baia, which
-/// runs as the user and inspects the pane's shell: Ghostty spawns it through
-/// `login -flp`, which drops root. baia is unsandboxed, so no entitlement is
-/// involved.
+/// be privileged, so root can inspect any process. baia is unsandboxed, so no
+/// entitlement is involved.
+///
+/// **That restriction is not immaterial, and this comment claimed it was until
+/// 2026-08-02.** The old reasoning was that ghostty spawns the shell through
+/// `login -flp`, which drops root. True of the shell it execs, false of the
+/// `login` process itself: that one stays uid 0 and, in a pane opened by
+/// `split --command`, it is also the leader of the pty's foreground process
+/// group, because `zsh -lc` is not interactive and gives its children no groups
+/// of their own. So `tcgetpgrp` names a root process, this returns nil for it
+/// every time, and a caller that treats nil as "no answer yet" waits forever.
+///
+/// Callers that start from a foreground pid must therefore be prepared to walk.
+/// `ProcessTree.cwdCandidates(forForeground:in:)` orders the attempts, and
+/// `PaneAnchorTracker` is the caller that does it.
 public enum ProcessWorkingDirectory {
     public static func url(ofProcess pid: pid_t) -> URL? {
         var info = proc_vnodepathinfo()
