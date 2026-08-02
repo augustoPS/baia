@@ -173,20 +173,15 @@ final class PaneActivityTracker {
         guard let shell = ProcessTree.shellPid(above: foreground, in: tree) else { return }
         let next = PaneActivityClassifier.classify(tree: tree, shellPid: shell)
         guard next != activity else { return }
-        let wasIdle = Self.isIdle(activity)
+        let wasIdle = PaneActivity.isIdle(activity)
         activity = next
         // A pane that goes from idle back to running has been answered: whatever
         // it was waiting for arrived and it is working again. This is the only
         // thing that ends a request, and it is deliberately the transition rather
         // than the state, so a bell that arrives after its command already exited
         // is not cleared on the very next tick before anyone has seen it.
-        if wasIdle, !Self.isIdle(next) { _ = attention.noteResumed() }
+        if wasIdle, !PaneActivity.isIdle(next) { _ = attention.noteResumed() }
         rebuild()
-    }
-
-    /// True for a pane sitting at a prompt with nothing under it.
-    private static func isIdle(_ activity: PaneActivity) -> Bool {
-        activity == .idleShell
     }
 
     private func rebuild() {

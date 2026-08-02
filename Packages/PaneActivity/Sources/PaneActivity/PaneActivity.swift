@@ -68,4 +68,9 @@ public enum PaneActivity: Sendable, Equatable {
         case let .command(name): name
         }
     }
+
+    /// True for a pane sitting at a prompt with nothing under it.
+    public static func isIdle(_ activity: PaneActivity) -> Bool {
+        activity == .idleShell
+    }
 }

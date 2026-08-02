@@ -36,4 +36,20 @@ import Testing
                 == PaneActivity.agent(name: "claude", pid: 9999).label
         )
     }
+
+    // MARK: - isIdle
+
+    /// True for a pane sitting at a prompt with nothing under it.
+    @Test func idleShellIsIdle() {
+        #expect(PaneActivity.isIdle(.idleShell))
+    }
+
+    /// Every other case is something running, or an inability to tell what is,
+    /// neither of which is idle.
+    @Test func nothingElseIsIdle() {
+        #expect(!PaneActivity.isIdle(.agent(name: "claude", pid: 1)))
+        #expect(!PaneActivity.isIdle(.build(command: "npm")))
+        #expect(!PaneActivity.isIdle(.command(name: "vim")))
+        #expect(!PaneActivity.isIdle(.unnameable))
+    }
 }
