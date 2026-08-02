@@ -64,6 +64,16 @@ fi
 "$OBS/seed-worktree-settings.sh" \
   "$WT/baia--activity-rules" "$WT/baia--control-scope" "$WT/baia--layout-translation"
 
+# The previous run's verdicts move aside rather than being deleted or left in
+# place. Left in place they are a scoring hazard: verdicts are keyed by seq, the
+# ring restarts with the app, and run 2's seq 29 would sit in the same directory
+# as this run's seq 29 with nothing but a file date to tell them apart. Deleted
+# they are gone, and the log is the one artefact the whole exercise produces.
+if [ -d "$OBS/verdicts" ] && [ -n "$(ls -A "$OBS/verdicts" 2>/dev/null)" ]; then
+  previous="$OBS/verdicts-$(date -u +%Y%m%dT%H%M%SZ)"
+  mv "$OBS/verdicts" "$previous"
+  echo "moved the previous run's verdicts to $(basename "$previous")"
+fi
 mkdir -p "$OBS/verdicts"
 mkdir -p "$LOG"
 : > "$LOG/verdicts.jsonl"
