@@ -184,7 +184,13 @@ final class PaneGitStatus {
         // this afterwards would label one poll's branch with the previous poll's
         // answer.
         isOnDefaultBranch = isDefault
-        apply(status.map { paneGit($0, isLinkedWorktree: isLinkedWorktree) })
+        apply(status.map {
+            PaneStatus.Git(
+                $0,
+                operation: PaneStatus.Git.operationLabel(for: $0.inProgress),
+                isLinkedWorktree: isLinkedWorktree
+            )
+        })
         if isStale {
             isStale = false
             refresh()
@@ -197,40 +203,4 @@ final class PaneGitStatus {
         onChange?(next)
     }
 
-    /// Takes the worktree flag rather than reading it, so the mapping depends on
-    /// nothing but its arguments. `isLinkedWorktree` is resolved once per anchor
-    /// in ``setAnchor(_:)`` and is the only field here that is not in `status`.
-    private func paneGit(
-        _ status: RepositoryStatus,
-        isLinkedWorktree: Bool
-    ) -> PaneStatus.Git {
-        PaneStatus.Git(
-            head: status.displayHead,
-            hasUpstream: status.upstream != nil,
-            ahead: status.ahead,
-            behind: status.behind,
-            // Conflicts count as dirty, matching how the owner's own statusline
-            // derives its asterisk from `git diff --quiet`, which reports an
-            // unmerged path as a difference.
-            dirty: status.staged > 0 || status.unstaged > 0 || status.conflicted > 0,
-            untracked: status.untracked,
-            conflicted: status.conflicted,
-            operation: label(for: status.inProgress),
-            isLinkedWorktree: isLinkedWorktree
-        )
-    }
-
-    /// Upper case because these are the states where the next command does
-    /// something other than what it usually does, and the footer is otherwise
-    /// all lower case.
-    private func label(for operation: RepositoryStatus.InProgress?) -> String? {
-        switch operation {
-        case .none: nil
-        case .rebase: "REBASE"
-        case .merge: "MERGE"
-        case .cherryPick: "CHERRY-PICK"
-        case .revert: "REVERT"
-        case .bisect: "BISECT"
-        }
-    }
 }

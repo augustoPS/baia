@@ -132,17 +132,11 @@ public enum PaneStatusSegments {
     /// operation label is dropped because the palette row has no room for it
     /// and the footer will say so the moment the project is open.
     public static func runs(for status: RepositoryStatus) -> [PaneStatusRun] {
-        let git = PaneStatus.Git(
-            head: status.displayHead,
-            hasUpstream: status.upstream != nil,
-            ahead: status.ahead,
-            behind: status.behind,
-            dirty: status.staged > 0 || status.unstaged > 0 || status.conflicted > 0,
-            untracked: status.untracked,
-            conflicted: status.conflicted,
-            operation: nil,
-            isLinkedWorktree: false
-        )
+        // The operation is dropped for the reason above. The worktree flag is
+        // false because a palette row names a project rather than a pane, and
+        // nothing here has been anchored to a checkout yet; the pane's own
+        // footer answers that the moment the project is open.
+        let git = PaneStatus.Git(status, operation: nil, isLinkedWorktree: false)
         let pane = PaneStatus(
             anchorName: "",
             anchorIsRepository: true,
