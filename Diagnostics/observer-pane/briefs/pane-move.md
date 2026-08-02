@@ -1,3 +1,4 @@
+<!-- model: claude-opus-5 -->
 # A pane cannot be re-placed without being destroyed
 
 You are working in a git worktree of baia on branch `observer/pane-move`.

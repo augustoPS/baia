@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Spawns three executor panes from the pane that runs this, then prints the
-# by-hand steps for the observer.
+# Spawns one executor pane per brief in `briefs/`, from the pane that runs this,
+# then prints the by-hand steps for the observer.
 #
 # Run this from inside a baia pane. It needs $BAIA_SOCK and $BAIA_TOKEN, which
 # only a pane has: the token is the capability the channel authenticates on and
@@ -31,18 +31,44 @@ if ! baia --help 2>/dev/null | grep -q -- '--command'; then
   exit 2
 fi
 
-for w in activity-rules control-scope layout-translation; do
-  [ -d "$WT/baia--$w" ] || { echo "missing worktree: $WT/baia--$w" >&2; exit 2; }
+# The wave is whatever `briefs/` holds, rather than three names written here.
+# Hardcoding them meant that retiring a wave to `briefs/spent/` left this script
+# pointing at files that had moved, and the failure would have been a `cat` of a
+# missing brief inside a pane, which reaches the agent as an empty prompt.
+#
+# One convention carries it: a brief `X.md` runs in `baia--X` on `observer/X`.
+ITEMS=()
+for brief in "$OBS"/briefs/*.md; do
+  [ -e "$brief" ] || { echo "no briefs in $OBS/briefs" >&2; exit 2; }
+  ITEMS+=("$(basename "$brief" .md)")
 done
 
-# The brief gate, and it blocks rather than warns. On 2026-08-01 two of these
-# three briefs could not reach their own goals and both said so in writing, so the
-# observer spent a wave judging adherence to instructions that could not arrive.
+# The observer watches for drift across a wave, and a wave of one is a pane the
+# owner can read. Refused rather than run, so nobody spends a Fable session
+# learning that.
+if [ "${#ITEMS[@]}" -lt 2 ]; then
+  echo "only ${#ITEMS[@]} brief in $OBS/briefs: ${ITEMS[*]}" >&2
+  echo "The observer measures drift across a wave, so it wants two or more." >&2
+  echo "For one item, spawn it directly and read the pane:" >&2
+  echo "  baia split --cwd $WT/baia--${ITEMS[0]} --command \\" >&2
+  echo "    \"'/bin/zsh' -lc 'claude \\\"\\\$(cat $OBS/briefs/${ITEMS[0]}.md)\\\"; exec \\\"\\\$SHELL\\\" -l'\"" >&2
+  exit 2
+fi
+
+WORKTREES=()
+for w in "${ITEMS[@]}"; do
+  [ -d "$WT/baia--$w" ] || { echo "missing worktree: $WT/baia--$w" >&2; exit 2; }
+  WORKTREES+=("$WT/baia--$w")
+done
+
+# The brief gate, and it blocks rather than warns. On 2026-08-01 two briefs could
+# not reach their own goals and both said so in writing, so the observer spent a
+# wave judging adherence to instructions that could not arrive.
 #
-# The list above is the wave definition, so replacing those three names is what
-# planning a wave means, and the gate runs against whatever they now point at. It
-# refused on the 2026-08-01 briefs until they were retired to `briefs/spent/`,
-# which is the behaviour to expect from it rather than a fault to work around.
+# `briefs/` is the wave definition, so filling it is what planning a wave means and
+# the gate reads whatever is in it. It refused the 2026-08-01 briefs until they
+# were retired to `briefs/spent/`, which is the behaviour to expect rather than a
+# fault to work around.
 if ! "$REPO/Diagnostics/brief-check/run.sh"; then
   echo >&2
   echo "refusing to spawn: fix the briefs above first." >&2
@@ -54,15 +80,13 @@ fi
 # Surface 1, closed 2026-08-01: pre-accept the workspace-trust dialog for each
 # worktree. Without this every executor halts before its first tool call, and the
 # acceptance does not survive a killed session.
-"$OBS/trust-worktrees.sh" \
-  "$WT/baia--activity-rules" "$WT/baia--control-scope" "$WT/baia--layout-translation"
+"$OBS/trust-worktrees.sh" "${WORKTREES[@]}"
 
 # Surfaces 2 and 4, closed 2026-08-01: the executors' allowlist and guard hook.
 # Seeded rather than assumed present. The settings existed for run 2 and were
 # hand-written and untracked, so they lived in three directories that get deleted
 # and remade, and a fresh worktree met both surfaces again.
-"$OBS/seed-worktree-settings.sh" \
-  "$WT/baia--activity-rules" "$WT/baia--control-scope" "$WT/baia--layout-translation"
+"$OBS/seed-worktree-settings.sh" "${WORKTREES[@]}"
 
 # The previous run's verdicts move aside rather than being deleted or left in
 # place. Left in place they are a scoring hazard: verdicts are keyed by seq, the
@@ -86,9 +110,12 @@ spawn() {                       # spawn <dir> <brief> <model>
 }
 
 echo "spawning executors..."
-spawn "$WT/baia--activity-rules"     "$OBS/briefs/activity-rules.md"     claude-sonnet-5
-spawn "$WT/baia--control-scope"      "$OBS/briefs/control-scope.md"      claude-opus-5
-spawn "$WT/baia--layout-translation" "$OBS/briefs/layout-translation.md" claude-sonnet-5
+for w in "${ITEMS[@]}"; do
+  # The tier lives in the brief, so the wave definition stays in one directory.
+  # Absent means Sonnet, which is what most moves want.
+  model=$(sed -n 's/^<!-- model: *\([a-z0-9-]*\) *-->$/\1/p' "$OBS/briefs/$w.md" | head -1)
+  spawn "$WT/baia--$w" "$OBS/briefs/$w.md" "${model:-claude-sonnet-5}"
+done
 
 echo
 echo "panes now in scope:"
