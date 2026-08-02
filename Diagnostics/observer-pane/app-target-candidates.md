@@ -62,15 +62,46 @@ from `self` rather than passed in, or no single obvious package to land in.
 | `Sources/PaneActivityTracker.swift:199` | `private func shellPid(above pid: pid_t, in tree: [ProcessSnapshot]) -> pid_t?` | `PaneActivity`, beside `ProcessTree`. Pure, bounded (64-iteration) walk over `[ProcessSnapshot]`, a package type; the 64-cap and the "excludes the shell by pid" invariant are exactly the kind of thing worth a package test rather than a comment. |
 | `Sources/PaneActivityTracker.swift:217` | `private static func normalized(_ name: String) -> String` | `PaneActivity`. Trivial (strips a leading `-`), but pairs with `shellPid` and has no reason to be a different distance from a test. |
 
-### Git status → `GitWorkspace` / `PaneChrome` / `ProjectAnchor`
+### ~~Git status → `GitWorkspace` / `PaneChrome` / `ProjectAnchor`~~ MOVED 2026-08-02
 
-| File:line | Signature | Belongs in |
-|---|---|---|
-| `Sources/PaneGitStatus.swift:135` | `private func repositoryRoot(for anchor: Anchor?) -> URL?` | `ProjectAnchor`, beside `Anchor`. Pure, checks `anchor.kind == .repository`. |
-| `Sources/PaneGitStatus.swift:208` | `private func paneGit(_ status: RepositoryStatus) -> PaneStatus.Git` | `PaneChrome` or `GitWorkspace`. **Needs `isLinkedWorktree` as a parameter first.** Otherwise pure `RepositoryStatus` → `PaneStatus.Git` field mapping (the dirty/conflicted/upstream logic lives here, not in either package). |
-| `Sources/PaneGitStatus.swift:228` | `private func label(for operation: RepositoryStatus.InProgress?) -> String?` | `GitWorkspace`, beside `RepositoryStatus`. Pure five-case enum-to-string mapping. |
-| `Sources/ChangesSurface.swift:431` / `:439` | `private static func sort(_ changes: [RepositoryFileChange]) -> [RepositoryFileChange]` / `private static func rank(_ change: RepositoryFileChange) -> Int` | `GitWorkspace`, beside `RepositoryFileChange`. The conflict-first, staged-before-unstaged ordering is a stated policy ("what a `git commit` needs answered, in the order it needs it"), currently untestable without instantiating the view. |
-| `Sources/FilesSurface.swift:523` | `private func guide(for index: Int?) -> (depth: Int, rows: Range<Int>)?` | `GitWorkspace`, beside `FileTree`/`DirectoryTree`. Pure descendant-range walk over tree rows (finds every row nested under a given directory row). The same shape of problem `FileTree.swift` already solves, reimplemented here over the view's own row array. |
+The last of the seven Tier 1 groups, and the only one that did not run as a wave:
+one item left, so an executor would have been orchestration with no parallelism
+to buy. Done in the main session as five green commits, `113bd54..05e0d8b`.
+
+| Was | Is now |
+|---|---|
+| `PaneGitStatus.repositoryRoot(for:)` | `Anchor.repositoryRoot(of:)` in `ProjectAnchor` |
+| `PaneGitStatus.paneGit(_:)` | `PaneStatus.Git(_:operation:isLinkedWorktree:)` in `PaneChrome` |
+| `PaneGitStatus.label(for:)` | `PaneStatus.Git.operationLabel(for:)` in `PaneChrome` |
+| `ChangesSurface.sort` / `.rank` | `[RepositoryFileChange].inCommitOrder()` in `GitWorkspace` |
+| `FilesSurface.guide(for:)` | `FileTree.descendants(ofRowAt:in:)` in `GitWorkspace` |
+
+**The parameter lift was its own commit**, as planned: `paneGit` read
+`self.isLinkedWorktree` for the one field a `RepositoryStatus` does not carry,
+which is what kept an otherwise pure mapping in the app target.
+
+**`paneGit` was a duplicate, which the survey did not know.**
+`PaneStatusSegments.runs(for:)` already built the same eight fields from the same
+type with the same dirty rule written out a second time. The two agreed, by luck:
+the rule is a judgement, and a judgement in two places drifts the first time one
+is corrected. Both call the one mapping now, which is why a mutation of the dirty
+rule reddens a palette test that predates this work.
+
+**`guide(for:)` could not move alone.** It reads a row array the app target built
+by hand, so a package function taking a row type the app target still filled in
+would have been a new copy of exactly what the first correction removed. The
+flattening moved with it, and `Row` is gone from `FilesSurface`. This is the one
+place the group's scope grew, and it grew for the reason the group exists.
+
+Two corrections to trust over the table above, both found by doing it:
+`FilesSurface`'s guide was at `:540` rather than the `:523` recorded, and
+`label(for:)` went to `PaneChrome` rather than the `GitWorkspace` named here,
+because upper-casing an operation is a decision about footer ink and the footer
+is what reads it.
+
+Every one of the twelve new tests was written against a mutation and nine
+mutations were actually run, three per move. Not one was believed on a reading.
+1537 tests, up from 1504 at the start of the group.
 
 ### Command palette → `PaneChrome`
 
@@ -121,7 +152,11 @@ flag, and did not.
 - **`Sources/PaneGitStatus.swift:208` `paneGit(_:)` is not pure in its own
   parameter.** Its body reads `isLinkedWorktree`, a stored property set from `root`
   elsewhere in the class. Moving it means making that an explicit parameter, exactly
-  the caveat given to `gate(_:)` two rows above.
+  the caveat given to `gate(_:)` two rows above. **The correction held.** It was
+  lifted in `113bd54` as its own commit before anything moved, and the group cost
+  five commits rather than four because of it. What neither the row nor this
+  correction caught is that the function was already duplicated inside `PaneChrome`;
+  see the group's own entry above.
 - **The four-function colour cluster is not uniform.** Only
   `ChangesSurface.swift:508` is a pure static taking `role` and `theme`. The other
   three are instance methods on `NSView` subclasses reading `self.theme`, and
