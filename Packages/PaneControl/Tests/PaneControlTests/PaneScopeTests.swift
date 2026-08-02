@@ -125,6 +125,55 @@ import Testing
         }
     }
 
+    /// Two siblings, in the order the sort promises rather than in some order.
+    ///
+    /// **The test above cannot fail if the sort is deleted, and repeating it
+    /// harder does not help.** Measured 2026-08-01 by review: with both
+    /// `.sorted(by:)` calls replaced by `.shuffled()` the whole suite still
+    /// passed, because no fixture gave any pane two children and a one-element
+    /// `Set` has one order. Widening the fixture is not the fix either. A
+    /// two-child fixture caught the sort-deleted mutant in 89 of 200 trials and a
+    /// three-child one in 0 of 200, since `children(of:)` rebuilds an identical
+    /// `Set` on every call and Swift iterates identical sets identically inside
+    /// one process. Repetition is measuring the language, not the code.
+    ///
+    /// So the order is pinned absolutely. `scope(of:)` promises sorted, this says
+    /// which sorted, and deleting either sort fails it on the first run.
+    @Test func siblingsComeBackInSortedOrder() {
+        var fixture = Fixture()
+        let siblings = (0..<3).map { _ in ControlPaneID(rawValue: UUID()) }
+        for (index, sibling) in siblings.enumerated() {
+            fixture.graph.open(
+                pane: sibling,
+                createdBy: fixture.parent,
+                secret: PaneSecret("c1-not-a-uuid-sibling-\(index)")
+            )
+        }
+
+        let scope = fixture.graph.scope(of: fixture.parent)
+        let walked = scope.filter { siblings.contains($0) }
+        #expect(walked == siblings.sorted { $0.description < $1.description })
+    }
+
+    /// The same promise on the peer arm, which has its own sort and its own
+    /// chance to lose it.
+    @Test func peersComeBackInSortedOrder() {
+        var fixture = Fixture()
+        let peers = (0..<3).map { _ in ControlPaneID(rawValue: UUID()) }
+        for (index, peer) in peers.enumerated() {
+            fixture.graph.open(
+                pane: peer,
+                createdBy: nil,
+                secret: PaneSecret("c1-not-a-uuid-extra-peer-\(index)")
+            )
+            fixture.graph.addPeerEdge(between: fixture.parent, and: peer)
+        }
+
+        let scope = fixture.graph.scope(of: fixture.parent)
+        let walked = scope.filter { peers.contains($0) }
+        #expect(walked == peers.sorted { $0.description < $1.description })
+    }
+
     /// A closed pane leaves the scope of the pane that opened it. Parentage is
     /// dropped on close, so this holds without anybody pruning a second index.
     @Test func aClosedChildLeavesItsParentsScope() {
