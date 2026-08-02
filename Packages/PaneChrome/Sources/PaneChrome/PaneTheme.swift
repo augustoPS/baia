@@ -535,6 +535,26 @@ public struct PaneTheme: Sendable, Equatable {
         color(for: emphasis, focused: focused, on: barBackground)
     }
 
+    /// The colour a run is drawn in, honouring the attention-fill collapse.
+    ///
+    /// A distinct function rather than a branch inside ``color(for:focused:on:)``:
+    /// that one is the palette's own per-tier policy, exercised by every ordinary
+    /// bar, and a fill parameter folded into it would make every caller's meaning
+    /// depend on an argument most of them never vary. Unfilled, this delegates to
+    /// it unchanged.
+    ///
+    /// Filled, every tier collapses onto two inks derived from the fill, because
+    /// a fill bright enough to be worth filling a bar with reverses the direction
+    /// the repair chain pushes in, and the tier colours are all derived from the
+    /// foreground, which is the wrong end.
+    public func color(for emphasis: PaneStatusEmphasis, focused: Bool, filled: Bool, on bar: RGB) -> RGB {
+        guard filled else { return color(for: emphasis, focused: focused, on: bar) }
+        switch emphasis {
+        case .context, .faint: return mutedInk(on: bar)
+        default: return ink(on: bar)
+        }
+    }
+
     /// The text colour for a bar that has been filled with `fill`, which today
     /// means an asking footer.
     ///
