@@ -208,7 +208,7 @@ import Testing
     }
 
     @Test func everyFocusAccentChoiceResolvesToItsOwnColour() {
-        // The hexes the design pass quotes for each of the five, so a formula
+        // The hexes the design pass quotes for each of the seven, so a formula
         // edited without meaning to shows up here rather than as a focus colour
         // nobody recognises. Whether a choice ever reaches the screen is a
         // separate question, answered by
@@ -219,7 +219,9 @@ import Testing
         #expect(theme.accent(for: .ansi5).hexString == "#ff55ff")
         #expect(theme.accent(for: .ansi6).hexString == "#55ffff")
         #expect(theme.accent(for: .twilight).hexString == "#aa55ff")
-        // No two of the five collide, on a theme that declares all sixteen
+        #expect(theme.accent(for: .nightshade).hexString == "#8a358a")
+        #expect(theme.accent(for: .sea).hexString == "#55aaff")
+        // No two of the seven collide, on a theme that declares all sixteen
         // slots. On one that declares none, four of them collapse onto the
         // foreground and a focused name stops being distinguishable from an
         // unfocused one. That degradation is the deliberate price of
@@ -252,6 +254,53 @@ import Testing
             < PaneTheme.minimumTextContrast)
         #expect(twilight.inkFocus.contrastRatio(against: twilight.barBackground)
             >= PaneTheme.minimumTextContrast)
+    }
+
+    /// **Nightshade is dark where it is composed and never dark where it is
+    /// drawn, and this is the test that keeps its doc honest.**
+    ///
+    /// The catalog sweep says its raw value clears 4.5:1 on the bar for none of
+    /// the 485 shipped themes, so the repair chain lifts it every single time. A
+    /// case documented as the dark one and drawn at 4.89:1 is exactly the shape
+    /// `midnight` had before it was renamed, and the only thing that stops it
+    /// repeating is saying so in both directions: the derivation fails the floor,
+    /// the ink clears it.
+    @Test func nightshadeIsDarkInTheDerivationAndLiftedInTheInk() {
+        let theme = PaneTheme.darkPastel
+        var nightshade = theme
+        nightshade.focusedAccent = theme.accent(for: .nightshade)
+        #expect(nightshade.focusedAccent.contrastRatio(against: nightshade.barBackground)
+            < PaneTheme.minimumTextContrast)
+        #expect(nightshade.inkFocus.contrastRatio(against: nightshade.barBackground)
+            >= PaneTheme.minimumTextContrast)
+        #expect(nightshade.inkFocus.hexString == "#b37bb3")
+        // Darker than every other derivation before repair, which is the property
+        // the name is allowed to claim. Spelled as a comparison rather than as a
+        // number so a formula edited elsewhere in the set is what fails.
+        for other in FocusAccent.allCases where other != .nightshade {
+            #expect(
+                theme.accent(for: .nightshade).relativeLuminance
+                    < theme.accent(for: other).relativeLuminance,
+                "nightshade is no longer the darkest derivation: \(other) is at or below it"
+            )
+        }
+    }
+
+    /// `sea` is its own colour rather than a second spelling of ``FocusAccent/ansi6``.
+    ///
+    /// The argument for halfway over the 0.35 that measures four degenerate rows
+    /// better on the catalog. A fraction small enough to be safest is a fraction
+    /// small enough to land back on the case beside it, and two menu entries that
+    /// resolve to one colour is a menu with a lie in it, which is the same rule
+    /// `derived(from:)` stops at 0.75 for.
+    @Test func seaIsFarEnoughFromTheCyanItStartsFrom() {
+        let theme = PaneTheme.darkPastel
+        #expect(theme.accent(for: .sea)
+            .perceptualDistance(to: theme.accent(for: .ansi6))
+            >= PaneTheme.minimumAttentionSeparation)
+        #expect(theme.accent(for: .sea)
+            .perceptualDistance(to: theme.accent(for: .accent))
+            >= PaneTheme.minimumAttentionSeparation)
     }
 
     @Test func theFourTiersAreOrderedAndNoneIsRepairedIntoAnother() {

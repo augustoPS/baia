@@ -40,6 +40,38 @@ public enum FocusAccent: String, Sendable, Equatable, CaseIterable {
     /// rather than anything anyone would call midnight. The old spelling still
     /// decodes, to this case and so to this colour: see ``named(_:)``.
     case twilight
+
+    /// `ansi[5]` blended halfway into the terminal's own background: magenta
+    /// smoked down into the theme it sits in, `#8a358a` on Dark Pastel before
+    /// repair.
+    ///
+    /// **The darkest of the seven, and the only one repaired on every theme in
+    /// the catalog.** Its raw value clears 4.5:1 on the bar for none of the 485,
+    /// against 204 for ``twilight``, 252 for ``sea`` and 421 for ``bone``. So it
+    /// is dark where it is composed and never dark where it is drawn: on Dark
+    /// Pastel the derivation is `#8a358a` at 2.24:1 and the ink is `#b37bb3` at
+    /// 4.89:1. That is said here rather than left for the name to imply, which is
+    /// the whole reason ``twilight`` is not called midnight.
+    ///
+    /// What it buys over raw ``ansi5`` is therefore the background in the blend
+    /// rather than the darkness. It is the only derivation composed with a colour
+    /// the theme owns outright, so it carries that theme's own cast instead of
+    /// the palette's magenta unchanged.
+    case nightshade
+
+    /// `ansi[6]` blended halfway to `ansi[4]`: cyan towards info blue, `#55aaff`
+    /// on Dark Pastel.
+    ///
+    /// ``twilight``'s construction on the other side of blue, offered for the same
+    /// argument: it borrows two slots rather than spending one, and four brights
+    /// already carry meaning as alert, warn, info and ok, so a mixture cannot be
+    /// misread as one of them.
+    ///
+    /// Halfway rather than nearer the cyan, and the catalog says the cost. At 0.35
+    /// it costs four fewer degenerate rows; it also lands close enough to raw
+    /// ``ansi6`` to be a second spelling of a case that already exists. Half is
+    /// what makes it its own colour.
+    case sea
 }
 
 public extension FocusAccent {
@@ -138,7 +170,7 @@ public enum AttentionAccent: String, Sendable, Equatable, CaseIterable {
 /// things rather than one. The focus colour is the obvious one. The other is the
 /// footer itself: the loud treatment is a wash across the bar and a frame around
 /// the pane, and a wash the colour of the bar it washes leaves the pane asking
-/// with nothing on screen to say so. 124 of the 463 shipped ghostty themes do
+/// with nothing on screen to say so. 141 of the 485 shipped ghostty themes do
 /// exactly that under `accent`, because a selection colour is usually the theme's
 /// own background lifted a step and so is the bar. Both repair values measure
 /// both.

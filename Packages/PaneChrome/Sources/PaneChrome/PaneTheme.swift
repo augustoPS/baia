@@ -169,6 +169,22 @@ public struct PaneTheme: Sendable, Equatable {
         ansiColor(4).blended(with: ansiColor(5), fraction: 0.5)
     }
 
+    /// `ansi[5]` blended halfway into ``background``. See
+    /// ``BaiaSettings/FocusAccent/nightshade``.
+    ///
+    /// The one derivation that reads the terminal background, so it is also the
+    /// one that moves when a theme changes nothing else. That is what it is for:
+    /// raw `ansi[5]` is the palette's magenta on every theme alike, and this is
+    /// that magenta wearing the theme it is drawn in.
+    public var nightshadeAccent: RGB {
+        ansiColor(5).blended(with: background, fraction: 0.5)
+    }
+
+    /// `ansi[6]` blended halfway to `ansi[4]`. See ``BaiaSettings/FocusAccent/sea``.
+    public var seaAccent: RGB {
+        ansiColor(6).blended(with: ansiColor(4), fraction: 0.5)
+    }
+
     /// The raw derivation a `focusAccent` choice names, before repair.
     ///
     /// A name rather than a hex, and this is where that promise is kept: the
@@ -183,6 +199,8 @@ public struct PaneTheme: Sendable, Equatable {
         case .ansi5: ansiColor(5)
         case .ansi6: ansiColor(6)
         case .twilight: twilightAccent
+        case .nightshade: nightshadeAccent
+        case .sea: seaAccent
         }
     }
 
@@ -205,7 +223,8 @@ public struct PaneTheme: Sendable, Equatable {
     /// measured: two colours one 8-bit step apart are unequal and
     /// indistinguishable, so inequality proves nothing in either direction. An
     /// equality guard never fired on 16 of the 2315 theme-by-`focusAccent` rows the
-    /// catalog produces, two of them on the default `focusAccent`, and Glacier is
+    /// catalog produced when that was measured, two of them on the default
+    /// `focusAccent` — the catalog is 485 themes and 3395 rows now — and Glacier is
     /// the clearest: its `alert` `#bd0f2f` and its accent `#bd2523` are unequal,
     /// measure ΔE00 5.44 apart, and under the old guard `derive` handed the
     /// colliding colour straight back unchanged. The predicate that decides whether
@@ -221,7 +240,7 @@ public struct PaneTheme: Sendable, Equatable {
     /// distinction. It follows that `accent`/`stock` can resolve to a colour that
     /// *is* the bar it fills: a selection colour is very often the theme's own
     /// background lifted a step, which is exactly what ``barBackground`` is, and
-    /// 124 of the 463 catalog themes land within ΔE00 10 of their own bar that way.
+    /// 141 of the 485 catalog themes land within ΔE00 10 of their own bar that way.
     /// The two repair behaviours are the answer to that, and both of them measure
     /// against the bar as well as against focus.
     public func attentionColour(_ accent: AttentionAccent, behavior: AlertBehavior) -> RGB {
@@ -252,7 +271,7 @@ public struct PaneTheme: Sendable, Equatable {
     /// attention colour is the focus colour by construction, so its distance to
     /// focus is zero and it always collides. Under ``AttentionAccent/alert`` it is
     /// true only where the theme's own `ansi[1]` lands on its focus colour or its
-    /// bar, which 124 of the 463 catalog themes do.
+    /// bar, which 141 of the 485 catalog themes do.
     ///
     /// So this is a **superset** of the rule it replaces, not a narrower one. The
     /// first draft was to hide the picker unless `attentionAccent` is `accent`;
@@ -349,8 +368,9 @@ public struct PaneTheme: Sendable, Equatable {
     /// blended, while fourteen other palette slots are far away: HaX0R Blue spends
     /// `ansi[1]`, `ansi[3]` and `ansi[5]` on one colour, and `derive` returned the
     /// colliding colour bit for bit at ΔE00 **0.00**. 83 of the 2315
-    /// theme-by-`focusAccent` rows landed under the floor that way, across 33
-    /// themes, and every one of them had a palette slot that would have cleared it.
+    /// theme-by-`focusAccent` rows the catalog produced then landed under the floor
+    /// that way, across 33 themes, and every one of them had a palette slot that
+    /// would have cleared it.
     ///
     /// Towards ``background`` is not offered as a direction: a fill that is nearly
     /// the bar it fills is not a fill. That is now enforced rather than avoided,
