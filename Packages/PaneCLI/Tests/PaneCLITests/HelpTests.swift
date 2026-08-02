@@ -39,6 +39,13 @@ import Testing
         }
     }
 
+    /// `move` is spelled out rather than left to the walk above, which only asks
+    /// that the word appear somewhere and would be satisfied by "move the divider"
+    /// on the `resize` line. The one verb that names two panes has to show both.
+    @Test func helpShowsBothEndsOfAMove() {
+        #expect(Help.text.contains("move <PANE> --beside <PANE>"))
+    }
+
     /// The scope rule in one paragraph, because a `list` showing one entry is the
     /// thing readers report as a bug.
     @Test func helpStatesTheScopeRule() {
