@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import PaneControl
+import WorkspaceLayout
 
 /// What the socket layer tells the server, always on the channel queue and never
 /// on the main thread.
@@ -100,7 +101,8 @@ nonisolated final class ControlTransport: @unchecked Sendable {
     }
 
     private func bindOnQueue() -> BindOutcome {
-        guard Self.createDirectory(for: path) else {
+        let directory = (path as NSString).deletingLastPathComponent
+        guard SessionStore.createDirectory(atPath: directory) else {
             return .failed("could not create the directory for \(path)")
         }
 
@@ -694,24 +696,6 @@ nonisolated final class ControlTransport: @unchecked Sendable {
             }
         }
         return .success
-    }
-
-    /// Creates the directory the socket sits in, 0700, the way `SessionStore`
-    /// creates the one it shares with `session.json`.
-    ///
-    /// `mkdir(2)` rather than `FileManager.createDirectory`, which throws for the
-    /// case that is not a failure: the directory already being there, which it
-    /// is on every launch after the first.
-    private static func createDirectory(for socketPath: String) -> Bool {
-        let directory = (socketPath as NSString).deletingLastPathComponent
-        guard directory.hasPrefix("/") else { return false }
-
-        var built = ""
-        for component in directory.split(separator: "/") {
-            built += "/" + component
-            if mkdir(built, 0o700) != 0, errno != EEXIST { return false }
-        }
-        return true
     }
 
     private static let newline = UInt8(0x0A)
