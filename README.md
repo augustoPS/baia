@@ -10,7 +10,7 @@ is a false cognate of *baía*, "bay", which comes from Latin by way of French.
 
 ## Requirements
 
-- macOS 15+
+- macOS 26+
 - Xcode 26+ with `xcode-select` pointed at it, not CommandLineTools
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`make bootstrap`)
 

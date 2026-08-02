@@ -271,9 +271,17 @@ final class ControlAdapter: ControlWorkspaceBridge {
 
     /// Hands the pane a working directory it says it moved to.
     ///
-    /// Straight through to the tracker's OSC 7 entry point, which has existed
-    /// unused because nothing emits OSC 7: the bundled libghostty ships no
-    /// shell-integration resources. This is the caller taking that job.
+    /// Straight through to the tracker's OSC 7 entry point, which it shares
+    /// rather than takes over. OSC 7 does arrive, about 100 ms after every
+    /// command, which this comment used to deny on the reasoning that the
+    /// trimmed libghostty ships no shell-integration resources. Measurement
+    /// overruled it, and the guard on `lastShellReport` exists because of it.
+    ///
+    /// What this caller adds is the case neither observer can see. A `cd` inside
+    /// a subshell moves no process cwd, so the poll reads the directory the pane
+    /// never left, and the next prompt emits an OSC 7 restating that same
+    /// directory. Both observers actively report a stale answer rather than
+    /// falling silent, which is why this one is applied unconditionally.
     ///
     /// Advisory, and it does not pin. The one-second poll of the foreground
     /// process's cwd keeps running, and a later read that disagrees wins, because
