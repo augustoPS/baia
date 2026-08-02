@@ -451,7 +451,11 @@ final class ControlServer {
 
         guard admit(id, as: actor) else { return }
 
-        if let gated = gate(request.verb) {
+        if let gated = Self.gate(
+            request.verb,
+            isReadAllowed: isReadAllowed,
+            isRunAllowed: isRunAllowed
+        ) {
             respond(ControlResponse.failure(gated), to: id)
             return
         }
@@ -520,7 +524,15 @@ final class ControlServer {
     ///
     /// No `default:`, for `ControlVerb.settingGate`'s reason: a verb whose gate
     /// was never decided must not inherit the permissive one by falling through.
-    private func gate(_ verb: ControlVerb) -> ControlError? {
+    ///
+    /// The two switches arrive as parameters and the function is `static`, so the
+    /// answer is a function of the verb and the settings and of nothing else the
+    /// server happens to be holding.
+    private static func gate(
+        _ verb: ControlVerb,
+        isReadAllowed: Bool,
+        isRunAllowed: Bool
+    ) -> ControlError? {
         switch verb.settingGate {
         case .channel:
             // Already answered above, for every verb, before the token was read.
