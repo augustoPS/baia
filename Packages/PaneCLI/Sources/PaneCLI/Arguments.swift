@@ -257,6 +257,45 @@ public enum Arguments {
                 }
             }
 
+        case .move:
+            // Two panes, both required, and neither defaulted. The default a move
+            // could invent is the calling pane, and a caller who typed one id and
+            // meant two would then have quietly rearranged its own window.
+            guard let subject = tokens.take(), !subject.hasPrefix("--") else {
+                return .usage("move needs the pane to move")
+            }
+            call.args.peer = subject
+            while let token = tokens.take() {
+                switch token {
+                case "--beside":
+                    guard let target = tokens.take(), !target.hasPrefix("--") else {
+                        return .usage("--beside needs a pane id")
+                    }
+                    call.args.beside = target
+                case "--right":
+                    call.args.axis = .horizontal
+                case "--down":
+                    call.args.axis = .vertical
+                case "--json":
+                    // For `cwd`'s reason: without it this verb prints nothing
+                    // whether it worked or not, which makes a refusal look like a
+                    // success at the one moment somebody is asking why the panes
+                    // did not move.
+                    call.json = true
+                default:
+                    return .usage(unexpected(token, verb))
+                }
+            }
+            guard call.args.beside != nil else {
+                return .usage("move needs --beside <pane>, the pane to land next to")
+            }
+            // `split`'s default, spelled in the same place and for the same
+            // reason: the app is not asked to hold a second opinion about what a
+            // side-less request means.
+            if call.args.axis == nil {
+                call.args.axis = .horizontal
+            }
+
         case .cwd:
             // One positional, and required. `baia cwd` with nothing after it is
             // almost certainly a shell that meant to print the directory, and

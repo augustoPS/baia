@@ -168,6 +168,58 @@ final class ControlAdapter: ControlWorkspaceBridge {
         return placed.pane.readScreenLines()
     }
 
+    /// Puts one pane beside another, both of them already authorised.
+    ///
+    /// **One window, and the refusal for two is not a refusal this type invents.**
+    /// `Workspace.move` looks in the tab holding the pane and nowhere else, so a
+    /// target in another tab is already false; the check here is the same rule one
+    /// level up, for two panes in two different *windows*, where there is no shared
+    /// `Workspace` to ask. Without it the second id would be silently dropped and
+    /// the move would refuse for a reason nobody could read.
+    ///
+    /// `before` is not on the wire, so this always lands the pane on the far side,
+    /// which is the side `split` puts a new pane on and the side `--right` and
+    /// `--down` name. `PaneTree.moving` takes both because a move names both ends;
+    /// the near side is what `--left` and `--up` would spell.
+    func move(
+        _ pane: ControlPaneID,
+        beside target: ControlPaneID,
+        axis: ControlAxis
+    ) -> ControlResponse {
+        let index = placements()
+        guard let moving = index[pane.layout], let landing = index[target.layout] else {
+            // Authorised and gone: the graph still holds a registration for a pane
+            // no window has. Not a probe, because both ids passed the resolver, so
+            // there is nothing to withhold by saying which.
+            return .failure(
+                .notFound,
+                "baia no longer has one of those panes. A window may have closed while this "
+                    + "request was in flight."
+            )
+        }
+        guard moving.controller === landing.controller else {
+            return .failure(
+                .refused,
+                "those panes are in different windows. A move rearranges one tab, and carrying "
+                    + "a pane between windows would leave the one it came from short a pane "
+                    + "nobody asked to close."
+            )
+        }
+        guard moving.tree.move(
+            pane: moving.pane.paneID,
+            beside: landing.pane.paneID,
+            axis: axis == .vertical ? .vertical : .horizontal,
+            before: false
+        ) else {
+            return .failure(
+                .refused,
+                "baia refused that move. The panes are in different tabs, the tab is zoomed and "
+                    + "shows one pane, or the move would leave the tree exactly as it is."
+            )
+        }
+        return .success()
+    }
+
     /// No `default:`, matching `ControlVerb.scope` and the server's own router: a
     /// verb added without a route has to fail to compile here rather than fall
     /// through to whatever the fallback happened to answer.
@@ -206,7 +258,7 @@ final class ControlAdapter: ControlWorkspaceBridge {
             return accept(report: args, on: placed)
 
         case .whoami, .list, .peers, .publish, .connect, .send, .recv, .subscribe, .revoke, .run,
-             .read, .layoutExport, .layoutApply:
+             .read, .move, .layoutExport, .layoutApply:
             // Unreachable: the server routes these to the graph, or to one of the
             // bridge's other methods, and never here. The arm exists because the
             // switch has no `default:` and never will.

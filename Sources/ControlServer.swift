@@ -502,6 +502,9 @@ final class ControlServer {
         case .read:
             read(request, on: id)
 
+        case .move:
+            move(request, on: id)
+
         case .layoutExport:
             exportLayout(request, on: id)
 
@@ -574,6 +577,50 @@ final class ControlServer {
                 to: id
             )
         }
+    }
+
+    /// Puts one pane beside another.
+    ///
+    /// **Both ends go through the resolver, separately, and neither is optional.**
+    /// The pane being moved is the obvious one; the pane it lands beside is the
+    /// one it would be easy to skip, and skipping it would let a caller reshape a
+    /// grid it does not own by naming one pane of its own and one of somebody
+    /// else's. Two calls rather than one because `authorize` answers about one
+    /// target, and a scope rule that took a pair would be a second resolver.
+    ///
+    /// A malformed id is `unauthorized` and not `badFrame`, for `read`'s reason: a
+    /// caller able to tell a malformed id from an out-of-scope one could probe the
+    /// shape of the namespace one id at a time.
+    private func move(_ request: ControlRequest, on id: Int) {
+        guard let named = request.args.peer, let beside = request.args.beside else {
+            respond(
+                .failure(.badFrame, "move needs a pane to move and a pane to move it beside"),
+                to: id
+            )
+            return
+        }
+        guard let subject = ControlPaneID(uuidString: named),
+              let target = ControlPaneID(uuidString: beside)
+        else {
+            respond(.failure(.unauthorized, "no pane you may move"), to: id)
+            return
+        }
+        for pane in [subject, target] {
+            if case let .denied(error) = graph.authorize(
+                token: request.token, verb: .move, target: pane
+            ) {
+                respond(ControlResponse.failure(error), to: id)
+                return
+            }
+        }
+        guard let bridge else {
+            respond(.failure(.internal, "baia has no workspace to move that in"), to: id)
+            return
+        }
+        respond(
+            bridge.move(subject, beside: target, axis: request.args.axis ?? .horizontal),
+            to: id
+        )
     }
 
     /// Describes the caller's window as a document.

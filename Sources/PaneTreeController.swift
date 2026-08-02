@@ -595,6 +595,48 @@ final class PaneTreeController: NSViewController {
         return true
     }
 
+    /// Puts `pane` beside `target`, wherever the two of them sit in this window.
+    ///
+    /// **Through ``rebuild()``, and that is the whole implementation.** A rebuild
+    /// answers a `.leaf(id)` with `panes[id]`, the controller that already exists,
+    /// so the surfaces are re-parented rather than made: nothing is created,
+    /// nothing is closed, and the shell in the moved pane keeps running. What it
+    /// costs is what the method's own comment says, a `SIGWINCH` to whatever is
+    /// running in each pane of this window, which is the price of any change to the
+    /// shape and is why ``resize(pane:direction:by:)`` deliberately does not pay it.
+    ///
+    /// The responder is taken again afterwards, the way ``toggleZoom()`` does:
+    /// a rebuild removes every child view and leaves the window with no first
+    /// responder, which silently disables every ghostty binding in the pane
+    /// somebody is typing in. `takeFocus()` is `makeFirstResponder` and raises no
+    /// window, so this is safe for a window nobody is looking at.
+    ///
+    /// False when the workspace refused: either pane missing from this window, the
+    /// two in different tabs, the tab zoomed, or the move would leave the tree
+    /// exactly as it is.
+    ///
+    /// **That last one is narrower than "already where it was asked to go", and
+    /// the difference is not pedantry.** ``PaneTree/moving(_:beside:axis:before:)``
+    /// builds its new split at a half, so a pane that already sits beside its
+    /// target across a divider the owner dragged to 0.7 is *not* refused: the
+    /// answer differs from the tree it started from, by that ratio. The move
+    /// succeeds, evens the divider, and pays the rebuild. Measured by review on
+    /// 2026-08-01, which read the old wording as a promise and found it false.
+    ///
+    /// The behaviour is right and stated where it is decided: a move is take the
+    /// pane out and put it back on a fresh even split, and carrying the collapsed
+    /// ratio through was rejected there because it would let a move in one corner
+    /// change a divider the owner set in another. Only the description was wrong.
+    func move(pane: PaneID, beside target: PaneID, axis: SplitAxis, before: Bool) -> Bool {
+        guard workspace.move(pane: pane, beside: target, axis: axis, before: before) else {
+            return false
+        }
+        rebuild()
+        focusedPane?.takeFocus()
+        onSessionChange?()
+        return true
+    }
+
     /// Gives every pane in `pane`'s tab the same share of the window.
     func equalize(tabContaining pane: PaneID) -> Bool {
         guard workspace.equalize(tabContaining: pane) else { return false }

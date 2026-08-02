@@ -104,8 +104,21 @@ public struct ControlArgs: Sendable, Equatable, Codable {
     /// from argv, because `ps -ww` shows any same-uid process's full argv.
     public var rendezvous: String?
 
-    /// `send`, `revoke`: the peer's display pane id.
+    /// `send`, `revoke`: the peer's display pane id. `read`: the pane to read.
+    /// `move`: the pane to move.
+    ///
+    /// One field for four verbs, the way ``text`` serves `send` and `report`: it
+    /// is the pane this request is about, and what the caller has to stand in to
+    /// name it is the verb's scope rather than the field's spelling.
     public var peer: String?
+
+    /// `move`: the display pane id the moved pane lands beside.
+    ///
+    /// A field of its own rather than a second use of ``peer``, because `move` is
+    /// the only verb naming two panes and a caller reading a frame with `nc` has
+    /// to be able to tell which one is which. Both are authorised: landing a pane
+    /// beside one the caller may not touch would reshape a grid it does not own.
+    public var beside: String?
 
     /// `send`: the message body, capped at
     /// ``ControlWire/maxMessagePayloadBytes``. `report --message`: what a blocked
@@ -170,6 +183,7 @@ public struct ControlArgs: Sendable, Equatable, Codable {
         rotate: Bool? = nil,
         rendezvous: String? = nil,
         peer: String? = nil,
+        beside: String? = nil,
         text: String? = nil,
         wait: Int? = nil,
         from: UInt64? = nil,
@@ -191,6 +205,7 @@ public struct ControlArgs: Sendable, Equatable, Codable {
         self.rotate = rotate
         self.rendezvous = rendezvous
         self.peer = peer
+        self.beside = beside
         self.text = text
         self.wait = wait
         self.from = from

@@ -252,6 +252,11 @@ import Testing
         .revoke: peerEdgeRow,
         .run: descendantRow,
         .read: descendantRow,
+        // The same row, and the claim is made rather than inherited: a caller may
+        // rearrange the panes it made, its parent's other children are out of
+        // reach, and a peer is out of reach for control however much it is
+        // reachable for talking.
+        .move: descendantRow,
     ]
 
     // MARK: The matrix

@@ -31,6 +31,7 @@ import Testing
             .subscribe: "subscribe",
             .report: "report",
             .read: "read",
+            .move: "move",
             // Hyphenated because a verb is one string on the wire and two tokens
             // at the prompt. The CLI rewrites `baia layout export` into this, so a
             // change here is a change to what a Makefile written against an older
@@ -90,6 +91,10 @@ import Testing
             .revoke: .peerEdge,
             .run: .descendant,
             .read: .descendant,
+            // Scoped exactly like `read`, and for the same relationship: a caller
+            // may rearrange the panes it made, and a peer is not reachable,
+            // because peering is consent to talk rather than consent to be driven.
+            .move: .descendant,
         ]
         for verb in ControlVerb.allCases {
             guard let expected = scopes[verb] else {
@@ -100,14 +105,42 @@ import Testing
         }
     }
 
-    /// No v1 verb reaches another pane's layout. Stated as its own assertion
-    /// rather than left implicit in the table above, because "every v1 layout
-    /// verb acts on the calling pane and takes no target" is the sentence the
-    /// whole v1 threat argument rests on.
-    @Test func noLayoutVerbCanNameAnotherPane() {
+    /// Every layout verb that opens, closes, or focuses something reaches the
+    /// calling pane and nothing else. Stated as its own assertion rather than left
+    /// implicit in the table above, because it is the sentence the whole threat
+    /// argument rests on.
+    ///
+    /// **`move` is deliberately not in this list**, and it is the only layout verb
+    /// that is not. It names another pane because rearranging is the one layout
+    /// change that needs two ends, and what it may name is bounded by
+    /// ``ControlScope/descendant``: panes the caller made. It creates nothing and
+    /// closes nothing, so the list above is still the whole of what a caller can
+    /// do to a pane's existence.
+    @Test func noLayoutVerbThatOpensOrClosesAPaneCanNameAnotherOne() {
         for verb in [ControlVerb.split, .close, .focus, .zoom, .resize, .equalize] {
             #expect(verb.scope == .selfOnly)
         }
+        #expect(ControlVerb.move.scope == .descendant)
+    }
+
+    /// **The first verb to mutate a pane the caller does not stand in**, which is
+    /// a change to what v1 reaches and is written down rather than left to the
+    /// table above to imply.
+    ///
+    /// It is bounded on both sides. `.descendant` is the same resolver `read`
+    /// uses, so nothing new is reachable: a caller that could already read a
+    /// pane's screen can now also move it. And the mutation itself creates
+    /// nothing, closes nothing, and touches no parentage edge, so the pane it
+    /// moves keeps its id, its shell, and its place in the graph.
+    ///
+    /// No key of its own, unlike `read` and `run`. `read` has one because its
+    /// answer carries another pane's screen; `run` has one because it hands over
+    /// execution. This carries a rearranged window back to a caller that could
+    /// already see the shape of it through `layout export`.
+    @Test func moveMutatesADescendantAndCarriesNoKeyOfItsOwn() {
+        #expect(ControlVerb.move.scope == .descendant)
+        #expect(ControlVerb.move.settingGate == .channel)
+        #expect(ControlVerb.move.gate(isReadAllowed: false, isRunAllowed: false) == nil)
     }
 
     /// **Two verbs carry a key of their own, and the rest carry none.**

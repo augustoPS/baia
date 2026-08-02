@@ -63,7 +63,12 @@ public enum Rendering {
         // address one of the new panes has to look anyway, because it needs the
         // records to tell them apart. A second, order-dependent list of the same
         // ids would be one more thing to keep truthful.
-        case .close, .focus, .resize, .equalize, .send, .revoke, .run, .cwd, .report, .layoutApply:
+        // `move` prints nothing for the reason the rest of this arm does: the
+        // window rearranged itself where the caller can see it, both pane ids were
+        // the caller's own words, and there is no third fact to report. The exit
+        // status carries the refusal.
+        case .close, .focus, .resize, .equalize, .send, .revoke, .run, .cwd, .report, .layoutApply,
+             .move:
             break
 
         // The document and nothing else, so `baia layout export > dev.json`

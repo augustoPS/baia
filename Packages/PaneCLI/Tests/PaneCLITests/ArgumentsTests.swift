@@ -63,7 +63,9 @@ import PaneControl
         // answer usage rather than send an incomplete request. `subscribe` is one
         // of them because a cursor it invented would be a re-read of the ring on
         // every poll.
-        let needsAnOperand: Set<ControlVerb> = [.resize, .send, .revoke, .subscribe, .cwd, .report, .read]
+        let needsAnOperand: Set<ControlVerb> = [
+            .resize, .send, .revoke, .subscribe, .cwd, .report, .read, .move,
+        ]
         for verb in ControlVerb.allCases {
             let outcome = Arguments.parse([verb.rawValue])
             if needsAnOperand.contains(verb) {
@@ -87,6 +89,7 @@ import PaneControl
             .revoke: ["pane-1"],
             .cwd: ["/tmp"],
             .read: ["pane-1"],
+            .move: ["pane-1", "--beside", "pane-2"],
             .report: ["--state", "working"],
         ]
         for verb in ControlVerb.allCases {
@@ -502,6 +505,35 @@ import PaneControl
     @Test func installHooksRefusesAFlagItDoesNotHave() {
         #expect(isUsage(Arguments.parse(["install-hooks", "--nonesuch"])))
         #expect(isUsage(Arguments.parse(["install-hooks", "stray"])))
+    }
+
+    // MARK: move
+
+    /// Both ends are required. A move that invented one of them would rearrange
+    /// a window on a guess, and the guess it would have to make, the calling pane,
+    /// is exactly the pane a caller writing `baia move` by hand is not thinking
+    /// about.
+    @Test func moveNeedsAPaneAndAPaneToLandBeside() {
+        #expect(isUsage(Arguments.parse(["move"])))
+        #expect(isUsage(Arguments.parse(["move", "pane-1"])))
+        #expect(isUsage(Arguments.parse(["move", "--beside", "pane-2"])))
+        #expect(isUsage(Arguments.parse(["move", "pane-1", "--beside"])))
+    }
+
+    @Test func moveCarriesBothPanesAndTheSideItLandsOn() {
+        let call = invocation(Arguments.parse(["move", "pane-1", "--beside", "pane-2", "--down"]))
+        #expect(call?.verb == .move)
+        #expect(call?.args.peer == "pane-1")
+        #expect(call?.args.beside == "pane-2")
+        #expect(call?.args.axis == .vertical)
+    }
+
+    /// The same default `split` carries, spelled in the same place: a bare move
+    /// lands to the right, so the app is not asked to hold a second opinion about
+    /// what a side-less move means.
+    @Test func aBareMoveLandsToTheRightTheWayABareSplitDoes() {
+        let call = invocation(Arguments.parse(["move", "pane-1", "--beside", "pane-2"]))
+        #expect(call?.args.axis == .horizontal)
     }
 
     // MARK: read

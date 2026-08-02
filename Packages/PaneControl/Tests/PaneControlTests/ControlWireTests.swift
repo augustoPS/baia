@@ -8,6 +8,11 @@ import Testing
     /// `$BAIA_PANE` carries and what every record on this wire spells.
     static let paneID = "8B0E6B1E-6C1B-4C56-9E5E-2C1E9F3A7D40"
 
+    /// A second one, for `move`, which is the only verb naming two panes at once.
+    /// Distinct from ``paneID`` so a round trip that dropped one of the two fields
+    /// and copied the other cannot pass.
+    static let otherPaneID = "1D4F2A77-3E58-4B0A-8C21-5F6E7A9B0C33"
+
     /// One representative request per verb, built by a switch with no
     /// `default:`, so a verb added without a decided wire shape fails to compile
     /// in this test as well as in ``ControlVerb/scope``.
@@ -35,6 +40,9 @@ import Testing
         case .subscribe: ControlArgs(wait: 30, from: 41, kinds: ["paneClosed"])
         case .report: ControlArgs(text: "which branch?", state: .blocked, ttl: 120, seq: 7)
         case .read: ControlArgs(lines: 50)
+        // Two pane ids in one frame, which no other verb sends: the pane being
+        // moved and the pane it lands beside.
+        case .move: ControlArgs(axis: .vertical, peer: paneID, beside: otherPaneID)
         // Export sends nothing; the window it describes is the caller's own.
         case .layoutExport: ControlArgs()
         // A nested tree with a directory on one leaf and none on the other, which
