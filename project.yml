@@ -118,7 +118,11 @@ targets:
         PRODUCT_NAME: baia
         PRODUCT_BUNDLE_IDENTIFIER: pasqualotto.baia
         MARKETING_VERSION: "0.1.0"
-        CURRENT_PROJECT_VERSION: "1"
+        # The build number, bumped for every installable rebuild of the same
+        # marketing version. 2 is the first build whose bundle id is
+        # `pasqualotto.baia`; build 1 was tagged before the rename and does not
+        # produce the app in /Applications.
+        CURRENT_PROJECT_VERSION: "2"
 
         INFOPLIST_FILE: Info.plist
         CODE_SIGN_ENTITLEMENTS: baia.entitlements
