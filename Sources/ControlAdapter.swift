@@ -578,7 +578,7 @@ final class ControlAdapter: ControlWorkspaceBridge {
             states.append(
                 PaneState(
                     id: id,
-                    workingDirectory: cwd.flatMap(Self.existingDirectory),
+                    workingDirectory: cwd.flatMap(PaneTree.existingDirectory),
                     pinnedDirectory: nil,
                     createdBy: createdBy
                 )
@@ -592,12 +592,6 @@ final class ControlAdapter: ControlWorkspaceBridge {
                 second: build(second, createdBy: createdBy, into: &states)
             )
         }
-    }
-
-    private static func existingDirectory(_ path: String) -> String? {
-        var isDirectory: ObjCBool = false
-        let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
-        return exists && isDirectory.boolValue ? path : nil
     }
 
 }
