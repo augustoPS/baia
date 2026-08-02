@@ -95,8 +95,24 @@ reader, the git-marker-state fixture builder, the capture driver) is in
 Package tests answer anything decidable without an `NSWindow` or a descriptor. A
 probe is for what needs a real window, surface, shell, socket, or human eye.
 
-**Never run a `Diagnostics/*/run.sh`, `make run`, or `make run-attached` from
-inside a baia pane.** You are running inside the app they launch or restart.
+**Never run a `Diagnostics/*/run.sh` or `make run-attached` from inside a baia
+pane.** Several probes quit or relaunch the app you are sitting in, and
+`run-attached` runs the build in the foreground of the calling pane, so the pane
+becomes its console and the agent in it loses its shell.
+
+**`make run` is fine from inside a pane, and this line said otherwise until
+2026-08-02.** It is a bare `open` of `baia-dev.app`: it kills nothing and quits
+nothing. Since the two copies were separated, the Debug build has its own bundle
+id, its own Application Support directory and its own `control.sock`, so
+launching it beside the Release build is the arrangement working rather than a
+hazard. Measured that day with both running at once, each bound to its own
+socket, neither disturbed.
+
+The stale version of this rule cost a session: every footer question was deferred
+to "needs a session outside a baia pane" when the fix could have been seen
+immediately in the dev build. A pane cannot drive the other app's channel
+(`BAIA_SOCK` and the per-pane `BAIA_TOKEN` belong to the app you are in), so the
+check still needs a command typed in the new window, but launching it is free.
 
 ## design/
 
