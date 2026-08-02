@@ -62,6 +62,15 @@ targets:
       # `main`.
       - path: Icon/baia.icns
         buildPhase: resources
+      # MIT requires the copyright notice to travel with binary distributions
+      # and not only with source, so a `NOTICE` sitting at the repository root
+      # discharges nothing: `sources` is explicit paths rather than a root glob,
+      # which is exactly why the notice was missing from every build up to 2.
+      # `NOTICE` and not `LICENSE`, because it already carries baia's own
+      # copyright line, ghostty's, libghostty-spm's, iTerm2-Color-Schemes' and
+      # MSDisplayLink's, plus the one MIT text that governs all five.
+      - path: NOTICE
+        buildPhase: resources
 
     # Info.plist and baia.entitlements are hand-maintained and wired in through
     # build settings below. Do NOT add `info:` or `entitlements:` keys here:

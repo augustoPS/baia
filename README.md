@@ -54,4 +54,8 @@ Glass work is built against. See `design/README.md`.
 
 ## License
 
-Not yet chosen. The dependency chain is MIT throughout, so anything is still open.
+MIT. See [`LICENSE`](LICENSE).
+
+baia embeds [Ghostty](https://github.com/ghostty-org/ghostty)'s terminal engine
+through [`Lakr233/libghostty-spm`](https://github.com/Lakr233/libghostty-spm),
+both MIT, whose notices are reproduced in `NOTICE`.
