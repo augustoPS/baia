@@ -32,10 +32,43 @@ public enum FocusAccent: String, Sendable, Equatable, CaseIterable {
     /// It borrows two slots rather than spending one, which is the argument for
     /// it over raw `ansi5` or `ansi6`: four brights already carry meaning as
     /// alert, warn, info and ok, and a mixture can never be misread as one of
-    /// them. Midnight names the hue, not the value. A footer ink has to clear
-    /// 4.5:1 on the bar, so the repair chain decides how dark it is allowed to
-    /// be and it lands lighter than the name suggests.
-    case midnight
+    /// them.
+    ///
+    /// Called `midnight` until the name was measured against the value. A footer
+    /// ink has to clear 4.5:1 on the bar, so the repair chain sets a floor under
+    /// how dark this is allowed to be, and what it lands on is a lit blue-violet
+    /// rather than anything anyone would call midnight. The old spelling still
+    /// decodes, to this case and so to this colour: see ``named(_:)``.
+    case twilight
+}
+
+public extension FocusAccent {
+    /// The case a config file's spelling names, including spellings this type no
+    /// longer uses.
+    ///
+    /// `SettingsDecoder` reads `focusAccent` through here rather than through
+    /// `init(rawValue:)`, so a file written before a rename keeps applying instead
+    /// of falling back to the default and reporting itself invalid.
+    static func named(_ spelling: String) -> FocusAccent? {
+        FocusAccent(rawValue: spelling) ?? retiredSpellings[spelling]
+    }
+
+    /// Spellings that were once a case's `rawValue` and still have to decode.
+    ///
+    /// Every entry has to name the case that resolves to **the colour the old
+    /// spelling always resolved to**, and that is the whole rule rather than a
+    /// detail. `midnight` meant the `ansi[4]`→`ansi[5]` blend, ``twilight`` is
+    /// that same blend renamed, so an existing config renders identically and says
+    /// nothing, which is correct. Pointing a retired spelling at a *different*
+    /// derivation would be the failure this table cannot detect for itself: the
+    /// value stays legal, ``SettingsDecoder`` only reports spellings it does not
+    /// recognise, and the owner's chrome changes colour with nothing anywhere
+    /// saying why.
+    ///
+    /// A new spelling never belongs here. Only a name that has already shipped.
+    private static let retiredSpellings: [String: FocusAccent] = [
+        "midnight": .twilight,
+    ]
 }
 
 /// How hard an unacknowledged pane asks.

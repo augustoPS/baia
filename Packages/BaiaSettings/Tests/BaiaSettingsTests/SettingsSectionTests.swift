@@ -28,7 +28,7 @@ import Testing
         settings.windowPadding = 31
         settings.windowPaddingBalance = !Settings.defaultSettings.windowPaddingBalance
         settings.transparentTitlebar = !Settings.defaultSettings.transparentTitlebar
-        settings.focusAccent = .midnight
+        settings.focusAccent = .twilight
         settings.attentionStyle = .quiet
         settings.attentionAccent = .accent
         settings.alertBehavior = .derive

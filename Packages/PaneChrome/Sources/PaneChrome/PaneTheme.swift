@@ -102,7 +102,7 @@ public struct PaneTheme: Sendable, Equatable {
     /// **The fraction is solved rather than written down, and that is a
     /// correction to the design pass.** v3 §1 quotes 0.14 and 0.20 as the
     /// fractions that hold the weight of the neutrals they replace. They do, for
-    /// `focusAccent: "midnight"`, which is what that document was written
+    /// `focusAccent: "twilight"`, which is what that document was written
     /// against. Under the default accent the same fractions land 31 percent
     /// brighter, and under `bone` 42 percent, because how far a fixed fraction
     /// carries depends entirely on how light the accent is. A line that gains a
@@ -164,8 +164,8 @@ public struct PaneTheme: Sendable, Equatable {
         foreground.blended(with: ansiColor(15), fraction: 0.55)
     }
 
-    /// `ansi[4]` blended halfway to `ansi[5]`. See ``BaiaSettings/FocusAccent/midnight``.
-    public var midnightAccent: RGB {
+    /// `ansi[4]` blended halfway to `ansi[5]`. See ``BaiaSettings/FocusAccent/twilight``.
+    public var twilightAccent: RGB {
         ansiColor(4).blended(with: ansiColor(5), fraction: 0.5)
     }
 
@@ -182,7 +182,7 @@ public struct PaneTheme: Sendable, Equatable {
         case .bone: boneAccent
         case .ansi5: ansiColor(5)
         case .ansi6: ansiColor(6)
-        case .midnight: midnightAccent
+        case .twilight: twilightAccent
         }
     }
 

@@ -462,6 +462,29 @@ import Testing
         #expect(decode(#"{"focusAccent": "bone"}"#).settings.focusAccent == .bone)
     }
 
+    @Test func theOldMidnightSpellingStillDecodesToTheColourItAlwaysMeant() {
+        // `midnight` was renamed to `twilight` because the name promised a darkness
+        // the repair chain is not allowed to deliver. The rename moved a name and
+        // not a colour, so a config file already on disk has to keep rendering
+        // exactly what it rendered before, and silently: nothing is wrong with it.
+        let result = decode(#"{"focusAccent": "midnight"}"#)
+        #expect(result.settings.focusAccent == .twilight)
+        // Silently. `focusAccent` is a key this version reads and `midnight` is a
+        // spelling it accepts, so neither list has anything to say.
+        #expect(result.unknownKeys.isEmpty)
+        #expect(result.invalidKeys.isEmpty)
+
+        #expect(FocusAccent.named("midnight") == .twilight)
+        // That the case it names still resolves to the `ansi[4]`→`ansi[5]` blend is
+        // the other half of the promise, and it is asserted where the derivations
+        // live: `PaneThemeTests.everyFocusAccentChoiceResolvesToItsOwnColour`.
+        // Silence is only correct because the value did not move.
+
+        // An alias is a spelling that shipped, never a synonym invented later.
+        #expect(FocusAccent.named("dusk") == nil)
+        #expect(decode(#"{"focusAccent": "dusk"}"#).invalidKeys == ["focusAccent"])
+    }
+
     @Test func theRetiredFocusKeysAreReportedRatherThanQuietlySwallowed() {
         // The owner's own file carries both of these, so this is the migration
         // decision written down. They are reported as unknown, which costs a line on

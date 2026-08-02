@@ -218,7 +218,7 @@ import Testing
         #expect(theme.accent(for: .bone).hexString == "#e0e0e0")
         #expect(theme.accent(for: .ansi5).hexString == "#ff55ff")
         #expect(theme.accent(for: .ansi6).hexString == "#55ffff")
-        #expect(theme.accent(for: .midnight).hexString == "#aa55ff")
+        #expect(theme.accent(for: .twilight).hexString == "#aa55ff")
         // No two of the five collide, on a theme that declares all sixteen
         // slots. On one that declares none, four of them collapse onto the
         // foreground and a focused name stops being distinguishable from an
@@ -242,13 +242,15 @@ import Testing
         // The shipped accent already clears the floor, so repair is a no-op.
         #expect(theme.inkFocus.hexString == "#b5d5ff")
 
-        // Midnight does not. Raw #aa55ff scores about 4.2:1 on #212121 and the
-        // chain's first step is what lifts it over.
-        var midnight = theme
-        midnight.focusedAccent = theme.accent(for: .midnight)
-        #expect(midnight.focusedAccent.contrastRatio(against: midnight.barBackground)
+        // Twilight does not. Raw #aa55ff scores about 4.2:1 on #212121 and the
+        // chain's first step is what lifts it over. This is the measurement the
+        // name was changed for: the repair chain, not the derivation, is what
+        // decides how dark this accent is allowed to end up.
+        var twilight = theme
+        twilight.focusedAccent = theme.accent(for: .twilight)
+        #expect(twilight.focusedAccent.contrastRatio(against: twilight.barBackground)
             < PaneTheme.minimumTextContrast)
-        #expect(midnight.inkFocus.contrastRatio(against: midnight.barBackground)
+        #expect(twilight.inkFocus.contrastRatio(against: twilight.barBackground)
             >= PaneTheme.minimumTextContrast)
     }
 
@@ -302,7 +304,7 @@ import Testing
     /// Design v3 §1 wants the planks tinted and the compartments they divide
     /// neutral, under a rule it states plainly: the line changes hue, never
     /// weight. It also quotes the fractions 0.14 and 0.20 as satisfying that.
-    /// **They satisfy it for `midnight` alone**, which is the accent that document
+    /// **They satisfy it for `twilight` alone**, which is the accent that document
     /// was written against: a fixed fraction carries as far as the accent is
     /// light, so the same 0.14 lands 31 percent brighter under the default accent
     /// and 42 percent under `bone`. `PaneTheme` solves the fraction instead, so
@@ -347,13 +349,13 @@ import Testing
     /// document against. Within a unit of eight-bit colour of the values quoted
     /// there, `#2d2535` and `#382d43`, the difference being the solved fraction.
     @Test func theTintedLinesUnderTheDocumentsOwnAccent() {
-        let midnight = PaneTheme(
+        let twilight = PaneTheme(
             background: "#141414", foreground: "#bbbbbb",
             selectionBackground: "#b5d5ff", palette: Self.darkPastelPalette,
-            focusAccent: .midnight
+            focusAccent: .twilight
         )
-        #expect(midnight.divider.hexString == "#2d2534")
-        #expect(midnight.hairline.hexString == "#392d44")
+        #expect(twilight.divider.hexString == "#2d2534")
+        #expect(twilight.hairline.hexString == "#392d44")
     }
 
     /// Text, unlike ``ok``, which is why it is not ``ok``.

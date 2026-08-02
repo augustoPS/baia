@@ -12,7 +12,7 @@ import Testing
         // invalid. Pinned here so that shows up as a failing test rather than as a
         // treatment that quietly reverted.
         #expect(FocusAccent.allCases.map(\.rawValue)
-            == ["accent", "bone", "ansi5", "ansi6", "midnight"])
+            == ["accent", "bone", "ansi5", "ansi6", "twilight"])
         #expect(AttentionStyle.allCases.map(\.rawValue) == ["loud", "quiet"])
         #expect(AttentionAccent.allCases.map(\.rawValue) == ["alert", "accent"])
         #expect(AlertBehavior.allCases.map(\.rawValue) == ["stock", "noCollision", "derive"])

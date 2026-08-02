@@ -252,8 +252,11 @@ public enum SettingsDecoder {
         // and ignored here: a key that stopped applying has to be visible, which
         // is the whole reason `unknownKeys` exists, and quietly swallowing them
         // is exactly how `focusAccent` sat dead for nine days.
+        // Through `FocusAccent.named(_:)` rather than `init(rawValue:)`, so a
+        // spelling this type used to carry keeps applying. `midnight` is the one
+        // there is, and it resolves to the case that kept its colour.
         if let accent = reader.text("focusAccent") {
-            if let accent = FocusAccent(rawValue: accent) {
+            if let accent = FocusAccent.named(accent) {
                 settings.focusAccent = accent
             } else {
                 reader.reject("focusAccent")
