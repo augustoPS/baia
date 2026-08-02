@@ -821,7 +821,7 @@ final class ControlServer {
         case let .ok(drain):
             guard drain.messages.isEmpty, drain.dropped == 0, let seconds = wait(from: request)
             else {
-                respond(answer(for: drain), to: id)
+                respond(.answer(for: drain), to: id)
                 return
             }
             park(id, pane: actor, token: request.token, seconds: seconds, kind: .recv)
@@ -992,7 +992,7 @@ final class ControlServer {
         case let .denied(error):
             respond(ControlResponse.failure(error), to: id)
         case let .ok(drain):
-            respond(answer(for: drain), to: id)
+            respond(.answer(for: drain), to: id)
         }
     }
 
@@ -1050,7 +1050,7 @@ final class ControlServer {
 
         switch waiter.kind {
         case .recv:
-            respond(answer(for: Drain.empty), to: id, thenClose: true)
+            respond(.answer(for: Drain.empty), to: id, thenClose: true)
         case .subscribe:
             // At the current head, not at the waiter's cursor: the caller is being
             // told "nothing more from me", and handing back a stale cursor would
@@ -1061,10 +1061,6 @@ final class ControlServer {
                 thenClose: true
             )
         }
-    }
-
-    private func answer(for drain: Drain) -> ControlResponse {
-        .success(ControlResult(messages: drain.messages, more: drain.more, dropped: drain.dropped))
     }
 
     private func answer(for batch: EventBatch) -> ControlResponse {

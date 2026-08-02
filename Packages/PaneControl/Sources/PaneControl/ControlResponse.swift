@@ -33,6 +33,16 @@ public struct ControlResponse: Sendable, Equatable, Codable {
     public static func failure(_ code: ControlErrorCode, _ message: String) -> ControlResponse {
         .failure(ControlError(code: code, message: message))
     }
+
+    /// What `recv` answers.
+    ///
+    /// The whole drain, including the counts that say what the caller did not
+    /// get: `more` for messages still parked and `dropped` for messages the
+    /// mailbox overwrote. A drain that answered only `messages` would read as a
+    /// complete delivery every time it was a partial one.
+    public static func answer(for drain: Drain) -> ControlResponse {
+        .success(ControlResult(messages: drain.messages, more: drain.more, dropped: drain.dropped))
+    }
 }
 
 /// The union of every verb's answer, one flat optional per field, for the same
