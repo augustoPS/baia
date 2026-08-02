@@ -451,7 +451,10 @@ final class ControlServer {
 
         guard admit(id, as: actor) else { return }
 
-        if let gated = gate(request.verb) {
+        if let gated = request.verb.gate(
+            isReadAllowed: isReadAllowed,
+            isRunAllowed: isRunAllowed
+        ) {
             respond(ControlResponse.failure(gated), to: id)
             return
         }
@@ -471,7 +474,7 @@ final class ControlServer {
             introspect(request, on: id, subjects: { [$0] })
 
         case .list:
-            introspect(request, on: id, subjects: { self.scope(of: $0) })
+            introspect(request, on: id, subjects: { self.graph.scope(of: $0) })
 
         case .peers:
             introspect(request, on: id, subjects: { actor in
@@ -513,41 +516,6 @@ final class ControlServer {
                 .failure(.internal, "run is answered by its settings gate before it is routed"),
                 to: id
             )
-        }
-    }
-
-    /// The settings answer for a verb, or nil when settings have nothing to say.
-    ///
-    /// No `default:`, for `ControlVerb.settingGate`'s reason: a verb whose gate
-    /// was never decided must not inherit the permissive one by falling through.
-    private func gate(_ verb: ControlVerb) -> ControlError? {
-        switch verb.settingGate {
-        case .channel:
-            // Already answered above, for every verb, before the token was read.
-            nil
-        case .allowRead:
-            isReadAllowed
-                ? nil
-                : ControlError(
-                    code: .disabled,
-                    message: "read is switched off. Set `controlAllowRead` to true in "
-                        + "~/.config/baia/config.json. It is the one verb whose answer carries "
-                        + "another pane's screen, which is why it has a key of its own."
-                )
-        case .allowRun:
-            isRunAllowed
-                ? ControlError(
-                    code: .refused,
-                    message: "run lands in v2. The verb and its key ship now so the switch has "
-                        + "something to switch; cross-pane execution does not."
-                )
-                : ControlError(
-                    code: .disabled,
-                    message: "run is switched off. Set `controlAllowRun` to true in "
-                        + "~/.config/baia/config.json, and note that it is a different key from "
-                        + "`controlChannelEnabled` on purpose: split hands a pane a shell it "
-                        + "could already spawn, run hands it another pane's context."
-                )
         }
     }
 
@@ -625,7 +593,7 @@ final class ControlServer {
                 respond(.failure(.internal, "baia has no workspace to describe"), to: id)
                 return
             }
-            let visible = Set(permitted(scope(of: actor), token: request.token))
+            let visible = Set(permitted(graph.scope(of: actor), token: request.token))
             guard let layout = bridge.layout(of: actor, disclosingDirectoriesFor: visible) else {
                 // The caller's own pane, since this verb names no target, so
                 // there is nothing to withhold: its window closed under it.
@@ -736,33 +704,6 @@ final class ControlServer {
             }
             respond(.success(ControlResult(panes: records, seq: graph.currentSequence)), to: id)
         }
-    }
-
-    /// The caller, everything below it, and its peers.
-    ///
-    /// Walked from `children(of:)` rather than read from a children index,
-    /// because the graph deliberately keeps only the parent edge: two indices are
-    /// two things that can disagree, and this disagreement would widen a scope
-    /// invisibly.
-    private func scope(of actor: ControlPaneID) -> [ControlPaneID] {
-        var seen: Set<ControlPaneID> = [actor]
-        var frontier = [actor]
-        var ordered = [actor]
-
-        while let pane = frontier.popLast() {
-            for child in graph.children(of: pane).sorted(by: { $0.description < $1.description }) {
-                guard seen.insert(child).inserted else { continue }
-                ordered.append(child)
-                frontier.append(child)
-            }
-        }
-
-        for peer in graph.peers(of: actor).sorted(by: { $0.description < $1.description }) {
-            guard seen.insert(peer).inserted else { continue }
-            ordered.append(peer)
-        }
-
-        return ordered
     }
 
     // MARK: Verbs the graph answers
@@ -880,7 +821,7 @@ final class ControlServer {
         case let .ok(drain):
             guard drain.messages.isEmpty, drain.dropped == 0, let seconds = wait(from: request)
             else {
-                respond(answer(for: drain), to: id)
+                respond(.answer(for: drain), to: id)
                 return
             }
             park(id, pane: actor, token: request.token, seconds: seconds, kind: .recv)
@@ -919,7 +860,7 @@ final class ControlServer {
             // one thing it needs to do.
             guard batch.events.isEmpty, batch.gap == false, let seconds = wait(from: request)
             else {
-                respond(answer(for: batch), to: id)
+                respond(.answer(for: batch), to: id)
                 return
             }
             park(
@@ -1051,7 +992,7 @@ final class ControlServer {
         case let .denied(error):
             respond(ControlResponse.failure(error), to: id)
         case let .ok(drain):
-            respond(answer(for: drain), to: id)
+            respond(.answer(for: drain), to: id)
         }
     }
 
@@ -1081,7 +1022,7 @@ final class ControlServer {
         case let .denied(error):
             respond(ControlResponse.failure(error), to: id)
         case let .ok(batch):
-            respond(answer(for: batch), to: id)
+            respond(.answer(for: batch), to: id)
         }
     }
 
@@ -1109,27 +1050,17 @@ final class ControlServer {
 
         switch waiter.kind {
         case .recv:
-            respond(answer(for: Drain.empty), to: id, thenClose: true)
+            respond(.answer(for: Drain.empty), to: id, thenClose: true)
         case .subscribe:
             // At the current head, not at the waiter's cursor: the caller is being
             // told "nothing more from me", and handing back a stale cursor would
             // make its next call re-read whatever landed while it waited.
             respond(
-                answer(for: EventBatch.empty(at: graph.currentSequence)),
+                .answer(for: EventBatch.empty(at: graph.currentSequence)),
                 to: id,
                 thenClose: true
             )
         }
-    }
-
-    private func answer(for drain: Drain) -> ControlResponse {
-        .success(ControlResult(messages: drain.messages, more: drain.more, dropped: drain.dropped))
-    }
-
-    private func answer(for batch: EventBatch) -> ControlResponse {
-        .success(ControlResult(
-            more: batch.more, events: batch.events, gap: batch.gap, seq: batch.seq
-        ))
     }
 
     // MARK: Writing back

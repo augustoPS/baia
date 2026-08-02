@@ -33,6 +33,29 @@ public struct ControlResponse: Sendable, Equatable, Codable {
     public static func failure(_ code: ControlErrorCode, _ message: String) -> ControlResponse {
         .failure(ControlError(code: code, message: message))
     }
+
+    /// What `recv` answers.
+    ///
+    /// The whole drain, including the counts that say what the caller did not
+    /// get: `more` for messages still parked and `dropped` for messages the
+    /// mailbox overwrote. A drain that answered only `messages` would read as a
+    /// complete delivery every time it was a partial one.
+    public static func answer(for drain: Drain) -> ControlResponse {
+        .success(ControlResult(messages: drain.messages, more: drain.more, dropped: drain.dropped))
+    }
+
+    /// What `subscribe` answers.
+    ///
+    /// `seq` is the cursor the caller passes back on its next call, so it goes
+    /// out even when `events` is empty: a batch that answered nothing and no
+    /// cursor would make the next call re-read from wherever the client last
+    /// remembered. `gap` says the ring overwrote events between the two calls,
+    /// which is the one thing a cursor alone cannot tell it.
+    public static func answer(for batch: EventBatch) -> ControlResponse {
+        .success(ControlResult(
+            more: batch.more, events: batch.events, gap: batch.gap, seq: batch.seq
+        ))
+    }
 }
 
 /// The union of every verb's answer, one flat optional per field, for the same

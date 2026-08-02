@@ -228,6 +228,42 @@ public struct PaneGraph: Sendable, Equatable {
         return audience
     }
 
+    /// The caller, everything below it, and its peers.
+    ///
+    /// ``observers(of:)`` read from the other end. That one answers "who may see
+    /// this pane" by walking up; this one answers "what may this pane see" by
+    /// walking down, and the two are the same edge, which `PaneScopeTests`
+    /// asserts for every ordered pair rather than leaving to the reader.
+    ///
+    /// Walked from ``children(of:)`` rather than read from a children index,
+    /// because the graph deliberately keeps only the parent edge: two indices are
+    /// two things that can disagree, and this disagreement would widen a scope
+    /// invisibly.
+    ///
+    /// Ordered and deduplicated. The sort is not cosmetic: `children(of:)`
+    /// answers a `Set`, whose iteration order is not promised, and an unsorted
+    /// walk would answer one graph with two orderings across calls.
+    public func scope(of actor: ControlPaneID) -> [ControlPaneID] {
+        var seen: Set<ControlPaneID> = [actor]
+        var frontier = [actor]
+        var ordered = [actor]
+
+        while let pane = frontier.popLast() {
+            for child in children(of: pane).sorted(by: { $0.description < $1.description }) {
+                guard seen.insert(child).inserted else { continue }
+                ordered.append(child)
+                frontier.append(child)
+            }
+        }
+
+        for peer in peers(of: actor).sorted(by: { $0.description < $1.description }) {
+            guard seen.insert(peer).inserted else { continue }
+            ordered.append(peer)
+        }
+
+        return ordered
+    }
+
     // MARK: Peering
 
     public func peers(of pane: ControlPaneID) -> Set<ControlPaneID> {
