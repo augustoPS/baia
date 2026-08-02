@@ -57,6 +57,13 @@ MODEL=("$3" "$6" "$9")
 
 for i in 0 1 2; do
   [ -d "${WT[$i]}" ] || { echo "missing worktree: ${WT[$i]}" >&2; exit 2; }
+  # The pane's command reads the brief with cwd set to the worktree, not to the
+  # directory this script ran from, and the briefs are untracked so no checkout
+  # carries them. A relative path therefore validates here and resolves to
+  # nothing in the pane, and `$(cat ...)` hands the agent an empty prompt: three
+  # executors sat at an idle prompt for exactly this on 2026-08-02. Anchor the
+  # path before it is baked into the command.
+  case "${BRIEF[$i]}" in /*) ;; *) BRIEF[$i]="$PWD/${BRIEF[$i]}" ;; esac
   [ -f "${BRIEF[$i]}" ] || { echo "missing brief: ${BRIEF[$i]}" >&2; exit 2; }
 done
 
