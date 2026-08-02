@@ -56,11 +56,15 @@ targets:
 
     sources:
       - path: Sources
-      # The icon only. `Icon/make-icon.swift` is a script that draws it, run by
-      # hand with `swift Icon/make-icon.swift`, and naming the directory here
-      # instead of the file would compile that script into the app as a second
-      # `main`.
+      # The two icons only. `Icon/make-icon.swift` is a script that draws them,
+      # run by hand with `swift Icon/make-icon.swift`, and naming the directory
+      # here instead of the files would compile that script into the app as a
+      # second `main`. Both ship in both bundles; Info.plist's CFBundleIconFile
+      # is `$(PRODUCT_NAME)`, which already differs per configuration, so each
+      # build picks its own file out of the two at launch.
       - path: Icon/baia.icns
+        buildPhase: resources
+      - path: Icon/baia-dev.icns
         buildPhase: resources
       # MIT requires the copyright notice to travel with binary distributions
       # and not only with source, so a `NOTICE` sitting at the repository root
