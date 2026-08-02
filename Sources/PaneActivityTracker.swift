@@ -249,7 +249,7 @@ final class PaneActivityTracker {
             // Busy means an agent is working, not that any command is running. A
             // build or a `sleep` is named by its label and does not earn the dot,
             // which is reserved for the thing the workspace exists to watch.
-            isBusy: Self.isWorkingAgent(activity)
+            isBusy: PaneActivity.isWorkingAgent(activity)
         )
     }
 
@@ -258,11 +258,4 @@ final class PaneActivityTracker {
     private var attentionLabel: String {
         resolvedAttention.message ?? "!"
     }
-
-    /// True while an agent is running in this pane.
-    private static func isWorkingAgent(_ activity: PaneActivity) -> Bool {
-        if case .agent = activity { return true }
-        return false
-    }
-
 }

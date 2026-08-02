@@ -52,4 +52,20 @@ import Testing
         #expect(!PaneActivity.isIdle(.command(name: "vim")))
         #expect(!PaneActivity.isIdle(.unnameable))
     }
+
+    // MARK: - isWorkingAgent
+
+    /// True while an agent is running in this pane.
+    @Test func anAgentIsWorking() {
+        #expect(PaneActivity.isWorkingAgent(.agent(name: "claude", pid: 1)))
+    }
+
+    /// Busy is reserved for the agent itself, not for a build or an unlabelled
+    /// command it might be running underneath.
+    @Test func nothingElseIsWorking() {
+        #expect(!PaneActivity.isWorkingAgent(.idleShell))
+        #expect(!PaneActivity.isWorkingAgent(.build(command: "npm")))
+        #expect(!PaneActivity.isWorkingAgent(.command(name: "vim")))
+        #expect(!PaneActivity.isWorkingAgent(.unnameable))
+    }
 }

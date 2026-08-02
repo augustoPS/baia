@@ -73,4 +73,10 @@ public enum PaneActivity: Sendable, Equatable {
     public static func isIdle(_ activity: PaneActivity) -> Bool {
         activity == .idleShell
     }
+
+    /// True while an agent is running in this pane.
+    public static func isWorkingAgent(_ activity: PaneActivity) -> Bool {
+        if case .agent = activity { return true }
+        return false
+    }
 }
