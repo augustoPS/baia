@@ -125,7 +125,7 @@ nonisolated final class ControlTransport: @unchecked Sendable {
 
         let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
         guard descriptor >= 0 else {
-            return .failed("could not open a socket: \(Self.reason(errno))")
+            return .failed("could not open a socket: \(SystemError.reason(errno))")
         }
 
         // Close-on-exec is load-bearing rather than tidy. Ghostty spawns a login
@@ -142,7 +142,7 @@ nonisolated final class ControlTransport: @unchecked Sendable {
             }
         }
         guard bound == 0 else {
-            let reason = Self.reason(errno)
+            let reason = SystemError.reason(errno)
             Darwin.close(descriptor)
             return .failed("could not bind \(path): \(reason)")
         }
@@ -154,7 +154,7 @@ nonisolated final class ControlTransport: @unchecked Sendable {
         _ = chmod(path, 0o600)
 
         guard Darwin.listen(descriptor, 32) == 0 else {
-            let reason = Self.reason(errno)
+            let reason = SystemError.reason(errno)
             Darwin.close(descriptor)
             unlink(path)
             return .failed("could not listen on \(path): \(reason)")
@@ -699,8 +699,4 @@ nonisolated final class ControlTransport: @unchecked Sendable {
     }
 
     private static let newline = UInt8(0x0A)
-
-    private static func reason(_ code: Int32) -> String {
-        String(cString: strerror(code))
-    }
 }
