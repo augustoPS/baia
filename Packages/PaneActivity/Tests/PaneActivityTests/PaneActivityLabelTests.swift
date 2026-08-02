@@ -36,4 +36,36 @@ import Testing
                 == PaneActivity.agent(name: "claude", pid: 9999).label
         )
     }
+
+    // MARK: - isIdle
+
+    /// True for a pane sitting at a prompt with nothing under it.
+    @Test func idleShellIsIdle() {
+        #expect(PaneActivity.isIdle(.idleShell))
+    }
+
+    /// Every other case is something running, or an inability to tell what is,
+    /// neither of which is idle.
+    @Test func nothingElseIsIdle() {
+        #expect(!PaneActivity.isIdle(.agent(name: "claude", pid: 1)))
+        #expect(!PaneActivity.isIdle(.build(command: "npm")))
+        #expect(!PaneActivity.isIdle(.command(name: "vim")))
+        #expect(!PaneActivity.isIdle(.unnameable))
+    }
+
+    // MARK: - isWorkingAgent
+
+    /// True while an agent is running in this pane.
+    @Test func anAgentIsWorking() {
+        #expect(PaneActivity.isWorkingAgent(.agent(name: "claude", pid: 1)))
+    }
+
+    /// Busy is reserved for the agent itself, not for a build or an unlabelled
+    /// command it might be running underneath.
+    @Test func nothingElseIsWorking() {
+        #expect(!PaneActivity.isWorkingAgent(.idleShell))
+        #expect(!PaneActivity.isWorkingAgent(.build(command: "npm")))
+        #expect(!PaneActivity.isWorkingAgent(.command(name: "vim")))
+        #expect(!PaneActivity.isWorkingAgent(.unnameable))
+    }
 }

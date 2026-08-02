@@ -96,4 +96,47 @@ import Testing
         let activity = PaneActivityClassifier.classify(tree: tree, shellPid: fixture.childPid)
         #expect(activity == .command(name: "sleep"))
     }
+
+    // MARK: - shellPid
+
+    private func process(
+        pid: pid_t,
+        parent: pid_t,
+        name: String
+    ) -> ProcessSnapshot {
+        ProcessSnapshot(
+            pid: pid,
+            parentPid: parent,
+            name: name,
+            executablePath: nil,
+            arguments: [],
+            startedAtSecondsSinceBoot: nil
+        )
+    }
+
+    @Test func theAnswerIsTheAncestorShellNotTheForegroundProcessItself() {
+        // The mistake `shellPid`'s own doc comment names: passing the foreground
+        // pid back out as if it were the shell. A pane running `sleep` under its
+        // real shell must resolve to the shell above it, not to `sleep`'s own
+        // pid, or `classify`'s shell exclusion would exclude the wrong process
+        // and the pane would read as idle forever.
+        let shell = process(pid: 100, parent: 10, name: "zsh")
+        let foreground = process(pid: 101, parent: 100, name: "sleep")
+
+        let found = ProcessTree.shellPid(above: 101, in: [shell, foreground])
+
+        #expect(found == 100)
+    }
+
+    @Test func aCycleInTheParentPointersTerminatesWithoutFindingAShell() {
+        // No process here is a shell, so a correct walk exhausts its bound and
+        // answers nil. An unbounded walk following these parent pointers would
+        // instead spin forever, freezing the poll timer that calls this.
+        let first = process(pid: 200, parent: 201, name: "make")
+        let second = process(pid: 201, parent: 200, name: "make")
+
+        let found = ProcessTree.shellPid(above: 200, in: [first, second])
+
+        #expect(found == nil)
+    }
 }
