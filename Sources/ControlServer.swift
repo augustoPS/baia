@@ -860,7 +860,7 @@ final class ControlServer {
             // one thing it needs to do.
             guard batch.events.isEmpty, batch.gap == false, let seconds = wait(from: request)
             else {
-                respond(answer(for: batch), to: id)
+                respond(.answer(for: batch), to: id)
                 return
             }
             park(
@@ -1022,7 +1022,7 @@ final class ControlServer {
         case let .denied(error):
             respond(ControlResponse.failure(error), to: id)
         case let .ok(batch):
-            respond(answer(for: batch), to: id)
+            respond(.answer(for: batch), to: id)
         }
     }
 
@@ -1056,17 +1056,11 @@ final class ControlServer {
             // told "nothing more from me", and handing back a stale cursor would
             // make its next call re-read whatever landed while it waited.
             respond(
-                answer(for: EventBatch.empty(at: graph.currentSequence)),
+                .answer(for: EventBatch.empty(at: graph.currentSequence)),
                 to: id,
                 thenClose: true
             )
         }
-    }
-
-    private func answer(for batch: EventBatch) -> ControlResponse {
-        .success(ControlResult(
-            more: batch.more, events: batch.events, gap: batch.gap, seq: batch.seq
-        ))
     }
 
     // MARK: Writing back
