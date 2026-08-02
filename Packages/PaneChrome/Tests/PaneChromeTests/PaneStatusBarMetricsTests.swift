@@ -72,6 +72,17 @@ import Testing
             == PaneStatusBarMetrics.spacingBetweenGroups)
     }
 
+    @Test func leadingReservesRoomForThePinChipAndTheBusyDot() {
+        // The pin chip always reserves its padding; the busy dot only reserves
+        // space while it is actually drawn, since an idle agent segment has
+        // nothing there to make room for. Every other role starts flush.
+        #expect(PaneStatusBarMetrics.leading(for: .pin, busy: false, chipPadding: 4, busyDotAdvance: 10) == 4)
+        #expect(PaneStatusBarMetrics.leading(for: .pin, busy: true, chipPadding: 4, busyDotAdvance: 10) == 4)
+        #expect(PaneStatusBarMetrics.leading(for: .agent, busy: true, chipPadding: 4, busyDotAdvance: 10) == 10)
+        #expect(PaneStatusBarMetrics.leading(for: .agent, busy: false, chipPadding: 4, busyDotAdvance: 10) == 0)
+        #expect(PaneStatusBarMetrics.leading(for: .branch, busy: true, chipPadding: 4, busyDotAdvance: 10) == 0)
+    }
+
     @Test func everyRoleBelongsToExactlyOneGroup() {
         // The mapping is derived from the role so that two call sites cannot
         // disagree about it. This is the assertion that a role added later was

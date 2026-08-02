@@ -125,4 +125,25 @@ public struct PaneStatusBarMetrics: Sendable, Equatable {
     public static func spacing(from: PaneStatusGroup, to: PaneStatusGroup) -> Double {
         from == to ? spacingWithinGroup : spacingBetweenGroups
     }
+
+    /// The room to leave before a segment's text, for an ornament drawn ahead
+    /// of it: the pin chip's padding, or the busy dot and its gap.
+    ///
+    /// The widths are parameters rather than constants owned here, because the
+    /// pin chip and the busy dot are both drawn by the app target, in points
+    /// derived from the same font metrics as the rest of the bar. This
+    /// function is the rule for which roles reserve the room and when; the
+    /// room itself is still the caller's to measure.
+    public static func leading(
+        for role: PaneStatusSegmentRole,
+        busy: Bool,
+        chipPadding: Double,
+        busyDotAdvance: Double
+    ) -> Double {
+        switch role {
+        case .pin: chipPadding
+        case .agent: busy ? busyDotAdvance : 0
+        default: 0
+        }
+    }
 }

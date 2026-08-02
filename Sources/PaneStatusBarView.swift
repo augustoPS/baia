@@ -566,17 +566,14 @@ final class PaneStatusBarView: NSView {
         return Rendered(
             string: string,
             role: segment.role,
-            leadingOrnament: leading(for: segment.role, busy: busy),
+            leadingOrnament: PaneStatusBarMetrics.leading(
+                for: segment.role,
+                busy: busy,
+                chipPadding: Self.chipPadding,
+                busyDotAdvance: Self.dotDiameter + Self.dotGap
+            ),
             trailingOrnament: segment.role == .pin ? Self.chipPadding : 0
         )
-    }
-
-    private func leading(for role: PaneStatusSegmentRole, busy: Bool) -> Double {
-        switch role {
-        case .pin: Self.chipPadding
-        case .agent: busy ? Self.dotDiameter + Self.dotGap : 0
-        default: 0
-        }
     }
 
     /// The colour a run is drawn in. The fill collapse itself lives in
