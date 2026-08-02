@@ -170,7 +170,7 @@ final class PaneActivityTracker {
         // `foregroundPid` is `tcgetpgrp`, so it names the running command, not
         // the shell, and a tree rooted there cannot see the shell above it.
         let tree = ProcessTree.snapshot(under: ProcessInfo.processInfo.processIdentifier)
-        guard let shell = shellPid(above: foreground, in: tree) else { return }
+        guard let shell = ProcessTree.shellPid(above: foreground, in: tree) else { return }
         let next = PaneActivityClassifier.classify(tree: tree, shellPid: shell)
         guard next != activity else { return }
         let wasIdle = Self.isIdle(activity)
@@ -187,35 +187,6 @@ final class PaneActivityTracker {
     /// True for a pane sitting at a prompt with nothing under it.
     private static func isIdle(_ activity: PaneActivity) -> Bool {
         activity == .idleShell
-    }
-
-    /// The pane's shell: the nearest shell at or above the foreground process.
-    ///
-    /// Passing the foreground pid as the shell instead is the obvious mistake
-    /// and it fails silently. `classify` excludes the shell by pid and looks only
-    /// below it, so a pane running `sleep` would report the sleep as its own
-    /// shell, find nothing beneath, and read as idle forever. The tell is a pane
-    /// that never labels anything while plainly running something.
-    private func shellPid(above pid: pid_t, in tree: [ProcessSnapshot]) -> pid_t? {
-        let byPid = Dictionary(tree.map { ($0.pid, $0) }, uniquingKeysWith: { first, _ in first })
-        var current = pid
-        // Bounded rather than trusting the parent chain to terminate. These
-        // pointers come from one kernel snapshot and should form a tree, but a
-        // loop here would hang the main thread on a poll timer.
-        for _ in 0 ..< 64 {
-            guard let process = byPid[current] else { return nil }
-            if PaneActivityClassifier.shellNames.contains(Self.normalized(process.name)) {
-                return process.pid
-            }
-            current = process.parentPid
-        }
-        return nil
-    }
-
-    /// A login shell presents itself as `-zsh`, and the leading hyphen is a
-    /// convention rather than part of the name.
-    private static func normalized(_ name: String) -> String {
-        name.hasPrefix("-") ? String(name.dropFirst()) : name
     }
 
     private func rebuild() {
