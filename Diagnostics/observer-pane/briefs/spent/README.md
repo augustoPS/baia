@@ -1,8 +1,12 @@
 # spent
 
-The briefs of the 2026-08-01 wave, kept where they were written rather than
-deleted, and out of `briefs/` so `brief-check` does not keep failing on a wave
-that already ran.
+Briefs that have run, kept where they were written rather than deleted, and out
+of `briefs/` because that directory is the *next* wave and the gate reads it.
+
+Two generations so far. The three from the 2026-08-01 morning wave, two of which
+could not reach their own goals. And the three from the afternoon, which could:
+every one required `make build`, permitted the app target, and produced a branch
+that compiles.
 
 Two of the three could not reach their own goals. `Diagnostics/brief-check/`
 carries its own verbatim copies as fixtures and asserts that two fail and one
