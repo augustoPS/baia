@@ -1,7 +1,19 @@
 #!/usr/bin/env bash
 # Surfaces 2 and 4: writes the executor settings into each worktree.
 #
-# Usage: seed-worktree-settings.sh <dir> [<dir> ...]
+# Usage: seed-worktree-settings.sh [--profile executor|reviewer] <dir> [<dir> ...]
+#
+# **Two profiles, because the two jobs are opposite shapes.** An executor writes
+# code and commits it, so it may `git add` and `git commit` and must never need
+# `git checkout --`. A reviewer verifies by mutation: it breaks the thing a claim
+# protects, runs the suite, and reverts, so `git checkout --` is its most frequent
+# command and committing is the one thing it must never do. Seeding a reviewer
+# with the executor profile prompts on every single revert and leaves the ban on
+# committing in prose, where nothing enforces it.
+#
+# Found 2026-08-02, on the first review pass run this way: the agent was seeded
+# executor and prompted through `git checkout --`, `swiftc`, `make upstream`,
+# `python3`, `md5` and `diff`, none of which an executor has ever needed.
 #
 # **The settings existed and were not reproducible**, which is why runs 2 and 3
 # met the same two surfaces the notes said were understood. Each worktree's
@@ -33,9 +45,23 @@ set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
-TEMPLATE="$HERE/executor-settings.json"
 
-[ "$#" -gt 0 ] || { echo "usage: $0 <dir> [<dir> ...]" >&2; exit 2; }
+PROFILE=executor
+if [ "${1:-}" = "--profile" ]; then
+  [ "$#" -ge 2 ] || { echo "--profile needs a value" >&2; exit 2; }
+  PROFILE=$2
+  shift 2
+fi
+case "$PROFILE" in
+  executor|reviewer) ;;
+  *) echo "unknown profile: $PROFILE (executor or reviewer)" >&2; exit 2 ;;
+esac
+TEMPLATE="$HERE/$PROFILE-settings.json"
+
+[ "$#" -gt 0 ] || {
+  echo "usage: $0 [--profile executor|reviewer] <dir> [<dir> ...]" >&2
+  exit 2
+}
 [ -f "$TEMPLATE" ] || { echo "no $TEMPLATE" >&2; exit 2; }
 
 for raw in "$@"; do
@@ -56,5 +82,5 @@ for raw in "$@"; do
   fi
   python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$target" \
     || { echo "refusing: $target is not valid JSON" >&2; exit 2; }
-  echo "  seeded $target"
+  echo "  seeded $target ($PROFILE)"
 done

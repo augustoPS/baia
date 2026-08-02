@@ -93,7 +93,10 @@ pre-accepts Claude Code's workspace-trust dialog, which no project settings file
 can approve and which stops a pane before its first tool call.
 `seed-worktree-settings.sh` writes the executors' allowlist and guard hook into
 each fresh directory, because those settings were once hand-written and untracked
-and did not survive the directories being remade.
+and did not survive the directories being remade. It takes `--profile reviewer`
+for a worktree that will verify rather than write: a verifier's commonest command
+is `git checkout --`, which the executor profile does not allow, and its one
+forbidden command is `git commit`, which the executor profile does.
 
 **If the gate fails, stop.** Do not edit a brief to get past it. A brief whose
 verification cannot observe its own change produces work nobody can check, and an

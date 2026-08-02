@@ -19,7 +19,8 @@ prompt.
 | `guard-baia-alive.sh` | PreToolUse hook. Refuses the commands that would kill the app hosting the run, including behind an `rtk` prefix |
 | `guard-test.sh` | 28 checks over the guard, including a negative control and both bundle names |
 | `executor-settings.json` | the tracked original of each executor's `.claude/settings.json`. `__REPO__` is substituted on seeding |
-| `seed-worktree-settings.sh` | writes it into each worktree. Closes surfaces 2 and 4 |
+| `reviewer-settings.json` | the same for an agent verifying by mutation. It may `git checkout --`, `swiftc`, `python3`, `md5` and `diff`; it may not `git add` or `git commit`, which is the one thing a verifier must never do and was previously only forbidden in prose |
+| `seed-worktree-settings.sh` | writes one of the two into each worktree, `--profile executor` (default) or `--profile reviewer`. Closes surfaces 2 and 4 |
 | `trust-worktrees.sh` | pre-accepts the workspace-trust dialog. Closes surface 1 |
 | `briefs/*.md` | one per executor. Each carries the item verbatim and its own first-step discipline |
 | `orchestrator-standalone.md` | the orchestrator's prompt, and the whole run. It creates the worktrees, gates the briefs, spawns through `spawn-1x3.sh`, binds panes to items by working directory, then watches |

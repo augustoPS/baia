@@ -56,7 +56,7 @@ responder inside a pane's window and silently kill every ghostty binding" is.
 | `key-resize/` | ⌃⌘arrow divider steps under key repeat |
 | `pane-resize/` | Divider drag arithmetic |
 | `path-picker/` | What lands on the prompt when a sidebar row is clicked. Drives the clicks and captures five images; the verdict is human, because reading a pane's contents needs the unbuilt `read` verb |
-| `theme-catalog/` | Whether a contrast promise measured on one theme holds on the other 484, and whether the figures the doc comments quote are still true. All 485 shipped themes by all seven `FocusAccent` cases. The only probe here that needs no window, no shell and no socket, and it is the exception that proves the rule below |
+| `theme-catalog/` | Whether a contrast promise measured on one theme holds on the other 484, and whether the figures the doc comments quote are still true. All 485 shipped themes by all seven `FocusAccent` cases. The only probe here that needs no window, no shell and no socket, and it is the exception that proves the rule below. Its build is `build.sh`, callable on its own for a reader who wants the binary without the verdict |
 | `theme-refresh/` | Whether a theme change reaches every surface already on screen |
 
 ## `lib/`
