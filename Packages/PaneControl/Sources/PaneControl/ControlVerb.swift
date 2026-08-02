@@ -12,8 +12,8 @@ import Foundation
 /// spelling and a rename is a protocol break, which is why a test asserts them
 /// against a literal table rather than trusting the case names.
 public enum ControlVerb: String, Sendable, Hashable, Codable, CaseIterable {
-    // Layout, self-relative. Every v1 layout verb acts on the calling pane and
-    // takes no target: the parentage graph is exercised read-only until v2.
+    // Layout, self-relative. Every layout verb below acts on the calling pane and
+    // takes no target. `move` is the exception and says why on its own case.
     case split
     case close
     case focus
@@ -62,6 +62,33 @@ public enum ControlVerb: String, Sendable, Hashable, Codable, CaseIterable {
     /// to exchange messages rather than to be read. `list` is peer-scoped and this
     /// is not, and that asymmetry is intentional rather than an oversight.
     case read
+
+    /// Puts one pane beside another, keeping the pane it moves.
+    ///
+    /// **Layout and channel are decided together everywhere else, and this is the
+    /// verb that separates them.** `split` splits the calling pane and stamps
+    /// `createdBy` with it, so where a pane lands and who may see it are one
+    /// decision. A caller wanting three panes stacked beside it had to build a
+    /// chain, where closing a middle pane orphans the ones below it, or open a
+    /// second window. A move breaks the coupling and costs nothing in the graph:
+    /// nothing is created, nothing is closed, and the pane keeps its id, so no
+    /// edge is added and none is lost.
+    ///
+    /// **Scoped exactly as ``read`` is, and it is the first verb to mutate a pane
+    /// the caller is not.** `.descendant` is the same resolver, so nothing new
+    /// becomes reachable: a caller that could already read a pane's screen can now
+    /// also move it. A peer is refused, because peering is a communication edge
+    /// and control over one is not what a peer agreed to.
+    ///
+    /// Both ends are authorised, not just the pane being moved. Landing a pane
+    /// beside one the caller may not touch would reshape a grid it does not own,
+    /// which is the same harm the scope exists to bound, and it would leak whether
+    /// an id names a live pane.
+    ///
+    /// No key of its own. `read` has one because its answer carries another pane's
+    /// screen and `run` has one because it hands over execution; this rearranges
+    /// panes whose shape the caller can already see through ``layoutExport``.
+    case move
 
     /// Prints the arrangement of the window the calling pane is in, as a document
     /// `layoutApply` can open.
@@ -164,7 +191,11 @@ public enum ControlVerb: String, Sendable, Hashable, Codable, CaseIterable {
         // The first verb to exercise `.descendant` for anything. The scope has
         // been implemented and correct since v1 with no consumer; `run` declares
         // it and is refused by its gate.
-        case .read:
+        //
+        // `move` joins them as the first to exercise it for a *mutation*, and
+        // deliberately shares the resolver rather than earning one: what a caller
+        // may rearrange is exactly what it may read, which is what it made.
+        case .read, .move:
             .descendant
         case .send, .revoke:
             .peerEdge
@@ -179,7 +210,7 @@ public enum ControlVerb: String, Sendable, Hashable, Codable, CaseIterable {
     /// never decided must not inherit the permissive one by falling through.
     public var settingGate: ControlSettingGate {
         switch self {
-        case .split, .close, .focus, .zoom, .resize, .equalize,
+        case .split, .close, .focus, .zoom, .resize, .equalize, .move,
              .whoami, .list, .publish, .connect, .peers, .send, .recv, .revoke,
              .subscribe, .cwd, .report, .layoutExport, .layoutApply:
             .channel
@@ -255,9 +286,12 @@ public enum ControlScope: Sendable, Hashable {
     /// cannot learn whether a pane id exists.
     case peerEdge
 
-    /// Mutation authority over a descendant, transitively. v2. The edge is
-    /// recorded from the first commit so v2 inherits real provenance, but no v1
-    /// verb exercises this scope for mutation.
+    /// Mutation authority over a descendant, transitively.
+    ///
+    /// Read by ``ControlVerb/read`` and written by ``ControlVerb/move``, which is
+    /// the first verb to spend it on a mutation. What it still does not carry is
+    /// execution: ``ControlVerb/run`` names this scope and is refused by its gate
+    /// until v2.
     case descendant
 }
 
