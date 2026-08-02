@@ -247,7 +247,7 @@ public struct SessionStore: Sendable {
     ///
     /// 0o700 to match the 0o600 on the file: nothing but baia reads this directory,
     /// and its one entry names directories the owner works in.
-    private static func createDirectory(atPath path: String) -> Bool {
+    static func createDirectory(atPath path: String) -> Bool {
         // A relative path would have "/" prepended to its first component below and
         // silently create a directory at the root. No caller can get here with one,
         // since `URL(filePath:)` resolves against the working directory, but this
