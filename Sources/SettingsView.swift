@@ -185,8 +185,10 @@ struct SettingsView: View {
                     // is every theme, since the attention colour is the focus
                     // colour by construction and the three behaviours always
                     // differ. Under `alert` it is the themes whose own `ansi[1]`
-                    // lands on their focus colour or their bar, which is 124 of
-                    // the 463 in the catalog. The remaining case is the shipped
+                    // lands on their focus colour or their bar, which is 141 of
+                    // the 485 in the catalog, the count `themeNames` above has
+                    // always given and `Diagnostics/theme-catalog/` now checks.
+                    // The remaining case is the shipped
                     // default, where all three answer the same thing and the
                     // picker would be a control that does nothing.
                     if chrome(model.draft).alertBehaviorMatters(for: model.draft.attentionAccent) {

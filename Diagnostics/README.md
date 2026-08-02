@@ -12,6 +12,16 @@ The rule that draws the line is the one the packages already follow. If a fact i
 answerable without an `NSWindow` or a descriptor, it belongs in a package test. If
 it is not, it belongs here.
 
+There is one more way to be unanswerable in a package test, and `theme-catalog/`
+is it: a fact that needs no window and no descriptor but does need a dependency no
+package may take. The ghostty theme catalog lives inside libghostty, and
+`PaneChrome` deliberately imports neither AppKit nor libghostty, so nothing in the
+one-second loop can count the themes it is measured against. The cost of having no
+home for that was paid in prose: every present-tense catalog figure in `PaneChrome`
+said 463 themes while the shipped catalog held 485, and nothing could notice.
+A probe of this kind still owns no rule. Every threshold it grades against is read
+off the package rather than restated.
+
 ## Layout
 
 ```
@@ -46,6 +56,7 @@ responder inside a pane's window and silently kill every ghostty binding" is.
 | `key-resize/` | ⌃⌘arrow divider steps under key repeat |
 | `pane-resize/` | Divider drag arithmetic |
 | `path-picker/` | What lands on the prompt when a sidebar row is clicked. Drives the clicks and captures five images; the verdict is human, because reading a pane's contents needs the unbuilt `read` verb |
+| `theme-catalog/` | Whether a contrast promise measured on one theme holds on the other 484, and whether the figures the doc comments quote are still true. All 485 shipped themes by all seven `FocusAccent` cases. The only probe here that needs no window, no shell and no socket, and it is the exception that proves the rule below |
 | `theme-refresh/` | Whether a theme change reaches every surface already on screen |
 
 ## `lib/`

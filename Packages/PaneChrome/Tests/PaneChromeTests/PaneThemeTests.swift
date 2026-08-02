@@ -208,7 +208,7 @@ import Testing
     }
 
     @Test func everyFocusAccentChoiceResolvesToItsOwnColour() {
-        // The hexes the design pass quotes for each of the five, so a formula
+        // The hexes the design pass quotes for each of the seven, so a formula
         // edited without meaning to shows up here rather than as a focus colour
         // nobody recognises. Whether a choice ever reaches the screen is a
         // separate question, answered by
@@ -218,8 +218,10 @@ import Testing
         #expect(theme.accent(for: .bone).hexString == "#e0e0e0")
         #expect(theme.accent(for: .ansi5).hexString == "#ff55ff")
         #expect(theme.accent(for: .ansi6).hexString == "#55ffff")
-        #expect(theme.accent(for: .midnight).hexString == "#aa55ff")
-        // No two of the five collide, on a theme that declares all sixteen
+        #expect(theme.accent(for: .twilight).hexString == "#aa55ff")
+        #expect(theme.accent(for: .nightshade).hexString == "#8a358a")
+        #expect(theme.accent(for: .sea).hexString == "#55aaff")
+        // No two of the seven collide, on a theme that declares all sixteen
         // slots. On one that declares none, four of them collapse onto the
         // foreground and a focused name stops being distinguishable from an
         // unfocused one. That degradation is the deliberate price of
@@ -242,14 +244,63 @@ import Testing
         // The shipped accent already clears the floor, so repair is a no-op.
         #expect(theme.inkFocus.hexString == "#b5d5ff")
 
-        // Midnight does not. Raw #aa55ff scores about 4.2:1 on #212121 and the
-        // chain's first step is what lifts it over.
-        var midnight = theme
-        midnight.focusedAccent = theme.accent(for: .midnight)
-        #expect(midnight.focusedAccent.contrastRatio(against: midnight.barBackground)
+        // Twilight does not. Raw #aa55ff scores about 4.2:1 on #212121 and the
+        // chain's first step is what lifts it over. This is the measurement the
+        // name was changed for: the repair chain, not the derivation, is what
+        // decides how dark this accent is allowed to end up.
+        var twilight = theme
+        twilight.focusedAccent = theme.accent(for: .twilight)
+        #expect(twilight.focusedAccent.contrastRatio(against: twilight.barBackground)
             < PaneTheme.minimumTextContrast)
-        #expect(midnight.inkFocus.contrastRatio(against: midnight.barBackground)
+        #expect(twilight.inkFocus.contrastRatio(against: twilight.barBackground)
             >= PaneTheme.minimumTextContrast)
+    }
+
+    /// **Nightshade is dark where it is composed and never dark where it is
+    /// drawn, and this is the test that keeps its doc honest.**
+    ///
+    /// The catalog sweep says its raw value clears 4.5:1 on the bar for none of
+    /// the 485 shipped themes, so the repair chain lifts it every single time. A
+    /// case documented as the dark one and drawn at 4.89:1 is exactly the shape
+    /// `midnight` had before it was renamed, and the only thing that stops it
+    /// repeating is saying so in both directions: the derivation fails the floor,
+    /// the ink clears it.
+    @Test func nightshadeIsDarkInTheDerivationAndLiftedInTheInk() {
+        let theme = PaneTheme.darkPastel
+        var nightshade = theme
+        nightshade.focusedAccent = theme.accent(for: .nightshade)
+        #expect(nightshade.focusedAccent.contrastRatio(against: nightshade.barBackground)
+            < PaneTheme.minimumTextContrast)
+        #expect(nightshade.inkFocus.contrastRatio(against: nightshade.barBackground)
+            >= PaneTheme.minimumTextContrast)
+        #expect(nightshade.inkFocus.hexString == "#b37bb3")
+        // Darker than every other derivation before repair, which is the property
+        // the name is allowed to claim. Spelled as a comparison rather than as a
+        // number so a formula edited elsewhere in the set is what fails.
+        for other in FocusAccent.allCases where other != .nightshade {
+            #expect(
+                theme.accent(for: .nightshade).relativeLuminance
+                    < theme.accent(for: other).relativeLuminance,
+                "nightshade is no longer the darkest derivation: \(other) is at or below it"
+            )
+        }
+    }
+
+    /// `sea` is its own colour rather than a second spelling of ``FocusAccent/ansi6``.
+    ///
+    /// The argument for halfway over the 0.35 that measures four degenerate rows
+    /// better on the catalog. A fraction small enough to be safest is a fraction
+    /// small enough to land back on the case beside it, and two menu entries that
+    /// resolve to one colour is a menu with a lie in it, which is the same rule
+    /// `derived(from:)` stops at 0.75 for.
+    @Test func seaIsFarEnoughFromTheCyanItStartsFrom() {
+        let theme = PaneTheme.darkPastel
+        #expect(theme.accent(for: .sea)
+            .perceptualDistance(to: theme.accent(for: .ansi6))
+            >= PaneTheme.minimumAttentionSeparation)
+        #expect(theme.accent(for: .sea)
+            .perceptualDistance(to: theme.accent(for: .accent))
+            >= PaneTheme.minimumAttentionSeparation)
     }
 
     @Test func theFourTiersAreOrderedAndNoneIsRepairedIntoAnother() {
@@ -302,7 +353,7 @@ import Testing
     /// Design v3 §1 wants the planks tinted and the compartments they divide
     /// neutral, under a rule it states plainly: the line changes hue, never
     /// weight. It also quotes the fractions 0.14 and 0.20 as satisfying that.
-    /// **They satisfy it for `midnight` alone**, which is the accent that document
+    /// **They satisfy it for `twilight` alone**, which is the accent that document
     /// was written against: a fixed fraction carries as far as the accent is
     /// light, so the same 0.14 lands 31 percent brighter under the default accent
     /// and 42 percent under `bone`. `PaneTheme` solves the fraction instead, so
@@ -347,13 +398,13 @@ import Testing
     /// document against. Within a unit of eight-bit colour of the values quoted
     /// there, `#2d2535` and `#382d43`, the difference being the solved fraction.
     @Test func theTintedLinesUnderTheDocumentsOwnAccent() {
-        let midnight = PaneTheme(
+        let twilight = PaneTheme(
             background: "#141414", foreground: "#bbbbbb",
             selectionBackground: "#b5d5ff", palette: Self.darkPastelPalette,
-            focusAccent: .midnight
+            focusAccent: .twilight
         )
-        #expect(midnight.divider.hexString == "#2d2534")
-        #expect(midnight.hairline.hexString == "#392d44")
+        #expect(twilight.divider.hexString == "#2d2534")
+        #expect(twilight.hairline.hexString == "#392d44")
     }
 
     /// Text, unlike ``ok``, which is why it is not ``ok``.

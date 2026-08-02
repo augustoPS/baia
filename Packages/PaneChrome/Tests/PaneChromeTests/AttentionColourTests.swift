@@ -69,7 +69,7 @@ import Testing
     /// A theme whose selection colour is its own background lifted a step, which
     /// is what ``PaneTheme/barBackground`` is too.
     ///
-    /// The commonest shape in the catalog by a distance: 124 of the 463 shipped
+    /// The commonest shape in the catalog by a distance: 141 of the 485 shipped
     /// themes put `accent`/`stock` within ΔE00 10 of the bar it fills, Afterglow's
     /// `#303030` on a `#2f2f2f` bar at 0.32 the tightest. The fill, the 510 ms
     /// arrival pulse and the pane frame all land in the colour of the footer that
@@ -241,7 +241,7 @@ import Testing
 
     @Test func aFillThatIsTheBarItFillsIsACollisionToo() {
         // The rule only ever asked whether attention was the focus colour. It never
-        // asked whether attention was the *surface*, and 124 of the 463 catalog
+        // asked whether attention was the *surface*, and 141 of the 485 catalog
         // themes fail that second question under `accent`: a selection colour is
         // usually the theme's own background lifted a step, which is exactly what
         // `barBackground` is. The 22 pt wash, the 510 ms arrival pulse and the 2 pt
@@ -323,7 +323,8 @@ import Testing
         // returning the last step gave `#b7d7ff` at ΔE00 0.73 against a floor of 10,
         // silently, with nothing for the caller to inspect.
         //
-        // 83 of the 2315 catalog rows had this shape, HaX0R Blue the worst of them:
+        // 83 of the 2315 rows the catalog produced then had this shape, HaX0R Blue
+        // the worst of them:
         // `ansi[1]`, `ansi[3]` and `ansi[5]` are one colour there, and `derive`
         // returned the colliding colour bit for bit at ΔE00 0.00. All 83 had a
         // palette slot that would have cleared the floor.
@@ -407,10 +408,16 @@ import Testing
         // The shipped instance of it, so the escape hatch is scoped by a real theme
         // rather than by a constructed one. `Retro` spends all sixteen slots and its
         // foreground on two greens over a black background, and it is the only theme
-        // in the catalog of 463 where `derive` cannot reach the floor: 8 of the 2315
+        // in the catalog of 485 where `derive` cannot reach the floor: 10 of the 3395
         // theme-by-`focusAccent` rows, all of them Retro, and none of them has a
         // palette colour that would have cleared it. Everything green is the accent;
         // everything else is the bar.
+        //
+        // It was 8 of 2315 across five accents. `sea` joins the four that land here
+        // and `nightshade` does not, which is the only thing the two new derivations
+        // change about this rule: they add a row to a hatch that already existed
+        // rather than opening a second one. No other theme in the catalog fails
+        // `derive` under either of them.
         let retro = PaneTheme(
             background: "#000000",
             foreground: "#13a10e",
@@ -521,7 +528,7 @@ import Testing
     /// The owner asked for the picker to be hidden unless `attentionAccent` is
     /// `accent`. That rule is wrong in the direction that matters, and this suite
     /// is where the counterexample already lives: `collided` and `fillIsTheBar`
-    /// collide under `alert` too, and 124 of the 463 catalog themes do. Keying the
+    /// collide under `alert` too, and 141 of the 485 catalog themes do. Keying the
     /// picker to the enum would hide a live control on every one of them.
     ///
     /// What the picker is really for is a theme where the three behaviours would

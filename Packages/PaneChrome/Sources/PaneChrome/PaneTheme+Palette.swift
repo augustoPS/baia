@@ -56,7 +56,7 @@ public extension PaneTheme {
         )
         // After delegation rather than in the argument above, because the
         // derivations are expressed in terms of the palette this initializer is
-        // what builds: `bone` needs `ansi[15]` and `midnight` needs `ansi[4]`
+        // what builds: `bone` needs `ansi[15]` and `twilight` needs `ansi[4]`
         // and `ansi[5]`, none of which exist until the holes are filled.
         focusedAccent = accent(for: focusAccent)
     }
