@@ -35,8 +35,8 @@ OUT="verify-out/tree-expansions"
 # redirect there writes into a directory that does not exist and fails silently.
 READOUT="$REPO/$OUT"
 CONFIG="$HOME/.config/baia/config.json"
-SESSION="$HOME/Library/Application Support/baia/session.json"
-BAIA_SOCK="$HOME/Library/Application Support/baia/control.sock"
+SESSION="$APP_SESSION"
+BAIA_SOCK="$APP_SOCKET"
 export BAIA_SOCK
 
 [ -d "$APP" ] || { echo "ABORT: no build at $APP, run make build first" >&2; exit 1; }
@@ -133,7 +133,7 @@ PLAIN_ROW=10
 SENDS="plain.txt"
 
 echo "1 a closed tree has no row 10, which is what makes row 10 an oracle"
-pkill -f "baia.app/Contents/MacOS/baia" 2>/dev/null
+quit_app
 sleep 1.5
 rm -f "$SESSION"
 python3 - "$CONFIG" <<'PY'
@@ -164,7 +164,7 @@ echo "3 the quit records the open set under the resolved anchor"
 # feature and measuring nothing.
 key 'keystroke "q" using command down'
 sleep 3
-if pgrep -f "baia.app/Contents/MacOS/baia" >/dev/null; then
+if pgrep -f "$APP_EXEC_PATTERN" >/dev/null; then
     bad "the app quit on command-Q" "no baia process" "still running"
 else
     ok "the app quit on command-Q"

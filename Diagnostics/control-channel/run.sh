@@ -59,16 +59,19 @@ SHELLS="$OUT/shells"
 ZDOT="$OUT/zdot"
 BACKUP="$OUT/backup"
 
+APP="$ROOT/.build/Build/Products/Debug/baia-dev.app"
+source "$ROOT/Diagnostics/lib/app-identity.sh"
+
 CONFIG="$HOME/.config/baia/config.json"
-SESSION="$HOME/Library/Application Support/baia/session.json"
-SOCKET="$HOME/Library/Application Support/baia/control.sock"
-BINARY="$ROOT/.build/Build/Products/Debug/baia-dev.app/Contents/MacOS/baia-dev"
+SESSION="$APP_SESSION"
+SOCKET="$APP_SOCKET"
+BINARY="$APP_EXEC"
 
 # A second baia would own the socket, and the instance this script launches would
 # then run with no channel at all and inject no `$BAIA_TOKEN`, which surfaces as
 # a probe that never sees a capability. Refused up front with the reason, rather
 # than killing an app somebody is using.
-if pgrep -f "baia.app/Contents/MacOS/baia" > /dev/null; then
+if pgrep -f "$APP_EXEC_PATTERN" > /dev/null; then
   echo "a baia is already running, and it owns $SOCKET."
   echo "quit it before running this probe: the instance launched here would get"
   echo "no control channel and no pane would receive a capability."

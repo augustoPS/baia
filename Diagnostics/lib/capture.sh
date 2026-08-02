@@ -21,8 +21,12 @@
 set -uo pipefail
 
 APP=".build/Build/Products/Debug/baia-dev.app"
+# Before `SESSION`, which reads a value this defines. `drive.sh` below sources it
+# too and sourcing twice is harmless, but the first use is here.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/app-identity.sh"
+
 OUT="${1:-design/handoffs/captures}"
-SESSION="$HOME/Library/Application Support/baia/session.json"
+SESSION="$APP_SESSION"
 CONFIG="$HOME/.config/baia/config.json"
 mkdir -p "$OUT"
 
@@ -54,7 +58,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/drive.sh"
 # config here already said `both`.
 restart() {
     local content=${1:-off}
-    pkill -f "baia.app/Contents/MacOS/baia" 2>/dev/null
+    quit_app
     sleep 1.5
     rm -f "$SESSION"
     python3 - "$CONFIG" "$content" <<'PY'
@@ -182,5 +186,5 @@ key 'key code 123 using {command down, option down}'
 key 'key code 123 using {command down, option down}'
 shot 13-sidebar-and-panes
 
-pkill -f "baia.app/Contents/MacOS/baia" 2>/dev/null
+quit_app
 echo "done"

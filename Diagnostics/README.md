@@ -66,7 +66,9 @@ one's header says which route and why, so nobody re-derives it.
 
 | File | What it is |
 |---|---|
-| `drive.sh` | Sourced, not run. Activation, keys, pasted text, real clicks and window captures against the running app: `act`, `key`, `type_line`, `type_raw`, `shot`, `click_pt`, `click_row`. Set `OUT` before sourcing. Shared by `capture.sh` and `path-picker/run.sh`, and the first place to look before scripting the app again |
+| `app-identity.sh` | Sourced, not run. Answers *which* baia a probe is talking to, from the bundle it launched rather than from a spelling: `APP_NAME`, `APP_ID`, `APP_EXEC`, `APP_SUPPORT`, `APP_SESSION`, `APP_SOCKET`, plus `quit_app`, `activate_app` and `app_is_running`. Set `APP` before sourcing. Read its header before adding a fifth driver |
+| `app-identity-test.sh` | 13 checks over the kill pattern, run against command-line strings rather than processes, so it launches nothing and kills nothing. Includes the pre-2026-08-02 pattern as a worked example of the bug and an over-broad pattern as a negative control |
+| `drive.sh` | Sourced, not run. Activation, keys, pasted text, real clicks and window captures against the running app: `act`, `key`, `type_line`, `type_raw`, `shot`, `click_pt`, `click_row`. Set `APP` and `OUT` before sourcing; it sources `app-identity.sh` itself. Shared by `capture.sh` and `path-picker/run.sh`, and the first place to look before scripting the app again |
 | `click.swift` | Posts a real `CGEvent` mouse click at a screen point. `System Events click at` resolves the accessibility element under the point and presses it, which a custom-drawn view answering `mouseDown` does not implement, so the call succeeds and nothing happens. The sidebar is custom-drawn precisely so it takes no first responder, so this is not a detail a redesign removes |
 | `pixel.py` | Reads pixels out of a `screencapture` PNG with no third-party dependency. `sips` reports metadata but cannot print a pixel and Pillow is not installed here. Decodes greyscale, truecolour and alpha at 8 bits |
 | `demo-repo.sh` | Builds two throwaway repositories under `/tmp/baia-design-demo`: `dirty` carries every git marker state at once (`UU`, `A`, `MM`, `M`, `??`) plus a deep tree and a control-byte filename, `clean` carries none. No real repository on this machine holds all four states, and manufacturing them beats staging a conflict in something the owner is working in. Prints the two paths and nothing else |
@@ -77,6 +79,15 @@ length in its header: text is pasted and never typed, because `keystroke "~"`
 silently arrives as `a` under the U.S. International layout; and baia must be
 verified frontmost before every keystroke, or the key goes to whatever is in
 front. One run typed a `cd` into the terminal running Claude Code that way.
+
+**Never name the app.** Every probe here launches `baia-dev.app` and the owner
+runs `baia.app` all day, so a literal `baia` in a `pkill` pattern, an AppleScript
+`tell application`, or an `Application Support/` path reaches the wrong one. The
+2026-08-02 split updated `APP` in all four drivers and none of those, and the
+harness spent the interval launching one build and then killing, driving and
+reading the state of the other: eighteen references across six files, found by
+the wave-five verification pass. `app-identity.sh` is the single answer and
+`app-identity-test.sh` is what keeps it honest.
 
 It backs up and restores both `~/.config/baia/config.json` and the workspace
 `session.json`. The session half was added 2026-07-30: `restart` deletes the

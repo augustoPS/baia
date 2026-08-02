@@ -17,29 +17,35 @@
 : "${REPO:=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 mkdir -p "$OUT"
 
+# Every function below names the app, and naming it wrong is how a probe drives
+# the build the owner is working in. Sourced here rather than left to the caller
+# so that cannot be forgotten in a fifth driver: `app-identity.sh` refuses
+# without APP, so a caller that has not said which bundle it launched stops here
+# instead of defaulting to whichever one answers.
+: "${APP:?drive.sh needs APP set to the .app bundle under test}"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/app-identity.sh"
+
 # A driven run is minutes of no human input, which is long enough for the display
 # to sleep. A slept display has no windows to ask about: `window 1` becomes an
 # invalid index, `screencapture -R` refuses the rect, and the run dies halfway
 # through looking like an app bug. Held awake for as long as the caller lives.
 caffeinate -dimsu -w $$ &
 
-# Activates baia and refuses to continue until it is genuinely frontmost.
+# Activates the app under test and refuses to continue until it is genuinely
+# frontmost.
 #
 # Without the check, a slow activation sends the next keystroke to whatever app
 # is in front. During one run that typed `cd /Users/.../shop` into the terminal
 # running Claude Code, which is harmless there but would not be if the leaked
 # line were destructive.
-act() {
-    local front
-    for _ in 1 2 3 4 5 6 7 8; do
-        osascript -e 'tell application "baia" to activate' >/dev/null 2>&1
-        sleep 0.5
-        front=$(osascript -e 'tell application "System Events" to get name of first process whose frontmost is true' 2>/dev/null)
-        [ "$front" = "baia" ] && return 0
-    done
-    echo "  ABORT: baia never came to the front, refusing to type into $front" >&2
-    exit 1
-}
+#
+# **By bundle id, since 2026-08-02.** This said `tell application "baia"` and
+# compared the frontmost name against the literal `"baia"`, both written when one
+# app had that name. With the Release build installed, AppleScript resolves the
+# name to it, so a probe launching `baia-dev.app` activated the daily driver, the
+# guard confirmed something called baia was in front, and the run typed into it.
+# The guard was working; it was asking about the wrong app.
+act() { activate_app || exit 1; }
 
 key() { act; osascript -e "tell application \"System Events\" to $1" >/dev/null 2>&1; sleep 1.3; }
 
@@ -78,7 +84,7 @@ type_raw() {
 shot() {
     act; sleep 0.8
     local geom x y w h
-    geom=$(osascript -e 'tell application "System Events" to tell process "baia" to get {position, size} of window 1' 2>/dev/null)
+    geom=$(osascript -e "tell application \"System Events\" to tell process \"$APP_NAME\" to get {position, size} of window 1" 2>/dev/null)
     x=$(echo "$geom" | cut -d, -f1 | tr -d ' ')
     y=$(echo "$geom" | cut -d, -f2 | tr -d ' ')
     w=$(echo "$geom" | cut -d, -f3 | tr -d ' ')
@@ -104,7 +110,7 @@ CLICK="$REPO/.build/click"
 click_pt() {
     act; sleep 0.4
     local geom x y
-    geom=$(osascript -e 'tell application "System Events" to tell process "baia" to get position of window 1' 2>/dev/null)
+    geom=$(osascript -e "tell application \"System Events\" to tell process \"$APP_NAME\" to get position of window 1" 2>/dev/null)
     x=$(echo "$geom" | cut -d, -f1 | tr -d ' ')
     y=$(echo "$geom" | cut -d, -f2 | tr -d ' ')
     "$CLICK" $((x + $1)) $((y + $2))

@@ -13,9 +13,17 @@
 set -uo pipefail
 
 APP=".build/Build/Products/Debug/baia-dev.app"
-BIN="$APP/Contents/MacOS/baia"
+# Names the app, its executable, its Application Support directory and the
+# pattern that reaches its process and no other copy of baia. Everything below
+# used to spell all four for the Release build while launching this one.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/app-identity.sh"
+
+BIN="$APP_EXEC"
+# Deliberately shared between the two builds, unlike the session: both read
+# `~/.config/baia/config.json`, because testing against settings that are not the
+# ones in daily use tests the wrong thing.
 CFG="$HOME/.config/baia/config.json"
-SESSION="$HOME/Library/Application Support/baia/session.json"
+SESSION="$APP_SESSION"
 OUT="verify-out"
 LOG="$OUT/stderr.log"
 
@@ -51,7 +59,7 @@ print('locked' if any(u.get('CGSSessionScreenIsLocked') for u in users) else 'un
     esac
 }
 
-stop() { pkill -f "baia.app/Contents/MacOS/baia" 2>/dev/null; sleep 1.5; }
+stop() { quit_app; sleep 1.5; }
 
 # Launched attached so the decoder's complaints land somewhere readable. They are
 # the only channel it has: there is no diagnostics surface in the app yet.
@@ -60,17 +68,14 @@ start() {
     sleep 5
 }
 
-baia_pid()  { pgrep -f "baia.app/Contents/MacOS/baia" | head -1; }
+baia_pid()  { pgrep -f "$APP_EXEC_PATTERN" | head -1; }
 shells()    { ps -eo pid,ppid,command | grep "[l]ogin -flp" | awk -v b="$(baia_pid)" '$2==b' | wc -l | tr -d ' '; }
 
-act() {
-    for _ in 1 2 3 4 5 6; do
-        osascript -e 'tell application "baia" to activate' >/dev/null 2>&1
-        sleep 0.5
-        [ "$(osascript -e 'tell application "System Events" to get name of first process whose frontmost is true' 2>/dev/null)" = "baia" ] && return 0
-    done
-    echo "ABORT: baia never came to the front"; exit 1
-}
+# The shared one, since 2026-08-02. This had its own copy that activated
+# `application "baia"` and compared the frontmost name against `"baia"`, both of
+# which resolve to the Release build while it is installed, so the probe drove
+# the daily driver and confirmed it had.
+act() { activate_app || exit 1; }
 
 key()  { act; osascript -e "tell application \"System Events\" to $1" >/dev/null 2>&1; sleep 1.2; }
 
@@ -86,7 +91,7 @@ type_line() {
 shot() {
     act; sleep 0.8
     local geom x y w h
-    geom=$(osascript -e 'tell application "System Events" to tell process "baia" to get {position, size} of window 1' 2>/dev/null) || return 1
+    geom=$(osascript -e "tell application \"System Events\" to tell process \"$APP_NAME\" to get {position, size} of window 1" 2>/dev/null) || return 1
     x=$(echo "$geom"|cut -d, -f1|tr -d ' '); y=$(echo "$geom"|cut -d, -f2|tr -d ' ')
     w=$(echo "$geom"|cut -d, -f3|tr -d ' '); h=$(echo "$geom"|cut -d, -f4|tr -d ' ')
     rm -f "$OUT/$1.png"
@@ -206,7 +211,7 @@ if [ "$(shells)" -ge 2 ]; then
     # Captured without `shot`, which activates baia first and would hand the
     # window its key state back before the shutter. The rect is read while baia is
     # still frontmost and reused once Finder has taken over.
-    geom=$(osascript -e 'tell application "System Events" to tell process "baia" to get {position, size} of window 1' 2>/dev/null | tr -d ' ')
+    geom=$(osascript -e "tell application \"System Events\" to tell process \"$APP_NAME\" to get {position, size} of window 1" 2>/dev/null | tr -d ' ')
     osascript -e 'tell application "Finder" to activate' >/dev/null 2>&1; sleep 1.5
     rm -f "$OUT/05-window-inactive.png"
     screencapture -x -o -R"$geom" "$OUT/05-window-inactive.png"

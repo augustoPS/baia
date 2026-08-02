@@ -33,8 +33,8 @@ OUT="verify-out/path-picker"
 # the pane having no capability at all.
 READOUT="$REPO/$OUT"
 CONFIG="$HOME/.config/baia/config.json"
-SESSION="$HOME/Library/Application Support/baia/session.json"
-BAIA_SOCK="$HOME/Library/Application Support/baia/control.sock"
+SESSION="$APP_SESSION"
+BAIA_SOCK="$APP_SOCKET"
 export BAIA_SOCK
 
 [ -d "$APP" ] || { echo "ABORT: no build at $APP, run make build first" >&2; exit 1; }
@@ -93,7 +93,7 @@ FIXTURE=$("$HERE/fixture.sh" | sed -n 's/^\[+\] fixture at //p')
 echo "  fixture at $FIXTURE"
 
 launch() {
-    pkill -f "baia.app/Contents/MacOS/baia" 2>/dev/null
+    quit_app
     sleep 1.5
     rm -f "$SESSION"
     python3 - "$CONFIG" <<'PY'
@@ -164,7 +164,7 @@ click_row 68 9          # src/esc<ESC>[Dname.txt
 shot 5-escape-refused
 refuse_prompt "and neither does the escape name"
 
-pkill -f "baia.app/Contents/MacOS/baia" 2>/dev/null
+quit_app
 
 cat <<EOF
 
