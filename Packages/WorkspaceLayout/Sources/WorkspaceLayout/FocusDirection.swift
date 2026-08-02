@@ -77,9 +77,17 @@ public enum FocusDirection: Sendable, Equatable {
     /// The wire's spelling of a direction onto this package's.
     ///
     /// Two enums for one idea because `PaneControl` imports Foundation and nothing
-    /// else, and `FocusDirection` is deliberately not `Codable` over there: a
-    /// direction is a keystroke and never session state. No `default:`, so a fifth
-    /// direction has to be mapped rather than silently becoming `left`.
+    /// else, and ``FocusDirection`` is deliberately not `Codable`, as the type
+    /// itself says: a direction is a keystroke and never session state. No
+    /// `default:`, so a fifth direction has to be mapped rather than silently
+    /// becoming `left`.
+    ///
+    /// That clause read "not `Codable` over there" until 2026-08-01, which was
+    /// true in the app target this moved from and inverted the moment it landed
+    /// here: from inside `WorkspaceLayout` the only place "over there" can name is
+    /// `PaneControl`, which has no ``FocusDirection`` at all. The mirror comment
+    /// in `ControlRequest.swift` still says "over there" and is still right,
+    /// because it is read from the other side.
     public static func direction(of direction: ControlDirection) -> FocusDirection {
         switch direction {
         case .left: .left
