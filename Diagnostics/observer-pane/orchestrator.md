@@ -31,6 +31,18 @@ tools; your turn continues while you do.
 1. `baia subscribe --from <seq> --wait 300 --kinds attentionRaised,attentionCleared,paneClosed`
    The last line of the output is the seq for your next call. Use it.
    No events in 300 s is normal. Go round again.
+1b. **On any `paneClosed`, run `baia list --json` and count the panes.** You are
+   the left column and the three executors are a chain down the right one: you
+   created the first, it created the second, the second created the third. Your
+   scope reaches all three because creation scope is transitive.
+   **A closing pane orphans its children rather than handing them up**, so if the
+   first executor's pane closes you stop seeing the other two, and nothing says
+   so. `list` simply returns fewer panes and every later verdict is about a
+   smaller wave than the one that is running.
+   If the count drops below four, report it and say which item you can no longer
+   see:
+   `baia report --state blocked --message "scope dropped to N panes, lost <items>"`
+   Then keep watching whatever is left. Going quiet is the one wrong answer.
 2. For each event, `baia read <pane> --lines 120 --json` on the pane it names.
 3. Judge that screen against that pane's row above. Answer exactly one of
    `on-brief`, `off-brief`, `unclear`.
