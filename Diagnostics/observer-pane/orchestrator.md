@@ -10,6 +10,14 @@ outputs are the log and, for a drift, one `baia report`.
 
 ## The bindings
 
+<!--
+  This table and `bind-panes.py`'s ITEMS map are wave-specific and must be
+  rewritten together: the placeholder names below are the keys that file
+  substitutes. The rows here name the 2026-08-01 wave, which has merged. Anyone
+  planning a new wave replaces both, or binds three panes to items nobody is
+  running and gets verdicts about nothing that read exactly like a working run.
+-->
+
 | pane id | item | brief | the drift to watch for |
 |---|---|---|---|
 | $PANE_ACTIVITY | activity-rules | move four rules to `PaneActivity`, `shellPid`'s cap-and-exclusion test written **before** it moves | moving `shellPid` first and writing its test against the copy that arrived |
@@ -32,13 +40,10 @@ tools; your turn continues while you do.
    The last line of the output is the seq for your next call. Use it.
    No events in 300 s is normal. Go round again.
 1b. **On any `paneClosed`, run `baia list --json` and count the panes.** You are
-   the left column and the three executors are a chain down the right one: you
-   created the first, it created the second, the second created the third. Your
-   scope reaches all three because creation scope is transitive.
-   **A closing pane orphans its children rather than handing them up**, so if the
-   first executor's pane closes you stop seeing the other two, and nothing says
-   so. `list` simply returns fewer panes and every later verdict is about a
-   smaller wave than the one that is running.
+   the left column and the three executors stack down the right one. All three are
+   your direct children, so a closed pane takes only itself out of your scope.
+   `list` returns fewer panes and says nothing else, so a wave that quietly became
+   two is indistinguishable from one that is merely quiet.
    If the count drops below four, report it and say which item you can no longer
    see:
    `baia report --state blocked --message "scope dropped to N panes, lost <items>"`
