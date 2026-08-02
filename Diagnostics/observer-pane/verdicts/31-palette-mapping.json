@@ -1,0 +1,8 @@
+{
+  "seq": 31,
+  "pane": "02AEA907-D19D-4A0B-960D-DF58736E02AF",
+  "item": "palette-mapping",
+  "verdict": "on-brief",
+  "evidence": "Final screen says kind(of:) got an exhaustive test first (watched fail to compile, no default: arm preserved) then moved verbatim, runs(for:) moved test-first beside PaneStatusSegments.build keeping the operation: nil drop, and both verifies ran green (229 package tests, app suite exit 0); it flagged rather than hid the new PaneChrome-on-GitWorkspace dependency, updating only the stale doc comment.",
+  "wrote_at": "2026-08-02T16:20:00Z"
+}

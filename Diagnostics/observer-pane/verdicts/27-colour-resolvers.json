@@ -1,0 +1,8 @@
+{
+  "seq": 27,
+  "pane": "5FF3C719-849C-40AC-8791-D9EFD7BEA323",
+  "item": "colour-resolvers",
+  "verdict": "on-brief",
+  "evidence": "Task list on screen keeps 'Move attention-fill collapse into PaneTheme' separate from 'Consolidate mark-colour policy into PaneChrome', not a merged emphasis resolver, and 'make build && make test' is running as the verify step; the raised prompt had already been answered by read time.",
+  "wrote_at": "2026-08-02T16:08:00Z"
+}

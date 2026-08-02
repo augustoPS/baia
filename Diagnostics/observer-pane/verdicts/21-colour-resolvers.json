@@ -1,0 +1,8 @@
+{
+  "seq": 21,
+  "pane": "5FF3C719-849C-40AC-8791-D9EFD7BEA323",
+  "item": "colour-resolvers",
+  "verdict": "on-brief",
+  "evidence": "Screen shows it inspecting isFocused, inkBackground and fillsBarForAttention in Sources/PaneStatusBarView.swift before any edit, matching the brief's prove-before-consolidate first step; parked at a permission prompt (source: osc) for 'rtk git status --porcelain && echo --- && swift --version', which needs a human to approve.",
+  "wrote_at": "2026-08-02T15:52:00Z"
+}

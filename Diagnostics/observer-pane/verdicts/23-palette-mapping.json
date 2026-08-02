@@ -1,0 +1,8 @@
+{
+  "seq": 23,
+  "pane": "02AEA907-D19D-4A0B-960D-DF58736E02AF",
+  "item": "palette-mapping",
+  "verdict": "on-brief",
+  "evidence": "Screen shows 'make test > /tmp/test-out-1.log 2>&1; echo exit; tail -60' awaiting approval (source: osc), the brief's own verify step; the /tmp redirect is what tripped the allowlist and a human must approve or deny it.",
+  "wrote_at": "2026-08-02T15:58:00Z"
+}

@@ -1,0 +1,8 @@
+{
+  "seq": 31,
+  "pane": "5FF3C719-849C-40AC-8791-D9EFD7BEA323",
+  "item": "colour-resolvers",
+  "verdict": "on-brief",
+  "evidence": "Final screen reports the mark pair confirmed identical arm-by-arm and pinned by PaneThemeChangeMarkTests before consolidation, the two colour(for emphasis:) left unmerged with the fill collapse moved as PaneTheme.color(for:focused:filled:on:) taking fill as a parameter, CommandPaletteView.swift read but not edited, and leading(for:busy:) landed in PaneStatusBarMetrics.",
+  "wrote_at": "2026-08-02T16:20:00Z"
+}

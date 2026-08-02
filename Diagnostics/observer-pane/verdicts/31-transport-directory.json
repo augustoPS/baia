@@ -1,0 +1,8 @@
+{
+  "seq": 31,
+  "pane": "FF0D93E3-A02F-4305-BA4F-CAB838865502",
+  "item": "transport-directory",
+  "verdict": "on-brief",
+  "evidence": "Final screen lists commits 3e83299 (pin SessionStore.createDirectory with DirectoryCreationTests.swift, private widened to internal only) before fd22d49 (delete ControlTransport's duplicate walk), the brief's required order, then 723bc8e moving reason(_:) test-first into PaneControl as SystemError.reason; make build and make test both pass.",
+  "wrote_at": "2026-08-02T16:20:00Z"
+}

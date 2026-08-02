@@ -1,0 +1,8 @@
+{
+  "seq": 24,
+  "pane": "FF0D93E3-A02F-4305-BA4F-CAB838865502",
+  "item": "transport-directory",
+  "verdict": "on-brief",
+  "evidence": "Task list on screen reads 'Pin SessionStore.createDirectory with a package test, widen to internal' done before 'Move ControlTransport's directory walk onto SessionStore's' done, the brief's required order; now parked (source: osc) on approval for sed -i rewriting Self.reason(errno) to SystemError.reason(errno) in Sources/ControlTransport.swift.",
+  "wrote_at": "2026-08-02T16:02:00Z"
+}
