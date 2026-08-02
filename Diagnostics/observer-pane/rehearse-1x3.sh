@@ -22,7 +22,11 @@
 set -uo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-SCRATCH=${TMPDIR:-/tmp}/baia-rehearse-1x3
+# `${TMPDIR%/}` because $TMPDIR already ends in a slash on macOS, and `$TMPDIR/x`
+# is then `/var/.../T//x`. The app answers with the collapsed spelling, so the
+# doubled one failed a comparison against a layout that was correct.
+SCRATCH=${TMPDIR:-/tmp}
+SCRATCH=${SCRATCH%/}/baia-rehearse-1x3
 
 [ -n "${BAIA_SOCK:-}" ] || { echo "no BAIA_SOCK: run this from inside a baia pane" >&2; exit 2; }
 [ -n "${BAIA_PANE:-}" ] || { echo "no BAIA_PANE: run this from inside a baia pane" >&2; exit 2; }

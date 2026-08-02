@@ -20,6 +20,7 @@ python inside a script is one nesting level too many. `read-prompt.py`,
 """
 
 import json
+import re
 import sys
 
 
@@ -32,11 +33,24 @@ def cwd(node):
 
 
 def normalised(path):
-    """Trailing slashes and a `/private` prefix are the app's spelling, not a defect."""
-    text = (path or "").rstrip("/")
+    """One spelling of a path, so a comparison is about the path and not the typing.
+
+    Three differences are the app's spelling or the shell's rather than a defect,
+    and all three were met on the way here:
+
+    - a `/private` prefix, which macOS resolves `/var` and `/tmp` through
+    - a trailing slash, which `URL(directoryHint: .isDirectory)` appends
+    - a doubled inner slash, because `$TMPDIR` already ends in one, so
+      `${TMPDIR}/x` is `/var/.../T//x` while the app answers `/var/.../T/x`
+
+    The third failed a run on 2026-08-02 against a layout that was correct in both
+    shape and order, which is the second time in one evening this check has been
+    the broken half.
+    """
+    text = re.sub(r"/{2,}", "/", path or "")
     if text.startswith("/private/"):
         text = text[len("/private"):]
-    return text
+    return text.rstrip("/")
 
 
 def main() -> int:
@@ -85,12 +99,21 @@ def main() -> int:
                     if kind(row) != "pane":
                         problems.append("row %d of the right column is a %s"
                                         % (index + 1, kind(row)))
-                got = [cwd(r) for r in rows if kind(r) == "pane"]
-                want = ["%s/%s" % (scratch, name) for name in ("one", "two", "three")]
-                if [normalised(g) for g in got] != [normalised(w) for w in want]:
-                    problems.append("the rows are in the wrong order")
-                    problems.append("  got  %s" % [normalised(g) for g in got])
-                    problems.append("  want %s" % [normalised(w) for w in want])
+                got = [normalised(cwd(r)) for r in rows if kind(r) == "pane"]
+                want = [normalised("%s/%s" % (scratch, name))
+                        for name in ("one", "two", "three")]
+                # Order and membership are separate answers, because they send a
+                # reader to different places. A run on 2026-08-02 reported "wrong
+                # order" for three rows that were in the right order and spelled
+                # with one extra slash, and the message cost the trip it was
+                # supposed to save.
+                if got != want:
+                    if sorted(got) == sorted(want):
+                        problems.append("the three directories are all there, in the wrong order")
+                    else:
+                        problems.append("the rows are not the three directories")
+                    problems.append("  got  %s" % got)
+                    problems.append("  want %s" % want)
 
     if problems:
         for problem in problems:
