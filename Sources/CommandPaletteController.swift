@@ -250,7 +250,7 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
                     query: query,
                     candidate: project.relativePath
                 )?.matchedIndices ?? [],
-                kind: Self.kind(of: project.kind)
+                kind: PaletteRow.kind(of: project.kind)
             )
         }
         listView.selection = 0
@@ -263,14 +263,6 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
     private func countText(query: String) -> String {
         guard !query.isEmpty else { return "\(projects.count)" }
         return "\(results.count) of \(projects.count)"
-    }
-
-    private static func kind(of kind: Project.Kind) -> PaletteRowKind {
-        switch kind {
-        case .repository: .repository
-        case .worktree: .worktree
-        case .directory: .directory
-        }
     }
 
     // MARK: - Keyboard

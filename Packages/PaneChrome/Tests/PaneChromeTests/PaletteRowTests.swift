@@ -1,9 +1,20 @@
 import Foundation
+import GitWorkspace
 import Testing
 
 @testable import PaneChrome
 
 @Suite struct PaletteRowTests {
+    /// One arm per case of `Project.Kind`, and no `default:`, so a fourth case
+    /// added there fails this file to compile rather than silently falling
+    /// through to whichever arm `default:` would have picked. `--kinds` broke
+    /// exactly this way once, in a mapping the same shape as this one.
+    @Test func kindMapsEachCaseOfProjectKind() {
+        #expect(PaletteRow.kind(of: .repository) == .repository)
+        #expect(PaletteRow.kind(of: .worktree(ofRepositoryNamed: "baia")) == .worktree)
+        #expect(PaletteRow.kind(of: .directory) == .directory)
+    }
+
     @Test func theLastComponentIsTheNameAndTheRestIsContext() {
         // The tier split that makes a list of paths scannable. Without it every
         // row is one grey string and the eye has to parse slashes to find the

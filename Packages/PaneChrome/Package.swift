@@ -14,11 +14,21 @@ let package = Package(
         // no test bundle. `focusAccent` was decoded, stored and tested for a
         // week while nothing read it, which is what an untestable wiring buys.
         .package(path: "../BaiaSettings"),
+        // Acyclic: `GitWorkspace` imports only Foundation. The dependency exists
+        // so the command palette's translation from `GitWorkspace`'s vocabulary
+        // (`Project.Kind`, `RepositoryStatus`) into this package's own
+        // (`PaletteRowKind`, `PaneStatusRun`) is a tested pure function here
+        // instead of a switch in the app target, which has no test bundle.
+        .package(path: "../GitWorkspace"),
     ],
     targets: [
         .target(name: "PaneChrome", dependencies: [
             .product(name: "BaiaSettings", package: "BaiaSettings"),
+            .product(name: "GitWorkspace", package: "GitWorkspace"),
         ]),
-        .testTarget(name: "PaneChromeTests", dependencies: ["PaneChrome"]),
+        .testTarget(name: "PaneChromeTests", dependencies: [
+            "PaneChrome",
+            .product(name: "GitWorkspace", package: "GitWorkspace"),
+        ]),
     ]
 )
