@@ -143,22 +143,9 @@ final class ControlAdapter: ControlWorkspaceBridge {
             anchor: anchor?.url.path(percentEncoded: false),
             branch: controller.gitStatus.git?.head,
             activity: controller.activityLabel,
-            attention: Self.name(of: controller.attentionState),
+            attention: PaneStatus.Attention.name(of: controller.attentionState),
             createdBy: controller.createdBy?.rawValue.uuidString
         )
-    }
-
-    /// The chrome's three attention levels, spelled for a reader.
-    ///
-    /// Nil for `none`, so a pane that is not asking prints no `attention` line at
-    /// all rather than a line saying nothing happened. No `default:`: a fourth
-    /// level has to decide what it is called here before this compiles.
-    private static func name(of attention: PaneStatus.Attention) -> String? {
-        switch attention {
-        case .none: nil
-        case .asking: "asking"
-        case .acknowledged: "acknowledged"
-        }
     }
 
     // MARK: Moving a pane

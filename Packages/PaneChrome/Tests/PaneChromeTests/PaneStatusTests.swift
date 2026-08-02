@@ -124,4 +124,15 @@ import Testing
             #expect(PaneStatus.Attention(agent) == Sample.status(agent: agent).attention)
         }
     }
+
+    @Test func noneNamesNoLineAtAll() {
+        // A pane that is not asking prints no `attention` line at all rather than
+        // a line saying nothing happened.
+        #expect(PaneStatus.Attention.name(of: .none) == nil)
+    }
+
+    @Test func askingAndAcknowledgedNameTheirOwnWord() {
+        #expect(PaneStatus.Attention.name(of: .asking) == "asking")
+        #expect(PaneStatus.Attention.name(of: .acknowledged) == "acknowledged")
+    }
 }

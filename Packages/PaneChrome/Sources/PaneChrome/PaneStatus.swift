@@ -104,6 +104,18 @@ public struct PaneStatus: Sendable, Equatable {
             guard let agent, agent.wantsAttention else { self = .none; return }
             self = agent.isAcknowledged ? .acknowledged : .asking
         }
+
+        /// This level, spelled for a reader. Nil for `none`, so a pane that is
+        /// not asking prints no `attention` line at all rather than a line
+        /// saying nothing happened. No `default:`: a fourth level has to decide
+        /// what it is called here before this compiles.
+        public static func name(of attention: Attention) -> String? {
+            switch attention {
+            case .none: nil
+            case .asking: "asking"
+            case .acknowledged: "acknowledged"
+            }
+        }
     }
 
     /// What is running in the pane, and whether it asked for the owner.
