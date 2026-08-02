@@ -67,6 +67,25 @@ for i in 0 1 2; do
   [ -f "${BRIEF[$i]}" ] || { echo "missing brief: ${BRIEF[$i]}" >&2; exit 2; }
 done
 
+# Resolved here, in the calling shell, and passed to the pane absolute.
+#
+# The pane runs `zsh -lc`, which is a login shell but not an interactive one, so
+# it reads .zprofile and never .zshrc. `claude` lives in ~/.local/bin and that
+# directory is added to PATH by .zshrc, so the bare name resolves for the caller
+# and not for the pane. Every executor died on `command not found: claude`
+# instantly, which looks exactly like an agent thinking: the pane is alive, the
+# command already failed, and `exec $SHELL -l` leaves a prompt sitting there.
+#
+# Found 2026-08-02. Testing this from a shell that already has the directory on
+# PATH proves nothing; `env -i HOME="$HOME" /bin/zsh -lc 'command -v claude'` is
+# the check that reproduces what the pane gets.
+CLAUDE_BIN=$(command -v claude || true)
+[ -n "$CLAUDE_BIN" ] || {
+  echo "claude is not on PATH; a spawned pane would die on 'command not found'" >&2
+  exit 2
+}
+
+
 # A `--command` pane closes when its command exits, so every value ends with an
 # exec to leave a shell behind. No newlines are permitted in the value, and the
 # brief reaches the agent through a file the command reads rather than inline.
@@ -87,7 +106,7 @@ spawn() {                       # spawn <dir> <brief> <model>
     return
   fi
   baia split --right --cwd "$1" --command \
-    "'/bin/zsh' -lc 'claude --model $3 \"\$(cat $2)\"; exec \"\$SHELL\" -l'" \
+    "'/bin/zsh' -lc '$CLAUDE_BIN --model $3 \"\$(cat $2)\"; exec \"\$SHELL\" -l'" \
     | tr -d '[:space:]'
 }
 
