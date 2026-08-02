@@ -93,7 +93,7 @@ final class PaneGitStatus {
     /// load bearing: this is called from the one-second anchor poll, so without
     /// it every tick would fork git in every pane.
     func setAnchor(_ anchor: Anchor?) {
-        let next = repositoryRoot(for: anchor)
+        let next = Anchor.repositoryRoot(of: anchor)
         guard next != root else { return }
         root = next
         isLinkedWorktree = next.map { GitDirectory.isLinkedWorktree(repositoryRoot: $0) } ?? false
@@ -127,14 +127,6 @@ final class PaneGitStatus {
     func stopPolling() {
         timer?.invalidate()
         timer = nil
-    }
-
-    /// Only a repository anchor has git state. A plain directory anchor gets
-    /// nil, and `PaneStatusSegments` then emits no git segments at all rather
-    /// than a branch-shaped blank.
-    private func repositoryRoot(for anchor: Anchor?) -> URL? {
-        guard let anchor, anchor.kind == .repository else { return nil }
-        return anchor.url
     }
 
     private func refresh() {
