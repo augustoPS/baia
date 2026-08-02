@@ -209,20 +209,13 @@ final class FileTreeRowsView: NSView {
 
     override var isFlipped: Bool { true }
 
-    /// One visible row: a node and how deep it sits.
-    private struct Row {
-        let node: FileTreeNode
-        let depth: Int
-    }
-
-    private var rows: [Row] = []
+    private var rows: [FileTree.VisibleRow] = []
 
     private func rebuild() {
-        rows = []
         // A fade in flight belongs to the row that was at that index, and after a
         // rebuild that index is a different file.
         feedback.reset()
-        append(tree, depth: 0)
+        rows = FileTree.visibleRows(of: tree, expanded: expanded)
         resize()
         // See `ChangesRowsView.changes`: a frame that does not move marks no layout
         // pass, so the areas would stay built against the list that was there
@@ -272,15 +265,6 @@ final class FileTreeRowsView: NSView {
         needsDisplay = true
     }
 
-    private func append(_ nodes: [FileTreeNode], depth: Int) {
-        for node in nodes {
-            rows.append(Row(node: node, depth: depth))
-            if node.isDirectory, expanded.contains(node.path) {
-                append(node.children, depth: depth + 1)
-            }
-        }
-    }
-
     override func draw(_ dirty: NSRect) {
         // No fill of its own: the scroll view behind it is the column's material.
         guard hasRoot else {
@@ -302,7 +286,7 @@ final class FileTreeRowsView: NSView {
         }
     }
 
-    private func draw(_ row: Row, atIndex index: Int) {
+    private func draw(_ row: FileTree.VisibleRow, atIndex index: Int) {
         let y = Double(index) * Self.rowHeight
         let x = Self.inset + Double(row.depth) * Self.indent
 
@@ -371,7 +355,7 @@ final class FileTreeRowsView: NSView {
     /// descendants and nowhere else, so the extent of what a click is about to
     /// collapse is visible before it collapses. §5.3. One guide and never the
     /// ancestors: the row fill already says which row.
-    private func drawGuides(of row: Row, atIndex index: Int, y: Double) {
+    private func drawGuides(of row: FileTree.VisibleRow, atIndex index: Int, y: Double) {
         guard row.depth > 0 else { return }
         for depth in 0 ..< row.depth {
             let lit = hoverGuide.map { $0.depth == depth && $0.rows.contains(index) } ?? false
@@ -523,7 +507,7 @@ final class FileTreeRowsView: NSView {
 
     private func updateHoverGuide() {
         let previous = hoverGuide
-        hoverGuide = guide(for: feedback.hovered)
+        hoverGuide = FileTree.descendants(ofRowAt: feedback.hovered, in: rows)
         guard previous?.depth != hoverGuide?.depth || previous?.rows != hoverGuide?.rows else {
             return
         }
@@ -535,16 +519,6 @@ final class FileTreeRowsView: NSView {
                 height: Double(span.count) * Self.rowHeight
             ))
         }
-    }
-
-    private func guide(for index: Int?) -> (depth: Int, rows: Range<Int>)? {
-        guard let index, rows.indices.contains(index) else { return nil }
-        let row = rows[index]
-        guard row.node.isDirectory, expanded.contains(row.node.path) else { return nil }
-        var end = index + 1
-        while end < rows.count, rows[end].depth > row.depth { end += 1 }
-        guard end > index + 1 else { return nil }
-        return (depth: row.depth, rows: (index + 1) ..< end)
     }
 
     override func resetCursorRects() {
