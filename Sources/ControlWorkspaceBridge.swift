@@ -71,6 +71,28 @@ protocol ControlWorkspaceBridge: AnyObject {
     /// `ScreenRead.tail`, which is pure and tested.
     func readLines(from pane: ControlPaneID) -> [String]?
 
+    /// Puts one pane beside another, and answers with the frame the caller gets.
+    ///
+    /// **Both ids arrive authorised**, each one run past the resolver separately,
+    /// because a move names two panes and reaching either of them is reaching into
+    /// somebody's window. Nothing here re-checks that, for the reason
+    /// ``record(for:)`` does not: half the scope rule in a second place is half a
+    /// rule with no test on it.
+    ///
+    /// Its own method rather than another arm of ``applyLayout(_:to:args:)``,
+    /// which takes one target and is called after one authorization. A move that
+    /// went through there would have to pull its second pane out of `args` past a
+    /// signature saying there was only one, which is exactly the wiring mistake
+    /// `.selfOnly` exists to make impossible.
+    ///
+    /// An implementation opens nothing and closes nothing. The pane keeps its id,
+    /// so the parentage graph is not consulted and cannot change.
+    func move(
+        _ pane: ControlPaneID,
+        beside target: ControlPaneID,
+        axis: ControlAxis
+    ) -> ControlResponse
+
     /// The arrangement of the window `pane` sits in, or nil when no window holds
     /// it any more.
     ///
