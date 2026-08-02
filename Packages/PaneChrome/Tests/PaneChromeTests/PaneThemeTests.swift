@@ -286,14 +286,21 @@ import Testing
         }
     }
 
-    /// `sea` is its own colour rather than a second spelling of ``FocusAccent/ansi6``.
+    /// `sea` is its own colour rather than a second spelling of
+    /// ``FocusAccent/ansi6`` **on this theme**.
     ///
-    /// The argument for halfway over the 0.35 that measures four degenerate rows
-    /// better on the catalog. A fraction small enough to be safest is a fraction
-    /// small enough to land back on the case beside it, and two menu entries that
-    /// resolve to one colour is a menu with a lie in it, which is the same rule
-    /// `derived(from:)` stops at 0.75 for.
-    @Test func seaIsFarEnoughFromTheCyanItStartsFrom() {
+    /// The scope in that sentence is the whole point, and this test used to lack
+    /// it. It was named `seaIsFarEnoughFromTheCyanItStartsFrom` and documented as
+    /// the argument for halfway over 0.35, which is a claim about the catalog;
+    /// one theme cannot hold it, and it passed on `darkPastel` at every fraction
+    /// down to 0.15. The threshold argument is graded where it can be, in
+    /// `Diagnostics/theme-catalog`, and what is left here is the one thing a
+    /// package test can see: on the theme baia ships as its default, the two menu
+    /// entries are two colours.
+    ///
+    /// Kept rather than deleted for the same reason `PaneTheme.darkPastel` is the
+    /// default: it is the theme most panes are actually drawn in.
+    @Test func seaIsFarFromTheCyanItStartsFromOnThisTheme() {
         let theme = PaneTheme.darkPastel
         #expect(theme.accent(for: .sea)
             .perceptualDistance(to: theme.accent(for: .ansi6))
@@ -301,6 +308,21 @@ import Testing
         #expect(theme.accent(for: .sea)
             .perceptualDistance(to: theme.accent(for: .accent))
             >= PaneTheme.minimumAttentionSeparation)
+    }
+
+    /// The blend is towards `ansi[4]` and nowhere else, which is the half of
+    /// ``PaneTheme/seaAccent`` a distance assertion cannot see.
+    ///
+    /// `sea` on a theme whose blue is elsewhere must move with it. Without this,
+    /// blending towards any colour far enough from `ansi[6]` satisfies every
+    /// separation figure above while making the name `sea` mean nothing.
+    @Test func seaBlendsTowardsTheThemesOwnBlue() {
+        let theme = PaneTheme.darkPastel
+        #expect(theme.accent(for: .sea)
+            == theme.ansiColor(6).blended(with: theme.ansiColor(4), fraction: 0.5))
+        // And it is genuinely between the two, rather than either of them.
+        #expect(theme.accent(for: .sea) != theme.ansiColor(6))
+        #expect(theme.accent(for: .sea) != theme.ansiColor(4))
     }
 
     @Test func theFourTiersAreOrderedAndNoneIsRepairedIntoAnother() {

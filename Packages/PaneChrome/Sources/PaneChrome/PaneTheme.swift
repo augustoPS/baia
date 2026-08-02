@@ -181,6 +181,25 @@ public struct PaneTheme: Sendable, Equatable {
     }
 
     /// `ansi[6]` blended halfway to `ansi[4]`. See ``BaiaSettings/FocusAccent/sea``.
+    ///
+    /// **Halfway reduces the collision with raw `ansi[6]`; it does not remove
+    /// it.** Measured over the catalog 2026-08-02: `sea` lands within ΔE00 10 of
+    /// `ansi[6]` on 165 of the 485 themes at this fraction, against 258 at the
+    /// 0.35 that measures four degenerate rows better. So halfway buys 93 themes,
+    /// and on the remaining 165 the settings menu still offers two entries that
+    /// resolve to one colour.
+    ///
+    /// 14 of those 165 are past helping: their `ansi[6]` and `ansi[4]` are the
+    /// same colour, so there is nothing to blend towards and no fraction
+    /// separates them. That is the floor, and it is why this is a fraction rather
+    /// than a guard: a guard that cannot hold on 14 themes is a guard that has to
+    /// answer for them, and blending nowhere is the honest answer.
+    ///
+    /// Both figures are pinned in `Diagnostics/theme-catalog`, which is the only
+    /// place they can be graded. The package test beside this one sees
+    /// ``darkPastel`` alone and says so in its name; it was previously named and
+    /// documented as the argument for this fraction, and passed at every fraction
+    /// down to 0.15.
     public var seaAccent: RGB {
         ansiColor(6).blended(with: ansiColor(4), fraction: 0.5)
     }

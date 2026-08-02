@@ -77,6 +77,22 @@ enum Pinned {
         .accent: 140, .bone: 421, .ansi5: 215, .ansi6: 312,
         .twilight: 204, .nightshade: 0, .sea: 252,
     ]
+
+    /// "`sea` still lands within ΔE00 10 of raw `ansi6` on 165 of the 485", in
+    /// `PaneTheme.seaAccent` and in `seaIsFarFromTheCyanItStartsFromOnThisTheme`.
+    ///
+    /// The figure the fraction argument actually turns on, and it was asserted
+    /// for a day before it was measured. `seaIsFarEnoughFromTheCyanItStartsFrom`
+    /// claimed to be the case for halfway over 0.35 and passed on `darkPastel`
+    /// at every fraction down to 0.15, because one theme cannot see a catalog
+    /// rule. Measured 2026-08-02: 258 collide at 0.35 and 165 at 0.50, so
+    /// halfway buys 93 themes and does not buy the guarantee.
+    static let seaCollidesWithAnsi6 = 165
+
+    /// The 14 themes whose `ansi[6]` and `ansi[4]` are the same colour, where no
+    /// fraction separates `sea` from `ansi6` because there is nothing to blend
+    /// towards. The floor of ``seaCollidesWithAnsi6``: it can never go below this.
+    static let seaCannotBeSeparated = 14
 }
 
 /// The rule `PaneTheme.attentionSeparation(of:)` holds.
@@ -132,7 +148,27 @@ var accentIsTheBar = 0
 var rawClears: [FocusAccent: Int] = [:]
 var deriveMisses: [Failure] = []
 
+/// Counted once per theme rather than once per row: `sea`'s distance from raw
+/// `ansi[6]` does not depend on which accent the row is for.
+var seaCollisions = 0
+var seaInseparable = 0
+
 for definition in GhosttyThemeCatalog.allThemes {
+    // Once per theme. `sea` is `ansi[6]` blended halfway to `ansi[4]`, and the
+    // question is whether the halfway is enough to keep the menu's `sea` and
+    // `ansi6` entries from resolving to one colour. `break-pins` damages
+    // `focusedAccent` and not the palette, so this figure is deliberately
+    // measured off the raw palette and stays honest under that control; the
+    // control still fails on the four pins above it.
+    let plain = theme(definition, .accent)
+    // `accent(for:)` rather than this file's own copy of the blend, per the
+    // header: a probe that restates a derivation passes while the shipped one
+    // resolves something else. Written the restated way first, which would have
+    // let a change to `seaAccent` move nothing here.
+    let sea = plain.accent(for: .sea)
+    if sea.perceptualDistance(to: plain.ansiColor(6)) < minimumSeparation { seaCollisions += 1 }
+    if plain.ansiColor(6) == plain.ansiColor(4) { seaInseparable += 1 }
+
     for choice in FocusAccent.allCases {
         rows += 1
         let t = theme(definition, choice)
@@ -226,6 +262,8 @@ pin("themes", GhosttyThemeCatalog.allThemes.count, Pinned.themes)
 pin("theme-by-focusAccent rows", rows, Pinned.rows)
 pin("accent lands on its own bar", accentIsTheBar, Pinned.accentIsTheBar)
 pin("the floor cannot be reached", deriveMisses.count, Pinned.deriveMisses)
+pin("sea collides with ansi6", seaCollisions, Pinned.seaCollidesWithAnsi6)
+pin("  of those, unseparable", seaInseparable, Pinned.seaCannotBeSeparated)
 print("  raw value already clears \(minimumTextContrast):1, per accent")
 for choice in FocusAccent.allCases {
     pin("    \(choice.rawValue)", rawClears[choice, default: 0], Pinned.rawClears[choice] ?? -1)
