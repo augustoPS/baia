@@ -449,6 +449,31 @@ public struct PaneTheme: Sendable, Equatable {
     /// A conflicted tree, and an agent asking for input. Nothing else.
     public var alert: RGB { ansiColor(1) }
 
+    /// The colour ``colour(for:)`` resolves a file's change state to.
+    ///
+    /// One policy shared by the changes list's two-column marker and the file
+    /// tree's single glyph, which colour a `staged`/`unstaged` pair and a
+    /// rolled-up worst-case respectively but agree on what each state means.
+    public enum ChangeMark: Sendable, Equatable, CaseIterable {
+        case staged, unstaged, untracked, conflict
+    }
+
+    /// The colour a file's change state is drawn in, wherever it appears.
+    ///
+    /// Borrowed from the footer's own vocabulary rather than invented: the same
+    /// colours already mean the same things one line below.
+    public func colour(for mark: ChangeMark) -> RGB {
+        switch mark {
+        // Not `ok`, whose own documentation says it is never used for text.
+        // `staged` is that green given `warn`'s construction, so the pair a
+        // reader has to tell apart is one vocabulary rather than two.
+        case .staged: staged
+        case .unstaged: warn
+        case .untracked: inkFaint
+        case .conflict: alert
+        }
+    }
+
     /// A floating panel over the workspace, for example the command palette.
     ///
     /// Below ``barBackground`` rather than above it. The panel is a large surface
