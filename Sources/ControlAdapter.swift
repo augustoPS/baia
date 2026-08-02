@@ -143,22 +143,9 @@ final class ControlAdapter: ControlWorkspaceBridge {
             anchor: anchor?.url.path(percentEncoded: false),
             branch: controller.gitStatus.git?.head,
             activity: controller.activityLabel,
-            attention: Self.name(of: controller.attentionState),
+            attention: PaneStatus.Attention.name(of: controller.attentionState),
             createdBy: controller.createdBy?.rawValue.uuidString
         )
-    }
-
-    /// The chrome's three attention levels, spelled for a reader.
-    ///
-    /// Nil for `none`, so a pane that is not asking prints no `attention` line at
-    /// all rather than a line saying nothing happened. No `default:`: a fourth
-    /// level has to decide what it is called here before this compiles.
-    private static func name(of attention: PaneStatus.Attention) -> String? {
-        switch attention {
-        case .none: nil
-        case .asking: "asking"
-        case .acknowledged: "acknowledged"
-        }
     }
 
     // MARK: Moving a pane
@@ -408,7 +395,7 @@ final class ControlAdapter: ControlWorkspaceBridge {
 
         guard placed.tree.resize(
             pane: placed.pane.paneID,
-            direction: Self.direction(of: direction),
+            direction: FocusDirection.direction(of: direction),
             by: delta
         ) else {
             return .failure(
@@ -525,7 +512,7 @@ final class ControlAdapter: ControlWorkspaceBridge {
         var pieces: [SessionSnapshot] = []
         for tab in layout.tabs {
             var states: [PaneState] = []
-            let tree = Self.build(tab, createdBy: pane.layout, into: &states)
+            let tree = PaneTree.build(tab, createdBy: pane.layout, into: &states)
             guard let focused = tree.paneIDs.first else { continue }
             pieces.append(
                 SessionSnapshot(
@@ -556,62 +543,4 @@ final class ControlAdapter: ControlWorkspaceBridge {
         return .success()
     }
 
-    /// One document node, as a tree of fresh panes.
-    ///
-    /// **Fresh ids on every apply**, which is what makes a layout a template: the
-    /// document holds none, so applying the same file twice opens two independent
-    /// windows rather than two claims on one set of panes.
-    ///
-    /// A directory that is not a directory becomes nil, and a nil opens at the
-    /// default. That is the rule `SessionStore.reconciled` follows for a restore,
-    /// except that this drops the *directory* and never the pane: the owner asked
-    /// for five panes, and answering with four because one repository moved is a
-    /// worse answer than five with one of them at home.
-    private static func build(
-        _ node: ControlLayoutNode,
-        createdBy: PaneID,
-        into states: inout [PaneState]
-    ) -> PaneTree {
-        switch node {
-        case let .pane(cwd):
-            let id = PaneID()
-            states.append(
-                PaneState(
-                    id: id,
-                    workingDirectory: cwd.flatMap(Self.existingDirectory),
-                    pinnedDirectory: nil,
-                    createdBy: createdBy
-                )
-            )
-            return .leaf(id)
-        case let .split(axis, ratio, first, second):
-            return .split(
-                axis: axis == .vertical ? .vertical : .horizontal,
-                ratio: ControlLayout.clampedRatio(ratio),
-                first: build(first, createdBy: createdBy, into: &states),
-                second: build(second, createdBy: createdBy, into: &states)
-            )
-        }
-    }
-
-    private static func existingDirectory(_ path: String) -> String? {
-        var isDirectory: ObjCBool = false
-        let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
-        return exists && isDirectory.boolValue ? path : nil
-    }
-
-    /// The wire's spelling of a direction onto the layout package's.
-    ///
-    /// Two enums for one idea because `PaneControl` imports Foundation and nothing
-    /// else, and `FocusDirection` is deliberately not `Codable` over there: a
-    /// direction is a keystroke and never session state. No `default:`, so a fifth
-    /// direction has to be mapped rather than silently becoming `left`.
-    private static func direction(of direction: ControlDirection) -> FocusDirection {
-        switch direction {
-        case .left: .left
-        case .right: .right
-        case .up: .up
-        case .down: .down
-        }
-    }
 }

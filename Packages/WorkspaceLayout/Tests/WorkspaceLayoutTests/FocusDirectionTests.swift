@@ -1,9 +1,22 @@
 import Foundation
+import PaneControl
 import Testing
 
 @testable import WorkspaceLayout
 
 @Suite struct FocusDirectionTests {
+    /// One assertion per ``ControlDirection`` case. `direction(of:)` has no
+    /// `default:` arm, matching the wire enum exactly, so a fifth case added to
+    /// either side has to be mapped here before anything compiles again — the
+    /// exact shape the `--kinds` mapping got wrong the first time it moved.
+    @Test func mapsEveryControlDirectionToItsFocusDirection() {
+        #expect(FocusDirection.direction(of: .left) == .left)
+        #expect(FocusDirection.direction(of: .right) == .right)
+        #expect(FocusDirection.direction(of: .up) == .up)
+        #expect(FocusDirection.direction(of: .down) == .down)
+    }
+
+
     /// Half the window, on the left.
     private let source = LayoutRect(x: 0, y: 0, width: 0.5, height: 0.5)
 
