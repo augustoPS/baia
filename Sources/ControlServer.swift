@@ -474,7 +474,7 @@ final class ControlServer {
             introspect(request, on: id, subjects: { [$0] })
 
         case .list:
-            introspect(request, on: id, subjects: { self.scope(of: $0) })
+            introspect(request, on: id, subjects: { self.graph.scope(of: $0) })
 
         case .peers:
             introspect(request, on: id, subjects: { actor in
@@ -593,7 +593,7 @@ final class ControlServer {
                 respond(.failure(.internal, "baia has no workspace to describe"), to: id)
                 return
             }
-            let visible = Set(permitted(scope(of: actor), token: request.token))
+            let visible = Set(permitted(graph.scope(of: actor), token: request.token))
             guard let layout = bridge.layout(of: actor, disclosingDirectoriesFor: visible) else {
                 // The caller's own pane, since this verb names no target, so
                 // there is nothing to withhold: its window closed under it.
@@ -704,33 +704,6 @@ final class ControlServer {
             }
             respond(.success(ControlResult(panes: records, seq: graph.currentSequence)), to: id)
         }
-    }
-
-    /// The caller, everything below it, and its peers.
-    ///
-    /// Walked from `children(of:)` rather than read from a children index,
-    /// because the graph deliberately keeps only the parent edge: two indices are
-    /// two things that can disagree, and this disagreement would widen a scope
-    /// invisibly.
-    private func scope(of actor: ControlPaneID) -> [ControlPaneID] {
-        var seen: Set<ControlPaneID> = [actor]
-        var frontier = [actor]
-        var ordered = [actor]
-
-        while let pane = frontier.popLast() {
-            for child in graph.children(of: pane).sorted(by: { $0.description < $1.description }) {
-                guard seen.insert(child).inserted else { continue }
-                ordered.append(child)
-                frontier.append(child)
-            }
-        }
-
-        for peer in graph.peers(of: actor).sorted(by: { $0.description < $1.description }) {
-            guard seen.insert(peer).inserted else { continue }
-            ordered.append(peer)
-        }
-
-        return ordered
     }
 
     // MARK: Verbs the graph answers
