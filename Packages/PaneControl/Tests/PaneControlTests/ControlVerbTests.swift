@@ -164,4 +164,58 @@ import Testing
         #expect(ControlVerb.report.settingGate == .channel)
         #expect(ControlVerb.report.rawValue == "report")
     }
+
+    /// Every combination of the two switches, for every verb, checked against the
+    /// verb's own ``ControlVerb/settingGate`` rather than against a second list of
+    /// verbs. A verb added without a gate decision fails in `settingGate`'s own
+    /// switch, and one added with the wrong decision fails here.
+    @Test(arguments: [(false, false), (false, true), (true, false), (true, true)])
+    func theGateAnswersFromTheVerbsOwnKeyForEverySettingCombination(
+        switches: (read: Bool, run: Bool)
+    ) {
+        for verb in ControlVerb.allCases {
+            let answer = verb.gate(isReadAllowed: switches.read, isRunAllowed: switches.run)
+
+            switch verb.settingGate {
+            case .channel:
+                // The channel key is answered before the token is read, so a verb
+                // that needs nothing else has nothing left to say here.
+                #expect(answer == nil, "\(verb.rawValue) with \(switches)")
+            case .allowRead:
+                #expect(answer?.code == (switches.read ? nil : .disabled), "\(verb.rawValue)")
+            case .allowRun:
+                // Never nil, either way. `run` ships as a switch with nothing
+                // behind it: on means `refused`, off means `disabled`.
+                #expect(answer?.code == (switches.run ? .refused : .disabled), "\(verb.rawValue)")
+            }
+        }
+    }
+
+    /// The two `run` refusals are different words for a reason a caller acts on:
+    /// `disabled` says turn the key on, `refused` says the key is on and the verb
+    /// is not built. Collapsing them would send someone to edit a config file that
+    /// already says what they want.
+    @Test func runSeparatesTheKeyBeingOffFromTheVerbNotExisting() {
+        let off = ControlVerb.run.gate(isReadAllowed: true, isRunAllowed: false)
+        let on = ControlVerb.run.gate(isReadAllowed: true, isRunAllowed: true)
+
+        #expect(off?.code == .disabled)
+        #expect(off?.message.contains("controlAllowRun") == true)
+        #expect(on?.code == .refused)
+        #expect(on?.message.contains("v2") == true)
+    }
+
+    /// `read` is the only verb whose gate can answer nil on one setting and an
+    /// error on the other, and the error names its own key rather than the
+    /// channel's: a caller told "disabled" has to know which of the two to flip.
+    @Test func readIsTheOnlyVerbTheReadKeyAnswersFor() {
+        #expect(ControlVerb.read.gate(isReadAllowed: true, isRunAllowed: false) == nil)
+
+        let refusal = ControlVerb.read.gate(isReadAllowed: false, isRunAllowed: true)
+        #expect(refusal?.code == .disabled)
+        #expect(refusal?.message.contains("controlAllowRead") == true)
+
+        let gatedOnRead = ControlVerb.allCases.filter { $0.settingGate == .allowRead }
+        #expect(gatedOnRead == [.read])
+    }
 }

@@ -451,8 +451,7 @@ final class ControlServer {
 
         guard admit(id, as: actor) else { return }
 
-        if let gated = Self.gate(
-            request.verb,
+        if let gated = request.verb.gate(
             isReadAllowed: isReadAllowed,
             isRunAllowed: isRunAllowed
         ) {
@@ -517,49 +516,6 @@ final class ControlServer {
                 .failure(.internal, "run is answered by its settings gate before it is routed"),
                 to: id
             )
-        }
-    }
-
-    /// The settings answer for a verb, or nil when settings have nothing to say.
-    ///
-    /// No `default:`, for `ControlVerb.settingGate`'s reason: a verb whose gate
-    /// was never decided must not inherit the permissive one by falling through.
-    ///
-    /// The two switches arrive as parameters and the function is `static`, so the
-    /// answer is a function of the verb and the settings and of nothing else the
-    /// server happens to be holding.
-    private static func gate(
-        _ verb: ControlVerb,
-        isReadAllowed: Bool,
-        isRunAllowed: Bool
-    ) -> ControlError? {
-        switch verb.settingGate {
-        case .channel:
-            // Already answered above, for every verb, before the token was read.
-            nil
-        case .allowRead:
-            isReadAllowed
-                ? nil
-                : ControlError(
-                    code: .disabled,
-                    message: "read is switched off. Set `controlAllowRead` to true in "
-                        + "~/.config/baia/config.json. It is the one verb whose answer carries "
-                        + "another pane's screen, which is why it has a key of its own."
-                )
-        case .allowRun:
-            isRunAllowed
-                ? ControlError(
-                    code: .refused,
-                    message: "run lands in v2. The verb and its key ship now so the switch has "
-                        + "something to switch; cross-pane execution does not."
-                )
-                : ControlError(
-                    code: .disabled,
-                    message: "run is switched off. Set `controlAllowRun` to true in "
-                        + "~/.config/baia/config.json, and note that it is a different key from "
-                        + "`controlChannelEnabled` on purpose: split hands a pane a shell it "
-                        + "could already spawn, run hands it another pane's context."
-                )
         }
     }
 
