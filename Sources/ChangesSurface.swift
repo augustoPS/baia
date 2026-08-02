@@ -122,7 +122,7 @@ final class ChangesRowsView: NSView {
 
     var changes: [RepositoryFileChange] = [] {
         didSet {
-            sorted = Self.sort(changes)
+            sorted = changes.inCommitOrder()
             // The list under the pointer is a different list now, so a fade in
             // flight belongs to a row that may not be the same file. Design v3's
             // states are about *this* row answering.
@@ -418,30 +418,6 @@ final class ChangesRowsView: NSView {
         // away was the file name the row exists to show. The width is answered
         // before the string is built rather than by the drawing.
         line.draw(at: NSPoint(x: x, y: y))
-    }
-
-    /// Conflicts first, then staged, then unstaged, then untracked, and by path
-    /// within each group.
-    ///
-    /// The order is what a `git commit` needs answered, in the order it needs it: a
-    /// conflict blocks the commit, a staged change is going into it, an unstaged one
-    /// is not, and an untracked file is the one most easily forgotten. Git's own
-    /// order is by path across all of them, which buries a conflict among fifty
-    /// modified files.
-    private static func sort(_ changes: [RepositoryFileChange]) -> [RepositoryFileChange] {
-        changes.sorted { left, right in
-            let leftRank = rank(left)
-            let rightRank = rank(right)
-            return leftRank == rightRank ? left.path < right.path : leftRank < rightRank
-        }
-    }
-
-    private static func rank(_ change: RepositoryFileChange) -> Int {
-        switch change.kind {
-        case .unmerged: 0
-        case .untracked: 3
-        case .ordinary, .renamedOrCopied: change.index != nil ? 1 : 2
-        }
     }
 
     /// The two-column `XY` git itself prints, so the marker is one the owner already
