@@ -1,11 +1,12 @@
 import Foundation
+import GitWorkspace
 
 /// What kind of thing a palette row is offering to open.
 ///
 /// A local mirror of `GitWorkspace.Project.Kind` rather than the type itself,
-/// because this package has no dependencies and gains nothing by taking one. The
-/// app maps between them in one place, and the mapping is a `switch` the compiler
-/// checks.
+/// so a row can be built and tested (``PaletteRow/make(relativePath:matchedIndices:kind:)``)
+/// without a `Project` in hand. ``PaletteRow/kind(of:)`` is the one place that
+/// maps between them, and the mapping is a `switch` the compiler checks.
 public enum PaletteRowKind: Sendable, Equatable, CaseIterable {
     case repository
     case worktree
@@ -103,6 +104,19 @@ public struct PaletteRow: Sendable, Equatable {
             }
         }
         return runs
+    }
+
+    /// `GitWorkspace`'s vocabulary onto this package's own.
+    ///
+    /// No `default:` arm, so a fourth `Project.Kind` case fails this to compile
+    /// rather than falling through to whichever arm `default:` would have
+    /// picked. `--kinds` broke exactly this way once, in a mapping this shape.
+    public static func kind(of kind: Project.Kind) -> PaletteRowKind {
+        switch kind {
+        case .repository: .repository
+        case .worktree: .worktree
+        case .directory: .directory
+        }
     }
 
     private static func chip(for kind: PaletteRowKind) -> String? {

@@ -1,9 +1,39 @@
 import Foundation
+import GitWorkspace
 import Testing
 
 @testable import PaneChrome
 
 @Suite struct PaletteRowTests {
+    /// One arm per case of `Project.Kind`, in a switch of this file's own with no
+    /// `default:`, so a fourth case added there fails **this file** to compile
+    /// and not only the mapping it checks.
+    ///
+    /// The switch is the whole point of the shape. A list of `#expect` calls
+    /// covers the same three cases and goes on compiling and passing when a
+    /// fourth arrives, which is how a test ends up claiming a guarantee that
+    /// only the implementation provides. `--kinds` broke this way once, in a
+    /// mapping this shape, and this file claimed the guarantee before it had it.
+    @Test func kindMapsEachCaseOfProjectKind() {
+        // Hand-listed because `Project.Kind` cannot be `CaseIterable`:
+        // `.worktree` carries a name. A case added there and not added here is
+        // still caught, by the switch below rather than by this array.
+        let kinds: [Project.Kind] = [
+            .repository,
+            .worktree(ofRepositoryNamed: "baia"),
+            .directory,
+        ]
+
+        for kind in kinds {
+            let expected: PaletteRowKind = switch kind {
+            case .repository: .repository
+            case .worktree: .worktree
+            case .directory: .directory
+            }
+            #expect(PaletteRow.kind(of: kind) == expected)
+        }
+    }
+
     @Test func theLastComponentIsTheNameAndTheRestIsContext() {
         // The tier split that makes a list of paths scannable. Without it every
         // row is one grey string and the eye has to parse slashes to find the

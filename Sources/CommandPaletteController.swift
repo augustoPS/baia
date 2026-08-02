@@ -250,7 +250,7 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
                     query: query,
                     candidate: project.relativePath
                 )?.matchedIndices ?? [],
-                kind: Self.kind(of: project.kind)
+                kind: PaletteRow.kind(of: project.kind)
             )
         }
         listView.selection = 0
@@ -263,14 +263,6 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
     private func countText(query: String) -> String {
         guard !query.isEmpty else { return "\(projects.count)" }
         return "\(results.count) of \(projects.count)"
-    }
-
-    private static func kind(of kind: Project.Kind) -> PaletteRowKind {
-        switch kind {
-        case .repository: .repository
-        case .worktree: .worktree
-        case .directory: .directory
-        }
     }
 
     // MARK: - Keyboard
@@ -356,47 +348,9 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
             let status = GitCommand().status(ofRepositoryRoot: root)
             await MainActor.run { [weak self] in
                 guard let self, generation == gitGeneration else { return }
-                listView.selectedGitRuns = status.map(Self.runs(for:)) ?? []
+                listView.selectedGitRuns = status.map(PaneStatusSegments.runs(for:)) ?? []
             }
         }
-    }
-
-    /// The branch and markers, built through `PaneStatusSegments` rather than
-    /// formatted here.
-    ///
-    /// Routing through the segment table is what keeps the palette and the footer
-    /// from drifting: the same dirty marker is the same colour in both, and a
-    /// change to the marker vocabulary reaches this for free. The operation label
-    /// is dropped because the palette row has no room for it and the footer will
-    /// say so the moment the project is open.
-    private static func runs(for status: RepositoryStatus) -> [PaneStatusRun] {
-        let git = PaneStatus.Git(
-            head: status.displayHead,
-            hasUpstream: status.upstream != nil,
-            ahead: status.ahead,
-            behind: status.behind,
-            dirty: status.staged > 0 || status.unstaged > 0 || status.conflicted > 0,
-            untracked: status.untracked,
-            conflicted: status.conflicted,
-            operation: nil,
-            isLinkedWorktree: false
-        )
-        let pane = PaneStatus(
-            anchorName: "",
-            anchorIsRepository: true,
-            isPinned: false,
-            workingDirectory: nil,
-            git: git,
-            agent: nil
-        )
-
-        var runs: [PaneStatusRun] = []
-        for segment in PaneStatusSegments.build(from: pane)
-            where segment.role == .branch || segment.role == .indicators {
-            if !runs.isEmpty { runs.append(PaneStatusRun(text: " ", emphasis: .context)) }
-            runs.append(contentsOf: segment.runs)
-        }
-        return runs
     }
 
     private func nsColor(_ rgb: RGB) -> NSColor {

@@ -1,4 +1,5 @@
 import Foundation
+import GitWorkspace
 import Testing
 
 @testable import PaneChrome
@@ -256,5 +257,45 @@ import Testing
         // cleanly and presents as a fact the bar silently never shows.
         let built = Set(PaneStatusSegments.build(from: Sample.everything()).map(\.role))
         #expect(built == Set(PaneStatusSegmentRole.allCases))
+    }
+
+    // MARK: - runs(for:)
+
+    @Test func runsJoinsTheBranchAndIndicatorsWithASpace() {
+        // The palette row has no room for a second line, so the two segments
+        // `build(from:)` would draw apart are flattened onto one, with a space
+        // run standing in for the gap between them.
+        let status = RepositoryStatus(head: .branch("main"), upstream: "origin/main", ahead: 1)
+        let runs = PaneStatusSegments.runs(for: status)
+        #expect(runs.map(\.text).joined() == "main ↑1")
+        #expect(runs.map(\.text) == ["main", " ", "↑1"])
+    }
+
+    @Test func runsDropsTheSpaceWhenThereAreNoIndicators() {
+        let status = RepositoryStatus(head: .branch("main"))
+        let runs = PaneStatusSegments.runs(for: status)
+        #expect(runs.map(\.text) == ["main"])
+    }
+
+    @Test func runsReadsDirtyFromStagedUnstagedOrConflicted() {
+        // Three ways a tree can be dirty, none of them `ahead`/`behind`, so a
+        // status with only one of the three still has to raise the marker.
+        for status in [
+            RepositoryStatus(head: .branch("main"), staged: 1),
+            RepositoryStatus(head: .branch("main"), unstaged: 1),
+            RepositoryStatus(head: .branch("main"), conflicted: 1),
+        ] {
+            #expect(PaneStatusSegments.runs(for: status).map(\.text).contains("*"))
+        }
+    }
+
+    @Test func runsDropsAheadAndBehindWithNoUpstream() {
+        let status = RepositoryStatus(head: .branch("main"), ahead: 3, behind: 2)
+        #expect(PaneStatusSegments.runs(for: status).map(\.text) == ["main"])
+    }
+
+    @Test func runsUsesTheDisplayHeadForADetachedCommit() {
+        let status = RepositoryStatus(head: .detached(commit: "abc1234567"))
+        #expect(PaneStatusSegments.runs(for: status).map(\.text) == ["(abc1234)"])
     }
 }
