@@ -138,6 +138,12 @@ if grep -qE '\\\$(PANE_ACTIVITY|PANE_CONTROL|PANE_LAYOUT|START_SEQ)' "\$PROMPT";
   grep -oE '\\\$(PANE_ACTIVITY|PANE_CONTROL|PANE_LAYOUT|START_SEQ)' "\$PROMPT" | sort -u >&2
   exit 2
 fi
+# And the failure the check above cannot see, which happened on 2026-08-01: a
+# prompt left over from an earlier run holds no placeholders, because that run
+# already replaced them, so it passes as substituted while binding panes that no
+# longer exist. Asking the channel which panes are real is the only spelling of
+# this question that a stale file cannot answer correctly.
+python3 "$OBS/check-bindings.py" "\$PROMPT" || exit 2
 
 exec claude --model claude-fable-5 "\$(cat "\$PROMPT")"
 LAUNCHER
