@@ -284,6 +284,46 @@ public struct Workspace: Sendable, Equatable, Codable {
         }
     }
 
+    /// Puts `pane` beside `beside`, wherever the two of them live, without opening
+    /// or closing anything.
+    ///
+    /// **One tree, and the tab holding `pane` is the one.** A target in another tab
+    /// answers false, because `PaneTree.moving` only sees the tree it is called on.
+    /// That refusal is the design rather than a limit reached: carrying a pane
+    /// between tabs could empty the one it left, which is a tab closing without
+    /// anybody asking, and it would leave the vacated tab's focus naming a pane
+    /// that is now somewhere else.
+    ///
+    /// Focus is untouched, for ``resize(pane:direction:by:)``'s reason: the caller
+    /// can be a pane nobody is looking at, and rearranging panes is never a reason
+    /// to move a cursor that is somewhere else. The pane keeps its id, so a tab
+    /// whose focus names the moved pane still names it afterwards.
+    ///
+    /// False when the tab is zoomed by anyone, the caller included, matching
+    /// ``resize(pane:direction:by:)`` and ``equalize(tabContaining:)``: a zoomed tab
+    /// shows one pane, so the rearrangement would be invisible until a zoom this
+    /// caller may not own was cleared. Refused rather than unzoomed, which is what
+    /// ``split(pane:axis:newPane:ratio:)`` does with the same situation.
+    public mutating func move(
+        pane: PaneID,
+        beside target: PaneID,
+        axis: SplitAxis,
+        before: Bool
+    ) -> Bool {
+        guard let index = tabIndex(containing: pane) else { return false }
+        return withTab(at: index) { tab in
+            guard tab.zoomedPane == nil else { return false }
+            guard let moved = tab.tree.moving(
+                pane,
+                beside: target,
+                axis: axis,
+                before: before
+            ) else { return false }
+            tab.tree = moved
+            return true
+        }
+    }
+
     /// Grows `pane` in that direction by one keyboard step, wherever it lives.
     ///
     /// Focus is untouched for both of ``resizeFocusedPane(_:by:)``'s reasons and one

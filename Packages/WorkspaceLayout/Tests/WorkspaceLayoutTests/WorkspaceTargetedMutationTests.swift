@@ -388,6 +388,91 @@ import Testing
         #expect(workspace == before)
     }
 
+    // A move, which is the one mutator that changes where a pane sits without
+    // changing which panes exist.
+
+    @Test func movingAPaneRearrangesItsTabAndMovesNobodysFocus() {
+        let panes = ThreePanesInARow()
+        var workspace = panes.workspace
+
+        let moved = workspace.move(
+            pane: panes.right,
+            beside: panes.left,
+            axis: .vertical,
+            before: false
+        )
+
+        #expect(moved)
+        // Visual order, so this says where the pane went and not merely that
+        // something changed: `right` now sits under `left`, ahead of `middle`.
+        #expect(workspace.tabs[0].tree.paneIDs == [panes.left, panes.right, panes.middle])
+        // Focus is untouched for `resize`'s reason: the caller can be a pane
+        // nobody is looking at, and rearranging panes is never a reason to move a
+        // cursor that is somewhere else.
+        #expect(workspace.focusedPane == panes.left)
+    }
+
+    @Test func movingAPaneInABackgroundTabLandsThereWithoutSwitchingTabs() {
+        let panes = TwoTabsOfTwo()
+        var workspace = panes.workspace
+
+        let moved = workspace.move(
+            pane: panes.backgroundRight,
+            beside: panes.backgroundLeft,
+            axis: .vertical,
+            before: false
+        )
+
+        #expect(moved)
+        #expect(workspace.focusedTabIndex == 0)
+        #expect(workspace.tabs[1].tree == .split(
+            axis: .vertical,
+            ratio: 0.5,
+            first: .leaf(panes.backgroundLeft),
+            second: .leaf(panes.backgroundRight)
+        ))
+        #expect(workspace.tabs[0].tree == panes.workspace.tabs[0].tree)
+    }
+
+    @Test func movingWithinATabAnotherPaneHasZoomedIsRefused() {
+        let panes = ZoomedTab()
+        var workspace = panes.workspace
+        let before = workspace
+
+        let moved = workspace.move(
+            pane: panes.last,
+            beside: panes.middle,
+            axis: .vertical,
+            before: true
+        )
+
+        // `resize`'s answer for `resize`'s reason: a zoomed tab shows one pane, so
+        // the rearrangement would be invisible until a zoom this caller does not
+        // own was cleared. Refused rather than unzoomed, matching `split`.
+        #expect(!moved)
+        #expect(workspace == before)
+    }
+
+    @Test func movingBesideAPaneInAnotherTabIsRefused() {
+        let panes = TwoTabsOfTwo()
+        var workspace = panes.workspace
+        let before = workspace
+
+        let moved = workspace.move(
+            pane: panes.visibleLeft,
+            beside: panes.backgroundLeft,
+            axis: .horizontal,
+            before: false
+        )
+
+        // A move is one tree's operation. Carrying a pane between tabs would let
+        // one empty out, which is a tab close nobody asked for, so the tab holding
+        // the pane is the only tree consulted and a target it does not hold reads
+        // as a target that does not exist.
+        #expect(!moved)
+        #expect(workspace == before)
+    }
+
     @Test func aPaneResolvesToTheTabThatHoldsIt() {
         let panes = TwoTabsOfTwo()
         let workspace = panes.workspace
