@@ -1,4 +1,5 @@
 import Foundation
+import PaneControl
 
 /// Which way a directional focus move travels, one direction per arrow key.
 ///
@@ -71,6 +72,21 @@ public enum FocusDirection: Sendable, Equatable {
         _ otherUpper: Double
     ) -> Bool {
         lower + tolerance < otherUpper && otherLower + tolerance < upper
+    }
+
+    /// The wire's spelling of a direction onto this package's.
+    ///
+    /// Two enums for one idea because `PaneControl` imports Foundation and nothing
+    /// else, and `FocusDirection` is deliberately not `Codable` over there: a
+    /// direction is a keystroke and never session state. No `default:`, so a fifth
+    /// direction has to be mapped rather than silently becoming `left`.
+    public static func direction(of direction: ControlDirection) -> FocusDirection {
+        switch direction {
+        case .left: .left
+        case .right: .right
+        case .up: .up
+        case .down: .down
+        }
     }
 
     /// The slack allowed when deciding that two edges are the same edge.

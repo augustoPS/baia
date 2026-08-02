@@ -408,7 +408,7 @@ final class ControlAdapter: ControlWorkspaceBridge {
 
         guard placed.tree.resize(
             pane: placed.pane.paneID,
-            direction: Self.direction(of: direction),
+            direction: FocusDirection.direction(of: direction),
             by: delta
         ) else {
             return .failure(
@@ -600,18 +600,4 @@ final class ControlAdapter: ControlWorkspaceBridge {
         return exists && isDirectory.boolValue ? path : nil
     }
 
-    /// The wire's spelling of a direction onto the layout package's.
-    ///
-    /// Two enums for one idea because `PaneControl` imports Foundation and nothing
-    /// else, and `FocusDirection` is deliberately not `Codable` over there: a
-    /// direction is a keystroke and never session state. No `default:`, so a fifth
-    /// direction has to be mapped rather than silently becoming `left`.
-    private static func direction(of direction: ControlDirection) -> FocusDirection {
-        switch direction {
-        case .left: .left
-        case .right: .right
-        case .up: .up
-        case .down: .down
-        }
-    }
 }
