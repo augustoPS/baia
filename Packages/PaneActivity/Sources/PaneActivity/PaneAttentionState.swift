@@ -39,6 +39,17 @@ public struct PaneAttentionState: Sendable, Equatable {
     /// visit that predates a question does not answer it.
     private var seen = false
 
+    /// The visit, readable on its own.
+    ///
+    /// Internal rather than public: nothing outside this package has a use for a
+    /// visit that ``attention`` has not already resolved, and a public reader
+    /// would be a second way to ask "has this pane been seen" for the chrome to
+    /// disagree with. It exists so the tests can pin the visit for a pane that is
+    /// asking nothing, which is the one case no resolved attention can show,
+    /// because a pane asking nothing resolves to ``PaneAttention/none`` whether
+    /// the visit was recorded or not.
+    var hasBeenSeen: Bool { seen }
+
     public init() {}
 
     /// What the chrome draws, with the pane's own statement taken into account.
