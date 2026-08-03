@@ -58,6 +58,37 @@ The route under test is the whole of it: git's index, `GitStatusParser`,
 `TerminalPaneController.send`, the patched `sendBytes`, and
 `ghostty_surface_text`.
 
+## It needs a human once, and it blocks silently without one
+
+Attempted unattended 2026-08-03 and it hung. It got as far as launching
+`baia-dev` and stopped there: nothing was written to `verify-out/`, no click was
+posted, and the script sat indefinitely rather than failing.
+
+The cause is macOS TCC. Every event helper in `Diagnostics/lib/drive.sh` goes
+through `act`, whose first action is `osascript -e 'tell application id ... to
+activate'`, and the first time the calling process drives System Events macOS
+puts up an Automation consent dialog and **blocks the `osascript` call until
+somebody answers it**. Overnight nobody did. `UserNotificationCenter` was up the
+whole time, which is the tell.
+
+This is not the locked-screen case and does not look like it. `activate_app`
+gives up after eight tries with `ABORT: <app> never came to the front`, so a
+screen that cannot bring a window forward fails in about eight seconds and says
+so. A hang with no output is the dialog.
+
+So the first run of this probe on a machine, or after a Automation permission is
+reset, has to be watched by a person who can click Allow. Runs after that are
+unattended-safe. Grant it in System Settings > Privacy & Security > Automation
+for whichever app hosts the shell.
+
+What the attempt did prove, which was the open question about running it from
+inside a baia pane: the identity guards hold. `quit_app` pkills a pattern
+anchored at the absolute path of the worktree's `baia-dev`, and the Release
+`baia` this pane runs in was still alive afterwards. `act` refuses to type unless
+the frontmost process is named `baia-dev`, and nothing was typed into the pane.
+The shared `~/.config/baia/config.json` was rewritten to `sidebar: files` for the
+run and restored by the `EXIT` trap, confirmed after the kill.
+
 ## Row indices are derived, not observed
 
 The click targets row 2 under an expanded `src/`. This probe was written from
