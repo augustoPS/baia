@@ -198,7 +198,7 @@ final class FileTreeRowsView: NSView {
     /// `FilesSurface` re-asserts this set every time the sidebar is repointed,
     /// which is several times a second while someone arrows across a grid, and a
     /// rebuild throws away the press feedback and the tracking areas.
-    var expanded: Set<String> = [] {
+    var expanded: Set<RepositoryPath> = [] {
         didSet {
             guard expanded != oldValue else { return }
             rebuild()
@@ -298,7 +298,7 @@ final class FileTreeRowsView: NSView {
         drawGuides(of: row, atIndex: index, y: y)
 
         if row.node.isDirectory {
-            let chevron = expanded.contains(row.node.path) ? "▾" : "▸"
+            let chevron = expanded.contains(row.node.rawPath) ? "▾" : "▸"
             NSAttributedString(
                 string: chevron,
                 attributes: [.font: Self.font, .foregroundColor: nsColor(theme.inkFaint)]
@@ -425,10 +425,13 @@ final class FileTreeRowsView: NSView {
             return feedback.answer(onSelect?(node.rawPath) == true ? .landed : .refused, at: index)
         }
 
-        if expanded.contains(node.path) {
-            expanded.remove(node.path)
+        // `rawPath` for the same reason the send above uses it: keyed on the drawn
+        // spelling, two sibling directories that draw alike shared one entry and
+        // one chevron moved both.
+        if expanded.contains(node.rawPath) {
+            expanded.remove(node.rawPath)
         } else {
-            expanded.insert(node.path)
+            expanded.insert(node.rawPath)
         }
     }
 

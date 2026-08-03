@@ -1,3 +1,4 @@
+import GitWorkspace
 import Testing
 
 @testable import PaneChrome
@@ -30,7 +31,7 @@ import Testing
     @Test func answersTheLiveSetWhenTheAnchorHasNotMoved() {
         var expansions = FileTreeExpansions()
         _ = expansions.retarget(to: "/repos/baia", keeping: [])
-        let open: Set<String> = ["Sources", "Diagnostics"]
+        let open: Set<RepositoryPath> = ["Sources", "Diagnostics"]
         #expect(expansions.retarget(to: "/repos/baia", keeping: open) == open)
     }
 

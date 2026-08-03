@@ -15,8 +15,43 @@ import Testing
         ])
     }
 
-    private func rows(expanded: Set<String>) -> [FileTree.VisibleRow] {
+    private func rows(expanded: Set<RepositoryPath>) -> [FileTree.VisibleRow] {
         FileTree.visibleRows(of: tree, expanded: expanded)
+    }
+
+    /// Two sibling directories whose names differ only outside UTF-8 open
+    /// independently.
+    ///
+    /// Both draw as `?` with one U+FFFD, so keyed on the drawn spelling one
+    /// membership test answered for both: opening either revealed the children of
+    /// both, and the set could not hold one without the other.
+    @Test func twoDirectoriesThatDrawTheSameOpenIndependently() {
+        let first = RepositoryPath([0xFF])
+        let second = RepositoryPath([0xFE])
+        #expect(first.display == second.display)
+
+        let tree = FileTree.build(paths: [
+            RepositoryPath([0xFF] + Array("/a.swift".utf8)),
+            RepositoryPath([0xFE] + Array("/b.swift".utf8)),
+        ])
+
+        // Sorted on bytes, so `0xFE` comes first and its child is the row that
+        // does *not* appear: only the directory that was opened reveals anything.
+        let openFirst = FileTree.visibleRows(of: tree, expanded: [first])
+        #expect(openFirst.map(\.node.rawPath) == [
+            second,
+            first,
+            RepositoryPath([0xFF] + Array("/a.swift".utf8)),
+        ])
+
+        // The mirror, which is what proves the two are independent rather than
+        // merely ordered: opening the other reveals the other child alone.
+        let openSecond = FileTree.visibleRows(of: tree, expanded: [second])
+        #expect(openSecond.map(\.node.rawPath) == [
+            second,
+            RepositoryPath([0xFE] + Array("/b.swift".utf8)),
+            first,
+        ])
     }
 
     private func paths(_ rows: [FileTree.VisibleRow]) -> [String] {

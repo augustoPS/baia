@@ -23,13 +23,13 @@ extension FileTree {
     /// forward from its own row instead of searching, and it is what makes a
     /// span of rows a contiguous rectangle on screen.
     ///
-    /// Keyed on ``FileTreeNode/path``, the drawn spelling, because that is what
-    /// the caller's expanded set holds. Two paths differing only outside UTF-8
-    /// therefore open and close together, which is the same lossy-path limit the
-    /// picker still has and is tracked with it rather than separately.
+    /// Keyed on ``FileTreeNode/rawPath``, the bytes, and not on the drawn
+    /// spelling. It was the drawn spelling until the byte pass: two sibling
+    /// directories differing only outside UTF-8 draw one name, so they opened and
+    /// closed as one row apiece, and clicking either chevron moved both.
     public static func visibleRows(
         of nodes: [FileTreeNode],
-        expanded: Set<String>
+        expanded: Set<RepositoryPath>
     ) -> [VisibleRow] {
         var rows: [VisibleRow] = []
         append(nodes, depth: 0, expanded: expanded, to: &rows)
@@ -39,12 +39,12 @@ extension FileTree {
     private static func append(
         _ nodes: [FileTreeNode],
         depth: Int,
-        expanded: Set<String>,
+        expanded: Set<RepositoryPath>,
         to rows: inout [VisibleRow]
     ) {
         for node in nodes {
             rows.append(VisibleRow(node: node, depth: depth))
-            if node.isDirectory, expanded.contains(node.path) {
+            if node.isDirectory, expanded.contains(node.rawPath) {
                 append(node.children, depth: depth + 1, expanded: expanded, to: &rows)
             }
         }
