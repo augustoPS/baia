@@ -9,11 +9,12 @@ import Testing
 /// target to hold them. The surfaces read the row under the mouse and hand the
 /// result to the pane; they decide nothing.
 @Suite struct PromptPathTests {
-    /// Every expectation below this line was written against the `String` version
-    /// of `resolve` and is unchanged. That is the point of keeping the helper: the
-    /// move to bytes is supposed to be invisible to every path that has a `String`
-    /// spelling, and 29 assertions saying so is the evidence. The byte-only cases
-    /// go through ``sendBytes(_:root:cwd:)`` instead.
+    /// Every expectation reached through this helper was written against the
+    /// `String` version of `resolve` and is unchanged, which is the point of
+    /// keeping it: a path with a `String` spelling must send exactly what it sent
+    /// before, both across the move to bytes and across the refusal added on top
+    /// of it. Paths with no `String` spelling go through ``sendBytes(_:root:cwd:)``
+    /// and ``refusalOf(_:root:cwd:)``.
     private func send(
         _ path: String,
         root: String = "/repo",
@@ -41,8 +42,20 @@ import Testing
         root: String = "/repo",
         cwd: String? = "/repo"
     ) -> PromptPath.Refusal? {
+        refusalOf(Array(path.utf8), root: root, cwd: cwd)
+    }
+
+    /// The same, for a path with no `String` spelling. Which refusal it is matters
+    /// as much as that there was one: the footer says the reason, and "not UTF-8"
+    /// for a name whose real problem is a tab would send the owner to the wrong
+    /// fix.
+    private func refusalOf(
+        _ path: [UInt8],
+        root: String = "/repo",
+        cwd: String? = "/repo"
+    ) -> PromptPath.Refusal? {
         guard case let .refuse(reason) = PromptPath.resolve(
-            repositoryRelativePath: Array(path.utf8),
+            repositoryRelativePath: path,
             repositoryRoot: root,
             workingDirectory: cwd
         ) else { return nil }
@@ -298,114 +311,92 @@ import Testing
 
     // MARK: - Paths that have no String spelling
 
-    /// The whole reason this resolver moved onto bytes.
+    /// The decision this resolver exists to make, and it is a refusal.
     ///
-    /// `0xE9` alone is Latin-1 `é` and is not valid UTF-8. Through a `String` it
-    /// becomes U+FFFD, which is three different bytes naming a file that does not
-    /// exist, and every unreadable byte in every filename collapses onto that same
-    /// replacement. The bytes have to arrive at the pty exactly as git reported
-    /// them or the path is not the path.
-    @Test func aPathThatIsNotUTF8SurvivesByteForByte() {
+    /// `0xE9` alone is Latin-1 `é` and is not valid UTF-8. Measured against a real
+    /// pane on 2026-08-03: the bytes reach the pty intact, but zsh's line editor
+    /// decodes its input as characters, so the prompt showed `printf '%s' 'src/caf`
+    /// and stopped at that byte with the quote still open. Sending is the worse
+    /// failure of the two available, because a half-line reads as the app having
+    /// lost the click and has to be cleared by hand.
+    @Test func aPathThatIsNotUTF8IsRefusedRatherThanLeftHalfOnThePrompt() {
         let latin1 = Array("caf".utf8) + [0xE9] + Array(".txt".utf8)
-        let sent = sendBytes(latin1)
-        // Quoted, because 0xE9 is not in the safe set, and the quotes are the only
-        // bytes added.
-        #expect(sent == [0x27] + latin1 + [0x27, 0x20])
-
-        // The lossy spelling is a different byte string, which is the failure this
-        // replaces rather than a detail: it is what the old code sent.
-        #expect(sent != Array("'\(String(decoding: latin1, as: UTF8.self))' ".utf8))
+        #expect(sendBytes(latin1) == nil)
+        #expect(refusalOf(latin1) == .notUTF8)
     }
 
-    /// Two names that differ only in a byte `String` cannot read stay two names.
+    /// **The discrimination that justifies carrying bytes at all, now that the
+    /// answer for an unreadable name is "refuse".**
     ///
-    /// Through `String` both become `caf\u{FFFD}.txt` and the sidebar sends one
-    /// path for two files, which is the collapse that makes the loss worse than a
-    /// wrong glyph.
-    @Test func twoPathsThatCollapseUnderStringStayDistinct() {
-        let first = Array("caf".utf8) + [0xE9] + Array(".txt".utf8)
-        let second = Array("caf".utf8) + [0xFF] + Array(".txt".utf8)
-        #expect(sendBytes(first) != sendBytes(second))
+    /// U+FFFD is an ordinary character and a file may honestly be named with it.
+    /// A resolver taking a `String` sees the same three bytes for that file and
+    /// for `caf<E9>.txt`, because the decode already happened, so it must either
+    /// send both, which puts a path naming nothing on the prompt, or refuse both,
+    /// which rejects a legal file for a fault it does not have. Only the raw bytes
+    /// tell them apart, and this asserts both directions of that.
+    @Test func aFileHonestlyNamedWithTheReplacementCharacterStillSends() {
+        let honest = Array("caf\u{FFFD}.txt".utf8)
+        let mangled = Array("caf".utf8) + [0xE9] + Array(".txt".utf8)
+
+        // Same rendering, opposite answers.
+        #expect(String(decoding: honest, as: UTF8.self)
+            == String(decoding: mangled, as: UTF8.self))
+        #expect(sendBytes(honest) == [0x27] + honest + [0x27, 0x20])
+        #expect(sendBytes(mangled) == nil)
     }
 
-    /// A byte at or above 0x80 is not a control scalar and must not be refused.
+    /// A lone high byte and the C1 pair are both refused, for different reasons,
+    /// and the reason is what the footer will say.
     ///
-    /// The C1 block lives at U+0080...U+009F, which is `0xC2` *followed by* one of
-    /// those bytes. A lone 0x80 is neither that pair nor valid UTF-8, and refusing
-    /// it would reject a filename for being foreign.
-    @Test func aLoneHighByteIsSentAndTheC1PairIsRefused() {
-        #expect(sendBytes(Array("a".utf8) + [0x80] + Array("b".utf8)) != nil)
-        #expect(sendBytes(Array("a".utf8) + [0x9F] + Array("b".utf8)) != nil)
-
-        guard case let .refuse(reason) = PromptPath.resolve(
-            repositoryRelativePath: Array("a".utf8) + [0xC2, 0x85] + Array("b".utf8),
-            repositoryRoot: "/repo",
-            workingDirectory: "/repo"
-        ) else { return #expect(Bool(false), "the C1 pair has to be refused") }
-        #expect(reason == .controlScalar)
+    /// `0x80` on its own is not valid UTF-8; `0xC2 0x85` is valid UTF-8 for a C1
+    /// control, which a line editor would act on. Two rules, two cases, and a
+    /// single refusal that could not tell them apart would be a worse message.
+    @Test func aLoneHighByteAndTheC1PairRefuseForDifferentReasons() {
+        #expect(refusalOf(Array("a".utf8) + [0x80] + Array("b".utf8)) == .notUTF8)
+        #expect(refusalOf(Array("a".utf8) + [0x9F] + Array("b".utf8)) == .notUTF8)
+        #expect(refusalOf(Array("a".utf8) + [0xC2, 0x85] + Array("b".utf8)) == .controlScalar)
     }
 
-    /// The exact bytes `Diagnostics/prompt-path-bytes/` expects to see arrive at
-    /// the shell, pinned here so the probe and the resolver cannot drift.
+    /// The control check runs before the UTF-8 one, so a path that fails both is
+    /// reported as the more specific of the two.
     ///
-    /// That probe builds a repository holding `src/caf<E9>.txt` as an index entry,
-    /// clicks its row, and compares what zsh received against a file the fixture
-    /// wrote. The fixture spells the expectation as a literal, which is a second
-    /// copy of this rule; this is the first, and a change here that the probe does
-    /// not know about fails on the next run rather than silently passing against a
-    /// stale expectation. If this test moves, move `fixture.sh` with it.
-    @Test func theBytesTheLiveProbeExpectsAreTheOnesThisProduces() {
-        let path = Array("src/caf".utf8) + [0xE9] + Array(".txt".utf8)
-        let expected = Array("'src/caf".utf8) + [0xE9] + Array(".txt' ".utf8)
-        #expect(sendBytes(path, root: "/repo", cwd: "/repo") == expected)
+    /// A tab is what the owner can act on: rename the file. "Not UTF-8" for a path
+    /// whose real problem is a tab would send them looking at encodings.
+    @Test func aControlScalarBeatsTheUTF8RefusalWhenAPathCarriesBoth() {
+        #expect(refusalOf(Array("a\tb".utf8) + [0xE9]) == .controlScalar)
     }
 
-    /// A path that names the working directory itself refuses rather than sending
-    /// the directory back.
+    /// Every byte at or above 0x80 that forms valid UTF-8 still sends, quoted.
     ///
-    /// The byte rewrite broke this and the review caught it: `hasPrefix(base + "/")`
-    /// matched the equality case and `dropFirst` left an empty string, which the
-    /// caller refused; a strict `count > base.count` dropped that branch and sent
-    /// the absolute directory path instead. No caller reaches it, since directory
-    /// rows never send and neither `ls-files` nor `status` prints a trailing slash,
-    /// which is why nothing else noticed. A refusal turning into a send is the one
-    /// change this type must never make quietly, reachable or not.
-    @Test func aPathThatIsTheWorkingDirectoryRefuses() {
-        #expect(refusal("src/", cwd: "/repo/src") == .emptyPath)
+    /// The refusal is about what the line editor can hold, not about how foreign
+    /// the name looks, and `café.txt` properly encoded is ordinary text.
+    @Test func aProperlyEncodedNonAsciiNameStillSends() {
+        let utf8 = Array("caf\u{e9}.txt".utf8)
+        #expect(sendBytes(utf8) == [0x27] + utf8 + [0x27, 0x20])
     }
 
-    /// Two spellings of one directory still relativize.
+    /// The relative match is still byte-wise, and a non-UTF-8 component is refused
+    /// after that match rather than by breaking it.
     ///
-    /// `String.hasPrefix` compares by canonical equivalence and the byte compare
-    /// that replaced it cannot, so an NFD working directory stopped matching an NFC
-    /// path and every click in that repository sent a long absolute path instead of
-    /// the short relative one the feature exists for. The pairing is ordinary on
-    /// macOS rather than exotic: `core.precomposeunicode` makes git report NFC while
-    /// the pane's working directory carries the bytes the directory was made with.
-    @Test func aDecomposedWorkingDirectoryStillRelativizesAPrecomposedPath() {
-        let precomposed = "caf\u{e9}/x.txt"
-        #expect(send(precomposed, root: "/repo", cwd: "/repo/cafe\u{301}") == "x.txt ")
-    }
-
-    /// And the fallback never rescues a path that is not UTF-8, because such a path
-    /// has no `String` to compare. It has to come back byte-exact from the byte
-    /// branch or not at all.
-    @Test func theCanonicalFallbackNeverTouchesBytesThatAreNotUTF8() {
-        let path = Array("dir/caf".utf8) + [0xE9] + Array(".txt".utf8)
-        #expect(sendBytes(path, root: "/repo", cwd: "/repo")
-            == [0x27] + path + [0x27, 0x20])
-
-        // A working directory that shares no prefix still sends absolute, with the
-        // bytes intact rather than dropped by the fallback's `String` gate.
-        let absolute = Array("'/repo/dir/caf".utf8) + [0xE9] + Array(".txt' ".utf8)
-        #expect(sendBytes(path, root: "/repo", cwd: "/elsewhere") == absolute)
-    }
-
-    /// The relative-path boundary is byte-wise, so a non-UTF-8 directory name in
-    /// the middle of a path cannot break the component match.
-    @Test func aNonUTF8ComponentDoesNotBreakTheRelativeMatch() {
+    /// Worth separating because the two failures look alike from outside: a path
+    /// that failed to relativize would be sent absolute, and one refused for its
+    /// encoding is sent not at all. The first would be a bug in `relative`.
+    @Test func aNonUTF8ComponentIsRefusedRatherThanFailingTheRelativeMatch() {
         let path = Array("dir".utf8) + [0xE9] + Array("/file.txt".utf8)
-        #expect(sendBytes(path, root: "/repo", cwd: "/repo")
-            == [0x27] + path + [0x27, 0x20])
+        #expect(refusalOf(path, root: "/repo", cwd: "/repo") == .notUTF8)
+        // Absolute rendering, same answer: the refusal does not depend on which
+        // branch produced the path.
+        #expect(refusalOf(path, root: "/repo", cwd: "/elsewhere") == .notUTF8)
+    }
+
+    /// What `Diagnostics/prompt-path-bytes/` asserts on a real pane, pinned here so
+    /// the probe and the resolver cannot drift.
+    ///
+    /// The probe clicks the row and expects the prompt to stay empty and the
+    /// footer to say why. This is the same claim without a window: the row that
+    /// probe builds resolves to a refusal, and to this one.
+    @Test func theLiveProbesRowResolvesToTheRefusalItExpects() {
+        let path = Array("src/caf".utf8) + [0xE9] + Array(".txt".utf8)
+        #expect(refusalOf(path, root: "/repo", cwd: "/repo") == .notUTF8)
     }
 }

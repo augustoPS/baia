@@ -743,7 +743,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case let .send(bytes):
             pane.send(bytes)
             return true
-        case .refuse:
+        case let .refuse(reason):
+            // The beep says a click was refused and never which one or why, and
+            // the row's red flash says the same thing twice. The footer carries
+            // the reason, which is the half that lets the owner act: every
+            // message names the fix. Both are kept, because the sound is what
+            // survives the pointer having moved on.
+            pane.showNotice(reason.notice)
             NSSound.beep()
             return false
         }

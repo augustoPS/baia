@@ -186,13 +186,37 @@ public struct PaneStatus: Sendable, Equatable {
     /// to ``Attention/none`` with no transition to run and nothing to reset.
     public var attention: Attention { Attention(agent) }
 
+    /// A sentence the bar shows instead of everything else, for a few seconds.
+    ///
+    /// **For an action the pane refused, and nothing else.** A click on a sidebar
+    /// row either lands on the prompt or does not, and until this existed the only
+    /// answer to "does not" was a beep and a red flash on the row: the owner
+    /// learned that something was refused and never why. The reason is the whole
+    /// value, so this carries a sentence rather than a state.
+    ///
+    /// **It replaces the bar rather than joining it**, which is the one design
+    /// decision here worth defending. The alternative is a segment competing for
+    /// width with the branch and the markers, and under width pressure
+    /// ``PaneStatusLayout`` would drop either the notice, which makes the feature
+    /// pointless on a narrow pane, or the git markers, which are the thing the
+    /// bar exists for. A notice is rare, brief, and caused by something the owner
+    /// did a moment ago, so taking the bar for three seconds costs less than
+    /// either.
+    ///
+    /// **It does not touch attention.** The wash, the frame and the tab glyph are
+    /// drawn from ``attention``, which this leaves alone, so a pane that is asking
+    /// keeps saying so in colour while the notice occupies the text. That is why
+    /// the two can share a bar without a rule about which wins.
+    public var notice: String?
+
     public init(
         anchorName: String,
         anchorIsRepository: Bool,
         isPinned: Bool,
         workingDirectory: String?,
         git: Git?,
-        agent: Agent?
+        agent: Agent?,
+        notice: String? = nil
     ) {
         self.anchorName = anchorName
         self.anchorIsRepository = anchorIsRepository
@@ -200,6 +224,7 @@ public struct PaneStatus: Sendable, Equatable {
         self.workingDirectory = workingDirectory
         self.git = git
         self.agent = agent
+        self.notice = notice
     }
 
     /// The value for ``workingDirectory``: nil when the shell sits at the

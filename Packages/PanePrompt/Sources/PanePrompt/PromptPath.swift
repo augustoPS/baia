@@ -27,6 +27,44 @@ public enum PromptPath {
         case controlScalar
         /// There is no path to send.
         case emptyPath
+        /// The rendered path is not valid UTF-8, so no line editor can hold it.
+        ///
+        /// **Measured rather than assumed**, on 2026-08-03 against a real pane.
+        /// The bytes do reach the pty intact: clicked into `cat`, which reads the
+        /// pty with no line editor in front of it, `'src/caf<E9>.txt' ` arrived
+        /// byte for byte. Clicked onto a command line the prompt showed
+        /// `printf '%s' 'src/caf` and stopped at exactly that byte. zsh's ZLE
+        /// decodes its input as characters, `0xE9` opens a three-byte sequence
+        /// `.txt` does not complete, and everything from there is dropped. The
+        /// quote never closes, so the owner is left with a broken line rather
+        /// than a wrong one.
+        ///
+        /// Sending was the worse of the two failures. A dropped tail looks like
+        /// the app losing the click, and the half-line has to be cleared by hand
+        /// before anything else can be typed.
+        case notUTF8
+
+        /// What the pane's footer says, in the owner's words rather than the
+        /// type's.
+        ///
+        /// Here rather than in the app target for the reason every rule in this
+        /// package is: it is decidable without a window, and the app target has
+        /// no test target to hold it. A refusal whose message lived at the call
+        /// site would be a string nothing could grade.
+        ///
+        /// Each names the fix, because the reason on its own leaves the owner
+        /// where the beep did. Lower case and no trailing stop: the bar is a
+        /// status line and its other segments are labels, not sentences.
+        public var notice: String {
+            switch self {
+            case .notUTF8:
+                "name is not valid UTF-8, so the shell cannot hold it: rename the file"
+            case .controlScalar:
+                "name holds a control character the shell would act on: rename the file"
+            case .emptyPath:
+                "nothing to send"
+            }
+        }
     }
 
     public enum Resolution: Sendable, Equatable {
@@ -76,6 +114,27 @@ public enum PromptPath {
         // the same test. A repository can be cloned into any directory the owner
         // was given the name of.
         guard !carriesControl(rendered) else { return .refuse(.controlScalar) }
+
+        // **The destination's limit, not the path's.** Everything above this line
+        // is about what the path is; this is about what a line editor can hold,
+        // and the answer measured against a real pane is "valid UTF-8 and nothing
+        // else". See ``Refusal/notUTF8``.
+        //
+        // **This check is the reason the bytes had to be carried, rather than an
+        // argument against having carried them.** A resolver taking a `String`
+        // cannot make it: by the time a path is a `String` every unreadable byte
+        // is already U+FFFD, and U+FFFD is a perfectly legal character that a
+        // file may genuinely be named with. Such a resolver has two choices and
+        // both are wrong. It sends, and a file named `caf<E9>.txt` puts a path
+        // naming nothing on the prompt, which is the defect this branch opened
+        // against. Or it refuses anything containing U+FFFD, and a file honestly
+        // called `caf<FFFD>.txt` is refused for a fault it does not have. Only
+        // the raw bytes separate the two, so only a byte-carrying resolver can
+        // refuse exactly the paths that cannot work and send every other one
+        // unchanged.
+        guard String(bytes: rendered, encoding: .utf8) != nil else {
+            return .refuse(.notUTF8)
+        }
 
         return .send(quoted(guardedAgainstOptionSyntax(rendered)) + [0x20])
     }
