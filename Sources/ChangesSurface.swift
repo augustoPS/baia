@@ -73,7 +73,7 @@ final class ChangesSurface: NSObject, WorkspaceSurface {
     /// refused, which is the one bit the row needs to know which flash to draw.
     /// `PromptPath.Resolution` already carries that distinction, so the surface
     /// stays as ignorant of quoting as it was. Design v3 §2.3.
-    var onSelect: ((String) -> Bool)? {
+    var onSelect: ((RepositoryPath) -> Bool)? {
         get { rows.onSelect }
         set { rows.onSelect = newValue }
     }
@@ -140,7 +140,7 @@ final class ChangesRowsView: NSView {
 
     private var sorted: [RepositoryFileChange] = []
 
-    var onSelect: ((String) -> Bool)?
+    var onSelect: ((RepositoryPath) -> Bool)?
 
     private lazy var feedback = RowFeedback { [weak self] row in
         self?.redraw(row)
@@ -175,7 +175,9 @@ final class ChangesRowsView: NSView {
         guard let index = feedback.pressed else { return }
         feedback.pressed = nil
         guard sorted.indices.contains(index), row(at: event) == index else { return }
-        feedback.answer(onSelect?(sorted[index].path) == true ? .landed : .refused, at: index)
+        // `rawPath` rather than `path`: the latter is the lossy spelling the row
+        // draws, and what is being sent here is a name rather than a label.
+        feedback.answer(onSelect?(sorted[index].rawPath) == true ? .landed : .refused, at: index)
     }
 
     private func row(at event: NSEvent) -> Int {

@@ -255,8 +255,22 @@ import Testing
     @Test func everyRoleIsReachable() {
         // Guards a role added to the enum and then never built, which compiles
         // cleanly and presents as a fact the bar silently never shows.
-        let built = Set(PaneStatusSegments.build(from: Sample.everything()).map(\.role))
-        #expect(built == Set(PaneStatusSegmentRole.allCases))
+        //
+        // Two statuses rather than one, and the split is the rule rather than a
+        // concession to make the assertion pass. Every role is reachable from a
+        // status that has everything, except `.notice`, which is reachable only
+        // from a status that has one *and* is unreachable from any status that
+        // does not, because a notice replaces the bar. Asserting the union alone
+        // would let a build that emitted `.notice` beside the branch pass, which
+        // is the arrangement `PaneStatus.notice` exists to prevent.
+        let ordinary = Set(PaneStatusSegments.build(from: Sample.everything()).map(\.role))
+        let noticed = Set(PaneStatusSegments
+            .build(from: Sample.everything(notice: "refused"))
+            .map(\.role))
+
+        #expect(ordinary == Set(PaneStatusSegmentRole.allCases).subtracting([.notice]))
+        #expect(noticed == [.notice])
+        #expect(ordinary.union(noticed) == Set(PaneStatusSegmentRole.allCases))
     }
 
     // MARK: - runs(for:)
@@ -297,5 +311,68 @@ import Testing
     @Test func runsUsesTheDisplayHeadForADetachedCommit() {
         let status = RepositoryStatus(head: .detached(commit: "abc1234567"))
         #expect(PaneStatusSegments.runs(for: status).map(\.text) == ["(abc1234)"])
+    }
+
+    // MARK: - The notice
+
+    /// A notice takes the bar alone, and the git segments it displaces are the
+    /// point rather than a side effect: a reason competing for width with the
+    /// branch would be dropped on exactly the narrow pane where an unexplained
+    /// refusal is most confusing.
+    @Test func aNoticeReplacesEverySegmentRatherThanJoiningThem() {
+        let status = Sample.status(
+            isPinned: true,
+            workingDirectory: "~/src",
+            git: Sample.git(ahead: 2, dirty: true, untracked: 1),
+            agent: PaneStatus.Agent(label: "claude", wantsAttention: true),
+            notice: "name is not valid UTF-8"
+        )
+        #expect(roles(status) == [.notice])
+        #expect(segment(.notice, in: status)?.text == "name is not valid UTF-8")
+    }
+
+    /// The same status without the notice is the control: everything the notice
+    /// displaced really was there to displace.
+    @Test func theSameStatusWithoutANoticeEmitsItsOrdinarySegments() {
+        let ordinary = Sample.status(
+            isPinned: true,
+            workingDirectory: "~/src",
+            git: Sample.git(ahead: 2, dirty: true, untracked: 1),
+            agent: PaneStatus.Agent(label: "claude", wantsAttention: true)
+        )
+        #expect(roles(ordinary).contains(.anchorName))
+        #expect(roles(ordinary).contains(.indicators))
+        #expect(roles(ordinary) != [.notice])
+    }
+
+    /// An empty string is not a notice. A caller clearing one by writing `""`
+    /// rather than nil would otherwise blank the whole bar for three seconds,
+    /// which reads as the pane having died.
+    @Test func anEmptyNoticeIsIgnoredRatherThanBlankingTheBar() {
+        let status = Sample.status(git: Sample.git(dirty: true), notice: "")
+        #expect(roles(status) == [.anchorName, .branch, .indicators])
+    }
+
+    /// Drawn in the alert colour, since it exists to say something was refused,
+    /// and never truncated: a clipped reason still names the problem where an
+    /// ellipsis does not.
+    @Test func aNoticeIsAlertAndIsNotTruncated() {
+        let status = Sample.status(notice: "name holds a control character")
+        let notice = segment(.notice, in: status)
+        #expect(notice?.emphasis == .alert)
+        #expect(notice?.truncation == PaneStatusTruncation.none)
+        #expect(notice?.alignment == .leading)
+    }
+
+    /// The notice does not touch attention. The wash, the frame and the tab
+    /// glyph are read from `status.attention`, so a pane that is asking keeps
+    /// saying so in colour while the notice occupies the text, which is what lets
+    /// the two share a bar with no rule about which wins.
+    @Test func aNoticeLeavesAttentionAlone() {
+        let asking = Sample.status(
+            agent: PaneStatus.Agent(label: "claude", wantsAttention: true),
+            notice: "nothing to send"
+        )
+        #expect(asking.attention == .asking)
     }
 }

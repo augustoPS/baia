@@ -16,7 +16,8 @@ enum Sample {
         isPinned: Bool = false,
         workingDirectory: String? = nil,
         git: PaneStatus.Git? = nil,
-        agent: PaneStatus.Agent? = nil
+        agent: PaneStatus.Agent? = nil,
+        notice: String? = nil
     ) -> PaneStatus {
         PaneStatus(
             anchorName: anchorName,
@@ -24,7 +25,8 @@ enum Sample {
             isPinned: isPinned,
             workingDirectory: workingDirectory,
             git: git,
-            agent: agent
+            agent: agent,
+            notice: notice
         )
     }
 
@@ -74,7 +76,7 @@ enum Sample {
 
     /// A status with every optional populated, used by the tests that assert over
     /// every role at once.
-    static func everything() -> PaneStatus {
+    static func everything(notice: String? = nil) -> PaneStatus {
         status(
             isPinned: true,
             workingDirectory: "~/Projects/baia/Packages",
@@ -85,7 +87,8 @@ enum Sample {
                 untracked: 3,
                 operation: "REBASE 1/3"
             ),
-            agent: PaneStatus.Agent(label: "claude", wantsAttention: false)
+            agent: PaneStatus.Agent(label: "claude", wantsAttention: false),
+            notice: notice
         )
     }
 }

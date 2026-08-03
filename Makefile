@@ -53,7 +53,11 @@ bootstrap: ## Install build tooling (xcodegen)
 
 UPSTREAM_DIR := upstream/libghostty-spm
 UPSTREAM_REF := $(shell cat upstream/libghostty-spm.ref 2>/dev/null)
-UPSTREAM_PATCH := upstream/libghostty-spm-read-text.patch
+# Named for the package rather than for one of its changes. It was
+# `-read-text.patch` while reading the terminal was all it did; it now also
+# carries the write path a filename needs (`sendBytes`), and a patch whose name
+# lists one of its two halves is a name that goes stale on the next addition.
+UPSTREAM_PATCH := upstream/libghostty-spm.patch
 
 upstream: ## Recreate the patched libghostty checkout project.yml points at
 # `project.yml` pins libghostty by PATH while the read-text change is unmerged,

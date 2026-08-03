@@ -31,6 +31,36 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/app-identity.sh"
 # through looking like an app bug. Held awake for as long as the caller lives.
 caffeinate -dimsu -w $$ &
 
+# **Assistive access, checked once and loudly, because without it a driven run is
+# a silent no-op that reports findings.** Every `osascript` below sends its errors
+# to /dev/null so a transient AppleScript hiccup does not spray a run, and the
+# cost of that showed on 2026-08-03: a caller with Automation permission but not
+# Accessibility activated the app successfully and then had every `keystroke` and
+# every window-geometry query fail without a word. Nothing was typed, nothing was
+# clicked, `screencapture -R` refused an empty rect, and the probe reported two
+# byte-level failures against a build that had done nothing wrong. That is the
+# expensive kind of wrong: it sends the reader somewhere there is nothing to find.
+#
+# Only `-1719` counts. A machine that *has* the grant can still fail this query
+# for ordinary reasons, Finder having no open window being the obvious one, and
+# aborting on that would trade a silent no-op for a false refusal.
+#
+# The grant is per calling process, so it is the terminal or the agent host that
+# needs it and not baia: System Settings > Privacy & Security > Accessibility.
+assistive_error=$(osascript -e 'tell application "System Events" to get position of window 1 of process "Finder"' 2>&1 >/dev/null)
+case "$assistive_error" in
+    *-1719*|*"not allowed assistive access"*)
+        echo "ABORT: this process has no Accessibility permission, so nothing can be" >&2
+        echo "       typed or clicked and every check below would fail for that reason" >&2
+        echo "       rather than for anything about the app." >&2
+        echo "       osascript said: $assistive_error" >&2
+        echo "       Grant it to the app hosting this shell in System Settings >" >&2
+        echo "       Privacy & Security > Accessibility, then run again." >&2
+        exit 1
+        ;;
+esac
+unset assistive_error
+
 # Activates the app under test and refuses to continue until it is genuinely
 # frontmost.
 #

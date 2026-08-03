@@ -33,11 +33,24 @@ OUT="verify-out/path-picker"
 # the pane having no capability at all.
 READOUT="$REPO/$OUT"
 CONFIG="$HOME/.config/baia/config.json"
+
+[ -d "$APP" ] || { echo "ABORT: no build at $APP, run make build first" >&2; exit 1; }
+
+# **Sourced before `APP_SESSION` is read, and it was not.** `app-identity.sh`,
+# which `drive.sh` pulls in, derives the support directory, the session file and
+# the socket from the bundle `APP` names, so `APP` has to be set first and the
+# source has to come before either is used. This block read both fifteen lines
+# above the source, and `set -u` turns that from wrong into fatal: every run died
+# on `APP_SESSION: unbound variable` before it launched anything. Arrived with the
+# identity resolver on 2026-08-02 and was never run afterwards, which is the only
+# reason it stayed. `tree-expansions/run.sh` carried the same three lines and the
+# same defect.
+export OUT REPO
+source "$REPO/Diagnostics/lib/drive.sh"
+
 SESSION="$APP_SESSION"
 BAIA_SOCK="$APP_SOCKET"
 export BAIA_SOCK
-
-[ -d "$APP" ] || { echo "ABORT: no build at $APP, run make build first" >&2; exit 1; }
 
 # Same contract capture.sh keeps: the run rewrites the sidebar key and deletes the
 # session, so both are put back whatever happens, including on a kill.
@@ -46,9 +59,6 @@ SESSION_BACKUP=$(mktemp)
 cp "$CONFIG" "$CONFIG_BACKUP" 2>/dev/null
 cp "$SESSION" "$SESSION_BACKUP" 2>/dev/null
 trap 'cp "$CONFIG_BACKUP" "$CONFIG" 2>/dev/null; cp "$SESSION_BACKUP" "$SESSION" 2>/dev/null; rm -f "$CONFIG_BACKUP" "$SESSION_BACKUP"' EXIT
-
-export OUT REPO
-source "$REPO/Diagnostics/lib/drive.sh"
 
 pass=0
 fail=0
@@ -183,17 +193,3 @@ if [ "$fail" -ne 0 ]; then
     exit 1
 fi
 echo "PASS: all $pass checks"
-
-  LOOK  1-plain-sends            src/plain.txt on the prompt, one trailing space
-  LOOK  2-three-arguments        three paths, space separated, none quoted away
-  LOOK  3-space-one-argument     'a space.txt' quoted or escaped as ONE argument
-  LOOK  4-control-byte-refused   prompt unchanged, row flashed its refusal
-  LOOK  5-escape-refused         prompt unchanged, row flashed its refusal
-
-  Five images in $OUT. Nothing here asserts; see the header for why.
-
-  Still by hand, because neither is a click:
-    - clicking while an agent is mid-run inserts into its prompt
-    - ~notes.txt, =lookup.txt and -rf.txt must not expand or read as options
-      (the unit tests pin these; worth seeing once)
-EOF

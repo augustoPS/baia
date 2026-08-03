@@ -6,6 +6,10 @@ import Foundation
 /// called `main` next to a directory called `main` is not hypothetical here.
 public enum PaneStatusSegmentRole: Sendable, Equatable, CaseIterable {
     case anchorName, pin, branch, indicators, operation, agent, workingDirectory
+
+    /// A transient sentence answering a click the pane refused, and the only role
+    /// that replaces the bar rather than sharing it. See ``PaneStatus/notice``.
+    case notice
 }
 
 /// Which question a segment answers, and therefore what it sits next to.
@@ -28,6 +32,10 @@ public enum PaneStatusGroup: Sendable, Equatable, CaseIterable {
 
     /// True but not urgent: the working directory.
     case context
+
+    /// Something the owner just did and the pane refused. Its own group because
+    /// it never sits beside anything: a notice takes the bar alone.
+    case notice
 }
 
 public extension PaneStatusSegmentRole {
@@ -43,6 +51,7 @@ public extension PaneStatusSegmentRole {
         case .operation, .branch, .indicators: .repository
         case .agent: .agent
         case .workingDirectory: .context
+        case .notice: .notice
         }
     }
 }

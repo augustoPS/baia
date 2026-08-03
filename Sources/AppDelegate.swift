@@ -278,7 +278,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // with no window to reach them.
         // False when the window has gone: a click that reaches nothing is a
         // refusal from the row's point of view, which is the honest thing to draw.
-        let send: (String) -> Bool = { [weak self, weak tree] path in
+        let send: (RepositoryPath) -> Bool = { [weak self, weak tree] path in
             guard let self, let tree else { return false }
             return sendToPrompt(path, of: tree)
         }
@@ -721,7 +721,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// for the feedback to belong to, so the row flashes a refusal and nothing
     /// sounds. That is the one silent no-op here.
     @discardableResult
-    private func sendToPrompt(_ path: String, of tree: PaneTreeController) -> Bool {
+    private func sendToPrompt(_ path: RepositoryPath, of tree: PaneTreeController) -> Bool {
         guard let pane = tree.focusedPane else { return false }
         let anchor = pane.anchorTracker.anchor
         guard anchor?.kind == .repository, let root = anchor?.url else { return false }
@@ -735,15 +735,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // under `$TMPDIR`, `/tmp` or `/var` sent every path absolute: caught on
         // 2026-07-29 by the fixture, which lives in exactly that place.
         switch PromptPath.resolve(
-            repositoryRelativePath: path,
+            repositoryRelativePath: path.bytes,
             repositoryRoot: root.resolvingSymlinksInPath().path(percentEncoded: false),
             workingDirectory: pane.anchorTracker.workingDirectory?
                 .resolvingSymlinksInPath().path(percentEncoded: false)
         ) {
-        case let .send(text):
-            pane.send(text)
+        case let .send(bytes):
+            pane.send(bytes)
             return true
-        case .refuse:
+        case let .refuse(reason):
+            // The beep says a click was refused and never which one or why, and
+            // the row's red flash says the same thing twice. The footer carries
+            // the reason, which is the half that lets the owner act: every
+            // message names the fix. Both are kept, because the sound is what
+            // survives the pointer having moved on.
+            pane.showNotice(reason.notice)
             NSSound.beep()
             return false
         }

@@ -13,6 +13,10 @@ public enum PaneStatusSegments {
     /// project outranks both, because a pane nobody can identify is the failure
     /// the bar exists to prevent.
     private enum Priority {
+        /// Above everything, though nothing ever competes with it: a notice is
+        /// returned as the only segment. The value is here so the solver cannot
+        /// be surprised if that ever stops being true.
+        static let notice = 120
         static let anchorName = 100
         static let pin = 80
         static let operation = 80
@@ -42,6 +46,26 @@ public enum PaneStatusSegments {
     /// ``PaneStatusLayout/solve(segments:widths:availableWidth:)`` measures from
     /// the right edge leftwards while keeping this order on screen.
     public static func build(from status: PaneStatus) -> [PaneStatusSegment] {
+        // A notice takes the bar alone and returns before anything else is
+        // built, rather than being appended and left to the layout solver. See
+        // ``PaneStatus/notice``: a segment competing on width would be dropped on
+        // a narrow pane, which is where an unexplained refusal is most confusing,
+        // or would push out the git markers, which is worse.
+        //
+        // `.none` truncation, so a bar too narrow for the sentence clips it
+        // rather than eliding it to nothing. A half-read reason still names the
+        // problem; an ellipsis does not.
+        if let notice = status.notice, !notice.isEmpty {
+            return [PaneStatusSegment(
+                role: .notice,
+                text: notice,
+                alignment: .leading,
+                priority: Priority.notice,
+                truncation: .none,
+                emphasis: .alert
+            )]
+        }
+
         var segments: [PaneStatusSegment] = []
 
         // An empty name emits nothing rather than an empty box the width of the

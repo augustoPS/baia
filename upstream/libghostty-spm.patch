@@ -1,5 +1,5 @@
 diff --git a/Sources/GhosttyTerminal/Platform/AppKit/AppTerminalView+PublicInput.swift b/Sources/GhosttyTerminal/Platform/AppKit/AppTerminalView+PublicInput.swift
-index 0b9e78d..347f0d5 100644
+index 0b9e78d..cad410f 100644
 --- a/Sources/GhosttyTerminal/Platform/AppKit/AppTerminalView+PublicInput.swift
 +++ b/Sources/GhosttyTerminal/Platform/AppKit/AppTerminalView+PublicInput.swift
 @@ -8,6 +8,7 @@
@@ -10,10 +10,19 @@ index 0b9e78d..347f0d5 100644
  
      extension AppTerminalView {
          /// Send raw UTF-8 text directly to the underlying pty (bypassing
-@@ -18,6 +19,16 @@
+@@ -18,6 +19,25 @@
              surface?.sendText(text)
          }
  
++        /// Send raw bytes, for input that has no `String` spelling.
++        ///
++        /// A filename on a Unix filesystem is a byte string, and `String` cannot
++        /// carry one that is not valid UTF-8: it substitutes U+FFFD irreversibly.
++        /// `sendText` is the same path for input that is already text.
++        public func sendBytes(_ bytes: [UInt8]) {
++            surface?.sendBytes(bytes)
++        }
++
 +        /// The whole terminal text including scrollback, or nil before the
 +        /// surface exists.
 +        public func readRow(_ row: UInt32, columns: UInt32) -> String? {
@@ -28,10 +37,45 @@ index 0b9e78d..347f0d5 100644
          /// "clear_screen"). Returns true when the action dispatched.
          @discardableResult
 diff --git a/Sources/GhosttyTerminal/Surface/TerminalSurface.swift b/Sources/GhosttyTerminal/Surface/TerminalSurface.swift
-index 076d21f..e567c8c 100644
+index 076d21f..9fe0ac3 100644
 --- a/Sources/GhosttyTerminal/Surface/TerminalSurface.swift
 +++ b/Sources/GhosttyTerminal/Surface/TerminalSurface.swift
-@@ -111,6 +111,54 @@ public final class TerminalSurface {
+@@ -58,6 +58,34 @@ public final class TerminalSurface {
+         return true
+     }
+ 
++    /// Send raw bytes to the pty.
++    ///
++    /// `ghostty_surface_text` takes a pointer and a length and has never wanted a
++    /// `String`; `sendText` narrows it to one. That narrowing is lossy for the one
++    /// input that most needs to arrive intact, a filename, because a Unix path is
++    /// a byte string with no requirement to be UTF-8 and `String` replaces every
++    /// byte it cannot read with U+FFFD.
++    ///
++    /// Not NUL-terminated, and it does not need to be: the length is passed
++    /// explicitly, which is also why this cannot go through `withCString`.
++    @discardableResult
++    public func sendBytes(_ bytes: [UInt8]) -> Bool {
++        guard let s = surface else {
++            TerminalDebugLog.log(.input, "surface bytes ignored: missing surface")
++            return false
++        }
++        guard !bytes.isEmpty else { return true }
++        TerminalDebugLog.log(.input, "surface bytes count=\(bytes.count)")
++        bytes.withUnsafeBufferPointer { buffer in
++            buffer.withMemoryRebound(to: CChar.self) { rebound in
++                if let base = rebound.baseAddress {
++                    ghostty_surface_text(s, base, UInt(rebound.count))
++                }
++            }
++        }
++        return true
++    }
++
+     @discardableResult
+     func sendMouseButton(
+         state: ghostty_input_mouse_state_e,
+@@ -111,6 +139,54 @@ public final class TerminalSurface {
          }
      }
  

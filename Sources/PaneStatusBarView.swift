@@ -702,6 +702,12 @@ final class PaneStatusBarView: NSView {
         case .operation: NSFont.monospacedSystemFont(ofSize: 10.5, weight: .bold)
         case .branch, .indicators: NSFont.monospacedSystemFont(ofSize: 10.5, weight: .regular)
         case .workingDirectory: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
+        // Proportional and the same size as the anchor name, because a notice is
+        // a sentence to be read rather than machine data to be scanned, and the
+        // font change is what carries that distinction on this bar. Not semibold:
+        // it already arrives in the alert colour and alone on the bar, and a
+        // third emphasis on top of those two is shouting.
+        case .notice: NSFont.systemFont(ofSize: 11, weight: .regular)
         }
     }
 

@@ -361,8 +361,12 @@ final class TerminalPaneController: NSViewController {
     ///
     /// `terminalView` stays private, for the reason find-in-pane reaches the
     /// surface through methods here rather than by handing the view out.
-    func send(_ text: String) {
-        terminalView.sendText(text)
+    /// Bytes rather than a `String`, because the only caller is sending a
+    /// filename. A path is a byte string that need not be UTF-8, and every
+    /// spelling of it that goes through `String` is a path no command can find.
+    /// `PromptPath` decides what these bytes are; this writes them.
+    func send(_ bytes: [UInt8]) {
+        terminalView.sendBytes(bytes)
     }
 
     private static let rowSearchBound = 64
@@ -885,9 +889,46 @@ final class TerminalPaneController: NSViewController {
             isPinned: anchor.source == .pinned,
             workingDirectory: shown,
             git: gitStatus.git,
-            agent: activityTracker.agent
+            agent: activityTracker.agent,
+            notice: notice
         )
     }
+
+    /// The sentence the footer is showing instead of its segments, and nil the
+    /// rest of the time.
+    ///
+    /// Held here rather than written straight into `statusBar.status`, because
+    /// the anchor tracker rebuilds that once a second: a notice written directly
+    /// would survive for up to one poll and no longer, which is both too short to
+    /// read and impossible to predict.
+    private var notice: String?
+
+    /// The work the notice timer is waiting to do, kept so a second refusal
+    /// restarts the clock rather than inheriting the remains of the first one.
+    private var noticeDismissal: DispatchWorkItem?
+
+    /// Shows a sentence in the footer for a few seconds, then puts the bar back.
+    ///
+    /// **Three seconds, and the number is the only arbitrary thing here.** Long
+    /// enough to read eleven words without hurrying, short enough that a bar
+    /// showing stale text is never what the owner is looking at. Two refusals in
+    /// a row restart it rather than queueing, since the second is the one being
+    /// asked about.
+    func showNotice(_ text: String) {
+        noticeDismissal?.cancel()
+        notice = text
+        refreshStatus()
+
+        let dismissal = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            notice = nil
+            refreshStatus()
+        }
+        noticeDismissal = dismissal
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.noticeDuration, execute: dismissal)
+    }
+
+    private static let noticeDuration: TimeInterval = 3
 
     /// Makes this pane's terminal the first responder. Nothing else may take it:
     /// `AppTerminalView.performKeyEquivalent` returns false unless the surface is

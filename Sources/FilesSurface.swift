@@ -143,7 +143,7 @@ final class FilesSurface: NSObject, WorkspaceSurface {
     /// refused, which is the one bit the row needs to know which flash to draw.
     /// `PromptPath.Resolution` already carries that distinction, so the surface
     /// stays as ignorant of quoting as it was. Design v3 §2.3.
-    var onSelect: ((String) -> Bool)? {
+    var onSelect: ((RepositoryPath) -> Bool)? {
         get { rows.onSelect }
         set { rows.onSelect = newValue }
     }
@@ -379,7 +379,7 @@ final class FileTreeRowsView: NSView {
         return theme.colour(for: resolved)
     }
 
-    var onSelect: ((String) -> Bool)?
+    var onSelect: ((RepositoryPath) -> Bool)?
 
     private lazy var feedback = RowFeedback { [weak self] row in
         self?.redraw(row)
@@ -420,7 +420,9 @@ final class FileTreeRowsView: NSView {
         // A directory answers by opening, which is answer enough: the rows below it
         // change. Only a send has an outcome the column has to state.
         guard node.isDirectory else {
-            return feedback.answer(onSelect?(node.path) == true ? .landed : .refused, at: index)
+            // `rawPath` rather than `path`: the latter is the lossy spelling the
+            // row draws, and what is being sent here is a name rather than a label.
+            return feedback.answer(onSelect?(node.rawPath) == true ? .landed : .refused, at: index)
         }
 
         if expanded.contains(node.path) {
