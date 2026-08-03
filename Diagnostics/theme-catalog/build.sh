@@ -44,7 +44,26 @@ build_module() {
 
 build_module BaiaSettings
 build_module GitWorkspace
-build_module PaneChrome -lBaiaSettings -lGitWorkspace
+
+# `PaneChrome` minus `SettingsDerivations.swift`, for the same reason
+# `GhosttyThemeDefinition+TerminalConfiguration` is left out below: it imports
+# `GhosttyTerminal`, which is where `View/`, `Surface/` and `Platform/` live, and
+# nothing in the sweep needs a terminal to exist. The file arrived in this package
+# on 2026-08-03 (`9e60308`) and broke this build the same day; two of its four
+# derivations cannot be spelled without that module, and the sweep calls none of
+# the four. It grades `PaneTheme.accent(for:)` and `attentionColour(_:behavior:)`.
+#
+# Excluded by name rather than by widening the link line, so the probe keeps the
+# property it is built around: no Metal, no window, safe from inside a pane.
+PANE_CHROME_SOURCES=()
+for source in Packages/PaneChrome/Sources/PaneChrome/*.swift; do
+  [ "$(basename "$source")" = SettingsDerivations.swift ] && continue
+  PANE_CHROME_SOURCES+=("$source")
+done
+swiftc -swift-version 6 -emit-library -emit-module \
+  -module-name PaneChrome -emit-module-path "$LIB/PaneChrome.swiftmodule" \
+  -o "$LIB/libPaneChrome.dylib" -I "$LIB" -L "$LIB" -lBaiaSettings -lGitWorkspace \
+  "${PANE_CHROME_SOURCES[@]}"
 
 # The catalog, from the patched checkout `project.yml` points at, so the themes
 # swept are the themes the app offers. `GhosttyThemeDefinition+TerminalConfiguration`
