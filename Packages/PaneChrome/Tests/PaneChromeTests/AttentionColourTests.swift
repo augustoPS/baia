@@ -418,6 +418,10 @@ import Testing
         // change about this rule: they add a row to a hatch that already existed
         // rather than opening a second one. No other theme in the catalog fails
         // `derive` under either of them.
+        //
+        // That split is pinned per accent in `Diagnostics/theme-catalog`, and the
+        // sentence above is the reason it had to be: the count and the theme are
+        // pinned too, and both survive a redistribution that makes it false.
         let retro = PaneTheme(
             background: "#000000",
             foreground: "#13a10e",

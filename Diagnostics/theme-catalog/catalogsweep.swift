@@ -89,6 +89,24 @@ enum Pinned {
     /// halfway buys 93 themes and does not buy the guarantee.
     static let seaCollidesWithAnsi6 = 165
 
+    /// Which accents own the ten, and the sentence it backs is the one at
+    /// `AttentionColourTests.swift` scoping the hatch: it was "8 of 2315 across
+    /// five accents", `sea` joins the four that land there and `nightshade` does
+    /// not. ``deriveMisses`` and ``deriveMissTheme`` both survive a
+    /// redistribution, which is the hole this closes: swapping the `nightshade`
+    /// and `seaAccent` derivations leaves 10 misses on nothing but Retro while
+    /// making that sentence false.
+    ///
+    /// Measured 2026-08-02. Every accent that lands here misses under both
+    /// ``AttentionAccent`` cases and never one, which is why these are 2 and 0
+    /// rather than odd numbers. `bone` is the only one whose two cases separate
+    /// differently, ΔE00 4.18 against 3.11; the other four sit at 5.62 twice,
+    /// Retro's two greens collapsing most derivations onto one colour.
+    static let deriveMissesByAccent: [FocusAccent: Int] = [
+        .accent: 0, .bone: 2, .ansi5: 2, .ansi6: 2,
+        .twilight: 2, .nightshade: 0, .sea: 2,
+    ]
+
     /// The 14 themes whose `ansi[6]` and `ansi[4]` are the same colour, where no
     /// fraction separates `sea` from `ansi6` because there is nothing to blend
     /// towards. The floor of ``seaCollidesWithAnsi6``: it can never go below this.
@@ -147,6 +165,7 @@ var rows = 0
 var accentIsTheBar = 0
 var rawClears: [FocusAccent: Int] = [:]
 var deriveMisses: [Failure] = []
+var deriveMissesByAccent: [FocusAccent: Int] = [:]
 
 /// Counted once per theme rather than once per row: `sea`'s distance from raw
 /// `ansi[6]` does not depend on which accent the row is for.
@@ -204,6 +223,7 @@ for definition in GhosttyThemeCatalog.allThemes {
                         theme: definition.name, choice: choice.rawValue,
                         rule: "\(guarded)/\(accent)",
                         detail: String(format: "ΔE00 %.2f", separation(fill, in: t))))
+                    deriveMissesByAccent[choice, default: 0] += 1
                 }
 
                 // The ink on whatever it resolved to, and the tier ordering the
@@ -262,6 +282,14 @@ pin("themes", GhosttyThemeCatalog.allThemes.count, Pinned.themes)
 pin("theme-by-focusAccent rows", rows, Pinned.rows)
 pin("accent lands on its own bar", accentIsTheBar, Pinned.accentIsTheBar)
 pin("the floor cannot be reached", deriveMisses.count, Pinned.deriveMisses)
+// Named by theme as well as accent, because the raw-clears rows below are also
+// one per `FocusAccent` and a bare `    bone` in a failure would not say which of
+// the two sections it came from.
+for choice in FocusAccent.allCases {
+    pin("  of those, \(choice.rawValue) on \(Pinned.deriveMissTheme)",
+        deriveMissesByAccent[choice, default: 0],
+        Pinned.deriveMissesByAccent[choice] ?? -1)
+}
 pin("sea collides with ansi6", seaCollisions, Pinned.seaCollidesWithAnsi6)
 pin("  of those, unseparable", seaInseparable, Pinned.seaCannotBeSeparated)
 print("  raw value already clears \(minimumTextContrast):1, per accent")
