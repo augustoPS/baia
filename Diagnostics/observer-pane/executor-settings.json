@@ -70,6 +70,10 @@
         "hooks": [
           {
             "type": "command",
+            "command": "rtk hook claude"
+          },
+          {
+            "type": "command",
             "command": "bash __REPO__/Diagnostics/observer-pane/guard-baia-alive.sh"
           }
         ]

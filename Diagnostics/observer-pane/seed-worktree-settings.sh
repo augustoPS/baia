@@ -82,5 +82,31 @@ for raw in "$@"; do
   fi
   python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$target" \
     || { echo "refusing: $target is not valid JSON" >&2; exit 2; }
+  # A project `PreToolUse` **replaces** the user-level chain rather than adding
+  # to it, so a seeded worktree that declares only the guard loses
+  # `rtk hook claude` from `~/.claude/settings.json`. Found 2026-08-03 when an
+  # executor prompted for `make test` and `make build`, both of which its own
+  # allow list holds, and reported that `rtk` could not be found: with no
+  # rewrite, the commands reaching the permission layer were not the spellings
+  # any rule was written against.
+  #
+  # `rtk hook claude` must also be **first**, because every later hook reads the
+  # rewritten string. `guard-baia-alive.sh` anchors its patterns on both
+  # spellings for that reason, and reordering these two would quietly stop it
+  # matching, which is the failure the force-push guard already had once.
+  python3 - "$target" <<'PY' || exit 2
+import json, sys
+settings = json.load(open(sys.argv[1]))
+chains = settings.get("hooks", {}).get("PreToolUse", [])
+commands = [h.get("command", "") for chain in chains for h in chain.get("hooks", [])]
+if not any(c.strip() == "rtk hook claude" for c in commands):
+    print(f"refusing: {sys.argv[1]} declares PreToolUse without `rtk hook claude`,"
+          " which displaces the user-level rewrite", file=sys.stderr)
+    raise SystemExit(2)
+if commands and commands[0].strip() != "rtk hook claude":
+    print(f"refusing: {sys.argv[1]} runs `{commands[0]}` before `rtk hook claude`;"
+          " later hooks read the rewritten string", file=sys.stderr)
+    raise SystemExit(2)
+PY
   echo "  seeded $target ($PROFILE)"
 done
