@@ -22,10 +22,29 @@ public struct PaletteVerb: Sendable, Equatable {
     /// `MenuCommand.tag`, so the caller can recover the command it sent.
     public let id: Int
 
-    public init(title: String, shortcut: String = "", id: Int) {
+    /// Why this verb cannot be run right now, or nil when it can.
+    ///
+    /// **An unavailable verb is listed rather than dropped**, which is the
+    /// correction the first look on screen produced. Hiding it made the palette
+    /// only ever offer what could actually happen, and that read well until
+    /// `>eq` returned nothing in a one-pane window: absence is indistinguishable
+    /// from a typo, and the reader has no way to learn that Equalize Panes
+    /// exists and wants a second pane. A menu greys the item and keeps it in
+    /// place; this is the palette's version of the same courtesy.
+    public let unavailableReason: String?
+
+    public var isAvailable: Bool { unavailableReason == nil }
+
+    public init(
+        title: String,
+        shortcut: String = "",
+        id: Int,
+        unavailableReason: String? = nil
+    ) {
         self.title = title
         self.shortcut = shortcut
         self.id = id
+        self.unavailableReason = unavailableReason
     }
 }
 
@@ -60,6 +79,13 @@ public enum VerbRanker {
         }
 
         return scored.sorted { left, right in
+            // Available first, ahead of the score. A verb that can be run now is
+            // always the better answer than one that cannot, and letting a
+            // higher-scoring unavailable verb take the top row would put the
+            // selection on something Return refuses.
+            if left.verb.isAvailable != right.verb.isAvailable {
+                return left.verb.isAvailable
+            }
             if left.score != right.score { return left.score > right.score }
 
             // A total order, for the reason `ProjectRanker`'s comparator spells

@@ -33,7 +33,11 @@ public enum MenuValidation {
         // from, so a single pane disables it, and the check is what tells the
         // user which state ⇧⌘↩ will leave them in.
         case .zoomPane:
-            MenuItemState(isEnabled: availability.paneCount > 1, isChecked: availability.isZoomed)
+            MenuItemState(
+                isEnabled: availability.paneCount > 1,
+                isChecked: availability.isZoomed,
+                unavailableReason: "needs 2 panes"
+            )
 
         // Two panes minimum. Close Pane is deliberately in here rather than in
         // the group below: with one pane there is nothing to collapse into, and
@@ -42,35 +46,59 @@ public enum MenuValidation {
         case .closePane, .selectNextPane, .selectPreviousPane,
              .focusPaneLeft, .focusPaneRight, .focusPaneUp, .focusPaneDown,
              .growPaneLeft, .growPaneRight, .growPaneUp, .growPaneDown, .equalizePanes:
-            MenuItemState(isEnabled: availability.paneCount > 1, isChecked: nil)
+            MenuItemState(
+                isEnabled: availability.paneCount > 1,
+                isChecked: nil,
+                unavailableReason: "needs 2 panes"
+            )
 
         // One pane is enough. The Edit items are validated here even though
         // ghostty owns their keys, because the items are still clickable and a
         // click with no pane travels a responder chain holding no terminal, which
         // AppKit answers with a beep.
         case .copy, .paste, .pasteSelection, .selectAll, .splitRight, .splitDown, .setProjectDirectory:
-            MenuItemState(isEnabled: availability.paneCount > 0, isChecked: nil)
+            MenuItemState(
+                isEnabled: availability.paneCount > 0,
+                isChecked: nil,
+                unavailableReason: "needs a pane"
+            )
 
         // A window has to exist. Keyed on the tab count rather than a separate
         // `hasWindow` flag: a window always holds at least one tab, so the two
         // would be one fact stored twice and free to disagree.
         case .closeTab, .closeWindow, .minimize, .zoomWindow, .enterFullScreen:
-            MenuItemState(isEnabled: availability.tabCount > 0, isChecked: nil)
+            MenuItemState(
+                isEnabled: availability.tabCount > 0,
+                isChecked: nil,
+                unavailableReason: "needs a window"
+            )
 
         // Cycling to the next tab of one is a no-op that still consumes the key.
         case .showPreviousTab, .showNextTab:
-            MenuItemState(isEnabled: availability.tabCount > 1, isChecked: nil)
+            MenuItemState(
+                isEnabled: availability.tabCount > 1,
+                isChecked: nil,
+                unavailableReason: "needs 2 tabs"
+            )
 
         // The rule that already exists in AppDelegate.validateMenuItem: clearing
         // a pin that is not set is meaningless, and the item was the reason that
         // method exists at all.
         case .clearProjectDirectoryPin:
-            MenuItemState(isEnabled: availability.isPinned, isChecked: nil)
+            MenuItemState(
+                isEnabled: availability.isPinned,
+                isChecked: nil,
+                unavailableReason: "nothing is pinned"
+            )
 
         // A pane has no anchor until its first working directory arrives, which
         // is up to one poll interval after the pane appears.
         case .revealAnchor, .copyAnchorPath:
-            MenuItemState(isEnabled: availability.hasAnchor, isChecked: nil)
+            MenuItemState(
+                isEnabled: availability.hasAnchor,
+                isChecked: nil,
+                unavailableReason: "the pane has no anchor yet"
+            )
 
         // Both conditions, not just the kind. A plain anchor is what a pane gets
         // outside any repository and it has no branch, no ahead or behind count,
@@ -78,7 +106,8 @@ public enum MenuValidation {
         case .refreshGitStatus:
             MenuItemState(
                 isEnabled: availability.hasAnchor && availability.anchorIsRepository,
-                isChecked: nil
+                isChecked: nil,
+                unavailableReason: "the anchor is not a repository"
             )
 
         // Enabled whenever there is a pane to search. An empty result is a real
@@ -89,7 +118,11 @@ public enum MenuValidation {
         // AppKit runs on every menu open and every key equivalent, read the
         // scrollback.
         case .findInPane:
-            MenuItemState(isEnabled: availability.paneCount > 0, isChecked: nil)
+            MenuItemState(
+                isEnabled: availability.paneCount > 0,
+                isChecked: nil,
+                unavailableReason: "needs a pane"
+            )
 
         // Always enabled, including when the config asked for no panel-housed
         // surface at all. Greying it out would need a new availability field
@@ -102,7 +135,11 @@ public enum MenuValidation {
         // An empty palette reads as a workspace holding no projects, which is
         // worse than a disabled item that says the list is not loaded yet.
         case .commandPalette:
-            MenuItemState(isEnabled: availability.paletteAvailable, isChecked: nil)
+            MenuItemState(
+                isEnabled: availability.paletteAvailable,
+                isChecked: nil,
+                unavailableReason: "the project list is still loading"
+            )
         }
     }
 }

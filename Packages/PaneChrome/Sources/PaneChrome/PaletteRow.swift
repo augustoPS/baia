@@ -100,16 +100,34 @@ public struct PaletteRow: Sendable, Equatable {
     public static func verb(
         title: String,
         shortcut: String = "",
-        matchedIndices: [Int] = []
+        matchedIndices: [Int] = [],
+        unavailableReason: String? = nil
     ) -> PaletteRow {
         let characters = Array(title)
-        return PaletteRow(
-            parent: shortcut.isEmpty
-                ? []
-                : [PaneStatusRun(text: shortcut + "  ", emphasis: .context)],
-            name: runs(characters[0 ..< characters.count], hits: Set(matchedIndices), base: .normal),
-            chip: "CMD"
-        )
+
+        // An unavailable verb draws its whole title in the quiet tier, including
+        // the characters that matched. The match highlight is an invitation, and
+        // accenting a row that Return refuses would be the loudest thing on
+        // screen pointing at the one row that does nothing.
+        let base: PaneStatusEmphasis = unavailableReason == nil ? .normal : .context
+        let hits = unavailableReason == nil ? Set(matchedIndices) : []
+
+        var leading: [PaneStatusRun] = []
+        if !shortcut.isEmpty {
+            leading.append(PaneStatusRun(text: shortcut + "  ", emphasis: .context))
+        }
+
+        var trailing = runs(characters[0 ..< characters.count], hits: hits, base: base)
+        if let unavailableReason {
+            // After the title rather than before it, so the eye reaches the verb
+            // first and the requirement second. A reason drawn ahead of the name
+            // would make every unavailable row start with the same few words.
+            trailing.append(
+                PaneStatusRun(text: "  " + unavailableReason, emphasis: .context)
+            )
+        }
+
+        return PaletteRow(parent: leading, name: trailing, chip: "CMD")
     }
 
     /// Groups a stretch of characters into the fewest runs that still say which

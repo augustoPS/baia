@@ -324,7 +324,8 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
                 matchedIndices: FuzzyMatcher.match(
                     query: query,
                     candidate: verb.title
-                )?.matchedIndices ?? []
+                )?.matchedIndices ?? [],
+                unavailableReason: verb.unavailableReason
             )
         }
         // Cleared after the selection moves, not before. Setting `selection`
@@ -426,6 +427,11 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
         case let .verbs(verbs):
             guard verbs.indices.contains(index) else { return }
             let verb = verbs[index]
+            // An unavailable verb is listed so it can be found, not so it can be
+            // run. Committing it would dismiss the palette and do nothing, which
+            // is the worst of both: the reason it gave is gone from the screen
+            // before the reader can act on it.
+            guard verb.isAvailable else { return }
             dismiss()
             onRunVerb?(verb.id)
         }

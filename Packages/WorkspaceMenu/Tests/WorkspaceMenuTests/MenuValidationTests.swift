@@ -154,3 +154,57 @@ import Testing
         #expect(single.isChecked == false)
     }
 }
+
+/// Why a command is unavailable, which the menu ignores and the command palette
+/// draws.
+@Suite struct MenuUnavailableReasonTests {
+    /// The invariant the palette leans on: anything disabled can say why. A
+    /// disabled command with no reason would be drawn as if it were available,
+    /// since the palette reads the reason's absence as "runnable".
+    @Test func everyDisabledCommandInEveryStateExplainsItself() {
+        let states = [
+            MenuAvailability.empty,
+            MenuAvailability(paneCount: 1, tabCount: 1),
+            MenuAvailability(paneCount: 2, tabCount: 2, isPinned: true, hasAnchor: true,
+                             anchorIsRepository: true, paletteAvailable: true),
+            MenuAvailability(paneCount: 1, tabCount: 1, hasAnchor: true),
+        ]
+        for availability in states {
+            for command in MenuCommand.allCases {
+                let state = MenuValidation.state(for: command, given: availability)
+                if !state.isEnabled {
+                    #expect(
+                        state.unavailableReason != nil,
+                        "\(command) is disabled with no reason"
+                    )
+                }
+            }
+        }
+    }
+
+    /// An enabled item has nothing to explain, and a reason riding along with one
+    /// would put a requirement on screen beside a verb that already meets it.
+    @Test func anEnabledCommandCarriesNoReason() {
+        let plenty = MenuAvailability(
+            paneCount: 2, tabCount: 2, isPinned: true, hasAnchor: true,
+            anchorIsRepository: true, paletteAvailable: true
+        )
+        for command in MenuCommand.allCases {
+            let state = MenuValidation.state(for: command, given: plenty)
+            if state.isEnabled { #expect(state.unavailableReason == nil) }
+        }
+    }
+
+    /// The initializer drops a reason handed to an enabled state, so a caller
+    /// cannot construct the contradiction the arm above checks for.
+    @Test func anEnabledStateRefusesAReason() {
+        let state = MenuItemState(isEnabled: true, isChecked: nil, unavailableReason: "needs 2 panes")
+        #expect(state.unavailableReason == nil)
+    }
+
+    @Test func theReasonNamesWhatIsMissing() {
+        let one = MenuAvailability(paneCount: 1, tabCount: 1)
+        #expect(MenuValidation.state(for: .equalizePanes, given: one).unavailableReason == "needs 2 panes")
+        #expect(MenuValidation.state(for: .showNextTab, given: one).unavailableReason == "needs 2 tabs")
+    }
+}

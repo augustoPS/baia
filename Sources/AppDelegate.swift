@@ -63,7 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return palette
     }()
 
-    /// Every verb the palette can offer right now.
+    /// Every verb the palette can offer, available or not.
     ///
     /// Eligibility is `MenuValidation`'s answer and nothing else, which is the
     /// decision recorded in the palette spec: one source of truth for whether a
@@ -71,18 +71,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// disagree. The cost is that always-enabled verbs nobody searches for
     /// (`Hide`, `Quit`, `Copy`) are in the list, and it was taken knowingly.
     ///
+    /// **Disabled commands are included and carry their reason**, which is the
+    /// correction the first look on screen produced. They were dropped at first,
+    /// and `>eq` then returned nothing in a one-pane window: correct, since
+    /// Equalize Panes wants two, and useless, because an absent verb reads as a
+    /// mistyped one. A menu greys the item rather than removing it, and the
+    /// palette now does the same.
+    ///
     /// Rebuilt per call rather than cached. `availability` is a snapshot of what
     /// the app can do, and it changes with every split, tab and focus move; a
     /// list held across opens would offer Close Tab with one tab left.
     private func paletteVerbs() -> [PaletteVerb] {
         let state = availability
         return MenuCommand.allCases.compactMap { command in
-            guard MenuValidation.state(for: command, given: state).isEnabled else { return nil }
             guard let title = MenuBarLayout.title(of: command) else { return nil }
+            let itemState = MenuValidation.state(for: command, given: state)
             return PaletteVerb(
                 title: title,
                 shortcut: MenuBarLayout.shortcutText(of: command) ?? "",
-                id: command.tag
+                id: command.tag,
+                unavailableReason: itemState.isEnabled ? nil : itemState.unavailableReason
             )
         }
     }

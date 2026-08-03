@@ -161,3 +161,51 @@ import Testing
         #expect(VerbRanker.rank(odd, query: "snt").count == 1)
     }
 }
+
+/// Unavailable verbs are listed rather than dropped, which is the correction the
+/// first look on screen produced: `>eq` returned nothing in a one-pane window,
+/// correctly and uselessly, because an absent verb reads as a mistyped one.
+@Suite struct VerbAvailabilityTests {
+    private let mixed: [PaletteVerb] = [
+        PaletteVerb(title: "Equalize Panes", id: 1, unavailableReason: "needs 2 panes"),
+        PaletteVerb(title: "Settings…", id: 2),
+    ]
+
+    @Test func anUnavailableVerbIsStillFound() {
+        let titles = VerbRanker.rank(mixed, query: "eq").map(\.title)
+        #expect(titles == ["Equalize Panes"])
+    }
+
+    /// Available first, ahead of the score, so the selection never opens on a row
+    /// Return refuses.
+    @Test func availableVerbsRankAboveUnavailableOnes() {
+        let pair = [
+            PaletteVerb(title: "Split Right", id: 1, unavailableReason: "needs a pane"),
+            PaletteVerb(title: "Split Down", id: 2),
+        ]
+        #expect(VerbRanker.rank(pair, query: "split").map(\.id) == [2, 1])
+    }
+
+    @Test func availabilityIsTheAbsenceOfAReason() {
+        #expect(PaletteVerb(title: "x", id: 1).isAvailable)
+        #expect(!PaletteVerb(title: "x", id: 1, unavailableReason: "needs 2 panes").isAvailable)
+    }
+
+    /// An unavailable row draws quiet throughout, match included: accenting the
+    /// matched characters would make the loudest thing on screen point at the one
+    /// row that does nothing.
+    @Test func anUnavailableRowDrawsNoMatchHighlight() {
+        let row = PaletteRow.verb(
+            title: "Equalize Panes",
+            matchedIndices: [0, 1],
+            unavailableReason: "needs 2 panes"
+        )
+        #expect(!row.name.contains { $0.emphasis == .strong })
+        #expect(row.text.contains("needs 2 panes"))
+    }
+
+    @Test func anAvailableRowKeepsItsHighlight() {
+        let row = PaletteRow.verb(title: "Equalize Panes", matchedIndices: [0, 1])
+        #expect(row.name.contains { $0.emphasis == .strong })
+    }
+}
