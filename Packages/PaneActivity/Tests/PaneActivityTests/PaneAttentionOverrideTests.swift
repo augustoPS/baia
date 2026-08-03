@@ -108,16 +108,94 @@ import Testing
         #expect(PaneAttention.none.overridden(byReportedBlock: false, message: nil) == .none)
     }
 
+    // MARK: A report that the pane finished
+
+    /// The level itself: a finish nobody has been present for.
+    @Test func aFinishNobodyHasSeenIsDone() {
+        #expect(PaneAttention.none.overridden(byReportedFinish: true, seen: false) == .done)
+    }
+
+    /// **The asymmetry, in one arm.** A visit quiets a block and *ends* a finish.
+    /// A finish carries no request, so there is nothing left to be quietly still
+    /// waiting for, and a quieter tier for it would be a badge that outlived its
+    /// only job.
+    @Test func aVisitEndsAFinishRatherThanQuietingIt() {
+        #expect(PaneAttention.none.overridden(byReportedFinish: true, seen: true) == .none)
+        // The same visit, through the other function, quiets rather than ends.
+        #expect(
+            PaneAttention.none.overridden(byReportedBlock: true, message: "which branch?", seen: true)
+                == .acknowledged(message: "which branch?")
+        )
+    }
+
+    /// A pane that has not finished is left exactly as it is, at every latch and
+    /// either visit. This function may only ever add the new level.
+    @Test func noFinishChangesNothing() {
+        for latch in [PaneAttention.none, .requested(message: "b"), .acknowledged(message: "b"), .done] {
+            for seen in [true, false] {
+                #expect(latch.overridden(byReportedFinish: false, seen: seen) == latch)
+            }
+        }
+    }
+
+    /// A finish outranks a bell the pane rang earlier, the same way a working
+    /// report does. The agent rang, kept going and then said it was finished, so
+    /// the bell is answered by the statement that followed it.
+    @Test func anUnseenFinishOutranksAnEarlierBell() {
+        #expect(PaneAttention.requested(message: "bell").overridden(byReportedFinish: true, seen: false) == .done)
+        #expect(PaneAttention.acknowledged(message: "bell").overridden(byReportedFinish: true, seen: false) == .done)
+    }
+
+    /// `done` carries nothing to say. The wire puts a message on `blocked` alone,
+    /// so a message surviving into this level could only be a stale one from a
+    /// question the pane has stopped asking.
+    @Test func doneHasNoMessage() {
+        #expect(PaneAttention.requested(message: "which branch?")
+            .overridden(byReportedFinish: true, seen: false).message == nil)
+    }
+
+    /// `done` asks nothing. Anything reading `isRequesting` to decide whether to
+    /// interrupt the owner has to answer no, and anything reading
+    /// `isUnacknowledged` for the loud level has to as well: unseen and loud are
+    /// the same word for a block and different facts for a finish.
+    @Test func doneIsNeitherRequestingNorLoud() {
+        #expect(PaneAttention.done.isRequesting == false)
+        #expect(PaneAttention.done.isUnacknowledged == false)
+        #expect(PaneAttention.done.isDone)
+        #expect(PaneAttention.acknowledged(message: "b").isDone == false)
+    }
+
+    /// A block arriving over a finish is a new question and outranks it. The
+    /// agent finished, was started again and is now asking, and the notification
+    /// it left is answered by the question that replaced it.
+    @Test func aBlockedReportOutranksAFinish() {
+        let after = PaneAttention.done.overridden(byReportedBlock: true, message: "which branch?")
+        #expect(after == .requested(message: "which branch?"))
+        #expect(after.isUnacknowledged)
+    }
+
     // MARK: Idempotence
 
     /// Applying the rule twice is applying it once, so a caller that re-derives
     /// on every poll cannot drift.
     @Test func theRuleIsIdempotent() {
-        for latch in [PaneAttention.none, .requested(message: "b"), .acknowledged(message: "b")] {
+        for latch in [PaneAttention.none, .requested(message: "b"), .acknowledged(message: "b"), .done] {
             for blocked in [nil, true, false] as [Bool?] {
                 let once = latch.overridden(byReportedBlock: blocked, message: "m")
                 let twice = once.overridden(byReportedBlock: blocked, message: "m")
                 #expect(once == twice, "not idempotent for \(latch) and \(String(describing: blocked))")
+            }
+        }
+    }
+
+    /// The same for the finish rule, which a caller re-derives on every poll for
+    /// as long as the report stays live.
+    @Test func theFinishRuleIsIdempotent() {
+        for latch in [PaneAttention.none, .requested(message: "b"), .acknowledged(message: "b"), .done] {
+            for seen in [true, false] {
+                let once = latch.overridden(byReportedFinish: true, seen: seen)
+                let twice = once.overridden(byReportedFinish: true, seen: seen)
+                #expect(once == twice, "not idempotent for \(latch) and seen \(seen)")
             }
         }
     }

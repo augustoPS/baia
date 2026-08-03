@@ -113,6 +113,14 @@ public struct PaneAttentionState: Sendable, Equatable {
         // keystroke it rejects.
         case .requested:
             break
+
+        // Unreachable through the latch, and matched rather than defaulted so
+        // that it stays unreachable on purpose. ``PaneAttention/done`` is
+        // resolved on read from a report and a visit; it is never stored here,
+        // so `current` cannot hold it. A `default` would hide the day that stops
+        // being true.
+        case .done:
+            break
         }
         return attention != before
     }

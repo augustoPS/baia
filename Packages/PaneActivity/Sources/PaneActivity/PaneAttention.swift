@@ -20,15 +20,51 @@ public enum PaneAttention: Sendable, Equatable {
     /// had gone back to work.
     case acknowledged(message: String?)
 
+    /// The pane finished, and nobody has been here since it did.
+    ///
+    /// **A notification rather than a request**, which is the whole of why it is
+    /// a fourth case and not a flag on the first two. ``requested`` persists
+    /// because the pane wants something and goes on wanting it until the pane
+    /// itself resumes, so a person may see it and choose not to answer, and that
+    /// is why sight quiets it rather than clearing it. This carries no request:
+    /// there is nothing to do but know, so once known it has no further job and
+    /// decays fully.
+    ///
+    /// It has no message. A finished agent's report is a `idle` with no text
+    /// riding it, the message field on the wire being carried on `blocked`
+    /// alone, and inventing one here would put a stale `blocked` message on a
+    /// pane that stopped asking for it.
+    ///
+    /// **Derived here rather than reported.** ``PaneReport`` has no fourth state
+    /// and deliberately keeps none: a reporting agent can say it is idle, but
+    /// whether anybody looked is a fact about the owner, and the channel already
+    /// carries everything it can carry. This is resolved the same way
+    /// ``acknowledged`` is, from a report and a recorded visit.
+    case done
+
     /// True while the pane wants the user at all, at either volume.
+    ///
+    /// False for ``done``. A finished pane is worth drawing and is not worth
+    /// interrupting for: it asks nothing, so anything reading this to decide
+    /// whether the owner is needed must answer no.
     public var isRequesting: Bool {
         switch self {
-        case .none: false
+        case .none, .done: false
         case .requested, .acknowledged: true
         }
     }
 
+    /// True only while the pane has finished unseen.
+    public var isDone: Bool {
+        if case .done = self { return true }
+        return false
+    }
+
     /// True only for an unacknowledged request, which is the loud level.
+    ///
+    /// False for ``done``, which is unseen but is not loud. The two levels share
+    /// the word "unseen" and nothing else: one is a question waiting on the
+    /// owner, the other is a fact waiting to be read.
     public var isUnacknowledged: Bool {
         if case .requested = self { return true }
         return false
@@ -39,7 +75,7 @@ public enum PaneAttention: Sendable, Equatable {
     /// survive being acknowledged.
     public var message: String? {
         switch self {
-        case .none: nil
+        case .none, .done: nil
         case let .requested(message), let .acknowledged(message): message
         }
     }
@@ -86,10 +122,50 @@ public extension PaneAttention {
         // Asking, at whatever volume the latch and the visit between them settle
         // on. The report's message wins, because the report is the thing asking
         // and the latch may be holding an hour-old bell from a build.
+        //
+        // A pane that had finished and is now blocked is asking again, and the
+        // finish is over: the agent went back to work and stopped, so the
+        // notification it left is answered by the question that replaced it.
+        // Volume is decided by the visit exactly as for a pane that never
+        // finished, because the visit a `done` would have consumed is one the
+        // raise has already discarded.
         switch self {
-        case .none, .requested:
+        case .none, .requested, .done:
             return seen ? .acknowledged(message: message) : .requested(message: message)
         case .acknowledged: return .acknowledged(message: message)
         }
+    }
+
+    /// This attention once a report that the pane has *finished* is taken into
+    /// account.
+    ///
+    /// **Deliberately a second function rather than a case inside
+    /// ``overridden(byReportedBlock:message:seen:)``.** The two consume the same
+    /// visit in opposite ways, and one function with a flag is how they come to
+    /// disagree later:
+    ///
+    /// | | on a visit | ends on |
+    /// |---|---|---|
+    /// | a block | quiets, to ``acknowledged`` | `noteResumed`, from the classifier |
+    /// | a finish | ends | the visit itself |
+    ///
+    /// The asymmetry is not a preference. A block is a request and goes on being
+    /// one until the pane resumes, so seeing it answers "have you noticed" and
+    /// leaves "is it still waiting" alone. A finish asks nothing, so being seen
+    /// is the only thing that can happen to it, and `noteResumed` could not end
+    /// one anyway: a finished agent does not resume, which is the entire reason
+    /// `idle` crosses the channel rather than being read off the process tree.
+    ///
+    /// - Parameters:
+    ///   - finished: whether the pane says it has finished. Not an optional and
+    ///     not folded into the other function's `Bool?`, because the caller has
+    ///     already decided this is a live report saying `idle`; "no statement"
+    ///     and "says it is working" are distinctions that belong to the question
+    ///     the other function asks.
+    ///   - seen: the same recorded visit the other function reads, consumed
+    ///     rather than quieted. False is what makes this ``done`` at all.
+    func overridden(byReportedFinish finished: Bool, seen: Bool) -> PaneAttention {
+        guard finished, !seen else { return self }
+        return .done
     }
 }
