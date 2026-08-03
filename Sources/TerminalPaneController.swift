@@ -361,8 +361,12 @@ final class TerminalPaneController: NSViewController {
     ///
     /// `terminalView` stays private, for the reason find-in-pane reaches the
     /// surface through methods here rather than by handing the view out.
-    func send(_ text: String) {
-        terminalView.sendText(text)
+    /// Bytes rather than a `String`, because the only caller is sending a
+    /// filename. A path is a byte string that need not be UTF-8, and every
+    /// spelling of it that goes through `String` is a path no command can find.
+    /// `PromptPath` decides what these bytes are; this writes them.
+    func send(_ bytes: [UInt8]) {
+        terminalView.sendBytes(bytes)
     }
 
     private static let rowSearchBound = 64

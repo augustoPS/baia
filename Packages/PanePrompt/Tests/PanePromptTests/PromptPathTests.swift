@@ -9,17 +9,31 @@ import Testing
 /// target to hold them. The surfaces read the row under the mouse and hand the
 /// result to the pane; they decide nothing.
 @Suite struct PromptPathTests {
+    /// Every expectation below this line was written against the `String` version
+    /// of `resolve` and is unchanged. That is the point of keeping the helper: the
+    /// move to bytes is supposed to be invisible to every path that has a `String`
+    /// spelling, and 29 assertions saying so is the evidence. The byte-only cases
+    /// go through ``sendBytes(_:root:cwd:)`` instead.
     private func send(
         _ path: String,
         root: String = "/repo",
         cwd: String? = "/repo"
     ) -> String? {
-        guard case let .send(text) = PromptPath.resolve(
+        guard let bytes = sendBytes(Array(path.utf8), root: root, cwd: cwd) else { return nil }
+        return String(decoding: bytes, as: UTF8.self)
+    }
+
+    private func sendBytes(
+        _ path: [UInt8],
+        root: String = "/repo",
+        cwd: String? = "/repo"
+    ) -> [UInt8]? {
+        guard case let .send(bytes) = PromptPath.resolve(
             repositoryRelativePath: path,
             repositoryRoot: root,
             workingDirectory: cwd
         ) else { return nil }
-        return text
+        return bytes
     }
 
     private func refusal(
@@ -28,7 +42,7 @@ import Testing
         cwd: String? = "/repo"
     ) -> PromptPath.Refusal? {
         guard case let .refuse(reason) = PromptPath.resolve(
-            repositoryRelativePath: path,
+            repositoryRelativePath: Array(path.utf8),
             repositoryRoot: root,
             workingDirectory: cwd
         ) else { return nil }
@@ -225,7 +239,7 @@ import Testing
             directories.flatMap { root in
                 (directories.map { Optional($0) } + [nil]).map { cwd in
                     PromptPath.resolve(
-                        repositoryRelativePath: path,
+                        repositoryRelativePath: Array(path.utf8),
                         repositoryRoot: root,
                         workingDirectory: cwd
                     )
@@ -236,19 +250,28 @@ import Testing
 
     /// The invariant the refusal exists to hold. Anything that reaches a pty must
     /// be free of the scalars a line editor acts on, whatever the input was.
+    ///
+    /// Graded on the bytes rather than on decoded scalars, because bytes are what
+    /// reaches the pty and a decode would be a second implementation of the rule
+    /// under test. `Cc` is U+0000...U+001F and U+007F...U+009F, which in UTF-8 is
+    /// every byte below 0x20, `DEL`, and `0xC2` followed by 0x80...0x9F.
     @Test func nothingSentEverCarriesAControlScalar() {
         for resolution in Self.everyCombination {
-            guard case let .send(text) = resolution else { continue }
-            #expect(text.unicodeScalars.allSatisfy { $0.properties.generalCategory != .control })
+            guard case let .send(bytes) = resolution else { continue }
+            #expect(bytes.allSatisfy { $0 >= 0x20 && $0 != 0x7F })
+            #expect(!bytes.indices.contains { index in
+                bytes[index] == 0xC2 && index + 1 < bytes.count
+                    && (0x80 ... 0x9F).contains(bytes[index + 1])
+            })
         }
     }
 
     @Test func everythingSentEndsInExactlyOneSpace() {
         for resolution in Self.everyCombination {
-            guard case let .send(text) = resolution else { continue }
-            #expect(text.hasSuffix(" "))
-            #expect(text.hasSuffix("  ") == false)
-            #expect(text.count > 1)
+            guard case let .send(bytes) = resolution else { continue }
+            #expect(bytes.last == 0x20)
+            #expect(bytes.dropLast().last != 0x20)
+            #expect(bytes.count > 1)
         }
     }
 
@@ -257,8 +280,12 @@ import Testing
     /// rescue rather than a path they can use.
     @Test func aQuotedResultIsBalanced() {
         for resolution in Self.everyCombination {
-            guard case let .send(text) = resolution else { continue }
-            let argument = String(text.dropLast())
+            guard case let .send(bytes) = resolution else { continue }
+            // Decoded rather than compared byte-wise, because every input in
+            // `hostile` has a `String` spelling and the quoting rule is about
+            // characters a shell reads. The non-UTF-8 cases are graded on bytes,
+            // in `aPathThatIsNotUTF8SurvivesByteForByte`.
+            let argument = String(decoding: bytes.dropLast(), as: UTF8.self)
             guard argument.contains("'") else { continue }
             #expect(argument.hasPrefix("'") || argument.hasPrefix("./'"))
             #expect(argument.hasSuffix("'"))
@@ -267,5 +294,62 @@ import Testing
             let remaining = argument.replacingOccurrences(of: "'\\''", with: "")
             #expect(remaining.filter { $0 == "'" }.count == 2)
         }
+    }
+
+    // MARK: - Paths that have no String spelling
+
+    /// The whole reason this resolver moved onto bytes.
+    ///
+    /// `0xE9` alone is Latin-1 `é` and is not valid UTF-8. Through a `String` it
+    /// becomes U+FFFD, which is three different bytes naming a file that does not
+    /// exist, and every unreadable byte in every filename collapses onto that same
+    /// replacement. The bytes have to arrive at the pty exactly as git reported
+    /// them or the path is not the path.
+    @Test func aPathThatIsNotUTF8SurvivesByteForByte() {
+        let latin1 = Array("caf".utf8) + [0xE9] + Array(".txt".utf8)
+        let sent = sendBytes(latin1)
+        // Quoted, because 0xE9 is not in the safe set, and the quotes are the only
+        // bytes added.
+        #expect(sent == [0x27] + latin1 + [0x27, 0x20])
+
+        // The lossy spelling is a different byte string, which is the failure this
+        // replaces rather than a detail: it is what the old code sent.
+        #expect(sent != Array("'\(String(decoding: latin1, as: UTF8.self))' ".utf8))
+    }
+
+    /// Two names that differ only in a byte `String` cannot read stay two names.
+    ///
+    /// Through `String` both become `caf\u{FFFD}.txt` and the sidebar sends one
+    /// path for two files, which is the collapse that makes the loss worse than a
+    /// wrong glyph.
+    @Test func twoPathsThatCollapseUnderStringStayDistinct() {
+        let first = Array("caf".utf8) + [0xE9] + Array(".txt".utf8)
+        let second = Array("caf".utf8) + [0xFF] + Array(".txt".utf8)
+        #expect(sendBytes(first) != sendBytes(second))
+    }
+
+    /// A byte at or above 0x80 is not a control scalar and must not be refused.
+    ///
+    /// The C1 block lives at U+0080...U+009F, which is `0xC2` *followed by* one of
+    /// those bytes. A lone 0x80 is neither that pair nor valid UTF-8, and refusing
+    /// it would reject a filename for being foreign.
+    @Test func aLoneHighByteIsSentAndTheC1PairIsRefused() {
+        #expect(sendBytes(Array("a".utf8) + [0x80] + Array("b".utf8)) != nil)
+        #expect(sendBytes(Array("a".utf8) + [0x9F] + Array("b".utf8)) != nil)
+
+        guard case let .refuse(reason) = PromptPath.resolve(
+            repositoryRelativePath: Array("a".utf8) + [0xC2, 0x85] + Array("b".utf8),
+            repositoryRoot: "/repo",
+            workingDirectory: "/repo"
+        ) else { return #expect(Bool(false), "the C1 pair has to be refused") }
+        #expect(reason == .controlScalar)
+    }
+
+    /// The relative-path boundary is byte-wise, so a non-UTF-8 directory name in
+    /// the middle of a path cannot break the component match.
+    @Test func aNonUTF8ComponentDoesNotBreakTheRelativeMatch() {
+        let path = Array("dir".utf8) + [0xE9] + Array("/file.txt".utf8)
+        #expect(sendBytes(path, root: "/repo", cwd: "/repo")
+            == [0x27] + path + [0x27, 0x20])
     }
 }
