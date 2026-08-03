@@ -20,11 +20,19 @@ def main() -> int:
     try:
         got = open(path, "rb").read()
     except FileNotFoundError:
+        # Deliberately does not name a cause. It named one until 2026-08-03,
+        # "an unterminated quote leaves zsh at a continuation prompt", which is
+        # only the most interesting of several and was wrong on the run that
+        # exposed it: that run had no Accessibility permission, so nothing was
+        # ever typed and the confident diagnosis pointed at the shell. A missing
+        # file is the one outcome that carries no information about bytes.
         print(f"  FAIL  {label}")
         print(f"          nothing was written to {path}")
-        print("          the command never ran: an unterminated quote leaves zsh at a")
-        print("          continuation prompt, which is itself the line editor refusing")
-        print("          the bytes rather than a missing click.")
+        print("          this says nothing about the bytes. The command never ran, and")
+        print("          the reasons are not distinguishable from here: an unterminated")
+        print("          quote leaving zsh at a continuation prompt, a click that landed")
+        print("          on the wrong row, or a keystroke that never left the harness.")
+        print("          Read the capture beside it before concluding anything.")
         return 1
 
     # The Return that hands the line to a canonical-mode reader is not part of
