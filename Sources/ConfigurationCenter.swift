@@ -1,7 +1,6 @@
 import AppKit
 import BaiaSettings
 import GhosttyTerminal
-import GhosttyTheme
 import PaneChrome
 
 /// The one object that reads `~/.config/baia/config.json`, derives everything
@@ -47,58 +46,13 @@ final class ConfigurationCenter {
 
     // MARK: - Derivations
 
-    /// The catalog entry for the configured theme name.
-    ///
-    /// Resolved through `GhosttyThemeCatalog` rather than by sending
-    /// `theme = <name>` to ghostty. The bundled libghostty is a trimmed build
-    /// that ships no theme files, so the config key would be dropped without a
-    /// diagnostic and the terminal would keep its defaults while the config
-    /// looked applied.
-    ///
-    /// An unknown name falls back to the default theme rather than to whatever
-    /// libghostty would do on its own, so a typo degrades to the terminal the
-    /// owner already runs.
-    private static func themeDefinition(from settings: Settings) -> GhosttyThemeDefinition? {
-        GhosttyThemeCatalog.theme(named: settings.themeName)
-            ?? GhosttyThemeCatalog.theme(named: Settings.defaultSettings.themeName)
-    }
-
-    /// The terminal theme, with the configured background folded in on top.
-    ///
-    /// The fold is not cosmetic. `TerminalController` renders base, then the
-    /// session configuration, then the theme, and ghostty takes the last value
-    /// for a scalar key, so a background sent through the session layer is
-    /// replaced by the theme's own. The owner's `#141414` is deliberately lifted
-    /// off pure black, and losing it reports nothing.
-    private static func terminalTheme(from settings: Settings) -> TerminalTheme {
-        guard let definition = themeDefinition(from: settings) else { return .default }
-        let overrides = settings.themeOverrides
-        let configuration = TerminalConfiguration(
-            startingFrom: definition.toTerminalConfiguration()
-        ) { builder in
-            for override in overrides {
-                builder.withCustom(override.key, override.value)
-            }
-        }
-        return TerminalTheme(light: configuration, dark: configuration)
-    }
-
     /// The theme currently in effect.
-    var terminalTheme: TerminalTheme { Self.terminalTheme(from: settings) }
-
-    /// Everything the theme does not own, applied per pane through
-    /// `setTerminalConfiguration`.
-    private static func terminalConfiguration(from settings: Settings) -> TerminalConfiguration {
-        let overrides = settings.sessionOverrides
-        return TerminalConfiguration { builder in
-            for override in overrides {
-                builder.withCustom(override.key, override.value)
-            }
-        }
-    }
+    var terminalTheme: TerminalTheme { SettingsDerivations.terminalTheme(from: settings) }
 
     /// The session configuration currently in effect.
-    var terminalConfiguration: TerminalConfiguration { Self.terminalConfiguration(from: settings) }
+    var terminalConfiguration: TerminalConfiguration {
+        SettingsDerivations.terminalConfiguration(from: settings)
+    }
 
     /// The configuration and theme `settings` would produce, without applying them.
     ///
@@ -107,47 +61,23 @@ final class ConfigurationCenter {
     /// the window is how a sample comes to show what the panes will not, which is
     /// the one defect that would make the comparison worthless.
     func derivations(for settings: Settings) -> (TerminalConfiguration, TerminalTheme) {
-        (Self.terminalConfiguration(from: settings), Self.terminalTheme(from: settings))
-    }
-
-    /// The chrome palette, from the same catalog entry the terminal is themed
-    /// from.
-    ///
-    /// One lookup feeding both is the point. The standing rule is that chrome
-    /// matches the theme and never the reverse, and two sources for one theme is
-    /// how a footer ends up in Dark Pastel while the surface is in something
-    /// else.
-    ///
-    /// `focusAccent` goes in as an argument rather than being applied to the
-    /// result, so this reads the setting and decides nothing about it. The
-    /// resolution is `PaneTheme.accent(for:)`, which has tests; a line here
-    /// would not, and a line here is how the key came to be decoded, stored and
-    /// never read.
-    ///
-    /// The fallback keeps the shipped accent. It is reached only when the
-    /// catalog cannot produce even its own default theme, which is a broken
-    /// build rather than a config the owner wrote, and there is no palette in
-    /// hand at that point to resolve a choice against anyway.
-    private static func paneTheme(from settings: Settings) -> PaneTheme {
-        guard let definition = themeDefinition(from: settings) else { return .darkPastel }
-        return PaneTheme(
-            background: settings.backgroundHex,
-            foreground: definition.foreground,
-            selectionBackground: definition.selectionBackground,
-            palette: definition.palette,
-            focusAccent: settings.focusAccent
+        (
+            SettingsDerivations.terminalConfiguration(from: settings),
+            SettingsDerivations.terminalTheme(from: settings)
         )
     }
 
     /// The chrome palette currently in effect.
-    var paneTheme: PaneTheme { Self.paneTheme(from: settings) }
+    var paneTheme: PaneTheme { SettingsDerivations.paneTheme(from: settings) }
 
     /// The chrome palette `settings` would produce.
     ///
     /// Parameterised for the same reason the terminal derivations are: the
     /// settings window renders a draft through it, and a second mapping written
     /// inside the window is how a preview comes to show what the panes will not.
-    func chrome(for settings: Settings) -> PaneTheme { Self.paneTheme(from: settings) }
+    func chrome(for settings: Settings) -> PaneTheme {
+        SettingsDerivations.paneTheme(from: settings)
+    }
 
     // MARK: - Applying
 
