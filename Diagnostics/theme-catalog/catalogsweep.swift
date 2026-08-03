@@ -36,6 +36,33 @@ enum Mode: String {
     /// Replace every accent with the bar it is drawn on, so the counted figures
     /// move. This is the control for the pins rather than for a colour rule.
     case breakPins = "break-pins"
+
+    /// Resolve `sea`'s rows with `nightshade`'s derivation and the reverse, so a
+    /// row is judged on a candidate the walk should never have handed it.
+    ///
+    /// It grades something no other control does: which accent's candidate the
+    /// derive walk resolved. `focusedAccent` and the palette are untouched, so the
+    /// raw-clear rows and the collision figures do not move, which the run
+    /// confirms.
+    ///
+    /// **It was built to isolate `deriveMissesByAccent` and it does not, which is
+    /// worth more written down than quietly deleted.** Measured 2026-08-02: it
+    /// takes the misses from 10 to 26 and spreads them over 15 themes, so
+    /// ``Pinned/deriveMisses`` and the Retro rule below both fail on it first. The
+    /// cause is that the substitution applies to all 485 themes, and a fill that
+    /// misses the floor on a palette with room is a *new* miss rather than a moved
+    /// one.
+    ///
+    /// An isolating control has to keep the total at 10 and the theme at Retro
+    /// while changing the split, which means redistributing *within* Retro's
+    /// fourteen rows: two that currently clear have to start missing and two that
+    /// miss have to stop. Nothing external to the walk can arrange that, and
+    /// arranging it inside the walk means reverse-engineering why `accent` clears
+    /// on a palette of two greens where `bone` does not. Until someone does, the
+    /// honest scope of that pin is narrower than "catches a redistribution": it
+    /// catches one that preserves both the count and the theme, and no cheap
+    /// mutation produces such a thing.
+    case breakDistribution = "break-distribution"
 }
 
 let mode = CommandLine.arguments.dropFirst().first.flatMap(Mode.init(rawValue:)) ?? .sweep
@@ -144,6 +171,16 @@ func theme(_ definition: GhosttyThemeDefinition, _ choice: FocusAccent) -> PaneT
     return built
 }
 
+/// `sea` and `nightshade` exchanged, everything else itself. Only
+/// ``Mode/breakDistribution`` calls this.
+func swappedForDistribution(_ choice: FocusAccent) -> FocusAccent {
+    switch choice {
+    case .sea: .nightshade
+    case .nightshade: .sea
+    default: choice
+    }
+}
+
 struct Failure {
     let theme: String
     let choice: String
@@ -212,7 +249,15 @@ for definition in GhosttyThemeCatalog.allThemes {
         let guarded: AlertBehavior = mode == .breakDerive ? .stock : .derive
         for accent in AttentionAccent.allCases {
             for behavior in [AlertBehavior.noCollision, guarded] {
-                let fill = t.attentionColour(accent, behavior: behavior)
+                // The fill comes from this row's own theme, except under the
+                // distribution control, where `sea` and `nightshade` take each
+                // other's. The separation is still judged `in: t`, against this
+                // row's focus accent and bar, which is what makes it a wrong
+                // *candidate* rather than a wrong question.
+                let fillTheme = mode == .breakDistribution
+                    ? theme(definition, swappedForDistribution(choice))
+                    : t
+                let fill = fillTheme.attentionColour(accent, behavior: behavior)
                 if behavior == guarded, separation(fill, in: t) < minimumSeparation {
                     // Only the guarded behaviour is graded. `noCollision` falls
                     // back to `alert` by definition, so on a theme whose alert is

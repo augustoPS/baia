@@ -51,15 +51,31 @@ not graded either: it falls back to `alert` by definition, so on a theme whose
 alert is itself the colliding colour it lands short, and that is the setting
 doing what it says.
 
-## The controls, and why there are three
+## The controls, and why there are four
 
-Each imitates one specific wrong measurement, and `run.sh` inverts all three.
+Each imitates one specific wrong measurement, and `run.sh` inverts all four.
 
 | Control | The mistake it imitates |
 |---|---|
 | `break-repair` | Grading the raw derivation instead of the repaired ink. 1851 rows fail |
 | `break-derive` | Grading `stock`, which promises nothing, and reporting on `derive`, which promises the floor. 484 themes fail |
 | `break-pins` | Every accent replaced by the bar it is drawn on, so the counted figures move. 8 pins fail |
+| `break-distribution` | The derive walk handing `sea` the candidate `nightshade` should have had, and the reverse. Misses go 10 to 26 across 15 themes |
+
+**`break-distribution` failed at the job it was added for, and that is recorded
+rather than hidden.** It was written to isolate `deriveMissesByAccent`, the pin
+added when the per-accent split turned out to be claimed in prose and graded by
+nothing. It does not isolate it: the substitution applies to all 485 themes, and a
+candidate that misses the floor on a palette with room is a new miss rather than a
+moved one, so the count pin and the Retro rule both fail on it first.
+
+Isolating that pin needs a redistribution *within* Retro's fourteen rows, keeping
+the total at 10 and the theme at Retro while two rows that clear start missing and
+two that miss stop. Nothing outside the walk can arrange that. So the honest scope
+of `deriveMissesByAccent` is narrower than "catches a redistribution": it catches
+one that preserves both the count and the theme, and no cheap mutation makes such
+a thing. The control is kept because it grades something no other one does, which
+accent's candidate the walk resolved, and because the finding is the useful part.
 
 **This started as one control and the one control passed.** It replaced
 `nightshade` with the bar it is drawn on, which sounds like maximum damage and is

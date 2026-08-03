@@ -19,7 +19,7 @@ cd "$ROOT"
 # the test; the controls are inverted, so a control that stops failing fails the
 # run as loudly as an arm that stops passing.
 #
-# Three rather than one, and that is a finding rather than thoroughness. The
+# Four rather than one, and that is a finding rather than thoroughness. The
 # first version had a single control that replaced `nightshade` with the bar it
 # is drawn on, and it passed: `nightshade` already clears 4.5:1 raw on none of
 # the 485, the repair chain lifts a bar-coloured accent like any other, and
@@ -28,7 +28,7 @@ cd "$ROOT"
 "$OUT/catalogsweep"
 echo
 
-for control in break-repair break-derive break-pins; do
+for control in break-repair break-derive break-pins break-distribution; do
   if "$OUT/catalogsweep" "$control"; then
     echo "CONTROL DID NOT FAIL: $control passes, so the rule it damages is not being graded"
     exit 1
@@ -37,4 +37,4 @@ for control in break-repair break-derive break-pins; do
   echo
 done
 
-echo "the sweep passes and all three controls fail"
+echo "the sweep passes and all four controls fail"
