@@ -36,6 +36,19 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<!-- The commit the bundle was built from: short hash, plus `-dirty` when the
+	     tree carried uncommitted or untracked changes at build time. Both
+	     versions above are hand-edited constants that cannot tell two builds a
+	     month apart apart, so this is the only thing in the bundle that names
+	     its source.
+
+	     Computed by `make build` and passed on the xcodebuild command line,
+	     since no build setting can run git; `BAIA_GIT_COMMIT` in project.yml
+	     defaults it to `unknown` for a build that does not come through the
+	     Makefile. Read it with
+	     `defaults read /Applications/baia.app/Contents/Info BAIAGitCommit`. -->
+	<key>BAIAGitCommit</key>
+	<string>$(BAIA_GIT_COMMIT)</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>LSApplicationCategoryType</key>

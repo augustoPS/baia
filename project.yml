@@ -137,6 +137,27 @@ targets:
         # produce the app in /Applications.
         CURRENT_PROJECT_VERSION: "2"
 
+        # The commit the bundle was built from, expanded into `BAIAGitCommit` in
+        # Info.plist the same way `BAIA_SUPPORT_DIRECTORY` is. Both versions
+        # above are hand-edited constants, so every build between two edits
+        # calls itself 0.1.0 (2) and nothing in the bundle says which source it
+        # came from; the installed copy could only be tied to a commit by the
+        # binary's mtime, which is an inference and not a record.
+        #
+        # The real value is passed on the xcodebuild command line by `make
+        # build`, because no build setting can run git. What stands here is the
+        # answer for a build that does not come through the Makefile, which is
+        # the Xcode UI, and it says so rather than claiming a commit.
+        #
+        # A build phase was tried first and is the wrong mechanism: a script
+        # writing into the built Info.plist races the task that processes it.
+        # Measured 2026-08-02, and the failure is the bad kind. A clean build
+        # stamped the right hash and the incremental build after it shipped
+        # `unknown`, because nothing orders a phase with no declared inputs
+        # against the plist task. Expansion cannot race: it happens inside that
+        # task.
+        BAIA_GIT_COMMIT: unknown
+
         INFOPLIST_FILE: Info.plist
         CODE_SIGN_ENTITLEMENTS: baia.entitlements
 

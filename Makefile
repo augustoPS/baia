@@ -101,12 +101,26 @@ build: gen ## Build Debug. Full log at .build/xcodebuild.log, only errors on std
 			break; \
 		fi; \
 	done
+	@# The commit this build came from, passed in as a build setting because no
+	@# build setting can run git, and expanded into `BAIAGitCommit` in
+	@# Info.plist. `-dirty` counts untracked files as well as modified ones: the
+	@# target's `sources` names directories, so a file never added to git still
+	@# went into the binary, and everything a build generates is gitignored
+	@# already. Computed here rather than in a build phase, which races the task
+	@# that processes Info.plist and loses on incremental builds.
 	@set +e; \
+	commit=$$(git rev-parse --short HEAD 2>/dev/null); \
+	if [[ -z "$$commit" ]]; then \
+		commit=unknown; \
+	elif [[ -n "$$(git status --porcelain 2>/dev/null)" ]]; then \
+		commit="$$commit-dirty"; \
+	fi; \
 	xcodebuild \
 		-project $(PROJECT) \
 		-scheme $(SCHEME) \
 		-configuration $(CONFIG) \
 		-derivedDataPath $(DERIVED) \
+		BAIA_GIT_COMMIT="$$commit" \
 		-quiet \
 		build > $(LOG) 2>&1; \
 	status=$$?; \
@@ -162,6 +176,11 @@ install: ## Build Release and install it to /Applications as the copy you use da
 	@echo "installed $(INSTALLED)"
 	@echo ""
 	@echo "  version:  $$(/usr/bin/defaults read "$(INSTALLED)/Contents/Info" CFBundleShortVersionString)"
+	@# The marketing version is a hand-edited constant and cannot say which
+	@# source produced this copy; the commit can, and the question "is the
+	@# installed build behind main" is asked of this app often enough to have
+	@# been answered by mtime before now.
+	@echo "  commit:   $$(/usr/bin/defaults read "$(INSTALLED)/Contents/Info" BAIAGitCommit)"
 	@echo "  bundle:   $$(/usr/bin/defaults read "$(INSTALLED)/Contents/Info" CFBundleIdentifier)"
 	@echo "  state:    ~/Library/Application Support/$$(/usr/bin/defaults read "$(INSTALLED)/Contents/Info" BAIASupportDirectory)"
 	@echo ""
