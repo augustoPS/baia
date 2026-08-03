@@ -61,32 +61,41 @@ public enum FileChangeMark: Sendable, Equatable, Comparable, CaseIterable {
 /// visible rows on every scroll, and a linear scan of the changes for each of them
 /// is the shape that makes a large repository stutter.
 public struct FileChangeMarks: Sendable, Equatable {
-    private var marks: [String: FileChangeMark] = [:]
+    /// Keyed on ``RepositoryPath`` and not on its drawn spelling, for the reason
+    /// that type exists: `display` maps every byte it cannot read onto U+FFFD, so
+    /// two files git reports separately collapse onto one entry and `max` hands
+    /// the quieter of them the louder one's glyph. ``FileTree`` keys its nodes on
+    /// bytes already; this is the other half of the same rule.
+    private var marks: [RepositoryPath: FileChangeMark] = [:]
 
     public init(_ changes: [RepositoryFileChange]) {
         for change in changes {
             guard let mark = FileChangeMark(change) else { continue }
-            raise(change.path, to: mark)
+            raise(change.rawPath, to: mark)
             // Every directory above it, so a collapsed row answers for its
-            // contents. Walked textually: these are repository-relative paths from
-            // git and the tree is built from the same strings, so nothing here
-            // asks the filesystem anything.
-            var components = change.path.split(separator: "/").map(String.init)
+            // contents. Walked over bytes: these are repository-relative paths
+            // from git and the tree splits the same bytes on the same separator,
+            // so nothing here asks the filesystem anything.
+            var components = change.rawPath.bytes
+                .split(separator: UInt8(ascii: "/"), omittingEmptySubsequences: true)
+                .map(Array.init)
+            guard !components.isEmpty else { continue }
             components.removeLast()
-            var prefix = ""
+            var prefix: [UInt8] = []
             for component in components {
-                prefix = prefix.isEmpty ? component : prefix + "/" + component
-                raise(prefix, to: mark)
+                if !prefix.isEmpty { prefix.append(UInt8(ascii: "/")) }
+                prefix += component
+                raise(RepositoryPath(prefix), to: mark)
             }
         }
     }
 
     /// The mark for a path, or nil when nothing under it has changed.
-    public subscript(path: String) -> FileChangeMark? { marks[path] }
+    public subscript(path: RepositoryPath) -> FileChangeMark? { marks[path] }
 
     public var isEmpty: Bool { marks.isEmpty }
 
-    private mutating func raise(_ path: String, to mark: FileChangeMark) {
+    private mutating func raise(_ path: RepositoryPath, to mark: FileChangeMark) {
         marks[path] = max(marks[path] ?? mark, mark)
     }
 }

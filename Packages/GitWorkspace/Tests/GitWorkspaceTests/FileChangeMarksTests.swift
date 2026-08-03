@@ -71,6 +71,40 @@ import Testing
         #expect(marks["a.swift"] == nil)
     }
 
+    /// Two files whose names differ in bytes git could report but UTF-8 cannot
+    /// read keep their own marks.
+    ///
+    /// `0xFF` and `0xFE` are each invalid on their own, so ``RepositoryPath/display``
+    /// renders both names as `?.swift` with one U+FFFD. Keyed on that spelling the
+    /// second file overwrote the first through `max`, and the quieter of the two
+    /// drew the louder one's glyph. Keyed on bytes they are two entries, which is
+    /// what they are on disk.
+    @Test func twoPathsThatDrawTheSameKeepTheirOwnMarks() {
+        let staged = RepositoryPath([0xFF] + Array(".swift".utf8))
+        let conflicted = RepositoryPath([0xFE] + Array(".swift".utf8))
+        #expect(staged.display == conflicted.display)
+
+        let marks = FileChangeMarks([
+            RepositoryFileChange(path: staged, index: .added, kind: .ordinary),
+            RepositoryFileChange(path: conflicted, index: .unmerged, worktree: .unmerged, kind: .unmerged),
+        ])
+        #expect(marks[staged] == .staged)
+        #expect(marks[conflicted] == .conflict)
+    }
+
+    /// The rollup walks bytes too, so a directory whose name is not UTF-8 answers
+    /// for what is under it rather than merging with its neighbour.
+    @Test func directoriesRollUpByBytesAsWell() {
+        let quiet = RepositoryPath([0xFF] + Array("/a.swift".utf8))
+        let loud = RepositoryPath([0xFE] + Array("/b.swift".utf8))
+        let marks = FileChangeMarks([
+            RepositoryFileChange(path: quiet, index: .added, kind: .ordinary),
+            RepositoryFileChange(path: loud, index: .unmerged, worktree: .unmerged, kind: .unmerged),
+        ])
+        #expect(marks[RepositoryPath([0xFF])] == .staged)
+        #expect(marks[RepositoryPath([0xFE])] == .conflict)
+    }
+
     /// The order is the whole of both operations: collapsing `XY` and rolling a
     /// directory up are the same `max`.
     @Test func urgencyOrdersQuietestFirst() {

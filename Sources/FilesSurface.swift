@@ -310,7 +310,7 @@ final class FileTreeRowsView: NSView {
         // column on that side would either push every name right by a quarter of
         // the depth budget or collide with the guides. Trailing costs the name
         // 14 pt at any depth and never moves as the tree expands.
-        let mark = marks[row.node.path]
+        let mark = marks[row.node.rawPath]
         if let mark {
             NSAttributedString(
                 string: String(mark.glyph),
