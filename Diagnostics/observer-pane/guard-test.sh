@@ -23,6 +23,15 @@ check() {                       # check <expected-exit> <command-string>
 # Denied: every route to killing the app that hosts this run.
 check 2 './Diagnostics/control-channel/run.sh'
 check 2 'cd ~/Projects/baia && ./Diagnostics/footer-corners/run.sh'
+
+# The two that launch nothing are allowed, and a command pairing one with a real
+# driver is not. Without that last pair the carve-out is a hole: naming a safe
+# probe anywhere in the command would clear the whole line.
+check 0 './Diagnostics/theme-catalog/run.sh'
+check 0 './Diagnostics/app-icon/run.sh'
+check 0 'cd ~/Projects/baia && ./Diagnostics/app-icon/run.sh'
+check 2 './Diagnostics/app-icon/run.sh; ./Diagnostics/path-picker/run.sh'
+check 2 './Diagnostics/theme-catalog/run.sh && ./Diagnostics/control-channel/run.sh'
 check 2 'make run'
 check 2 'make run-attached'
 check 2 'pkill -x baia'

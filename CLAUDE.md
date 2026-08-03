@@ -96,9 +96,23 @@ Package tests answer anything decidable without an `NSWindow` or a descriptor. A
 probe is for what needs a real window, surface, shell, socket, or human eye.
 
 **Never run a `Diagnostics/*/run.sh` or `make run-attached` from inside a baia
-pane.** Several probes quit or relaunch the app you are sitting in, and
-`run-attached` runs the build in the foreground of the calling pane, so the pane
-becomes its console and the agent in it loses its shell.
+pane, except the two that launch nothing.** Several probes quit or relaunch the
+app you are sitting in, and `run-attached` runs the build in the foreground of the
+calling pane, so the pane becomes its console and the agent in it loses its shell.
+
+`theme-catalog/` and `app-icon/` are the exceptions and are safe anywhere:
+the first builds a binary and sweeps the shipped themes, the second reads plists
+and compares files. Neither opens a window, launches an app or kills a process.
+`guard-baia-alive.sh` allows exactly these two and still denies a command that
+pairs one with a real driver.
+
+Naming them matters because the blanket version cost something. The wave-five
+reviewer needed the theme-catalog sweep, was refused by the guard, and
+hand-transcribed its `swiftc` lines into a single Bash call instead, which
+carries a shell function whose braces-around-quotes read to Claude Code's own
+command analyser as expansion obfuscation. That shape cannot be pre-approved by
+any permission rule, so a guard wider than its reason turned a safe probe into a
+prompt on every run.
 
 **`make run` is fine from inside a pane, and this line said otherwise until
 2026-08-02.** It is a bare `open` of `baia-dev.app`: it kills nothing and quits

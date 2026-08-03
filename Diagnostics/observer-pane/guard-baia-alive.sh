@@ -46,8 +46,33 @@ if has "${START}"'pkill([[:space:]]+-[a-zA-Z]+)*[[:space:]]+baia'; then
   emit_deny "Blocked: pkill baia would kill the app hosting this pane, the orchestrator, and every sibling executor."
 fi
 
-if has 'Diagnostics/[a-zA-Z0-9_-]+/run\.sh'; then
-  emit_deny "Blocked: a Diagnostics probe quits any running baia and launches its own. It would end this run. Use 'make test' to verify package work."
+# Two probes launch nothing, quit nothing and open no window, so the reason this
+# block gives does not apply to them. `theme-catalog` builds a binary and sweeps
+# the shipped themes; `app-icon` reads plists and compares files. Both say so in
+# their own headers and both are safe from inside a pane.
+#
+# Carved out rather than left blanket, because the blanket cost something
+# measurable: the wave-five reviewer needed the theme-catalog sweep, could not run
+# it, and hand-transcribed its `swiftc` lines into one Bash call instead. That
+# call carries a shell function, and a brace holding a quote reads to Claude
+# Code's own analyser as expansion obfuscation, which no allow rule can
+# pre-approve. A guard wider than its reason routes work into shapes nothing can
+# authorise.
+#
+# Every probe named must be safe, so a command pairing a safe one with a real
+# driver is still denied.
+SAFE_PROBES='^(theme-catalog|app-icon)$'
+probes=$(printf '%s' "$COMMAND" | grep -oE 'Diagnostics/[a-zA-Z0-9_-]+/run\.sh' | sed -E 's|Diagnostics/([^/]+)/run\.sh|\1|')
+if [ -n "$probes" ]; then
+  unsafe=0
+  while IFS= read -r probe; do
+    printf '%s' "$probe" | grep -qE "$SAFE_PROBES" || unsafe=1
+  done <<EOF
+$probes
+EOF
+  if [ "$unsafe" = "1" ]; then
+    emit_deny "Blocked: a Diagnostics probe quits any running baia and launches its own. It would end this run. Use 'make test' to verify package work, or theme-catalog/app-icon, which launch nothing."
+  fi
 fi
 
 if has "${START}"'make[[:space:]]+run([[:space:]]|$)' \
