@@ -143,6 +143,13 @@ else
 fi
 
 echo "2 can the line editor hold them on a command line"
+# **Ctrl-C first, and the 2026-08-03 run is why.** `clear` empties the screen and
+# not the input line, and check 1 left `'src/caf` on it: the line became
+# `'src/cafprintf '%s' 'src/caf > typed.bin`, which zsh parses as one
+# command word and a redirect, so it created an empty `typed.bin` and reported
+# command-not-found. The truncation that check exists to show was still visible
+# on the prompt, but the file it graded had the wrong cause behind it.
+key 'keystroke "c" using control down'
 type_line "clear"
 type_raw "printf '%s' "
 click_row 68 2                      # src/caf<E9>.txt
