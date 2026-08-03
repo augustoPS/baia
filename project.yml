@@ -19,7 +19,7 @@ packages:
   # recreates it from the two files that are tracked: the revision in
   # `upstream/libghostty-spm.ref` (b093203, the 1.3.1 SwiftPM had already
   # resolved, so the patch is the only difference from the unpatched build) and
-  # `upstream/libghostty-spm-read-text.patch`. Without that target a path pin
+  # `upstream/libghostty-spm.patch`. Without that target a path pin
   # would be machine-local and a fresh clone would not build anywhere, with
   # nothing on screen to say why.
   libghostty:

@@ -51,11 +51,16 @@ public struct RepositoryFileChange: Sendable, Equatable {
     /// is the only spelling that names the file, so it is what a click would have to
     /// send.
     ///
-    /// **Nothing sends it yet.** `Sources/ChangesSurface.swift` and
-    /// `Sources/FilesSurface.swift` still pass ``path`` into the prompt, and
-    /// `PromptPath` takes a `String`, so the picker remains lossy for a name that is
-    /// not UTF-8. This package carries the bytes; wiring the app target to use them
-    /// is a separate change.
+    /// **This is what the picker sends.** `Sources/ChangesSurface.swift` and
+    /// `Sources/FilesSurface.swift` hand it to `onSelect`, `PromptPath.resolve`
+    /// takes the bytes, and `TerminalPaneController.send` writes them through
+    /// `sendBytes`, so the route from git's index to the pty decodes nothing.
+    ///
+    /// The rule that leaves: ``path`` draws, ``rawPath`` names. A new call site
+    /// that has to identify a file, rather than show one, wants this. Two known
+    /// places still identify by ``path`` and collapse two files onto one entry
+    /// because of it, `FileChangeMarks.marks` and the sidebar's expanded-directory
+    /// set; both are tracked and neither is on this route.
     public let rawPath: RepositoryPath
 
     /// Where a renamed or copied file was, and nil for everything else.

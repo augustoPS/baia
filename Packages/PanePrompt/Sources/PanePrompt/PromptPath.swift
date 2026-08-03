@@ -104,10 +104,38 @@ public enum PromptPath {
         var base = Array(directory.utf8)
         if base.last == slash { base.removeLast() }
         base.append(slash)
-        guard absolute.count > base.count, Array(absolute.prefix(base.count)) == base else {
-            return nil
+
+        // `>=` rather than `>`, so a path that *is* the working directory comes
+        // back empty and the caller refuses it. Written strict first, which
+        // silently turned that refusal into a send of the directory's own
+        // absolute path and left the caller's empty check unreachable. No caller
+        // can reach it today, since directory rows never send and neither
+        // `ls-files` nor `status` reports a path with a trailing slash, but this
+        // is public API and a refusal quietly becoming a send is the one change
+        // this type must never make.
+        if absolute.count >= base.count, Array(absolute.prefix(base.count)) == base {
+            return Array(absolute.dropFirst(base.count))
         }
-        return Array(absolute.dropFirst(base.count))
+
+        // **The byte compare above cannot see two spellings of one directory.**
+        // `String.hasPrefix`, which this replaced, compares by canonical
+        // equivalence, so a precomposed path matched a decomposed working
+        // directory and the short form was sent. Both spellings occur together
+        // here routinely: `core.precomposeunicode` is on by default on macOS so
+        // git reports NFC, while the pane's working directory comes from the
+        // kernel and carries whatever bytes the directory was made with.
+        //
+        // So the byte answer is tried first and kept when it works, and this is
+        // the fallback for the case bytes cannot decide. It only runs when both
+        // sides are valid UTF-8, which is exactly when the old behaviour was
+        // defined, and it hands back the *bytes of the suffix* rather than a
+        // re-encoded string, so a path that is not UTF-8 never reaches it and
+        // nothing here can re-introduce a lossy round trip.
+        guard let text = String(bytes: absolute, encoding: .utf8),
+              let baseText = String(bytes: base, encoding: .utf8),
+              text.hasPrefix(baseText)
+        else { return nil }
+        return Array(text.dropFirst(baseText.count).utf8)
     }
 
     /// A relative path that would read as an option, prefixed so it cannot.

@@ -360,6 +360,47 @@ import Testing
         #expect(sendBytes(path, root: "/repo", cwd: "/repo") == expected)
     }
 
+    /// A path that names the working directory itself refuses rather than sending
+    /// the directory back.
+    ///
+    /// The byte rewrite broke this and the review caught it: `hasPrefix(base + "/")`
+    /// matched the equality case and `dropFirst` left an empty string, which the
+    /// caller refused; a strict `count > base.count` dropped that branch and sent
+    /// the absolute directory path instead. No caller reaches it, since directory
+    /// rows never send and neither `ls-files` nor `status` prints a trailing slash,
+    /// which is why nothing else noticed. A refusal turning into a send is the one
+    /// change this type must never make quietly, reachable or not.
+    @Test func aPathThatIsTheWorkingDirectoryRefuses() {
+        #expect(refusal("src/", cwd: "/repo/src") == .emptyPath)
+    }
+
+    /// Two spellings of one directory still relativize.
+    ///
+    /// `String.hasPrefix` compares by canonical equivalence and the byte compare
+    /// that replaced it cannot, so an NFD working directory stopped matching an NFC
+    /// path and every click in that repository sent a long absolute path instead of
+    /// the short relative one the feature exists for. The pairing is ordinary on
+    /// macOS rather than exotic: `core.precomposeunicode` makes git report NFC while
+    /// the pane's working directory carries the bytes the directory was made with.
+    @Test func aDecomposedWorkingDirectoryStillRelativizesAPrecomposedPath() {
+        let precomposed = "caf\u{e9}/x.txt"
+        #expect(send(precomposed, root: "/repo", cwd: "/repo/cafe\u{301}") == "x.txt ")
+    }
+
+    /// And the fallback never rescues a path that is not UTF-8, because such a path
+    /// has no `String` to compare. It has to come back byte-exact from the byte
+    /// branch or not at all.
+    @Test func theCanonicalFallbackNeverTouchesBytesThatAreNotUTF8() {
+        let path = Array("dir/caf".utf8) + [0xE9] + Array(".txt".utf8)
+        #expect(sendBytes(path, root: "/repo", cwd: "/repo")
+            == [0x27] + path + [0x27, 0x20])
+
+        // A working directory that shares no prefix still sends absolute, with the
+        // bytes intact rather than dropped by the fallback's `String` gate.
+        let absolute = Array("'/repo/dir/caf".utf8) + [0xE9] + Array(".txt' ".utf8)
+        #expect(sendBytes(path, root: "/repo", cwd: "/elsewhere") == absolute)
+    }
+
     /// The relative-path boundary is byte-wise, so a non-UTF-8 directory name in
     /// the middle of a path cannot break the component match.
     @Test func aNonUTF8ComponentDoesNotBreakTheRelativeMatch() {
