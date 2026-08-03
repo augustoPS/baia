@@ -57,10 +57,13 @@ public struct RepositoryFileChange: Sendable, Equatable {
     /// `sendBytes`, so the route from git's index to the pty decodes nothing.
     ///
     /// The rule that leaves: ``path`` draws, ``rawPath`` names. A new call site
-    /// that has to identify a file, rather than show one, wants this. Two known
-    /// places still identify by ``path`` and collapse two files onto one entry
-    /// because of it, `FileChangeMarks.marks` and the sidebar's expanded-directory
-    /// set; both are tracked and neither is on this route.
+    /// that has to identify a file, rather than show one, wants this. The two
+    /// places that still collapsed two files onto one entry have both been keyed
+    /// on bytes since, `FileChangeMarks` and the sidebar's expanded-directory set,
+    /// as has `GitDirectory`'s worktree pointer. One lossy identification is left
+    /// on purpose and it is not in memory: the session file writes the drawn
+    /// spelling, because JSON cannot carry a byte that is not Unicode. See
+    /// `FileTreeExpansions.recording(_:)`.
     public let rawPath: RepositoryPath
 
     /// Where a renamed or copied file was, and nil for everything else.
