@@ -118,7 +118,16 @@ PY
 # front, so what lands in its file is what the emulator delivered. The 0xE9
 # present means ghostty passes bytes and ZLE is the blocker; a file truncated at
 # `caf` means ghostty is the filter and `sendBytes` writes into one.
-rm -f "$READOUT/sent.bin" "$READOUT/typed.bin"
+# **Rotated rather than deleted, because a partial run used to destroy the
+# evidence of a complete one.** On 2026-08-03 a good run wrote both files and a
+# second run started four minutes later, cleared them here, and then aborted
+# before its first capture. What survived was two screenshots from one run and no
+# bytes from either, which reads as "the click sent nothing" and is the opposite
+# of what had happened. A probe may overwrite its own last answer only once it has
+# a new one.
+for stale in sent.bin typed.bin; do
+    [ -f "$READOUT/$stale" ] && mv -f "$READOUT/$stale" "$READOUT/$stale.prev"
+done
 
 classify() {
     python3 "$HERE/classify.py" "$1" "$2" "$FIXTURE/.expected-bytes" "$FIXTURE/.lossy-bytes"
