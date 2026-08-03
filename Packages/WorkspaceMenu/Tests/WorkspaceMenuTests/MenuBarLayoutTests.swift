@@ -101,3 +101,42 @@ import Testing
         }
     }
 }
+
+/// The lookups the command palette's verb mode reads, which are derived from the
+/// same tree the menu bar is built from rather than from a table beside it.
+@Suite struct MenuBarLayoutLookupTests {
+    @Test func findsTheItemForACommandInTheBar() {
+        #expect(MenuBarLayout.title(of: .openConfiguration) == "Settings…")
+        #expect(MenuBarLayout.title(of: .equalizePanes) == "Equalize Panes")
+    }
+
+    /// Derived from the tree, so a rename reaches the palette with no second
+    /// place to update. Asserted by comparing against the tree itself rather
+    /// than against a copied literal, which would be the very duplication the
+    /// lookup exists to avoid.
+    @Test func theTitleIsTheOneTheMenuTreeCarries() {
+        for menu in MenuBarLayout.menus {
+            for item in menu.items {
+                #expect(MenuBarLayout.title(of: item.command) == item.title)
+            }
+        }
+    }
+
+    /// Every command in the bar is reachable by the lookup. A command the walk
+    /// cannot find would be a verb the palette silently never offers.
+    @Test func everyCommandInTheBarIsFound() {
+        for menu in MenuBarLayout.menus {
+            for item in menu.items {
+                #expect(MenuBarLayout.item(for: item.command) != nil)
+            }
+        }
+    }
+
+    @Test func aCommandWithNoShortcutHasNoShortcutText() {
+        #expect(MenuBarLayout.shortcutText(of: .showAll) == nil)
+    }
+
+    @Test func aShortcutDrawsInTheOrderAMenuUses() {
+        #expect(MenuBarLayout.shortcutText(of: .openConfiguration) == "⌘,")
+    }
+}

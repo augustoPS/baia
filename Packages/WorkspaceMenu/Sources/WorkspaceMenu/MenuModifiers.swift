@@ -36,4 +36,22 @@ public struct MenuModifiers: OptionSet, Sendable, Equatable {
         if contains(.shift) { parts.append("shift") }
         return parts.joined(separator: "+")
     }
+
+    /// The glyphs as a menu draws them, `⌃⌥⇧⌘`.
+    ///
+    /// **A different order from ``ghosttyPrefix`` on purpose.** macOS renders
+    /// modifiers control, option, shift, command, always, and every Mac reader
+    /// knows that order without being told. Ghostty's is command first and is
+    /// matched literally. Deriving one from the other would either produce a
+    /// trigger ghostty silently fails to match or a shortcut that reads wrong on
+    /// screen, so they are two spellings of one fact rather than one spelling
+    /// reused.
+    public var displayText: String {
+        var text = ""
+        if contains(.control) { text += "⌃" }
+        if contains(.option) { text += "⌥" }
+        if contains(.shift) { text += "⇧" }
+        if contains(.command) { text += "⌘" }
+        return text
+    }
 }

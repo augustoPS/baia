@@ -44,4 +44,20 @@ public enum PaletteHints {
             close,
         ]
     }
+
+    /// The verb mode's hints, which name one action because a verb has one.
+    ///
+    /// `CommandPaletteController.open(at:)` ignores the action for a verb: there
+    /// is no second way to run Equalize Panes, and treating Shift-Return as a
+    /// variant would invent a behaviour nothing asked for. So the project row's
+    /// "split right" would be the exact fault this type exists to prevent, a
+    /// hint naming an action that does nothing, and it would be read once and
+    /// believed.
+    public static func verbs(hasResults: Bool) -> [PaletteHint] {
+        guard hasResults else { return [close] }
+        return [
+            PaletteHint(key: "\u{21A9}", label: "run"),
+            close,
+        ]
+    }
 }

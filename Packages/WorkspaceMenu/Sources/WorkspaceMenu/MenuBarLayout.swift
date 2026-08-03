@@ -19,6 +19,37 @@ public enum MenuBarLayout {
         ]
     }
 
+    /// The item describing `command`, or nil when nothing in the bar carries it.
+    ///
+    /// Walks ``menus`` rather than holding a second table keyed by command. The
+    /// tree is the one place a title is written, and a lookup table beside it is
+    /// a second place to forget: a renamed item would keep its old name wherever
+    /// the table was not updated, and the palette would offer a verb the menu no
+    /// longer calls that.
+    ///
+    /// Nil is reachable and not a defect. Not every command has to appear in the
+    /// bar, and a caller that needs a name for one that does not has to say what
+    /// to do about it rather than being handed a placeholder.
+    public static func item(for command: MenuCommand) -> MenuItemDescriptor? {
+        for menu in menus {
+            for item in menu.items where item.command == command {
+                return item
+            }
+        }
+        return nil
+    }
+
+    /// What the menu calls `command`.
+    public static func title(of command: MenuCommand) -> String? {
+        item(for: command)?.title
+    }
+
+    /// The shortcut as a reader sees it on the menu, `⌃⌘=`, or nil when the
+    /// command has none.
+    public static func shortcutText(of command: MenuCommand) -> String? {
+        item(for: command)?.shortcut?.displayText
+    }
+
     /// AppKit takes the first menu's title from the bundle and ignores whatever is
     /// set here, so "baia" is documentation rather than something rendered.
     ///

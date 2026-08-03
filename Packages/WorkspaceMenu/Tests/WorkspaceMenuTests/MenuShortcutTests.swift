@@ -78,3 +78,33 @@ import Testing
         #expect(GhosttyDefaultKeybinds.triggers.contains("super+shift+p"))
     }
 }
+
+/// The drawn spelling, which is a different order from the ghostty one and has
+/// to stay that way.
+@Suite struct MenuShortcutDisplayTests {
+    /// macOS renders control, option, shift, command in that order, always.
+    /// Ghostty matches `super+ctrl+alt+shift` literally. Deriving either from the
+    /// other produces a trigger ghostty silently fails to match or a shortcut
+    /// that reads wrong on screen.
+    @Test func theDisplayOrderIsNotTheGhosttyOrder() {
+        let all: MenuModifiers = [.command, .control, .option, .shift]
+        #expect(all.displayText == "⌃⌥⇧⌘")
+        #expect(all.ghosttyPrefix == "super+ctrl+alt+shift")
+    }
+
+    @Test func aLetterDrawsUpperCasedWithoutImplyingShift() {
+        let plain = MenuShortcut(key: .character("d"), modifiers: .command)
+        let shifted = MenuShortcut(key: .character("d"), modifiers: [.command, .shift])
+        #expect(plain.displayText == "⌘D")
+        #expect(shifted.displayText == "⇧⌘D")
+    }
+
+    @Test func theArrowsAndReturnDrawAsGlyphs() {
+        #expect(MenuShortcut(key: .arrowLeft, modifiers: .command).displayText == "⌘←")
+        #expect(MenuShortcut(key: .returnKey, modifiers: .command).displayText == "⌘↩")
+    }
+
+    @Test func aShortcutWithNoModifiersIsJustTheKey() {
+        #expect(MenuShortcut(key: .character("k"), modifiers: []).displayText == "K")
+    }
+}

@@ -78,6 +78,40 @@ public struct PaletteRow: Sendable, Equatable {
         )
     }
 
+    /// Builds a row for a verb, which has a title and a shortcut where a project
+    /// has a name and a parent.
+    ///
+    /// The shortcut goes in ``parent`` rather than into a new field, and that is
+    /// a claim about the layout rather than a saving: `parent` is the quiet run
+    /// drawn ahead of the loud one, which is exactly what a shortcut is next to
+    /// the verb it belongs to. A third field would draw in the same place and
+    /// need its own tier.
+    ///
+    /// The chip is always `CMD`. A project row leaves it nil for the common case
+    /// so the column is not noise, and here the common case is the opposite: in
+    /// verb mode every row is a verb, but the two modes share a list view, and a
+    /// row that carried no chip would be indistinguishable from a project row in
+    /// a screenshot or a capture.
+    ///
+    /// - Parameters:
+    ///   - title: what the menu calls it, which is what was matched.
+    ///   - shortcut: as drawn, `⌃⌘=`, or empty when the verb has none.
+    ///   - matchedIndices: offsets into `title`, as `FuzzyMatch` reports them.
+    public static func verb(
+        title: String,
+        shortcut: String = "",
+        matchedIndices: [Int] = []
+    ) -> PaletteRow {
+        let characters = Array(title)
+        return PaletteRow(
+            parent: shortcut.isEmpty
+                ? []
+                : [PaneStatusRun(text: shortcut + "  ", emphasis: .context)],
+            name: runs(characters[0 ..< characters.count], hits: Set(matchedIndices), base: .normal),
+            chip: "CMD"
+        )
+    }
+
     /// Groups a stretch of characters into the fewest runs that still say which
     /// ones matched.
     ///

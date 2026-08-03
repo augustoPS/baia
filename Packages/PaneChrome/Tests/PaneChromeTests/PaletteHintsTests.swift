@@ -44,3 +44,27 @@ import Testing
         }
     }
 }
+
+/// The verb mode's hints, which differ from the project mode's because a verb
+/// has one action and a project has two.
+@Suite struct PaletteVerbHintsTests {
+    /// The project row advertises "split right", and `open(at:)` ignores the
+    /// action for a verb, so carrying that hint into verb mode would name an
+    /// action that does nothing. That is the fault this whole type exists to
+    /// prevent.
+    @Test func verbModeNamesOneActionAndNotTwo() {
+        let hints = PaletteHints.verbs(hasResults: true)
+        #expect(hints.map(\.label) == ["run", "close"])
+        #expect(!hints.contains { $0.label == "split right" })
+    }
+
+    @Test func verbModeWithNoResultsOffersOnlyTheWayOut() {
+        #expect(PaletteHints.verbs(hasResults: false).map(\.label) == ["close"])
+    }
+
+    @Test func escapeSurvivesBothVerbStates() {
+        for hasResults in [true, false] {
+            #expect(PaletteHints.verbs(hasResults: hasResults).contains { $0.label == "close" })
+        }
+    }
+}

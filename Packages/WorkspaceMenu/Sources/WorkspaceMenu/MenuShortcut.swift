@@ -11,6 +11,15 @@ public struct MenuShortcut: Sendable, Equatable {
         self.modifiers = modifiers
     }
 
+    /// The shortcut as a menu draws it, `⌃⌘=`.
+    ///
+    /// Upper-cased for a letter, because that is what a menu shows: ⌘D rather
+    /// than ⌘d. The shift glyph is not implied by the case, it comes from the
+    /// modifiers, so ⇧ appears only when the shortcut really carries it.
+    public var displayText: String {
+        modifiers.displayText + key.displayText
+    }
+
     /// Every ghostty trigger string this shortcut corresponds to. More than one
     /// only for a digit, which ghostty's defaults bind twice.
     public var ghosttyTriggers: [String] {

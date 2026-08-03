@@ -18,6 +18,23 @@ public enum MenuKey: Sendable, Equatable {
     case returnKey
     case digit(Int)
 
+    /// The key as a menu draws it: `D`, `↑`, `↩`, `,`.
+    ///
+    /// Upper-cased for a letter, which is what every Mac menu shows. The case
+    /// says nothing about shift; ``MenuModifiers/displayText`` is where ⇧ comes
+    /// from, so ⌘D and ⌘⇧D stay distinguishable.
+    public var displayText: String {
+        switch self {
+        case let .character(character): String(character).uppercased()
+        case .arrowUp: "↑"
+        case .arrowDown: "↓"
+        case .arrowLeft: "←"
+        case .arrowRight: "→"
+        case .returnKey: "↩"
+        case let .digit(digit): String(digit)
+        }
+    }
+
     /// The scalar AppKit wants in `NSMenuItem.keyEquivalent`.
     ///
     /// The arrows are the private-use scalars 0xF700 to 0xF703 that back

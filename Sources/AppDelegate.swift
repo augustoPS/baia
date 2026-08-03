@@ -58,8 +58,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         palette.onOpen = { [weak self] project, action in
             self?.open(project, action: action)
         }
+        palette.availableVerbs = { [weak self] in self?.paletteVerbs() ?? [] }
+        palette.onRunVerb = { [weak self] tag in self?.runVerb(tag: tag) }
         return palette
     }()
+
+    /// Every verb the palette can offer right now.
+    ///
+    /// Eligibility is `MenuValidation`'s answer and nothing else, which is the
+    /// decision recorded in the palette spec: one source of truth for whether a
+    /// command can be performed, rather than a second list beside it that can
+    /// disagree. The cost is that always-enabled verbs nobody searches for
+    /// (`Hide`, `Quit`, `Copy`) are in the list, and it was taken knowingly.
+    ///
+    /// Rebuilt per call rather than cached. `availability` is a snapshot of what
+    /// the app can do, and it changes with every split, tab and focus move; a
+    /// list held across opens would offer Close Tab with one tab left.
+    private func paletteVerbs() -> [PaletteVerb] {
+        let state = availability
+        return MenuCommand.allCases.compactMap { command in
+            guard MenuValidation.state(for: command, given: state).isEnabled else { return nil }
+            guard let title = MenuBarLayout.title(of: command) else { return nil }
+            return PaletteVerb(
+                title: title,
+                shortcut: MenuBarLayout.shortcutText(of: command) ?? "",
+                id: command.tag
+            )
+        }
+    }
+
+    /// Performs the verb the palette committed, recovered from its tag.
+    ///
+    /// The tag rather than the command itself, for the same reason
+    /// `validateMenuItem` reads it: the palette is a surface and knows nothing
+    /// about `MenuCommand`, so the integer is the whole of what crosses the
+    /// boundary.
+    private func runVerb(tag: Int) {
+        guard let command = MenuCommand(tag: tag) else { return }
+        guard let selector = MenuCommandSelectors.selector(for: command) else { return }
+        // Through the responder chain rather than called directly, so a verb
+        // reaches whatever `NSMenuItem` would have reached. A direct call here
+        // would run against the delegate for commands the first responder owns.
+        NSApp.sendAction(selector, to: nil, from: menuItem(for: command))
+    }
+
+    /// A stand-in item carrying the command's tag, so an action that reads the
+    /// sender's tag (as several do) finds the command it was asked for.
+    private func menuItem(for command: MenuCommand) -> NSMenuItem {
+        let item = NSMenuItem()
+        item.tag = command.tag
+        return item
+    }
 
     /// The ⌘F panel. Built once and reused, like the palette, because a panel
     /// rebuilt per invocation would rebuild its window on a keystroke.

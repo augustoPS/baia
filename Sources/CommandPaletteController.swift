@@ -27,6 +27,19 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
     /// Raised with the chosen project and what to do with it.
     var onOpen: ((Project, PaletteAction) -> Void)?
 
+    /// Raised with the chosen verb's `MenuCommand.tag`, for the same reason
+    /// ``onOpen`` exists: only the app delegate can perform a menu command, and
+    /// the palette's job ends at deciding which one was asked for.
+    var onRunVerb: ((Int) -> Void)?
+
+    /// Every verb available right now, supplied by the app target because
+    /// availability is a fact about the app rather than about this panel.
+    ///
+    /// Re-read on each open rather than held across opens: `Close Tab` is
+    /// available with two tabs and not with one, and a list captured when the
+    /// palette was built would offer a verb that has since become impossible.
+    var availableVerbs: () -> [PaletteVerb] = { [] }
+
     var theme: PaneTheme = .darkPastel {
         didSet {
             queryView.theme = theme
@@ -54,7 +67,29 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
 
     private var projects: [Project] = []
     private var recency: [String: Int] = [:]
-    private var results: [Project] = []
+
+    /// What the list is currently showing.
+    ///
+    /// An enum rather than two arrays with a `Bool` beside them, so the three
+    /// places that read a selected row cannot reach the wrong population. The
+    /// git read in particular takes a `Project.url` and forks a subprocess; with
+    /// parallel arrays, a verb row selected at an index a project also occupies
+    /// would have run `git status` against whatever project sat there.
+    private enum Results {
+        case projects([Project])
+        case verbs([PaletteVerb])
+
+        var count: Int {
+            switch self {
+            case let .projects(projects): projects.count
+            case let .verbs(verbs): verbs.count
+            }
+        }
+
+        var isEmpty: Bool { count == 0 }
+    }
+
+    private var results: Results = .projects([])
 
     /// Bumped on every selection change, so a git read that comes back for a row
     /// the user has already moved off is discarded rather than drawn. Holding an
@@ -235,15 +270,26 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
 
     private func refilter() {
         let query = queryView.field.stringValue
-        results = ProjectRanker.rank(projects, query: query, recency: recency)
+
+        // `>` switches populations. Checked before anything is ranked, because
+        // the two rankers score different things and neither can answer for the
+        // other: `ProjectRanker` breaks ties on a recency count keyed by path,
+        // and a verb has no path.
+        if let verbQuery = VerbRanker.verbQuery(from: query) {
+            refilterVerbs(matching: verbQuery)
+            return
+        }
+
+        let ranked = ProjectRanker.rank(projects, query: query, recency: recency)
+        results = .projects(ranked)
         // The row follows the result set, because both actions it can name return
         // immediately when there is nothing matched.
-        hintsView.hints = PaletteHints.palette(hasResults: !results.isEmpty)
+        hintsView.hints = PaletteHints.palette(hasResults: !ranked.isEmpty)
 
         // Matched against `relativePath`, which is also what the row draws, so
         // the offsets `FuzzyMatcher` reports land on the characters the reader is
         // looking at with no translation in between.
-        listView.rows = results.map { project in
+        listView.rows = ranked.map { project in
             PaletteRow.make(
                 relativePath: project.relativePath,
                 matchedIndices: FuzzyMatcher.match(
@@ -258,11 +304,48 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
         refreshSelectedGitState()
     }
 
+    /// The verb half, which draws the same row type and reads no git state.
+    ///
+    /// A verb row has no repository behind it, so `refreshSelectedGitState` is
+    /// not called here and the previous row's runs are cleared instead. Leaving
+    /// them would draw the last selected project's branch beside a verb.
+    private func refilterVerbs(matching query: String) {
+        let ranked = VerbRanker.rank(availableVerbs(), query: query)
+        results = .verbs(ranked)
+        hintsView.hints = PaletteHints.verbs(hasResults: !ranked.isEmpty)
+
+        listView.rows = ranked.map { verb in
+            PaletteRow.verb(
+                title: verb.title,
+                shortcut: verb.shortcut,
+                matchedIndices: FuzzyMatcher.match(
+                    query: query,
+                    candidate: verb.title
+                )?.matchedIndices ?? []
+            )
+        }
+        listView.selection = 0
+        listView.selectedGitRuns = []
+        queryView.countText = verbCountText(query: query, shown: ranked.count)
+    }
+
     /// `3 of 12` while filtering, a bare total before the first keystroke. The
     /// second number is what says how much of the workspace is out of view.
     private func countText(query: String) -> String {
         guard !query.isEmpty else { return "\(projects.count)" }
         return "\(results.count) of \(projects.count)"
+    }
+
+    /// The same shape for verbs, counted against the verbs available rather than
+    /// against the project list.
+    ///
+    /// Its own function rather than a parameter on the one above, because the
+    /// denominators are different facts: how much of the workspace is out of
+    /// view, and how much of what the app can do right now is out of view.
+    private func verbCountText(query: String, shown: Int) -> String {
+        let total = availableVerbs().count
+        guard !query.isEmpty else { return "\(total)" }
+        return "\(shown) of \(total)"
     }
 
     // MARK: - Keyboard
@@ -315,14 +398,31 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
         let next = max(0, min(results.count - 1, listView.selection + delta))
         guard next != listView.selection else { return }
         listView.selection = next
+        // No-op in verb mode, which is what the guard inside it answers. Left as
+        // one call rather than a branch here, so the rule about which rows have
+        // git state lives in one place.
         refreshSelectedGitState()
     }
 
+    /// Commits the selected row, which means different things in the two modes.
+    ///
+    /// A verb ignores `action` rather than honouring it. Shift-Return means
+    /// "split right" for a project, and there is no second way to run Equalize
+    /// Panes; silently treating the modifier as a variant would invent a
+    /// behaviour nothing asked for.
     private func open(at index: Int, action: PaletteAction) {
-        guard results.indices.contains(index) else { return }
-        let project = results[index]
-        dismiss()
-        onOpen?(project, action)
+        switch results {
+        case let .projects(projects):
+            guard projects.indices.contains(index) else { return }
+            let project = projects[index]
+            dismiss()
+            onOpen?(project, action)
+        case let .verbs(verbs):
+            guard verbs.indices.contains(index) else { return }
+            let verb = verbs[index]
+            dismiss()
+            onRunVerb?(verb.id)
+        }
     }
 
     // MARK: - Git state for the selected row
@@ -339,8 +439,11 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
         let generation = gitGeneration
         listView.selectedGitRuns = []
 
-        guard results.indices.contains(listView.selection) else { return }
-        let project = results[listView.selection]
+        // A verb has no repository behind it, so there is nothing to read and
+        // the cleared runs above are the whole answer.
+        guard case let .projects(projects) = results else { return }
+        guard projects.indices.contains(listView.selection) else { return }
+        let project = projects[listView.selection]
         guard project.kind != .directory else { return }
         let root = project.url
 
