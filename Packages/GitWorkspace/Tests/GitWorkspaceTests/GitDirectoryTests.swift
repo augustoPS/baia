@@ -58,6 +58,44 @@ import Testing
         #expect(GitDirectory.url(forRepositoryRoot: tree) == fixture.directoryURL("proj/.git/worktrees/wt"))
     }
 
+    /// A pointer that is not UTF-8 survives the parse byte for byte.
+    ///
+    /// Tested at the parse rather than through ``GitDirectory/url(forRepositoryRoot:)``
+    /// because the target cannot be created here: APFS refuses a name that is not
+    /// valid UTF-8 at `mkdir`, so the end-to-end arm would need a mounted ext4,
+    /// NFS, SMB or ExFAT volume, which is exactly the case this is for. What the
+    /// old code did to such a pointer was replace `0xFF` with U+FFFD, whose UTF-8
+    /// spelling is three different bytes, so the path handed to `fileExists`
+    /// named a file no filesystem holds and the worktree read as pruned.
+    @Test func aPointerThatIsNotUTF8SurvivesTheParse() throws {
+        let tree = try fixture.directory("wt")
+        let raw = Array("gitdir: /vol/".utf8) + [0xFF] + Array("/worktrees/wt\n".utf8)
+        try Data(raw).write(to: tree.appending(path: ".git"))
+
+        let pointer = GitDirectory.gitdirPointer(
+            inFileAt: tree.appending(path: ".git").path(percentEncoded: false)
+        )
+        #expect(pointer == Array("/vol/".utf8) + [0xFF] + Array("/worktrees/wt".utf8))
+
+        // The whole point: what the lossy route produced was a different byte
+        // string, and no filesystem answers to it.
+        let lossy = Array(String(decoding: raw, as: UTF8.self).utf8)
+        #expect(lossy != raw)
+    }
+
+    /// The trailing-whitespace trim runs over bytes now, and must not cut into a
+    /// multi-byte scalar. UTF-8 is self-synchronising, so it cannot; this pins it.
+    @Test func aPointerEndingInAMultiByteScalarKeepsItsLastByte() throws {
+        let tree = try fixture.directory("wt")
+        let raw = Array("gitdir: /vol/wörktree\r\n".utf8)
+        try Data(raw).write(to: tree.appending(path: ".git"))
+
+        let pointer = GitDirectory.gitdirPointer(
+            inFileAt: tree.appending(path: ".git").path(percentEncoded: false)
+        )
+        #expect(pointer == Array("/vol/wörktree".utf8))
+    }
+
     @Test func returnsNilWhenTheGitFileHoldsNoPointer() throws {
         let tree = try fixture.directory("wt")
         try "not a pointer\n".write(

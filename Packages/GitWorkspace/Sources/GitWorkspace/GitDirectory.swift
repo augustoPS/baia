@@ -28,14 +28,29 @@ public enum GitDirectory {
         }
         guard let pointer = gitdirPointer(inFileAt: entryPath) else { return nil }
 
+        // Back to a URL through the byte-preserving door. `URL(filePath:)` takes a
+        // `String`, so a pointer that is not UTF-8 cannot go that way without the
+        // substitution this reads bytes to avoid; `FileManager`'s
+        // `string(withFileSystemRepresentation:length:)` is the inverse of the
+        // representation the syscalls actually take and carries those bytes
+        // through unharmed.
+        let pointerPath = pointer.withUnsafeBufferPointer { buffer -> String in
+            buffer.baseAddress.map { base in
+                base.withMemoryRebound(to: CChar.self, capacity: buffer.count) {
+                    FileManager.default.string(withFileSystemRepresentation: $0, length: buffer.count)
+                }
+            } ?? ""
+        }
+        guard !pointerPath.isEmpty else { return nil }
+
         // A relative pointer is relative to the worktree, not to the process's
         // working directory. `git worktree add --relative-paths` writes
         // `gitdir: ../.git/worktrees/<name>`, and resolving that against the
         // process instead of the root would land inside baia's own bundle.
         // Standardizing collapses the `..` without touching the filesystem.
-        let target: URL = pointer.hasPrefix("/")
-            ? URL(filePath: pointer, directoryHint: .isDirectory)
-            : root.appending(path: pointer, directoryHint: .isDirectory).standardizedFileURL
+        let target: URL = pointerPath.hasPrefix("/")
+            ? URL(filePath: pointerPath, directoryHint: .isDirectory)
+            : root.appending(path: pointerPath, directoryHint: .isDirectory).standardizedFileURL
 
         let targetPath = target.path(percentEncoded: false)
         var targetIsDirectory: ObjCBool = false
@@ -64,21 +79,44 @@ public enum GitDirectory {
     /// `FileManager.contents(atPath:)` is used rather than `Data(contentsOf:)`
     /// because the latter throws and this package has no error channel: a file it
     /// cannot read is the same answer as a file that is not there.
-    private static func gitdirPointer(inFileAt path: String) -> String? {
+    ///
+    /// Bytes rather than text, for the reason in ``RepositoryPath``. The pointer
+    /// names a path on a filesystem, and a filesystem path is a byte string.
+    /// Decoding it through `String(decoding:as:)` replaces every byte it cannot
+    /// read with U+FFFD, which never fails and never round-trips, so the pointer
+    /// came back naming a file no filesystem holds. `fileExists` then said no and
+    /// the worktree was reported as pruned: ``InProgressProbe`` went silent and
+    /// the root read as an ordinary clone. macOS cannot create such a name, but
+    /// it can mount one: a git directory on an ext4, NFS, SMB or ExFAT volume
+    /// carries whatever bytes that filesystem holds.
+    ///
+    /// Internal rather than private so the byte-preservation arms can reach it:
+    /// the end-to-end route needs a target directory APFS refuses to create.
+    static func gitdirPointer(inFileAt path: String) -> [UInt8]? {
         guard let data = FileManager.default.contents(atPath: path) else { return nil }
-        let text = String(decoding: data, as: UTF8.self)
-        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
-            guard line.hasPrefix(Self.pointerPrefix) else { continue }
+        let prefix = Array(Self.pointerPrefix.utf8)
+        for line in data.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: true) {
+            guard line.starts(with: prefix) else { continue }
             // Trimmed for newlines as well as spaces. A `.git` file written on
             // another platform, or copied through one, ends its line with CRLF,
             // and a trailing carriage return inside the path makes every probe
             // under the git directory miss while the path still looks right in
-            // any message printed from it.
-            let value = line.dropFirst(Self.pointerPrefix.count)
-                .trimmingCharacters(in: .whitespacesAndNewlines)
+            // any message printed from it. Trimmed over bytes, since the ASCII
+            // whitespace this drops is the whole of what git can write here and
+            // a multi-byte scalar cannot contain one of these bytes.
+            let value = Array(line.dropFirst(prefix.count).drop(while: Self.isASCIIWhitespace)
+                .reversed().drop(while: Self.isASCIIWhitespace).reversed())
             return value.isEmpty ? nil : value
         }
         return nil
+    }
+
+    /// UTF-8 is self-synchronising: every byte of a multi-byte scalar has its high
+    /// bit set, so none of them can equal one of these. Trimming them off a byte
+    /// string cannot cut into a character.
+    private static func isASCIIWhitespace(_ byte: UInt8) -> Bool {
+        byte == UInt8(ascii: " ") || byte == UInt8(ascii: "\t")
+            || byte == UInt8(ascii: "\r") || byte == UInt8(ascii: "\n")
     }
 
     private static let pointerPrefix = "gitdir: "
