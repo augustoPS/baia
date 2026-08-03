@@ -89,57 +89,85 @@ PY
     sleep 1
 }
 
-# The fixture's tree as the sidebar draws it, directories first and root files
-# last, which is the order `path-picker` recorded off its own capture:
+# The fixture's tree as the sidebar draws it, confirmed against the 2026-08-03
+# capture rather than derived:
 #
 #    1  src/
 #    2    caf<E9>.txt
 #    3    plain.txt
-#    4  README.md
+#    4  .expected-bytes
+#    5  .lossy-bytes
+#    6  README.md
 #
-# **Confirm these against `1-clicked.png` on the first run and correct them here
-# rather than guessing.** They are derived, not observed: this probe was written
-# from inside a baia pane, where it could not be run. path-picker's first version
-# was off by one throughout and every check failed against the wrong row.
-rm -f "$READOUT/sent.bin"
+# The two dotfiles the fixture writes are untracked, so `ls-files --others` lists
+# them and they take rows of their own. They sit below `src/`'s children and move
+# nothing clicked here.
 
-echo "1 a non-UTF-8 name reaches the shell unchanged"
+# **Two checks, and the pair is the instrument.** One of them alone answers
+# nothing.
+#
+# The 2026-08-03 run assembled a command line and ended with `printf '%s'
+# 'src/caf` on the prompt: the opening quote and the ASCII prefix arrived, the
+# 0xE9 and everything after it did not, the quote never closed, nothing ran. That
+# is one observation with two causes and no screenshot can separate them. Either
+# zsh's line editor cannot hold the bytes, since ZLE decodes its input as
+# characters and 0xE9 announces a three-byte sequence `.txt` does not complete,
+# or `ghostty_surface_text` validates UTF-8 and the tail never reached the pty.
+#
+# `cat` settles it. It reads the pty in canonical mode with no line editor in
+# front, so what lands in its file is what the emulator delivered. The 0xE9
+# present means ghostty passes bytes and ZLE is the blocker; a file truncated at
+# `caf` means ghostty is the filter and `sendBytes` writes into one.
+rm -f "$READOUT/sent.bin" "$READOUT/typed.bin"
+
+classify() {
+    python3 "$HERE/classify.py" "$1" "$2" "$FIXTURE/.expected-bytes" "$FIXTURE/.lossy-bytes"
+}
+
+echo "1 does the emulator deliver the bytes to a process at all"
 launch
 click_row 68 1                      # src/, expands
+# `cat` before the click, so the bytes land in a reader with no line editor in
+# front of them. Canonical mode still buffers to a newline, which the Return
+# below supplies and `classify.py` strips.
+type_line "cat > $READOUT/sent.bin"
+click_row 68 2                      # src/caf<E9>.txt
+shot 1-cat-clicked
+key 'key code 36'
+key 'keystroke "d" using control down'
+sleep 1
+if classify "the bytes reached a reading process" "$READOUT/sent.bin"; then
+    pass=$((pass + 1))
+else
+    fail=$((fail + 1))
+fi
+
+echo "2 can the line editor hold them on a command line"
+type_line "clear"
 type_raw "printf '%s' "
 click_row 68 2                      # src/caf<E9>.txt
-shot 1-clicked
-type_line "> $READOUT/sent.bin"
+shot 2-prompt-clicked
+type_line "> $READOUT/typed.bin"
 sleep 1
-
-if [ ! -f "$READOUT/sent.bin" ]; then
-    bad "the shell wrote nothing" "no $READOUT/sent.bin: the click may have refused, or the row index is wrong. Read 1-clicked.png."
+if classify "the bytes survived the line editor" "$READOUT/typed.bin"; then
+    pass=$((pass + 1))
 else
-    if cmp -s "$READOUT/sent.bin" "$FIXTURE/.expected-bytes"; then
-        ok "the clicked path arrived byte for byte"
-    else
-        bad "the bytes differ from what the fixture holds" \
-            "wanted: $(od -c "$FIXTURE/.expected-bytes" | head -2)
-          got:    $(od -c "$READOUT/sent.bin" | head -2)"
-    fi
-
-    # The negative control, and the whole point of the change: this is what the
-    # same click produced while the path went through a Swift `String`. A run that
-    # matches this has regressed to the defect rather than merely failed.
-    if cmp -s "$READOUT/sent.bin" "$FIXTURE/.lossy-bytes"; then
-        bad "the path was replaced by U+FFFD" \
-            "this is the pre-fix behaviour exactly: the bytes went through a String somewhere."
-    else
-        ok "and it is not the U+FFFD spelling the String path produced"
-    fi
+    fail=$((fail + 1))
 fi
+
+echo
+echo "  1 passing and 2 failing: the emulator is honest and zsh's line editor is"
+echo "  where a non-UTF-8 path cannot go. Both failing: ghostty filters the bytes"
+echo "  and sendBytes is writing into that filter."
+echo
 
 quit_app
 
 cat <<EOF
 
-  One image in $OUT, kept because a wrong row index reads far better as a picture
-  of the tree than as a byte diff.
+  Two images in $OUT: 1-cat-clicked.png with the path landing in \`cat\`, and
+  2-prompt-clicked.png with it landing on a command line. A picture of the prompt
+  is what showed the quote never closing on 2026-08-03, which no byte diff said.
 EOF
 
 echo

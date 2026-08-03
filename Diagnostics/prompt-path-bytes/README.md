@@ -41,17 +41,41 @@ name. Confirmed 2026-08-02 that `git ls-files -z` and `git status --porcelain=v2
 -z` both emit the 0xE9 unchanged, and those are the two commands `GitCommand` runs
 behind the Files tree and the Changes list.
 
-## What it grades
+## What it grades, and why it takes two clicks
 
-One click, two assertions:
+The first run, 2026-08-03, ended with `printf '%s' 'src/caf` sitting on the
+prompt. The opening quote and the ASCII prefix arrived; the 0xE9 and everything
+after it did not; the quote never closed and nothing executed. That is one
+observation with two possible causes, and no screenshot separates them:
 
-- the bytes the shell received equal the bytes git holds, `'src/caf<E9>.txt' `
-- and they are not `'src/caf<EF><BF><BD>.txt' `, which is what the same click
-  produced while the path went through a Swift `String`
+1. **zsh's line editor cannot hold the bytes.** ZLE decodes its input as
+   characters, and 0xE9 announces a three-byte UTF-8 sequence that `.txt` does
+   not complete. The bytes reached the pty and the editor is what failed.
+2. **ghostty filters them.** `ghostty_surface_text` may validate UTF-8, in which
+   case the tail never left the emulator and `sendBytes` is writing into a sieve.
 
-The second is a negative control rather than a restatement. A run that matches it
+So there are two checks, and the pair is the instrument.
+
+**Check 1 sends into `cat`.** It reads the pty in canonical mode with no line
+editor in front, so what lands in its file is exactly what the emulator
+delivered. This is the one that answers whether the bytes exist at all.
+
+**Check 2 sends onto a command line**, which is the real feature: a path a
+command can use. It is expected to be the harder of the two.
+
+`classify.py` grades each and names the layer:
+
+| Result | Diagnosis |
+|---|---|
+| both match `'src/caf<E9>.txt' ` | the route is sound end to end |
+| 1 passes, 2 fails | the emulator is honest; ZLE is where a non-UTF-8 path cannot go |
+| both truncated at `caf` | ghostty is the filter, and `sendBytes` writes into it |
+| either matches `'src/caf<EF><BF><BD>.txt' ` | a Swift `String` is still on the route |
+| nothing written | the quote never closed, which is the editor refusing the bytes |
+
+The U+FFFD row is a negative control rather than a restatement: a run matching it
 has regressed to the original defect, which is a different thing from a run that
-merely fails, and the output says so.
+merely fails, and the output says which.
 
 The route under test is the whole of it: git's index, `GitStatusParser`,
 `RepositoryPath`, the surface's `onSelect`, `PromptPath`,
@@ -89,11 +113,10 @@ the frontmost process is named `baia-dev`, and nothing was typed into the pane.
 The shared `~/.config/baia/config.json` was rewritten to `sidebar: files` for the
 run and restored by the `EXIT` trap, confirmed after the kill.
 
-## Row indices are derived, not observed
+## Row indices, now observed
 
-The click targets row 2 under an expanded `src/`. This probe was written from
-inside a baia pane, where it could not be run, so that number comes from the sort
-order `path-picker` recorded rather than from a capture of this fixture. **Confirm
-it against `1-clicked.png` on the first run and correct `run.sh` rather than
-guessing.** path-picker's first version was off by one throughout and every check
-failed against the wrong row.
+Row 2 under an expanded `src/` is `caf<E9>.txt`, confirmed against the 2026-08-03
+capture. The derivation happened to be right, which it had no business being: it
+came from `path-picker`'s sort order rather than from this fixture. The two
+dotfiles `fixture.sh` writes are untracked, so `ls-files --others` lists them and
+they take rows 4 and 5, below `src/`'s children and below nothing that is clicked.
