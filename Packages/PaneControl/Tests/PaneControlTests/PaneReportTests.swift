@@ -10,6 +10,34 @@ import Testing
     /// below builds its deadlines relative to this.
     static let now = Date(timeIntervalSince1970: 1_000_000)
 
+    // MARK: The mapping onto the attention model
+
+    /// **`isFinished` is not `!isAsking`, and this arm is the whole reason both
+    /// readers exist here instead of at the call site.** The attention model
+    /// takes two booleans, so somebody has to turn three cases into them, and the
+    /// tempting spelling of the second is "not blocked". `working` is also not
+    /// blocked, and a working agent has emphatically not finished: that spelling
+    /// would mark every busy pane as done the moment it stopped asking a
+    /// question. The app target that would hold the mistake has no test target.
+    @Test func askingAndFinishedAreTwoQuestionsAndWorkingAnswersNoToBoth() {
+        #expect(ReportedState.blocked.isAsking)
+        #expect(ReportedState.blocked.isFinished == false)
+
+        #expect(ReportedState.idle.isFinished)
+        #expect(ReportedState.idle.isAsking == false)
+
+        // The case that separates the two readers from one negated reader.
+        #expect(ReportedState.working.isAsking == false)
+        #expect(ReportedState.working.isFinished == false)
+    }
+
+    /// No statement can be both, at any case the enum has now or gains later.
+    @Test func noStatementIsBothAskingAndFinished() {
+        for state in ReportedState.allCases {
+            #expect(!(state.isAsking && state.isFinished), "\(state) claims both")
+        }
+    }
+
     private func report(
         _ state: ReportedState,
         seq: UInt64? = nil,

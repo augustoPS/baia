@@ -18,6 +18,23 @@ public enum ReportedState: String, Sendable, Hashable, Codable, CaseIterable {
     /// observer can tell a finished agent from a working one. This is how a
     /// finished agent says so when its process cannot.
     case idle
+
+    /// Whether this statement is the pane asking for a human.
+    ///
+    /// The attention model takes booleans rather than this enum, because the
+    /// package that holds it imports Foundation and nothing else. These two
+    /// readers are that mapping, kept here where the enum is and where a test
+    /// can reach them, rather than spelled at the call site in the app target,
+    /// which has no test target at all.
+    public var isAsking: Bool { self == .blocked }
+
+    /// Whether this statement is the pane saying it has stopped.
+    ///
+    /// **Not the negation of ``isAsking``**, and that is the whole point of
+    /// writing it down. `working` is also not asking, and a pane that is working
+    /// has emphatically not finished; folding the two would make every busy agent
+    /// read as done the moment it stopped being blocked.
+    public var isFinished: Bool { self == .idle }
 }
 
 /// One statement a pane made about itself, with the two facts that decide whether

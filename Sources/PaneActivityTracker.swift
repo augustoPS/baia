@@ -153,8 +153,13 @@ final class PaneActivityTracker {
     /// Deliberately does not fire `onChange`: the controller sets this and then
     /// publishes, so a single report produces one pass rather than two, and the
     /// ordering is visible at the call site rather than buried here.
-    func setReportedBlock(_ blocked: Bool?, message: String?) {
-        _ = attention.noteReported(blocked: blocked, message: message)
+    /// **Both facts, from the one report that carried them.** `ReportedState` has
+    /// three cases and the package takes two booleans, because the package
+    /// imports Foundation and nothing else; this is the one place the wire enum
+    /// is mapped onto them, the same move `activityReading` already makes. Two
+    /// separate setters would let one of the two go stale against the other.
+    func setReportedBlock(_ blocked: Bool?, finished: Bool?, message: String?) {
+        _ = attention.noteReported(blocked: blocked, finished: finished, message: message)
         // Recomputed here, announced by the caller. See ``refreshAgent()``.
         refreshAgent()
     }

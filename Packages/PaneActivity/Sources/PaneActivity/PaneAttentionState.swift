@@ -29,6 +29,20 @@ public struct PaneAttentionState: Sendable, Equatable {
     private var reported: Bool?
     private var reportedMessage: String?
 
+    /// Whether the pane's last statement was that it had *finished*, as opposed
+    /// to that it was working. Nil for a pane that has said nothing.
+    ///
+    /// **A second fact rather than a third value on ``reported``**, because the
+    /// two are read by two different rules and folding them would make one enum
+    /// that both rules have to agree about the spelling of. `reported == false`
+    /// goes on meaning exactly what it meant, "the agent says it is not asking",
+    /// and that answer is unchanged by whether it stopped or carried on.
+    ///
+    /// Set by the same call that sets the other two, which is what stops them
+    /// disagreeing: one report arrives and all three facts move together, so
+    /// there is no caller that can leave a finish behind under a live block.
+    private var reportedFinish: Bool?
+
     /// Whether the owner has been in this pane since the request in force began.
     ///
     /// Separate from the latch's own ``PaneAttention/acknowledged`` case, and not
@@ -39,6 +53,17 @@ public struct PaneAttentionState: Sendable, Equatable {
     /// visit that predates a question does not answer it.
     private var seen = false
 
+    /// The visit, readable on its own.
+    ///
+    /// Internal rather than public: nothing outside this package has a use for a
+    /// visit that ``attention`` has not already resolved, and a public reader
+    /// would be a second way to ask "has this pane been seen" for the chrome to
+    /// disagree with. It exists so the tests can pin the visit for a pane that is
+    /// asking nothing, which is the one case no resolved attention can show,
+    /// because a pane asking nothing resolves to ``PaneAttention/none`` whether
+    /// the visit was recorded or not.
+    var hasBeenSeen: Bool { seen }
+
     public init() {}
 
     /// What the chrome draws, with the pane's own statement taken into account.
@@ -46,8 +71,16 @@ public struct PaneAttentionState: Sendable, Equatable {
     /// **The report owns whether the pane is asking; the latch and the visit own
     /// how loudly.** Resolved on read rather than stored, so there is one place
     /// the three facts meet and no cached answer to go stale behind them.
+    ///
+    /// **The two rules run in this order, and the order is the ranking.** A block
+    /// is a live question and outranks a finish, so asking about the block first
+    /// means a pane that is somehow both never reads as finished. In practice one
+    /// report carries one state and only one of the two can be true, but the
+    /// ranking is written down here rather than left to depend on that.
     public var attention: PaneAttention {
-        current.overridden(byReportedBlock: reported, message: reportedMessage, seen: seen)
+        current
+            .overridden(byReportedBlock: reported, message: reportedMessage, seen: seen)
+            .overridden(byReportedFinish: reportedFinish == true && reported != true, seen: seen)
     }
 
     /// Records what the pane says about itself.
@@ -61,10 +94,26 @@ public struct PaneAttentionState: Sendable, Equatable {
     /// acknowledgement earned before it is dropped. The agent answered, went back
     /// to work and asked something else, and being in the pane for the first
     /// question says nothing about the second.
-    public mutating func noteReported(blocked: Bool?, message: String?) -> Bool {
+    ///
+    /// **A finish arriving where there was none discards the visit for the same
+    /// reason**, and it is the third instance of the rule the other two already
+    /// follow: the visit is reset where a request begins, never where one ends.
+    /// An agent that finishes after the owner has walked away has not been seen,
+    /// however much the pane was looked at earlier in the session, and a finish
+    /// that inherited that older visit would decay before anybody knew it had
+    /// happened. That is the silent-loss failure the spec ranks worst.
+    ///
+    /// - Parameter finished: whether the pane says it has stopped. Nil alongside
+    ///   a nil `blocked` is a pane that has said nothing. Passed here rather than
+    ///   through an entry point of its own so that one report moves every fact it
+    ///   carries at once: two setters would let a caller record a finish and
+    ///   forget to clear it, leaving a stale one under the next live block.
+    public mutating func noteReported(blocked: Bool?, finished: Bool? = nil, message: String?) -> Bool {
         let before = attention
         if blocked == true, reported != true { seen = false }
+        if finished == true, reportedFinish != true { seen = false }
         reported = blocked
+        reportedFinish = finished
         reportedMessage = message
         return attention != before
     }
@@ -101,6 +150,14 @@ public struct PaneAttentionState: Sendable, Equatable {
         // both for a single request, and a program at a prompt may ring on every
         // keystroke it rejects.
         case .requested:
+            break
+
+        // Unreachable through the latch, and matched rather than defaulted so
+        // that it stays unreachable on purpose. ``PaneAttention/done`` is
+        // resolved on read from a report and a visit; it is never stored here,
+        // so `current` cannot hold it. A `default` would hide the day that stops
+        // being true.
+        case .done:
             break
         }
         return attention != before
