@@ -853,7 +853,8 @@ final class TerminalPaneController: NSViewController {
     private func pushReportToTracker() {
         let live = reports.live(at: Date())
         activityTracker.setReportedBlock(
-            live.map { $0.state == .blocked },
+            live.map(\.state.isAsking),
+            finished: live.map(\.state.isFinished),
             message: live?.message
         )
     }
