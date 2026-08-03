@@ -48,14 +48,14 @@ BLOB=$(printf 'accented\n' | git hash-object -w --stdin)
 TREE=$(printf '100644 blob %s\tcaf\xe9.txt\n' "$BLOB" | git mktree)
 git read-tree --prefix=src/ "$TREE"
 
-# The bytes the click has to produce, written where the checks can read them
-# rather than spelled again in the assertions. Single-quoted and space-suffixed
-# because that is what `PromptPath` returns for a path carrying a byte outside its
-# safe set, which every byte at or above 0x80 is.
-printf "'src/caf\xe9.txt' " >"$OUT/.expected-bytes"
-
-# What the same click produced before the byte path existed, kept as the negative
-# control: U+FFFD is EF BF BD.
-printf "'src/caf\xef\xbf\xbd.txt' " >"$OUT/.lossy-bytes"
+# No expectation files any more. They held the bytes the click had to produce,
+# back when this probe graded what arrived at the shell; the answer now is that
+# nothing arrives, because `PromptPath` refuses a path the line editor cannot
+# hold. Which refusal this row produces is pinned in `PromptPathTests`, where it
+# needs no window, and the sentence the footer shows is graded by eye.
+#
+# Removing them also takes two rows out of the sidebar. They were untracked, so
+# `ls-files --others` listed them at rows 4 and 5; without them `README.md` moves
+# up and rows 1 to 3, which are the ones clicked, do not move.
 
 echo "[+] fixture at $OUT"

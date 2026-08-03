@@ -1,7 +1,10 @@
 # Prompt path bytes probe
 
-**The question:** when a sidebar row names a file whose name is not valid UTF-8,
-do those exact bytes reach the shell?
+**The question:** when a sidebar row names a file whose name the shell cannot
+hold, is the click refused with a reason the owner can act on?
+
+It used to ask whether the bytes reached the shell. That has an answer, below,
+and the answer is why the question changed.
 
 `./run.sh` from anywhere, and **never from inside a baia pane**: it launches and
 drives `baia-dev.app` with real events. `theme-catalog` and `app-icon` are the two
@@ -9,21 +12,20 @@ probes safe in a pane; this is not one of them.
 
 ## Why it is not a check inside `path-picker`
 
-Two reasons, and the second is the interesting one.
+`path-picker` addresses rows by hardcoded index, and adding a row to its fixture
+silently shifts five working checks. Its own file says so, having been off by one
+throughout on its first version.
 
-`path-picker` grades by reading the focused pane's last line over the control
-channel. That cannot work here. A terminal's screen buffer holds decoded text: the
-emulator turns arriving bytes into cells, and a byte that is not valid UTF-8
-becomes U+FFFD on the way in. A correct send and the exact defect this exists to
-catch therefore read back identically. The assertion has to come from the shell,
-which receives bytes, rather than from the screen, which receives characters.
+The stronger reason was true while this graded bytes and is worth keeping as the
+record: `path-picker` asserts by reading the pane's last line over the control
+channel, and a terminal's screen buffer holds decoded text. The emulator turns
+arriving bytes into cells, and a byte that is not valid UTF-8 becomes U+FFFD on
+the way in, so a correct send and the defect read back identically. That is what
+forced the `cat` route, and it is why the byte question could never have been
+answered inside `path-picker`.
 
-So the command line is assembled as `printf '%s' <clicked path> > sent.bin`: the
-click supplies the middle, zsh writes the argument out untouched, and `cmp` grades
-the file against bytes the fixture recorded. Nothing in that route decodes.
-
-The other reason is mundane. `path-picker` addresses rows by hardcoded index, and
-adding one row to its fixture silently shifts five working checks.
+Now that the answer is a refusal, the channel read is the right instrument again,
+because absence is what is being asserted and absence is ASCII.
 
 ## The fixture holds a file this machine cannot create
 
@@ -41,46 +43,40 @@ name. Confirmed 2026-08-02 that `git ls-files -z` and `git status --porcelain=v2
 -z` both emit the 0xE9 unchanged, and those are the two commands `GitCommand` runs
 behind the Files tree and the Changes list.
 
-## What it grades, and why it takes two clicks
+## What it grades
 
-The first run, 2026-08-03, ended with `printf '%s' 'src/caf` sitting on the
-prompt. The opening quote and the ASCII prefix arrived; the 0xE9 and everything
-after it did not; the quote never closed and nothing executed. That is one
-observation with two possible causes, and no screenshot separates them:
+The question this probe was built for has an answer, and the answer changed what
+it grades.
 
-1. **zsh's line editor cannot hold the bytes.** ZLE decodes its input as
-   characters, and 0xE9 announces a three-byte UTF-8 sequence that `.txt` does
-   not complete. The bytes reached the pty and the editor is what failed.
-2. **ghostty filters them.** `ghostty_surface_text` may validate UTF-8, in which
-   case the tail never left the emulator and `sendBytes` is writing into a sieve.
+**Measured 2026-08-03.** Clicked into `cat`, which reads the pty with no line
+editor in front of it, `'src/caf<E9>.txt' ` arrived byte for byte: the emulator
+delivers exactly what `sendBytes` writes, and every layer from git's index to
+`ghostty_surface_text` is honest. The same click onto a command line left
+`printf '%s' 'src/caf` on the prompt with the quote still open, because zsh's
+line editor decodes its input as characters and drops everything from the first
+byte that is not valid UTF-8.
 
-So there are two checks, and the pair is the instrument.
+Sending was the worse of the two failures available. A half-line reads as the app
+having lost the click, and it has to be cleared by hand before anything else can
+be typed. So `PromptPath` refuses such a path and the pane's footer says why,
+and this probe grades the refusal rather than the bytes.
 
-**Check 1 sends into `cat`.** It reads the pty in canonical mode with no line
-editor in front, so what lands in its file is exactly what the emulator
-delivered. This is the one that answers whether the bytes exist at all.
-
-**Check 2 sends onto a command line**, which is the real feature: a path a
-command can use. It is expected to be the harder of the two.
-
-`classify.py` grades each and names the layer:
-
-| Result | Diagnosis |
+| Check | How |
 |---|---|
-| both match `'src/caf<E9>.txt' ` | the route is sound end to end |
-| 1 passes, 2 fails | the emulator is honest; ZLE is where a non-UTF-8 path cannot go |
-| both truncated at `caf` | ghostty is the filter, and `sendBytes` writes into it |
-| either matches `'src/caf<EF><BF><BD>.txt' ` | a Swift `String` is still on the route |
-| nothing written | the quote never closed, which is the editor refusing the bytes |
+| an ordinary name still lands | click `plain.txt`, read the prompt over the channel |
+| the unholdable name appends nothing | click `caf<E9>.txt`, assert absence |
+| the footer says why | by eye, in `2-refused.png` |
 
-The U+FFFD row is a negative control rather than a restatement: a run matching it
-has regressed to the original defect, which is a different thing from a run that
-merely fails, and the output says which.
+**The positive control is not decoration.** On its own, "nothing was appended" is
+equally consistent with the refusal working, the row index being wrong, the click
+missing the window, and the picker being broken outright. Check 1 is the same
+picker, the same run and the neighbouring row, so check 2 means the refusal.
 
-The route under test is the whole of it: git's index, `GitStatusParser`,
-`RepositoryPath`, the surface's `onSelect`, `PromptPath`,
-`TerminalPaneController.send`, the patched `sendBytes`, and
-`ghostty_surface_text`.
+**The footer is by eye on purpose.** It is chrome rather than terminal text, so
+the control channel's `read` cannot reach it: that verb returns what the pty
+holds and the bar is drawn by the app. `PaneStatusSegmentsTests` grades the rule
+that a notice takes the bar alone, and `PromptPathTests` grades which refusal
+this row produces. What no test can see is the sentence arriving on screen.
 
 ## It needs a human once, and it blocks silently without one
 
@@ -117,6 +113,8 @@ run and restored by the `EXIT` trap, confirmed after the kill.
 
 Row 2 under an expanded `src/` is `caf<E9>.txt`, confirmed against the 2026-08-03
 capture. The derivation happened to be right, which it had no business being: it
-came from `path-picker`'s sort order rather than from this fixture. The two
-dotfiles `fixture.sh` writes are untracked, so `ls-files --others` lists them and
-they take rows 4 and 5, below `src/`'s children and below nothing that is clicked.
+came from `path-picker`'s sort order rather than from this fixture.
+
+The two byte-expectation dotfiles that sat at rows 4 and 5 went with the byte
+checks. They were untracked, so `ls-files --others` listed them; without them
+`README.md` moves up, and rows 1 to 3, the only ones clicked, do not move.
