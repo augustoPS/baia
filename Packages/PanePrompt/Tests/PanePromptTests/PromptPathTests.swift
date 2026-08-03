@@ -345,6 +345,21 @@ import Testing
         #expect(reason == .controlScalar)
     }
 
+    /// The exact bytes `Diagnostics/prompt-path-bytes/` expects to see arrive at
+    /// the shell, pinned here so the probe and the resolver cannot drift.
+    ///
+    /// That probe builds a repository holding `src/caf<E9>.txt` as an index entry,
+    /// clicks its row, and compares what zsh received against a file the fixture
+    /// wrote. The fixture spells the expectation as a literal, which is a second
+    /// copy of this rule; this is the first, and a change here that the probe does
+    /// not know about fails on the next run rather than silently passing against a
+    /// stale expectation. If this test moves, move `fixture.sh` with it.
+    @Test func theBytesTheLiveProbeExpectsAreTheOnesThisProduces() {
+        let path = Array("src/caf".utf8) + [0xE9] + Array(".txt".utf8)
+        let expected = Array("'src/caf".utf8) + [0xE9] + Array(".txt' ".utf8)
+        #expect(sendBytes(path, root: "/repo", cwd: "/repo") == expected)
+    }
+
     /// The relative-path boundary is byte-wise, so a non-UTF-8 directory name in
     /// the middle of a path cannot break the component match.
     @Test func aNonUTF8ComponentDoesNotBreakTheRelativeMatch() {

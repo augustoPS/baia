@@ -35,11 +35,20 @@ OUT="verify-out/tree-expansions"
 # redirect there writes into a directory that does not exist and fails silently.
 READOUT="$REPO/$OUT"
 CONFIG="$HOME/.config/baia/config.json"
+
+[ -d "$APP" ] || { echo "ABORT: no build at $APP, run make build first" >&2; exit 1; }
+
+# Sourced before `APP_SESSION` is read, for the reason `path-picker/run.sh`
+# records at the same place: `app-identity.sh` derives the session and the socket
+# from the bundle `APP` names, and `set -u` made reading them early fatal rather
+# than merely early. Both files carried the identical three lines in the identical
+# wrong order.
+export OUT REPO
+source "$REPO/Diagnostics/lib/drive.sh"
+
 SESSION="$APP_SESSION"
 BAIA_SOCK="$APP_SOCKET"
 export BAIA_SOCK
-
-[ -d "$APP" ] || { echo "ABORT: no build at $APP, run make build first" >&2; exit 1; }
 
 # The contract every driven probe here keeps: the run rewrites the sidebar key and
 # deletes the session, so both are put back whatever happens, including on a kill.
@@ -48,9 +57,6 @@ SESSION_BACKUP=$(mktemp)
 cp "$CONFIG" "$CONFIG_BACKUP" 2>/dev/null
 cp "$SESSION" "$SESSION_BACKUP" 2>/dev/null
 trap 'cp "$CONFIG_BACKUP" "$CONFIG" 2>/dev/null; cp "$SESSION_BACKUP" "$SESSION" 2>/dev/null; rm -f "$CONFIG_BACKUP" "$SESSION_BACKUP"' EXIT
-
-export OUT REPO
-source "$REPO/Diagnostics/lib/drive.sh"
 
 pass=0
 fail=0
