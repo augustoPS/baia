@@ -170,8 +170,20 @@ final class PaletteListView: NSView {
             guard selection != oldValue else { return }
             scrollSelectionIntoView()
             needsDisplay = true
+            // Raised for a hover as well as for an arrow key, because the git
+            // state on screen belongs to whichever row is selected however it
+            // came to be selected. Without this the pointer moved the highlight
+            // and left the previous row's branch drawn beside the new one.
+            onSelectionChange?()
         }
     }
+
+    /// Raised after the selection moves for any reason, so the owner can refresh
+    /// what it shows for the selected row.
+    ///
+    /// Separate from ``onActivate`` because the two are different events: this
+    /// fires while browsing and that fires on commit.
+    var onSelectionChange: (() -> Void)?
 
     /// Raised when a row is clicked. The palette closes on a click the same way
     /// it closes on Return.
@@ -316,12 +328,52 @@ final class PaletteListView: NSView {
     // MARK: - Mouse
 
     override func mouseDown(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        let offset = Int(point.y / Self.rowHeight)
-        let index = scrollOffset + offset
-        guard rows.indices.contains(index) else { return }
+        guard let index = row(at: event) else { return }
         selection = index
         onActivate?(index, event.modifierFlags.contains(.shift) ? .splitRight : .newTab)
+    }
+
+    /// Moving the pointer over a row selects it, the way a menu does.
+    ///
+    /// The palette is driven from the keyboard and the selection was only ever
+    /// moved by the arrows, so the pointer could sit on one row while the
+    /// highlight stayed on another and Return took the highlighted one. Clicking
+    /// worked, which is what made the gap easy to miss: the click sets the
+    /// selection on its way through.
+    override func mouseMoved(with event: NSEvent) {
+        guard let index = row(at: event), index != selection else { return }
+        selection = index
+    }
+
+    /// The row under an event, or nil when the pointer is past the last one.
+    ///
+    /// Shared by the click and the hover so one arithmetic mistake cannot make
+    /// them disagree, which would show a highlight on one row and open another.
+    private func row(at event: NSEvent) -> Int? {
+        let point = convert(event.locationInWindow, from: nil)
+        guard point.y >= 0 else { return nil }
+        let index = scrollOffset + Int(point.y / Self.rowHeight)
+        return rows.indices.contains(index) ? index : nil
+    }
+
+    /// Rebuilt whenever the frame changes, because the list is resized on every
+    /// keystroke as the result count moves and an area built against the old
+    /// frame tracks a rectangle the rows no longer occupy.
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+        addTrackingArea(
+            NSTrackingArea(
+                rect: bounds,
+                // `activeAlways` rather than `activeInKeyWindow`: the palette
+                // lives in an `NSPanel` that takes key from its host, so the
+                // window under the pointer is not the key window and the
+                // in-key-window variant delivers nothing.
+                options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways],
+                owner: self,
+                userInfo: nil
+            )
+        )
     }
 
     // MARK: - Scrolling

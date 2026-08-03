@@ -144,6 +144,9 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
         listView.onActivate = { [weak self] index, action in
             self?.open(at: index, action: action)
         }
+        listView.onSelectionChange = { [weak self] in
+            self?.refreshSelectedGitState()
+        }
     }
 
     // No `deinit` removing `resignObserver`, for the same reason the trackers do
@@ -324,6 +327,10 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
                 )?.matchedIndices ?? []
             )
         }
+        // Cleared after the selection moves, not before. Setting `selection`
+        // raises `onSelectionChange`, and while `refreshSelectedGitState` does
+        // nothing in verb mode today, ordering the clear last means this stays
+        // right even if that stops being true.
         listView.selection = 0
         listView.selectedGitRuns = []
         queryView.countText = verbCountText(query: query, shown: ranked.count)
@@ -397,11 +404,10 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
         // rate for a row that had not changed.
         let next = max(0, min(results.count - 1, listView.selection + delta))
         guard next != listView.selection else { return }
+        // The git read follows from `onSelectionChange` rather than from a call
+        // here, so the arrows and the pointer refresh through one path. Calling
+        // it here as well would fork two subprocesses per arrow key.
         listView.selection = next
-        // No-op in verb mode, which is what the guard inside it answers. Left as
-        // one call rather than a branch here, so the rule about which rows have
-        // git state lives in one place.
-        refreshSelectedGitState()
     }
 
     /// Commits the selected row, which means different things in the two modes.

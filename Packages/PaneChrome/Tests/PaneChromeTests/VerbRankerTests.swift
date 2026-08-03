@@ -94,3 +94,70 @@ import Testing
         #expect(ranked.first?.shortcut == "⌘,")
     }
 }
+
+/// How close a match has to be before a verb is shown at all.
+///
+/// `FuzzyMatcher` was built for paths, where a spread-out subsequence is a fair
+/// match because every component is a word the owner chose. A menu title is a
+/// sentence, and the same rule let `>set` return `Show Next Tab`.
+@Suite struct VerbMatchStrictnessTests {
+    /// The real titles, so these arms fail if the menu is renamed under them.
+    private let verbs: [PaletteVerb] = [
+        PaletteVerb(title: "Settings…", id: 1),
+        PaletteVerb(title: "Set Project Directory…", id: 2),
+        PaletteVerb(title: "Reset Sidebar Size", id: 3),
+        PaletteVerb(title: "Select All", id: 4),
+        PaletteVerb(title: "Select Next Pane", id: 5),
+        PaletteVerb(title: "Show Next Tab", id: 6),
+        PaletteVerb(title: "Show Previous Tab", id: 7),
+    ]
+
+    /// The reported defect. `S`(Show) + `e`(inside Next) + `t`(Tab) is a
+    /// subsequence and was accepted; the `e` is what makes it noise.
+    @Test func setNoLongerReachesShowNextTab() {
+        let titles = VerbRanker.rank(verbs, query: "set").map(\.title)
+        #expect(!titles.contains("Show Next Tab"))
+        #expect(!titles.contains("Show Previous Tab"))
+    }
+
+    /// The verbs a person typing `set` means, all of which are one unbroken run.
+    @Test func setStillFindsEveryContiguousMatch() {
+        let titles = VerbRanker.rank(verbs, query: "set").map(\.title)
+        #expect(titles.contains("Settings…"))
+        #expect(titles.contains("Set Project Directory…"))
+        #expect(titles.contains("Reset Sidebar Size"))
+    }
+
+    /// Contiguity is not required, word starts are. Dropping the second half of
+    /// the rule for a substring test would take this with it.
+    @Test func anAcronymOfWordStartsStillMatches() {
+        let titles = VerbRanker.rank(verbs, query: "snt").map(\.title)
+        #expect(titles.contains("Show Next Tab"))
+    }
+
+    /// The mirror of the acronym arm, and the pair is the whole rule: same
+    /// candidate, same length of query, accepted through word starts and refused
+    /// through a word's interior.
+    @Test func aFragmentInsideAWordIsRefused() {
+        let single = [PaletteVerb(title: "Show Next Tab", id: 1)]
+        #expect(VerbRanker.rank(single, query: "snt").count == 1)
+        #expect(VerbRanker.rank(single, query: "set").isEmpty)
+    }
+
+    /// A single character cannot be fragmented, so it is always acceptable and
+    /// the ranking alone orders it.
+    @Test func oneCharacterIsAlwaysAccepted() {
+        #expect(!VerbRanker.rank(verbs, query: "s").isEmpty)
+    }
+
+    /// Two words joined by the rule's other boundaries, so a hyphenated or
+    /// camel-cased title is reachable the same way a spaced one is.
+    @Test func separatorsAndCamelCaseStartWordsToo() {
+        let odd = [
+            PaletteVerb(title: "Reset-Sidebar Size", id: 1),
+            PaletteVerb(title: "ShowNextTab", id: 2),
+        ]
+        #expect(VerbRanker.rank(odd, query: "rss").count == 1)
+        #expect(VerbRanker.rank(odd, query: "snt").count == 1)
+    }
+}
