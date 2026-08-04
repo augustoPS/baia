@@ -12,20 +12,12 @@ cd "$ROOT"
 
 # Built straight from source rather than picked out of SwiftPM's incremental
 # object directory, whose per-file objects carry duplicate type metadata and do
-# not link on their own. Same reason as `footer-corners`.
-build_module() {
-  local name=$1
-  shift
-  swiftc -swift-version 6 -emit-library -emit-module \
-    -module-name "$name" -emit-module-path "$LIB/$name.swiftmodule" \
-    -o "$LIB/lib$name.dylib" -I "$LIB" -L "$LIB" "$@" \
-    Packages/"$name"/Sources/"$name"/*.swift
-}
-
-build_module BaiaSettings
-build_module PaneChrome -lBaiaSettings
-build_module WorkspaceLayout
-build_module GitWorkspace
+# not link on their own. The dependency edges live in `lib/build-packages.sh`
+# rather than here: this probe carried its own copy, it went stale when
+# `SettingsDerivations` moved into `PaneChrome`, and nothing noticed because no
+# `make` target compiles a probe.
+. "$ROOT/Diagnostics/lib/build-packages.sh"
+build_packages "$LIB" BaiaSettings GitWorkspace PaneControl PaneChrome WorkspaceLayout
 
 # The shipped sidebar files are compiled verbatim, not sliced and not retyped, so
 # the view driven below is the view the app installs. If `ChangesSurface` ever

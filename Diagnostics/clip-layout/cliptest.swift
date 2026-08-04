@@ -210,7 +210,12 @@ func shipped() -> Subject {
             surface.hasRepository = true
             surface.changes = (0 ..< count).map { index in
                 RepositoryFileChange(
-                    path: "Sources/AVeryLongPathThatWantsMoreColumnThanItHas\(index).swift",
+                    // `RepositoryPath(...)` rather than a bare literal: the type
+                    // took bytes in the 2026-08-02 byte-path work, and only the
+                    // `ExpressibleByStringLiteral` conformance still accepts a
+                    // plain literal. An interpolation is not a literal, so this
+                    // call needs the initializer spelled out.
+                    path: RepositoryPath("Sources/AVeryLongPathThatWantsMoreColumnThanItHas\(index).swift"),
                     index: nil,
                     worktree: .modified,
                     kind: .ordinary

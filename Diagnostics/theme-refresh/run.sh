@@ -13,18 +13,12 @@ cd "$ROOT"
 # The packages the probe needs, built straight from source rather than picked out
 # of SwiftPM's incremental object directory, whose per-file objects carry
 # duplicate type metadata and do not link on their own.
-build_module() {
-  local name=$1
-  shift
-  swiftc -swift-version 6 -emit-library -emit-module \
-    -module-name "$name" -emit-module-path "$LIB/$name.swiftmodule" \
-    -o "$LIB/lib$name.dylib" -I "$LIB" -L "$LIB" "$@" \
-    Packages/"$name"/Sources/"$name"/*.swift
-}
-
-build_module BaiaSettings
-build_module PaneChrome -lBaiaSettings
-build_module WorkspaceLayout
+# The dependency edges live in `lib/build-packages.sh` rather than here. This
+# probe carried its own copy and it went stale when `FileTreeExpansions` gave
+# `PaneChrome` a `GitWorkspace` import, which no `make` target could notice
+# because none of them compiles a probe.
+. "$ROOT/Diagnostics/lib/build-packages.sh"
+build_packages "$LIB" BaiaSettings GitWorkspace PaneControl PaneChrome WorkspaceLayout
 
 # `PaneSplitController` and `PaneSplitView` are sliced out of the shipped file
 # rather than retyped here, so the probe cannot pass against a copy that has
