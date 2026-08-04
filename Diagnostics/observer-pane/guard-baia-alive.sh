@@ -46,10 +46,13 @@ if has "${START}"'pkill([[:space:]]+-[a-zA-Z]+)*[[:space:]]+baia'; then
   emit_deny "Blocked: pkill baia would kill the app hosting this pane, the orchestrator, and every sibling executor."
 fi
 
-# Two probes launch nothing, quit nothing and open no window, so the reason this
+# Five probes launch nothing, quit nothing and take no focus, so the reason this
 # block gives does not apply to them. `theme-catalog` builds a binary and sweeps
-# the shipped themes; `app-icon` reads plists and compares files. Both say so in
-# their own headers and both are safe from inside a pane.
+# the shipped themes; `app-icon` reads plists and compares files. `clip-layout`,
+# `theme-refresh` and `pane-resize` each build an `NSWindow` and measure it, but
+# every one of them sets an `.accessory` or `.prohibited` activation policy
+# first, so the window never reaches the Dock, never becomes key, and never takes
+# focus from the pane that started it.
 #
 # Carved out rather than left blanket, because the blanket cost something
 # measurable: the wave-five reviewer needed the theme-catalog sweep, could not run
@@ -59,9 +62,26 @@ fi
 # pre-approve. A guard wider than its reason routes work into shapes nothing can
 # authorise.
 #
+# It cost something a second time on 2026-08-03. Six of the seven probes that
+# compile a package were found dead, none of them by a `make` target, because a
+# hand-written link line goes stale when a file moves between packages and no
+# build compiles a probe. The blanket is part of why they stayed dead: the five
+# named in this block could not be run from the pane where the work happens, and
+# an unrunnable probe is one nobody notices has stopped building. The list was
+# widened only after reading each probe's source, not on the strength of that
+# argument.
+#
+# **`footer-corners` and `fullscreen-strip` stay denied, and for a reason this
+# block did not previously state.** Neither quits baia either, so the message
+# below is wrong about them too, but both call `makeKeyAndOrderFront` and
+# `activate`, and `fullscreen-strip` additionally runs a real event loop and
+# drives its window into full screen and back twice. They steal focus from the
+# pane that launched them, which is disruption of a different kind than the one
+# named here rather than an absence of it.
+#
 # Every probe named must be safe, so a command pairing a safe one with a real
 # driver is still denied.
-SAFE_PROBES='^(theme-catalog|app-icon)$'
+SAFE_PROBES='^(theme-catalog|app-icon|clip-layout|theme-refresh|pane-resize)$'
 probes=$(printf '%s' "$COMMAND" | grep -oE 'Diagnostics/[a-zA-Z0-9_-]+/run\.sh' | sed -E 's|Diagnostics/([^/]+)/run\.sh|\1|')
 if [ -n "$probes" ]; then
   unsafe=0
@@ -71,7 +91,7 @@ if [ -n "$probes" ]; then
 $probes
 EOF
   if [ "$unsafe" = "1" ]; then
-    emit_deny "Blocked: a Diagnostics probe quits any running baia and launches its own. It would end this run. Use 'make test' to verify package work, or theme-catalog/app-icon, which launch nothing."
+    emit_deny "Blocked: this Diagnostics probe takes over the screen. footer-corners and fullscreen-strip open a key window and activate, and fullscreen-strip runs an event loop driving it in and out of full screen, so either would pull focus off this pane mid-run. Others quit any running baia and launch their own. Use 'make test' for package work, or theme-catalog, app-icon, clip-layout, theme-refresh and pane-resize, which take no focus."
   fi
 fi
 

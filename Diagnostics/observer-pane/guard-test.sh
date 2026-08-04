@@ -22,16 +22,32 @@ check() {                       # check <expected-exit> <command-string>
 
 # Denied: every route to killing the app that hosts this run.
 check 2 './Diagnostics/control-channel/run.sh'
-check 2 'cd ~/Projects/baia && ./Diagnostics/footer-corners/run.sh'
 
-# The two that launch nothing are allowed, and a command pairing one with a real
+# Denied for taking the screen rather than for killing anything. Both open a key
+# window and activate; `fullscreen-strip` also runs an event loop and drives its
+# window in and out of full screen twice. Neither quits baia, so these two are
+# the reason the deny message names focus as well as launching.
+check 2 'cd ~/Projects/baia && ./Diagnostics/footer-corners/run.sh'
+check 2 './Diagnostics/fullscreen-strip/run.sh'
+
+# The five that take no focus are allowed, and a command pairing one with a real
 # driver is not. Without that last pair the carve-out is a hole: naming a safe
 # probe anywhere in the command would clear the whole line.
+#
+# `clip-layout`, `theme-refresh` and `pane-resize` each build an `NSWindow`, and
+# are allowed anyway because each sets an `.accessory` or `.prohibited`
+# activation policy before showing anything, so the window never becomes key. If
+# one of them ever calls `makeKeyAndOrderFront`, it belongs above with the other
+# two and this line should start failing.
 check 0 './Diagnostics/theme-catalog/run.sh'
 check 0 './Diagnostics/app-icon/run.sh'
 check 0 'cd ~/Projects/baia && ./Diagnostics/app-icon/run.sh'
+check 0 './Diagnostics/clip-layout/run.sh'
+check 0 './Diagnostics/theme-refresh/run.sh'
+check 0 'cd ~/Projects/baia && ./Diagnostics/pane-resize/run.sh'
 check 2 './Diagnostics/app-icon/run.sh; ./Diagnostics/path-picker/run.sh'
 check 2 './Diagnostics/theme-catalog/run.sh && ./Diagnostics/control-channel/run.sh'
+check 2 './Diagnostics/clip-layout/run.sh; ./Diagnostics/footer-corners/run.sh'
 check 2 'make run'
 check 2 'make run-attached'
 check 2 'pkill -x baia'
