@@ -23,8 +23,27 @@ build_module() {
 }
 
 build_module BaiaSettings
-build_module PaneChrome -lBaiaSettings
-build_module WorkspaceLayout
+build_module GitWorkspace
+build_module PaneControl
+build_module WorkspaceLayout -lPaneControl
+
+# `PaneChrome` minus `SettingsDerivations.swift`, and with `GitWorkspace` linked.
+# Both are consequences of files moving into this package after the line above was
+# written, and neither announced itself: a hand-rolled link line sits outside
+# SwiftPM's dependency graph, so it goes stale silently and the probe fails at
+# compile time rather than reporting anything about the code it grades.
+# `FileTreeExpansions` needs `GitWorkspace`; `SettingsDerivations` imports
+# `GhosttyTerminal`, which is the rendering half and is excluded here for the same
+# reason `theme-catalog/build.sh` excludes it.
+PANE_CHROME_SOURCES=()
+for source in Packages/PaneChrome/Sources/PaneChrome/*.swift; do
+  [ "$(basename "$source")" = SettingsDerivations.swift ] && continue
+  PANE_CHROME_SOURCES+=("$source")
+done
+swiftc -swift-version 6 -emit-library -emit-module \
+  -module-name PaneChrome -emit-module-path "$LIB/PaneChrome.swiftmodule" \
+  -o "$LIB/libPaneChrome.dylib" -I "$LIB" -L "$LIB" -lBaiaSettings -lGitWorkspace \
+  "${PANE_CHROME_SOURCES[@]}"
 
 # The three shipped files are compiled verbatim, not sliced and not retyped, so
 # the pixels measured are the pixels the app draws. `PaneStatusBarView` and
