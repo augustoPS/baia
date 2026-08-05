@@ -33,6 +33,24 @@ private final class PaneStatusContentView: NSView {
     override func hitTest(_: NSPoint) -> NSView? { nil }
 }
 
+/// `NSGlassEffectView`, with the same three refusals every other layer of this
+/// footer makes.
+///
+/// A plain `NSGlassEffectView` hit-tests itself by AppKit's own default, and
+/// this bar's container relies on every child returning nil from `hitTest` so
+/// the click bubbles up to its own `mouseDown(with:)` (see that method's own
+/// note). Without this override the glass backing would be the view a click
+/// inside the footer actually lands on, and the container's `mouseDown` would
+/// never fire, so the pane it sits over could no longer be focused by clicking
+/// its footer once glass was on.
+private final class PaneStatusGlassBacking: NSGlassEffectView {
+    override var acceptsFirstResponder: Bool { false }
+
+    override var canBecomeKeyView: Bool { false }
+
+    override func hitTest(_: NSPoint) -> NSView? { nil }
+}
+
 /// The thin footer under one terminal surface.
 ///
 /// Drawing only. Every decision about which segments exist, what they say, and
@@ -79,6 +97,27 @@ final class PaneStatusBarView: NSView {
         didSet {
             guard theme != oldValue else { return }
             invalidate()
+        }
+    }
+
+    /// What the bar draws, chosen by `PaneChrome.resolvedStyle(setting:appearance:)`
+    /// upstream: flat, unchanged from what Plan 1 shipped, or glass with a
+    /// material set to draw a translucent backing under this bar's own content.
+    ///
+    /// A stored property with a `didSet`, the same shape as ``theme``, rather
+    /// than a value read fresh on every draw: the backing view's existence has to
+    /// change with it, and a view is created or torn down here, once, not on
+    /// every `draw(_:)` pass.
+    ///
+    /// **Flat creates no backing view at all, not merely a hidden one.** A hidden
+    /// `NSGlassEffectView` still costs a compositing pass macOS runs whether or
+    /// not it draws anything, and flat is the byte-identical spec: the absence of
+    /// the view is part of what "byte-identical" means here, not just the
+    /// absence of its visible effect.
+    var resolvedChrome: ResolvedChrome = .flat {
+        didSet {
+            guard resolvedChrome != oldValue else { return }
+            applyResolvedChrome()
         }
     }
 
@@ -146,6 +185,10 @@ final class PaneStatusBarView: NSView {
         didSet {
             guard bottomCorners != oldValue else { return }
             invalidate()
+            // The glass backing has no `draw(_:)` of its own for `cornerPath` to
+            // clip the way the drawn fill does, so its mask has to be rebuilt by
+            // hand whenever the corners it should match move.
+            updateGlassMask()
         }
     }
 
@@ -155,6 +198,15 @@ final class PaneStatusBarView: NSView {
     /// frame. Its own view because the fade is on `opacity`, and animating a
     /// value that `draw(_:)` paints would mean redrawing the text for 160 ms.
     private let barFrame = PaneStatusContentView(frame: .zero)
+
+    /// The glass material under everything else, or nil under flat.
+    ///
+    /// Created and torn down by ``applyResolvedChrome()``, not merely hidden:
+    /// see ``resolvedChrome``'s own doc comment for why flat has to mean no view
+    /// exists rather than an invisible one. Always the first subview when it
+    /// exists, below ``attentionWash``, so the glass reads as the surface the
+    /// bar's own drawing sits on rather than as a layer painted over the text.
+    private var glassBacking: PaneStatusGlassBacking?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -236,6 +288,10 @@ final class PaneStatusBarView: NSView {
             child.frame = bounds
             child.needsDisplay = true
         }
+        if let glassBacking {
+            glassBacking.frame = bounds
+            updateGlassMask()
+        }
     }
 
     override func viewDidChangeBackingProperties() {
@@ -255,6 +311,72 @@ final class PaneStatusBarView: NSView {
         contentView.needsDisplay = true
         barFrame.needsDisplay = true
         applyBarFrameOpacity()
+    }
+
+    // MARK: - Chrome material
+
+    /// The material set glass resolves to, or nil under flat. One place to
+    /// unwrap ``resolvedChrome`` for every reader below rather than a `switch`
+    /// repeated at each of them.
+    private var materialSet: MaterialSet? {
+        switch resolvedChrome {
+        case .flat: nil
+        case let .glass(set): set
+        }
+    }
+
+    /// Creates or tears down ``glassBacking`` to match ``resolvedChrome``, and
+    /// repaints: the drawn fill and the text both read ``materialSet`` too.
+    ///
+    /// Verified against the installed SDK before this package's Task 4 built on
+    /// it (see the plan's Task 4 gate): `NSGlassEffectView.cornerRadius`,
+    /// `.tintColor`, `.style` and `.contentView` all compile against macOS 26,
+    /// unguarded, matching `project.yml`'s deployment target, so this is the
+    /// real glass view rather than the `NSVisualEffectView` fallback the plan
+    /// named for the case a member was missing.
+    private func applyResolvedChrome() {
+        switch resolvedChrome {
+        case .flat:
+            glassBacking?.removeFromSuperview()
+            glassBacking = nil
+        case let .glass(set):
+            let backing: PaneStatusGlassBacking
+            if let existing = glassBacking {
+                backing = existing
+            } else {
+                backing = PaneStatusGlassBacking(frame: bounds)
+                backing.style = .regular
+                backing.wantsLayer = true
+                // Below everything: added first, ahead of `attentionWash`, so the
+                // bar's own drawing still lands on top of it.
+                addSubview(backing, positioned: .below, relativeTo: attentionWash)
+                glassBacking = backing
+            }
+            backing.cornerRadius = 0 // The mask carries the window's own squircle instead; see `updateGlassMask()`.
+            backing.tintColor = nsColor(set.fillChrome.rgb, alpha: set.fillChrome.alpha)
+        }
+        updateGlassMask()
+        invalidate()
+    }
+
+    /// Clips ``glassBacking`` to the same outline the drawn fill clips to in
+    /// `draw(_:)`, so the glass does not square off a corner the window itself
+    /// rounds.
+    ///
+    /// `NSGlassEffectView.cornerRadius` draws a uniform radius on every corner,
+    /// which is the wrong shape twice over for this bar: it would round corners
+    /// the window does not cut as well as the ones it does, and a circular arc
+    /// beside the window's own squircle reads as a visible mismatch the way
+    /// `WindowCorner`'s own doc comment measures for the drawn frame. A
+    /// `CAShapeLayer` mask built from the identical `WindowCorner.path` is what
+    /// keeps the glass and the drawn fill agreeing about the shape.
+    private func updateGlassMask() {
+        guard let glassBacking, let layer = glassBacking.layer else { return }
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        let mask = (layer.mask as? CAShapeLayer) ?? CAShapeLayer()
+        mask.frame = bounds
+        mask.path = WindowCorner.cgPath(in: bounds, corners: bottomCorners)
+        layer.mask = mask
     }
 
     // MARK: - State
@@ -381,7 +503,18 @@ final class PaneStatusBarView: NSView {
         // stops where the fill does.
         NSGraphicsContext.saveGraphicsState()
         cornerPath(in: bounds).addClip()
-        nsColor(theme.barBackground).setFill()
+        // Flat draws its own opaque fill, unchanged from what Plan 1 shipped.
+        // Glass drops to the material's own translucent fill instead: `draw(_:)`
+        // is this view's base layer, which every subview (including
+        // `glassBacking`) renders above, so an opaque fill here would sit under
+        // the glass and hide it completely. The material fill is what lets the
+        // glass view's own blur and vibrancy show through this layer rather than
+        // being painted over by it.
+        if let materialSet {
+            nsColor(materialSet.fillChrome.rgb, alpha: materialSet.fillChrome.alpha).setFill()
+        } else {
+            nsColor(theme.barBackground).setFill()
+        }
         bounds.fill()
         drawHairline()
         NSGraphicsContext.restoreGraphicsState()
@@ -491,7 +624,13 @@ final class PaneStatusBarView: NSView {
                 doneGlyphWidth: 0
             )
         case .done:
-            let ink = theme.ink(on: theme.barBackground)
+            // The done glyph is drawn straight on the bar's own surface, same as
+            // every ordinary run, so it is judged against the same
+            // ``effectiveBarFill`` those go through rather than against
+            // `theme.barBackground` unconditionally, which would leave a
+            // glass footer's checkmark repaired for a fill it is not actually
+            // sitting on.
+            let ink = theme.ink(on: effectiveBarFill)
             if let glyph = capsuleGlyph(ink: ink) {
                 glyph.draw(at: NSPoint(
                     x: PaneStatusBarMetrics.horizontalInset,
@@ -582,12 +721,25 @@ final class PaneStatusBarView: NSView {
         )
     }
 
+    /// The surface this bar's text is judged readable against.
+    ///
+    /// `theme.barBackground` under flat, unchanged. Under glass, the material
+    /// fill flattened onto `theme.background` (``PaneChrome/RGBA/composited(over:)``):
+    /// this package cannot see what the compositor actually draws under a
+    /// translucent bar, so the theme's own background is the honest
+    /// approximation the plan calls for, the nearest real surface this type has
+    /// any way to compute.
+    private var effectiveBarFill: RGB {
+        guard let materialSet else { return theme.barBackground }
+        return materialSet.fillChrome.composited(over: theme.background)
+    }
+
     /// The colour a run is drawn in. Tested against `focused` alone in
     /// ``PaneChrome/PaneTheme/color(for:focused:)``: the bar itself no longer
     /// fills for attention, so there is no second surface to judge a run
     /// against.
     private func colour(for emphasis: PaneStatusEmphasis) -> RGB {
-        theme.color(for: emphasis, focused: isFocused)
+        theme.color(for: emphasis, focused: isFocused, on: effectiveBarFill)
     }
 
     private func draw(_ rendered: Rendered, at x: Double, width: Double, in rect: CGRect) {
@@ -713,12 +865,17 @@ final class PaneStatusBarView: NSView {
     /// device space, which shifts the terminal's own colours against the same hex
     /// value rendered by ghostty, so the footer and the grid would disagree about
     /// what `#141414` looks like.
-    private func nsColor(_ rgb: PaneChrome.RGB) -> NSColor {
+    ///
+    /// `alpha` defaults to opaque, which is every call site on this bar except
+    /// the glass backing's own tint (Task 4): everything this bar draws itself
+    /// is opaque over the terminal, per ``PaneChrome/RGB``'s own doc comment, and
+    /// the material fills are the one exception, carried as ``PaneChrome/RGBA``.
+    private func nsColor(_ rgb: PaneChrome.RGB, alpha: Double = 1) -> NSColor {
         NSColor(
             srgbRed: CGFloat(rgb.red),
             green: CGFloat(rgb.green),
             blue: CGFloat(rgb.blue),
-            alpha: 1
+            alpha: CGFloat(alpha)
         )
     }
 }

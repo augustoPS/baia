@@ -160,4 +160,41 @@ import Testing
         let b = RGBA(red: 18, green: 20, blue: 24, alpha: 0.45)
         #expect(a != b)
     }
+
+    // MARK: - RGBA.composited(over:), Task 4's honest-approximation fill
+
+    @Test func compositingAtZeroAlphaLeavesTheBackdropUnchanged() {
+        let fill = RGBA(red: 255, green: 255, blue: 255, alpha: 0)
+        let backdrop = RGB.eightBit(20, 30, 40)
+        #expect(fill.composited(over: backdrop) == backdrop)
+    }
+
+    @Test func compositingAtFullAlphaIsTheFillsOwnColour() {
+        let fill = RGBA(red: 18, green: 20, blue: 24, alpha: 1)
+        let backdrop = RGB.eightBit(255, 255, 255)
+        let result = fill.composited(over: backdrop)
+        let expected = RGB.eightBit(18, 20, 24)
+        // Tolerance rather than `==`: `RGB.eightBit` and the compositing formula
+        // reach the same value through different floating-point paths (division
+        // versus a lerp), which land a float epsilon apart rather than bit-equal.
+        #expect(abs(result.red - expected.red) < 0.0001)
+        #expect(abs(result.green - expected.green) < 0.0001)
+        #expect(abs(result.blue - expected.blue) < 0.0001)
+    }
+
+    @Test func compositingChromeFillOverDarkBackgroundMatchesLinearInterpolation() {
+        // --mat-fill-chrome over a representative dark theme background, checked
+        // against the plain alpha-over-opaque formula rather than against
+        // `blended` a second time, so a shared bug in both could not cancel out.
+        let fill = ChromeMaterials.Dark.fillChrome
+        let backdrop = RGB.eightBit(20, 20, 22)
+        let result = fill.composited(over: backdrop)
+
+        let expectedRed = 20.0 / 255 + (18.0 / 255 - 20.0 / 255) * 0.44
+        let expectedGreen = 20.0 / 255 + (20.0 / 255 - 20.0 / 255) * 0.44
+        let expectedBlue = 22.0 / 255 + (24.0 / 255 - 22.0 / 255) * 0.44
+        #expect(abs(result.red - expectedRed) < 0.0001)
+        #expect(abs(result.green - expectedGreen) < 0.0001)
+        #expect(abs(result.blue - expectedBlue) < 0.0001)
+    }
 }

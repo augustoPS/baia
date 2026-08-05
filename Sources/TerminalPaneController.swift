@@ -128,6 +128,18 @@ final class TerminalPaneController: NSViewController {
         }
     }
 
+    /// What the footer should draw: flat, unchanged, or glass with a material
+    /// set, per `PaneChrome.resolvedStyle(setting:appearance:)`.
+    ///
+    /// Straight through to ``statusBar``, the same shape as ``bottomCorners``:
+    /// nothing else in this pane draws chrome material yet (the terminal grid
+    /// and the overlay family are Task 5's and Task 6's, not Task 4's), so
+    /// there is exactly one consumer and no reason to store a second copy here.
+    var resolvedChrome: ResolvedChrome {
+        get { statusBar.resolvedChrome }
+        set { statusBar.resolvedChrome = newValue }
+    }
+
     /// Which derivation the attention signal is drawn from, and what to do when it
     /// lands on the focus colour.
     ///

@@ -65,7 +65,17 @@ final class ConfigurationCenter {
         Self.report(result)
         startWatching()
         appearanceObserver.onAppearanceChange = { [weak self] _ in
-            self?.onSettingsChange?()
+            guard let self else { return }
+            // `resolvedChrome` reads `appearanceObserver.appearance` fresh on
+            // every access, so by the time this closure runs the observer has
+            // already updated and `apply(to:)` picks up the new resolution.
+            // Without this, dark/light and Reduce Transparency moved the value
+            // `resolvedChrome` answers but no pane redrew until some unrelated
+            // settings-file edit forced a reload, which is exactly the stale
+            // frame `onSettingsChange`'s own doc comment says both sources must
+            // not leave behind.
+            applyToEveryPane()
+            onSettingsChange?()
         }
     }
 
@@ -161,6 +171,11 @@ final class ConfigurationCenter {
         pane.alertBehavior = settings.alertBehavior
         pane.gitPollInterval = settings.gitPollSeconds
         pane.activityPollInterval = settings.activityPollSeconds
+        // `resolvedChrome` is computed fresh from the same two live inputs this
+        // method already closes over (`settings` and the appearance observer's
+        // last value), so it stays correct whether `apply` runs from `register`,
+        // a settings reload, or an appearance change.
+        pane.resolvedChrome = resolvedChrome
         // Both go through the controller rather than through the view.
         // Assigning `view.configuration` or `view.controller` has a `didSet`
         // that tears the surface down and respawns the shell, losing the

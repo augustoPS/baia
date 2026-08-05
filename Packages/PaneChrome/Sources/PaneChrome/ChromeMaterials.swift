@@ -27,6 +27,24 @@ public struct RGBA: Sendable, Equatable {
         self.rgb = rgb
         self.alpha = min(max(0, alpha), 1)
     }
+
+    /// This colour flattened onto an opaque backdrop, standard alpha-over-opaque
+    /// compositing (`RGB.blended(with:fraction:)` already is that formula: linear
+    /// interpolation towards `self` by `alpha` is exactly `backdrop * (1-alpha) +
+    /// self * alpha`).
+    ///
+    /// Task 4's honest approximation for a glass fill's text contrast: this
+    /// package cannot see what the window compositor actually draws under a
+    /// translucent bar (the desktop, another window, the terminal's own scrolled
+    /// content), so it flattens the material onto `theme.background`, which is
+    /// the nearest surface the package can compute without AppKit. The result
+    /// feeds `PaneTheme.color(for:focused:on:)` the same way `barBackground`
+    /// already does for the flat bar, so the repair chain judges glass text
+    /// against a real colour rather than skipping the check because the true
+    /// backdrop is unknowable here.
+    public func composited(over backdrop: RGB) -> RGB {
+        backdrop.blended(with: rgb, fraction: alpha)
+    }
 }
 
 /// One CSS `box-shadow` value with up to two layers, spelled the way

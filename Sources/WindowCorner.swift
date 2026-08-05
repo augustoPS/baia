@@ -89,11 +89,25 @@ enum WindowCorner {
     /// environment, so SwiftUI resolves them left-to-right, and the app is not
     /// localized.
     static func path(in rect: NSRect, corners: BottomCorners, inset: Double = 0) -> NSBezierPath {
+        NSBezierPath(cgPath: cgPath(in: rect, corners: corners, inset: inset))
+    }
+
+    /// The same outline as ``path(in:corners:inset:)``, as a `CGPath` rather
+    /// than an `NSBezierPath`.
+    ///
+    /// A `CAShapeLayer` mask (the glass backing's own corner clip, Task 4) takes
+    /// a `CGPath` directly, and `NSBezierPath` has a one-way conversion out of
+    /// `CGPath` (`init(cgPath:)`, macOS 14+) but none back in: there is no
+    /// `NSBezierPath.cgPath` to call on the result of the other overload. Both
+    /// overloads exist so a `draw(_:)` caller keeps using the `NSBezierPath` API
+    /// its `NSGraphicsContext` clip already speaks, while a layer-mask caller
+    /// gets there without a conversion that does not exist.
+    static func cgPath(in rect: NSRect, corners: BottomCorners, inset: Double = 0) -> CGPath {
         let box = rect.insetBy(dx: inset, dy: inset)
         // A pane away from the window's edge is the common case, and a rectangle
         // is what it has always been drawn as. Going through SwiftUI for it would
         // spend a path conversion per draw on four straight lines.
-        guard !corners.isEmpty else { return NSBezierPath(rect: box) }
+        guard !corners.isEmpty else { return CGPath(rect: box, transform: nil) }
 
         let curve = max(0, radius - inset)
         let shape = UnevenRoundedRectangle(
@@ -106,6 +120,6 @@ enum WindowCorner {
         // The view this is drawn into is flipped, which is also SwiftUI's
         // convention, so the shape's bottom is the visual bottom and no transform
         // is needed. In an unflipped view it would be upside down.
-        return NSBezierPath(cgPath: shape.path(in: box).cgPath)
+        return shape.path(in: box).cgPath
     }
 }
