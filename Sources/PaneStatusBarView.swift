@@ -177,7 +177,7 @@ final class PaneStatusBarView: NSView {
         // the layer's rectangle, and a pane in the corner would have worn a square
         // red block against a bar that curves away from it. The fade still happens
         // on `opacity`, which is why this is a layer of its own.
-        attentionWash.render = { [weak self] bounds in self?.drawAttentionWash(in: bounds) }
+        attentionWash.render = { [weak self] bounds in self?.drawCapsuleFill(in: bounds) }
         addSubview(attentionWash)
 
         contentView.render = { [weak self] bounds in self?.drawContent(in: bounds) }
@@ -249,7 +249,7 @@ final class PaneStatusBarView: NSView {
         // asking, so a redraw mid-wait does not restart the fade. A marker that
         // pulsed on every git poll would be one the eye learns to ignore.
         if attentionWash.layer?.animationKeys()?.isEmpty ?? true {
-            attentionWash.layer?.opacity = fillsBarForAttention ? 1 : 0
+            attentionWash.layer?.opacity = showsCapsuleFill ? 1 : 0
         }
         attentionWash.needsDisplay = true
         contentView.needsDisplay = true
@@ -260,16 +260,6 @@ final class PaneStatusBarView: NSView {
     // MARK: - State
 
     private var attention: PaneStatus.Attention { status?.attention ?? .none }
-
-    /// True when the bar itself is filled with the alert colour, which is the
-    /// only reason a bar fills.
-    ///
-    /// Both terms matter: only the unacknowledged level fills anything, and only
-    /// at the loud volume. `quiet` spends an edge instead, so that an asking pane
-    /// can be read without the bar's background being spent on it.
-    private var fillsBarForAttention: Bool {
-        attention == .asking && attentionStyle == .loud
-    }
 
     /// Gated on ``isWindowActive`` as well as focus. An accent stroke left on a
     /// background window would leave one pane un-recessed in a window that is
@@ -326,18 +316,10 @@ final class PaneStatusBarView: NSView {
     /// here may depend on `isFocused` for the same reason, which is why the ink
     /// below is spelled with `focused: true` baked in rather than routed through
     /// ``colour(for:)``: that helper answers `#bbbbbb` for an unfocused pane and
-    /// would flash the frame grey on its way out. ``fillsBarForAttention`` is
-    /// safe, since it reads the attention level and not the focus state.
+    /// would flash the frame grey on its way out.
     private func drawBarFrame(in rect: NSRect) {
         let width = PaneStatusBarMetrics.focusFrameWidth
-        // Judged against the surface the frame is actually on, the way the chip
-        // below already is. `inkFocus` is repaired against `barBackground` and
-        // scores 2.08:1 on `alert`, so a focused pane that is also asking, which
-        // is the default pairing and the state the owner is in every time he
-        // answers an agent, would wear a frame nobody can see. `ink(on:)` is the
-        // same colour the anchor name takes on that fill, at 5.86:1, so the two
-        // stay one signal rather than two.
-        let ink = fillsBarForAttention ? theme.ink(on: inkBackground) : theme.inkFocus
+        let ink = theme.inkFocus
         nsColor(ink).setStroke()
         nsColor(ink).setFill()
 
@@ -374,29 +356,19 @@ final class PaneStatusBarView: NSView {
         WindowCorner.path(in: rect, corners: bottomCorners, inset: inset)
     }
 
-    /// The colour every attention mark on this bar is drawn in: the wash, the
-    /// quiet line, and the acknowledged square.
+    /// The colour every attention mark on this bar is drawn in: the capsule fill,
+    /// its stroke once acknowledged, and the glyph ink asking derives from it.
     ///
-    /// One property feeding all three, and the pane frame is derived from the same
-    /// call in ``TerminalPaneController``. The three marks are one signal at three
-    /// volumes, so a value spelled per site is a footer whose quiet line and whose
-    /// fill can disagree about what attention looks like.
+    /// One property feeding all of them, and the pane frame is derived from the
+    /// same call in ``TerminalPaneController``. A value spelled per site is a
+    /// footer whose capsule and whose frame can disagree about what attention
+    /// looks like.
     ///
     /// `PaneTheme.alert` is deliberately still reached directly by the git
     /// segments, through `PaneStatusSegments` and the `.alert` emphasis. Red means
     /// conflict whatever this resolves to.
     private var attentionColour: RGB {
         theme.attentionColour(attentionAccent, behavior: alertBehavior)
-    }
-
-    /// The surface the text is judged against: the attention wash when there is
-    /// one, and the bar's own background otherwise.
-    ///
-    /// The wash is a layer above what ``draw(_:)`` paints, so that it can fade in
-    /// without taking the text with it, which is why the two are named separately
-    /// here rather than the fill simply being drawn.
-    private var inkBackground: RGB {
-        fillsBarForAttention ? attentionColour : theme.barBackground
     }
 
     // MARK: - Base drawing
@@ -415,11 +387,60 @@ final class PaneStatusBarView: NSView {
         NSGraphicsContext.restoreGraphicsState()
     }
 
-    /// The attention fill, on the same outline as the bar under it.
-    private func drawAttentionWash(in rect: NSRect) {
-        nsColor(attentionColour).setFill()
-        cornerPath(in: rect).fill()
+    /// True when the capsule is tinted, which is the only fill this bar draws
+    /// and the only thing the arrival pulse animates. Both volumes: the capsule
+    /// is the v5 resolution of "findable without shouting", and `loud` keeps
+    /// the whole-pane frame on top of it (`TerminalPaneController` gates that).
+    private var showsCapsuleFill: Bool {
+        attention == .asking
     }
+
+    /// The tinted capsule (asking). On its own layer so the arrival pulse can
+    /// run on opacity beneath a glyph that never fades.
+    private func drawCapsuleFill(in rect: NSRect) {
+        guard let frame = capsuleRect() else { return }
+        nsColor(attentionColour).setFill()
+        NSBezierPath(
+            roundedRect: frame,
+            xRadius: frame.height / 2,
+            yRadius: frame.height / 2
+        ).fill()
+    }
+
+    private static let capsuleGlyphFont = NSFont.monospacedSystemFont(ofSize: 10, weight: .heavy)
+
+    /// The capsule's glyph for the current level, measured once per draw pass.
+    private func capsuleGlyph(ink: RGB) -> NSAttributedString? {
+        let text: String? = switch attention {
+        case .asking, .acknowledged: "!"
+        case .done: "\u{2713}"
+        case .none: nil
+        }
+        guard let text else { return nil }
+        return NSAttributedString(string: text, attributes: [
+            .font: Self.capsuleGlyphFont,
+            .foregroundColor: nsColor(ink),
+        ])
+    }
+
+    /// Where the capsule sits, or nil at a level that draws none. One call
+    /// into the metrics so the fill, the stroke, the glyph and the popover
+    /// anchor cannot disagree (v5 open item 2).
+    private func capsuleRect() -> NSRect? {
+        guard attention == .asking || attention == .acknowledged else { return nil }
+        let width = Double(glyphWidth())
+        let frame = PaneStatusBarMetrics.attentionCapsuleFrame(glyphWidth: width)
+        return NSRect(x: frame.x, y: frame.y, width: frame.width, height: frame.height)
+    }
+
+    private func glyphWidth() -> CGFloat {
+        capsuleGlyph(ink: theme.foreground)?.size().width ?? 0
+    }
+
+    /// The capsule's frame in this view's coordinates, for the approval
+    /// popover to spring from. Nil when nothing pressable-looking is drawn,
+    /// which includes `done`: a ✓ is a fact, not a question to open.
+    var attentionCapsuleFrame: NSRect? { capsuleRect() }
 
     /// A one-point separator at the bottom edge rather than the top, so the
     /// terminal grid above meets the footer with no gap. Drawn as a blend rather
@@ -440,64 +461,50 @@ final class PaneStatusBarView: NSView {
     // MARK: - Content drawing
 
     private func drawContent(in rect: NSRect) {
-        // The quiet attention treatment: a line along the top edge instead of a
-        // filled band. It spends an edge rather than the bar's background, which
-        // is what keeps the footer legible while someone is working in the pane.
-        if attention == .asking, !fillsBarForAttention {
-            nsColor(attentionColour).setFill()
-            // Pushed inside the focus frame rather than under it. Both land on
-            // the same two points of the top edge and the frame is drawn above
-            // this view, so at y 0 the attention mark on a focused pane is not
-            // merely covered, it is gone: `quiet` has no arrival pulse either,
-            // by construction, so nothing else would have said the pane asked.
-            let y = framesForFocus ? PaneStatusBarMetrics.focusFrameWidth : 0
-            NSRect(x: 0, y: y, width: rect.width, height: PaneStatusBarMetrics.attentionLine).fill()
-        }
-
-        // The acknowledged mark. The smallest thing on the bar that is not grey,
-        // which is what lets it survive a glance across six panes without pulling
-        // at the eye of someone working in the pane beside it.
-        if attention == .acknowledged {
-            nsColor(attentionColour).setFill()
-            NSRect(
-                x: PaneStatusBarMetrics.horizontalInset,
-                y: (rect.height - Self.markSize) / 2,
-                width: Self.markSize,
-                height: Self.markSize
-            ).fill()
-        }
-
-        // The acknowledged line, along the bottom edge.
-        //
-        // The square above is what the level looks like on the bar it sits in;
-        // this is what carries it across a window. Added 2026-07-31, after a live
-        // look at three panes could not tell an acknowledged one from a pane
-        // asking nothing, which is the distance the level exists to survive.
-        //
-        // The bottom edge rather than the top, because the quiet treatment already
-        // spends the top one. Two lines on the same edge would read as one signal
-        // at two volumes rather than as the two different questions they answer,
-        // "how loudly is this pane asking" and "have I been here since it asked".
-        //
-        // Clipped, unlike everything else in this method. `drawContent` renders
-        // into its own view with no clip of its own, which costs nothing while the
-        // marks sit inside the bar, and this is the first thing here to reach the
-        // corner the pane shares with the window.
-        if attention == .acknowledged {
-            NSGraphicsContext.saveGraphicsState()
-            cornerPath(in: rect).addClip()
-            nsColor(attentionColour).setFill()
-            // Inside the focus frame, for the reason the quiet line is pushed
-            // inside it: the frame is stroked over this view, so a line on the
-            // extreme edge is not covered on a focused pane, it is gone.
-            let inset = framesForFocus ? PaneStatusBarMetrics.focusFrameWidth : 0
-            NSRect(
-                x: 0,
-                y: rect.maxY - inset - PaneStatusBarMetrics.attentionLine,
-                width: rect.width,
-                height: PaneStatusBarMetrics.attentionLine
-            ).fill()
-            NSGraphicsContext.restoreGraphicsState()
+        var offset: Double = 0
+        switch attention {
+        case .asking, .acknowledged:
+            guard let capsule = capsuleRect() else { break }
+            if attention == .acknowledged {
+                // Stroked here rather than on the wash view: nothing animates
+                // at this level, and a stroke under a pulsing fill would be
+                // the wrong z-order anyway.
+                let stroke = NSBezierPath(
+                    roundedRect: capsule.insetBy(dx: 0.5, dy: 0.5),
+                    xRadius: (capsule.height - 1) / 2,
+                    yRadius: (capsule.height - 1) / 2
+                )
+                stroke.lineWidth = 1
+                nsColor(attentionColour).setStroke()
+                stroke.stroke()
+            }
+            let ink = attention == .asking ? theme.ink(on: attentionColour) : attentionColour
+            if let glyph = capsuleGlyph(ink: ink) {
+                glyph.draw(at: NSPoint(
+                    x: capsule.midX - glyph.size().width / 2,
+                    y: capsule.midY - glyph.size().height / 2
+                ))
+            }
+            offset = PaneStatusBarMetrics.attentionLeadingAdvance(
+                for: attention,
+                glyphWidth: Double(glyphWidth()),
+                doneGlyphWidth: 0
+            )
+        case .done:
+            let ink = theme.ink(on: theme.barBackground)
+            if let glyph = capsuleGlyph(ink: ink) {
+                glyph.draw(at: NSPoint(
+                    x: PaneStatusBarMetrics.horizontalInset,
+                    y: Double(rect.height) / 2 - glyph.size().height / 2
+                ))
+                offset = PaneStatusBarMetrics.attentionLeadingAdvance(
+                    for: .done,
+                    glyphWidth: 0,
+                    doneGlyphWidth: Double(glyph.size().width)
+                )
+            }
+        case .none:
+            break
         }
 
         guard let status else { return }
@@ -505,7 +512,6 @@ final class PaneStatusBarView: NSView {
         guard !segments.isEmpty else { return }
 
         let rendered = segments.map { render($0) }
-        let offset = attention == .acknowledged ? Self.markSize + Self.markGap : 0
         let solved = PaneStatusLayout.solve(
             segments: segments,
             widths: rendered.map(\.width),
@@ -576,10 +582,12 @@ final class PaneStatusBarView: NSView {
         )
     }
 
-    /// The colour a run is drawn in. The fill collapse itself lives in
-    /// ``PaneChrome/PaneTheme/color(for:focused:filled:on:)``, tested there.
+    /// The colour a run is drawn in. Tested against `focused` alone in
+    /// ``PaneChrome/PaneTheme/color(for:focused:)``: the bar itself no longer
+    /// fills for attention, so there is no second surface to judge a run
+    /// against.
     private func colour(for emphasis: PaneStatusEmphasis) -> RGB {
-        theme.color(for: emphasis, focused: isFocused, filled: fillsBarForAttention, on: inkBackground)
+        theme.color(for: emphasis, focused: isFocused)
     }
 
     private func draw(_ rendered: Rendered, at x: Double, width: Double, in rect: CGRect) {
@@ -610,6 +618,9 @@ final class PaneStatusBarView: NSView {
     /// label attached to the name without competing with it. Inset by half a
     /// point so the one-point stroke lands on the pixel rather than straddling
     /// it.
+    ///
+    /// Unconditionally `plank`: the bar itself no longer fills for attention,
+    /// so there is no second backdrop the chip's border needs judging against.
     private func drawChip(at x: Double, width: Double, in rect: CGRect) {
         let box = NSRect(
             x: x + 0.5,
@@ -619,18 +630,7 @@ final class PaneStatusBarView: NSView {
         )
         let path = NSBezierPath(roundedRect: box, xRadius: Self.chipRadius, yRadius: Self.chipRadius)
         path.lineWidth = 1
-        // Blended against the surface the chip is actually drawn on, not against
-        // `barBackground`. When the bar is filled for attention the real backdrop
-        // is ``attentionColour``, and judging the stroke against the unfilled
-        // colour dropped it to 1.85:1 on exactly the pane that most wanted
-        // reading. `plank` on an ordinary bar, because the chip's border and the
-        // icon's dividers are one derivation. Everything on a filled bar is
-        // relative to `inkBackground` for this reason, which is also what carries
-        // the chip through a fill the config moved.
-        let stroke = fillsBarForAttention
-            ? colour(for: .context).blended(with: inkBackground, fraction: 0.45)
-            : theme.plank
-        nsColor(stroke).setStroke()
+        nsColor(theme.plank).setStroke()
         path.stroke()
     }
 
@@ -657,7 +657,7 @@ final class PaneStatusBarView: NSView {
     /// a marker that keeps pulsing while it waits is one the eye learns to
     /// ignore, and this one has to still work an hour later.
     private func runArrivalPulse() {
-        guard fillsBarForAttention, let washLayer = attentionWash.layer else { return }
+        guard showsCapsuleFill, let washLayer = attentionWash.layer else { return }
         washLayer.removeAllAnimations()
 
         // Reduce-motion skips to the final frame rather than to nothing. The
@@ -685,8 +685,6 @@ final class PaneStatusBarView: NSView {
     private static let chipRadius: Double = 2
     private static let dotDiameter: Double = 5
     private static let dotGap: Double = 5
-    private static let markSize: Double = 6
-    private static let markGap: Double = 6
 
     /// Proportional for the name, monospaced for machine data.
     ///
