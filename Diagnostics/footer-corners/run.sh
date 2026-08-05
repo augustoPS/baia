@@ -40,7 +40,7 @@ swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/cornertest" \
 #
 # `fullscreen` is last because it is the only arm that takes over the display: it
 # activates, opens a window and drives it into full screen and back, twice.
-for arm in radius match concentric height clip ackline frame fullscreen; do
+for arm in radius match concentric height clip capsule frame fullscreen; do
   "$OUT/cornertest" "$arm"
   echo
   if "$OUT/cornertest" "$arm" break; then

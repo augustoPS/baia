@@ -1,6 +1,7 @@
-// Probe for the footer's rounded bottom corners.
+// Probe for the footer's rounded bottom corners, and for the attention capsule
+// that draws inside the bar those corners belong to.
 //
-// Six questions, one arm each, and a `break` variant of every arm that damages
+// Eight questions, one arm each, and a `break` variant of every arm that damages
 // the thing under test and expects the check to catch it. A check that has never
 // failed proves nothing.
 //
@@ -9,6 +10,8 @@
 //   concentric  the focus frame stays 1 pt inside that corner all the way round
 //   height      rounding a corner moved neither the bar's height nor its text
 //   clip        the bar a real `PaneStatusBarView` renders has that corner in it
+//   capsule     the attention capsule (design v5 §3) fills, strokes, and clears
+//   frame       the whole-pane attention frame shares the window's own corner
 //   fullscreen  a full-screen window is square, and the shipped test says so
 //
 // Nothing here is part of the app build. `run.sh` compiles `Sources/WindowCorner.swift`
@@ -614,8 +617,13 @@ func renderBar(
         ),
         agent: PaneStatus.Agent(
             label: "claude",
-            wantsAttention: attention != .none,
-            isAcknowledged: attention == .acknowledged
+            // The three facts `PaneStatus.Attention.init(_:)` reads, reconstructed
+            // from the level this fixture was asked for rather than copied by hand,
+            // so a fifth level added there cannot silently render as one of these
+            // four without this call site being touched too.
+            wantsAttention: attention == .asking || attention == .acknowledged,
+            isAcknowledged: attention == .acknowledged,
+            hasFinishedUnseen: attention == .done
         )
     )
     bar.layoutSubtreeIfNeeded()
@@ -855,93 +863,207 @@ func differs(_ one: Render, _ other: Render, column: Int, fromBottom: Int) -> Bo
     return false
 }
 
-/// Does an acknowledged pane draw a line along the bottom edge, inside the corner
-/// and inside the focus frame?
+/// A pixel's RGBA bytes, addressed the way `PaneStatusBarView` addresses points
+/// on itself: `x` from the left, `y` from the *top*, both in view points and
+/// both scaled to the raster the bar was actually rendered at.
 ///
-/// The level's whole justification is being findable across a window while
-/// staying quiet enough to work beside, and until this line the only thing
-/// carrying it was a 6 pt square at the far left of one footer, which a live look
-/// on 2026-07-31 could not pick out from a pane that was asking nothing.
+/// Top rather than bottom, unlike the `fromBottom` convention the corner arms
+/// above use: `PaneStatusBarView.isFlipped` is `true`, so `attentionCapsuleFrame`
+/// and every coordinate `drawContent(in:)` computes from it, `y = 3` for the
+/// capsule's edge and `y = 11` for its centre on the 22 pt bar, are already
+/// measured from the top. Row 0 of an `NSBitmapImageRep` is also the top one, so
+/// this is a closer read of the drawing code than a bottom-relative one would be,
+/// not just a different label for the same row.
+///
+/// `renderBar` always renders a 300 pt-wide bar, so `renderScale` is the same
+/// conversion every other pixel-reading arm in this file already derives from
+/// `render.width / 300`.
+func samplePixel(_ render: Render, x: Double, y: Double, renderScale: Double) -> (r: UInt8, g: UInt8, b: UInt8, a: UInt8) {
+    let bytesPerRow = render.pixels.count / render.height
+    let column = Int((x * renderScale).rounded())
+    let row = Int((y * renderScale).rounded())
+    let offset = row * bytesPerRow + column * 4
+    return (render.pixels[offset], render.pixels[offset + 1], render.pixels[offset + 2], render.pixels[offset + 3])
+}
+
+/// The bytes ``PaneStatusBarView/nsColor(_:)`` would produce for this colour once
+/// composited into a `bitmapImageRepForCachingDisplay` bitmap, so a sampled pixel
+/// can be checked against the theme's own derivation rather than against a
+/// hand-copied hex constant that can drift from it.
+///
+/// `.genericRGB`, not `.deviceRGB`: `nsColor(_:)` builds its colour in explicit
+/// sRGB on purpose (its own doc comment explains why), but the bitmap this probe
+/// reads pixels from reports its own colour space as "Generic RGB", and AppKit
+/// converts through that on the way in. Verified empirically: an sRGB-tagged
+/// (255, 85, 85) composites to (252, 59, 68) in a real render, which is exactly
+/// what converting the expectation through `.genericRGB` first predicts, and nine
+/// levels off what `.deviceRGB` predicts.
+func expectedBytes(_ rgb: RGB) -> (r: UInt8, g: UInt8, b: UInt8) {
+    let color = NSColor(srgbRed: CGFloat(rgb.red), green: CGFloat(rgb.green), blue: CGFloat(rgb.blue), alpha: 1)
+    guard let converted = color.usingColorSpace(.genericRGB) else { return (0, 0, 0) }
+    return (
+        UInt8((converted.redComponent * 255).rounded()),
+        UInt8((converted.greenComponent * 255).rounded()),
+        UInt8((converted.blueComponent * 255).rounded())
+    )
+}
+
+/// Is a sampled pixel within a few levels of an expected colour? Antialiasing
+/// and colour-space rounding move a composited pixel a little even when it is
+/// unambiguously "that colour"; three ANSI-close comparisons in this codebase
+/// already treat single-digit 8-bit slack as noise rather than signal.
+func matches(_ sample: (r: UInt8, g: UInt8, b: UInt8, a: UInt8), _ expected: (r: UInt8, g: UInt8, b: UInt8), tolerance: Int = 3) -> Bool {
+    abs(Int(sample.r) - Int(expected.r)) <= tolerance
+        && abs(Int(sample.g) - Int(expected.g)) <= tolerance
+        && abs(Int(sample.b) - Int(expected.b)) <= tolerance
+}
+
+/// Does the footer draw the v5 attention capsule (design v5 §3): a tinted fill
+/// while asking, a clear stroked capsule once acknowledged, a bare `✓` and no
+/// capsule at all once done?
 ///
 /// Measured as a difference against the same bar rendered at `.none`, so the arm
-/// answers "these pixels are here because the pane is acknowledged" rather than
-/// "something is coloured down there", which the hairline satisfies on every bar
-/// in the app.
+/// answers "these pixels are here because the pane is asking/acknowledged/done"
+/// rather than "something is coloured over there", which the hairline and the
+/// bar fill both satisfy on every bar in the app regardless of level.
 ///
-/// Three claims, because three separate things silently take the line away. It
-/// has to be drawn at all. It has to be clipped to the corner, or a pane in the
-/// window's corner grows a square one. And it has to sit inside the focus frame,
-/// which is stroked over this view by `drawBarFrame(in:)` and would otherwise
-/// swallow the line on the focused pane, which is the pane most likely to be
-/// acknowledged.
+/// The fill is on its own layer (`attentionWash`), gated by `CALayer.opacity`
+/// rather than by a conditional in `draw(_:)`: `drawCapsuleFill` paints the same
+/// shape whenever `capsuleRect()` is non-nil, for both asking and acknowledged,
+/// and it is the layer's opacity that hides it at the acknowledged level on
+/// screen. `cacheDisplay(in:to:)`, which every arm in this file uses to read
+/// pixels without a screen, calls `draw(_:)` directly and does not composite
+/// through `CALayer.opacity` at all: verified by sampling the same point at
+/// opacity 0 and reading the fill at full strength regardless. So this arm
+/// cannot sample the capsule's exact centre and read "filled or not" off it,
+/// because the glyph is drawn there on every non-`.none` level and would answer
+/// the question by itself; instead every claim below reads a point chosen to
+/// land on exactly one draw call, verified against real renders before being
+/// written down here rather than assumed from the geometry alone.
 ///
-/// The control renders the acknowledged bar as an ordinary one, which is pixel for
-/// pixel what deleting the draw produces.
-func ackLineArm(breakIt: Bool) -> Bool {
+/// Three claims, one per non-quiet level, because each level takes the capsule
+/// away in its own way:
+///
+/// 1. **Asking draws a fill.** A point inside the capsule, off the glyph and
+///    off the rounded corners (`x` at the capsule's centre, `y` one point past
+///    the top edge, into the flat interior a stroke-only capsule leaves hollow)
+///    differs from `.none` and matches the theme's own
+///    `attentionColour(_:behavior:)`.
+/// 2. **Acknowledged draws a stroke, not a fill.** The same interior point
+///    matches the bar background (nothing painted over it), while the top edge
+///    itself, one point above, where the 1 pt stroke lands, differs from
+///    `.none`.
+/// 3. **Done draws a glyph and no capsule.** A point inside the leading glyph
+///    box differs from `.none` (the ✓ is drawn), while the point this arm reads
+///    the fill from for the other two levels matches the bar background: no
+///    capsule shape, filled or stroked, survives into the level that draws
+///    none.
+///
+/// Coordinates come from `attentionCapsuleFrame(glyphWidth:)` for this exact
+/// fixture, not hand-copied numbers: `x = 8`, `y = 3`, `width = 21`, `height =
+/// 16` on the 22 pt bar, `glyphWidth: 0` still landing on `capsuleMinWidth` for
+/// a single-character glyph, which is what `PaneStatusBarView.capsuleRect()`
+/// actually draws.
+///
+/// The negative controls damage the thing each claim is about, not the thing it
+/// calls: the asking bar rendered with attention forced to `.none` (claim 1
+/// fails, since there is then no fill anywhere to find), the acknowledged bar
+/// rendered as asking (claim 2 fails on both halves: the interior point fills
+/// and the edge stroke reads the same as a plain fill would), and the done bar
+/// rendered with attention forced to `.none` (claim 3 fails, since there is then
+/// no ✓ to find either).
+func capsuleArm(breakIt: Bool) -> Bool {
     let corners: BottomCorners = .left
     let height = PaneStatusBarMetrics.height
     guard
-        let plain = renderBar(corners: corners, height: height, focused: false, attention: .none),
-        let acked = renderBar(
-            corners: corners,
-            height: height,
-            focused: false,
-            attention: breakIt ? .none : .acknowledged
+        let none = renderBar(corners: corners, height: height, focused: false, attention: .none),
+        let asking = renderBar(corners: corners, height: height, focused: false, attention: breakIt ? .none : .asking),
+        let acknowledged = renderBar(
+            corners: corners, height: height, focused: false,
+            attention: breakIt ? .asking : .acknowledged
         ),
-        let plainFocused = renderBar(corners: corners, height: height, focused: true, attention: .none),
-        let ackedFocused = renderBar(
-            corners: corners,
-            height: height,
-            focused: true,
-            attention: breakIt ? .none : .acknowledged
-        )
+        let done = renderBar(corners: corners, height: height, focused: false, attention: breakIt ? .none : .done)
     else {
         print("  FAIL: the bar rendered nothing, so nothing was measured")
         return false
     }
 
-    let renderScale = Double(plain.width) / 300
-    let rows = max(1, Int((PaneStatusBarMetrics.attentionLine * renderScale).rounded()))
-    let inset = Int((PaneStatusBarMetrics.focusFrameWidth * renderScale).rounded())
-    let middle = plain.width / 2
+    let renderScale = Double(none.width) / 300
     print(breakIt
-        ? "bar rendered NOT acknowledged (negative control: the level's draw removed)"
-        : "bar rendered acknowledged by PaneStatusBarView, as shipped")
-    print(String(format: "  %dx%d px, %.1f px per point, line is %d row(s)",
-                 plain.width, plain.height, renderScale, rows))
+        ? "bars rendered with each level's own draw removed or swapped (negative controls)"
+        : "bars rendered asking / acknowledged / done by PaneStatusBarView, as shipped")
+    print(String(format: "  %dx%d px, %.1f px per point", none.width, none.height, renderScale))
+
+    let expectedAttention = expectedBytes(PaneTheme.darkPastel.attentionColour(.alert, behavior: .stock))
+    let expectedBarBackground = expectedBytes(PaneTheme.darkPastel.barBackground)
+
+    // The capsule's own geometry, not hand-copied numbers.
+    let frame = PaneStatusBarMetrics.attentionCapsuleFrame(glyphWidth: 0)
+    let centreX = frame.x + frame.width / 2
+    let edgeY = frame.y
+    // One point in from the top edge: past the 1 pt stroke a stroke-only
+    // capsule leaves hollow, and above where the glyph's own ink starts, which
+    // measured empirically begins well below this row for a heavy 10 pt `!`
+    // vertically centred at `frame.y + frame.height / 2`.
+    let interiorY = edgeY + 1
 
     var ok = true
 
-    // 1. Drawn at all, across the flat middle where no curve can be blamed.
-    let drawnRows = (0 ..< rows).filter { differs(plain, acked, column: middle, fromBottom: $0) }
-    if drawnRows.count == rows {
-        print("  the unfocused bar differs on all \(rows) bottom row(s) at mid-width")
-    } else {
-        print("  FAIL: only \(drawnRows.count) of \(rows) bottom row(s) differ at mid-width,")
-        print("        so an acknowledged pane is drawing no line along its bottom edge")
+    // 1. Asking draws a fill: the interior point differs from `.none` and
+    //    matches the theme's own attention derivation.
+    let noneInterior = samplePixel(none, x: centreX, y: interiorY, renderScale: renderScale)
+    let askingInterior = samplePixel(asking, x: centreX, y: interiorY, renderScale: renderScale)
+    if askingInterior.r == noneInterior.r, askingInterior.g == noneInterior.g, askingInterior.b == noneInterior.b {
+        print("  FAIL: asking's capsule interior is unchanged from `.none`, so no fill is drawn")
         ok = false
+    } else if !matches(askingInterior, expectedAttention) {
+        print("  FAIL: asking's capsule interior is (\(askingInterior.r), \(askingInterior.g), \(askingInterior.b)),")
+        print("        which is not the theme's attentionColour(.alert, behavior: .stock) \(expectedAttention)")
+        ok = false
+    } else {
+        print("  asking's capsule interior differs from `.none` and matches attentionColour")
     }
 
-    // 2. Clipped to the corner. An unclipped rect paints the outermost column of
-    //    the bottom row, which is outside the curve and outside the window's mask.
-    if differs(plain, acked, column: 0, fromBottom: 0) {
-        print("  FAIL: the bottom-left pixel changed, so the line is a full-width rect")
-        print("        rather than a fill clipped to the corner it shares with the window")
+    // 2. Acknowledged draws a stroke, not a fill: the interior point matches
+    //    the bar background, and the top edge, where the stroke lands, differs
+    //    from `.none`.
+    let ackedInterior = samplePixel(acknowledged, x: centreX, y: interiorY, renderScale: renderScale)
+    if !matches(ackedInterior, expectedBarBackground) {
+        print("  FAIL: acknowledged's capsule interior is (\(ackedInterior.r), \(ackedInterior.g), \(ackedInterior.b)),")
+        print("        which is not the bar background \(expectedBarBackground), so something is filling it")
         ok = false
     } else {
-        print("  the bottom-left pixel is untouched, so the line is inside the corner")
+        print("  acknowledged's capsule interior matches the bar background: no fill")
+    }
+    let noneEdge = samplePixel(none, x: centreX, y: edgeY, renderScale: renderScale)
+    let ackedEdge = samplePixel(acknowledged, x: centreX, y: edgeY, renderScale: renderScale)
+    if noneEdge.r == ackedEdge.r, noneEdge.g == ackedEdge.g, noneEdge.b == ackedEdge.b {
+        print("  FAIL: acknowledged's capsule edge is unchanged from `.none`, so no stroke is drawn")
+        ok = false
+    } else {
+        print("  acknowledged's capsule edge differs from `.none`: the stroke is drawn")
     }
 
-    // 3. Inside the focus frame, which is stroked over this view.
-    let focusedRows = (0 ..< rows).filter {
-        differs(plainFocused, ackedFocused, column: middle, fromBottom: inset + $0)
-    }
-    if focusedRows.count == rows {
-        print("  the focused bar differs on all \(rows) row(s) just inside the frame")
-    } else {
-        print("  FAIL: only \(focusedRows.count) of \(rows) row(s) differ inside the focus frame,")
-        print("        so the frame is swallowing the line on the focused pane")
+    // 3. Done draws a glyph and no capsule: a point inside the leading glyph
+    //    box differs from `.none`, and the interior point this arm reads the
+    //    fill from for the other two levels matches the bar background.
+    let glyphBoxX = PaneStatusBarMetrics.horizontalInset + 3
+    let glyphBoxY = height / 2
+    let noneGlyphBox = samplePixel(none, x: glyphBoxX, y: glyphBoxY, renderScale: renderScale)
+    let doneGlyphBox = samplePixel(done, x: glyphBoxX, y: glyphBoxY, renderScale: renderScale)
+    if doneGlyphBox.r == noneGlyphBox.r, doneGlyphBox.g == noneGlyphBox.g, doneGlyphBox.b == noneGlyphBox.b {
+        print("  FAIL: done's glyph box is unchanged from `.none`, so no ✓ is drawn")
         ok = false
+    } else {
+        print("  done's glyph box differs from `.none`: the ✓ is drawn")
+    }
+    let doneInterior = samplePixel(done, x: centreX, y: interiorY, renderScale: renderScale)
+    if !matches(doneInterior, expectedBarBackground) {
+        print("  FAIL: done's capsule interior is (\(doneInterior.r), \(doneInterior.g), \(doneInterior.b)),")
+        print("        which is not the bar background \(expectedBarBackground), so a capsule survived into done")
+        ok = false
+    } else {
+        print("  done's capsule interior matches the bar background: no capsule shape survives")
     }
 
     return ok
@@ -1275,14 +1397,14 @@ enum Probe {
             ok = heightArm(breakIt: breakIt)
         case "clip":
             ok = clipArm(breakIt: breakIt)
-        case "ackline":
-            ok = ackLineArm(breakIt: breakIt)
+        case "capsule":
+            ok = capsuleArm(breakIt: breakIt)
         case "frame":
             ok = frameArm(breakIt: breakIt)
         case "fullscreen":
             ok = fullscreenArm(breakIt: breakIt)
         default:
-            print("usage: cornertest radius|match|concentric|height|clip|ackline|frame|fullscreen [break]")
+            print("usage: cornertest radius|match|concentric|height|clip|capsule|frame|fullscreen [break]")
             ok = false
         }
 

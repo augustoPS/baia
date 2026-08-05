@@ -2,10 +2,10 @@
 
 `./run.sh` from anywhere. It measures the window's own rounded corner, measures
 the ones the footer and the attention frame draw, checks that rounding a corner
-did not move the bar or its text, checks that the acknowledged level draws a line
-along the bottom edge, and checks that the footer stops curving when the window
-does. Eight arms, one process each, and every arm is followed by a
-`break` variant that damages the thing under test and is expected to fail.
+did not move the bar or its text, checks that the attention capsule fills,
+strokes and clears at the right levels, and checks that the footer stops curving
+when the window does. Eight arms, one process each, and every arm is followed by
+a `break` variant that damages the thing under test and is expected to fail.
 `run.sh` inverts those, so a control that stops failing fails the run as loudly as
 an arm that stops passing.
 
@@ -168,41 +168,76 @@ loose enough to pass a square bar: the control renders the same bar with no
 corners, which is pixel for pixel what a `draw(_:)` with no clip produces for a
 pane in the corner, and it misses by 10.03 pt on the second row.
 
-## ackline
+## capsule
 
-Does an acknowledged pane draw a line along the bottom edge, inside the corner and
-inside the focus frame?
+Does the footer draw the v5 attention capsule (design v5 §3): a tinted fill while
+asking, a clear stroked capsule once acknowledged, a bare `✓` and no capsule at
+all once done?
 
-The level exists to be findable across a window while staying quiet enough to work
-beside, and until 2026-07-31 the only thing carrying it was a 6 pt square at the
-far left of one footer. A live look at three panes could not tell an acknowledged
-pane from one asking nothing, which is the distance the level is for, so the bar
-gained a line along its bottom edge in the attention colour.
+Until 2026-08-04 the acknowledged level was carried by a line along the bar's
+bottom edge, and this arm measured that line. The capsule replaced the bar-wide
+wash, the quiet top line, the acknowledged square and the acknowledged bottom
+line with one leading mark whose shape changes with the level, so the arm was
+rewritten rather than deleted: the old line no longer exists, and a probe still
+asserting it would fail after the capsule shipped, correctly, for a codebase this
+plan finished on purpose.
 
-Measured as a difference between two renders of the same bar, one at
-`.acknowledged` and one at `.none`, rather than by looking for colour near the
-bottom. The hairline is down there on every bar in the app, so "something is
-coloured at the bottom edge" is true whatever this level does; only a difference
-says the pixels arrived because the pane is acknowledged.
+Measured as a difference against the same bar rendered at `.none`, rather than by
+looking for colour at a fixed point. The bar fill and the hairline are painted
+under every level, so "something is coloured there" is true regardless of what
+this level draws; only a difference against the quiet bar says the pixels arrived
+because of asking, acknowledged, or done specifically.
 
-Three claims, because three separate things take the line away without a word:
+Two things about how the capsule is shipped rule out the coordinates the geometry
+alone would suggest, both found by rendering and reading real pixels rather than
+assumed from `PaneStatusBarMetrics`:
 
-- **It is drawn at all.** Every row of it differs from the plain bar at mid-width,
-  away from any curve that could be blamed for a partial row.
-- **It is clipped to the corner.** The bottom-left pixel is unchanged. A plain
-  full-width rect paints that pixel, which sits outside the curve the pane shares
-  with the window, and `drawContent` renders into a view with no clip of its own,
-  so the clip is this draw's own responsibility rather than something inherited
-  from `draw(_:)`.
-- **It survives focus.** The focus frame is stroked over this view by
-  `drawBarFrame(in:)`, so a line on the extreme edge is not covered on a focused
-  pane, it is gone. The rows are read one `focusFrameWidth` in, and the focused
-  pane is the one most likely to be acknowledged.
+- **The capsule's exact centre is where the glyph is drawn, at every non-`.none`
+  level.** `!` and `✓` are both centred on `capsuleRect()`'s midpoint, so a claim
+  that samples the centre reads "is a glyph here", never "is a fill here": every
+  level but `.none` answers yes.
+- **The fill is gated by `CALayer.opacity`, not by a branch in `draw(_:)`.**
+  `drawCapsuleFill` paints the same shape for both asking and acknowledged
+  whenever `capsuleRect()` is non-nil; it is `attentionWash.layer?.opacity`,
+  1 while asking and 0 once acknowledged, that hides it on screen.
+  `cacheDisplay(in:to:)`, which every arm in this file uses to read pixels
+  without a screen, calls `draw(_:)` directly and does not composite through
+  layer opacity at all: sampling the same point with the layer's model opacity
+  read back as exactly `0` still returns the fill at full strength. Verified
+  both ways, not assumed: a `CALayer.render(in:)` render was tried as an
+  alternative and produced no content at all off-window, because AppKit never
+  populates `layer.contents` without a real backing store to display into.
 
-The control renders the acknowledged bar as an ordinary one, which is pixel for
-pixel what deleting the draw produces. It fails the first and third claims and
-passes the second, which is correct: a line that is never drawn cannot break a
-corner.
+So every claim below reads a point picked to land on exactly one draw call, one
+point past the capsule's own top edge, on its horizontal centre: past the 1 pt
+stroke a stroke-only capsule leaves hollow, and above where a heavy 10 pt glyph's
+ink starts (measured, not assumed, before being written down here).
+
+Three claims, one per non-quiet level, because each level takes the capsule away
+in its own way:
+
+- **Asking draws a fill.** The interior point (`x = 8 + 21/2`, `y = 4`, one point
+  past the top edge at `frame.y = 3` on the 22 pt bar, from
+  `attentionCapsuleFrame(glyphWidth:)`) differs from `.none` and matches the
+  theme's own `attentionColour(_:behavior:)` within a few 8-bit levels of
+  colour-space rounding: an sRGB-tagged colour composites through the bitmap's
+  own "Generic RGB" colour space on the way into the pixels this arm reads, and
+  the expectation is converted through the same space rather than compared to
+  the raw sRGB bytes, which would be nine levels off.
+- **Acknowledged draws a stroke, not a fill.** The same interior point matches
+  the bar background (nothing painted over it), while the top edge itself, one
+  point above, where the 1 pt stroke lands, differs from `.none`.
+- **Done draws a glyph and no capsule.** A point inside the leading glyph box
+  differs from `.none` (the ✓ is drawn), while the interior point this arm reads
+  the fill from for the other two levels matches the bar background: no capsule
+  shape, filled or stroked, survives into the level that draws none.
+
+The negative controls damage the thing each claim is about, not the thing it
+calls: the asking bar rendered with attention forced to `.none` (claim 1 fails,
+since there is then no fill anywhere to find), the acknowledged bar rendered as
+asking (claim 2 fails: the interior point fills like any asking capsule does),
+and the done bar rendered with attention forced to `.none` (claim 3 fails, since
+there is then no ✓ to find either).
 
 ## frame
 
