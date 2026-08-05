@@ -246,21 +246,33 @@ final class PaneActivityTracker {
 
     private func paneAgent() -> PaneStatus.Agent? {
         let label = activity.label
-        guard label != nil || wantsAttention else { return nil }
+        let attention = resolvedAttention
+        // A finished pane with nothing running still has something to draw:
+        // the ✓ that says it finished unseen. Without the third clause a done
+        // pane whose command exited produced no agent at all and the level
+        // died at this guard.
+        guard label != nil || attention.isRequesting || attention.isDone else { return nil }
         return PaneStatus.Agent(
             label: label ?? attentionLabel,
-            wantsAttention: wantsAttention,
-            isAcknowledged: !resolvedAttention.isUnacknowledged,
+            wantsAttention: attention.isRequesting,
+            isAcknowledged: !attention.isUnacknowledged,
             // Busy means an agent is working, not that any command is running. A
             // build or a `sleep` is named by its label and does not earn the dot,
             // which is reserved for the thing the workspace exists to watch.
-            isBusy: PaneActivity.isWorkingAgent(activity)
+            isBusy: PaneActivity.isWorkingAgent(activity),
+            hasFinishedUnseen: attention.isDone
         )
     }
 
-    /// What an attention request says when nothing is running to name. A bell
-    /// from a pane whose command already exited still deserves a marker.
+    /// What an attention request says when nothing is running to name.
+    ///
+    /// `waiting` rather than `!`: the capsule now carries the glyph, and a bar
+    /// reading `! !` said the same thing twice (v5 §3 names the status word).
+    /// A finish names nothing, deliberately: `PaneAttention.done` carries no
+    /// message, and the empty label makes `PaneStatusSegments` skip the agent
+    /// segment while the ✓ still draws from the level itself.
     private var attentionLabel: String {
-        resolvedAttention.message ?? "!"
+        if resolvedAttention.isDone { return "" }
+        return resolvedAttention.message ?? "waiting"
     }
 }
