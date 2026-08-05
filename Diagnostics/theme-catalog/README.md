@@ -86,6 +86,33 @@ run reported a clean sweep. That is the failure this whole directory's README
 warns about, found here rather than believed away, and it is why the controls are
 now one per rule instead of one per probe.
 
+## The wells audit
+
+A second report, printed after the sweep, that asks a different question:
+**does a promise measured against the opaque catalog still hold once the
+background is a translucent well over an unknown desktop?**
+
+The wells are ghostty's own compositing, not this package's: `background-opacity`
+composites `theme.background` over whatever the compositor draws behind the
+window, and nothing else in the theme. The audit reproduces exactly that one
+substitution, `theme.background` composited over a bounding backdrop (pure
+white and pure black, the extremes any wallpaper region approaches) at a given
+opacity, and re-runs `repair`, `ink`/`mutedInk` under both `AlertBehavior`
+cases, tier order, and the floor (`derive`'s promise) against the result,
+through the same functions the sweep above calls.
+
+Five regimes: opaque (the baseline the sweep above already measured), the
+shipped well (`Settings.defaultSettings.backgroundOpacity`, 0.85) over white
+and over black, and the audited well (0.42, the value design v5 proposes and
+the reason this section exists) over white and over black.
+
+It is a measurement, not a gate: this section never fails the run. A promise
+already broken opaque is the sweep's failure, not this one's, and a promise
+that only breaks once composited is the finding the section exists to
+surface, printed as a per-promise count with its worst-offending themes rather
+than turned into an exit code. What the numbers permit is a decision for the
+owner, recorded in the vault hub, not a threshold this file enforces.
+
 ## Where it sits relative to the package tests
 
 The packages own the rules. This owns the population.

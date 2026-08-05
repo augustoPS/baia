@@ -361,3 +361,189 @@ guard failures.isEmpty else {
 
 print("\nevery one of \(rows) rows clears repair and carries readable ink, "
     + "and derive reaches the floor everywhere but \(Pinned.deriveMissTheme)")
+
+// MARK: - The wells audit
+
+/// `t` with ``PaneChrome/PaneTheme/background`` replaced by itself composited
+/// over a bounding backdrop at the well's opacity, everything else untouched.
+///
+/// Starts from the theme `theme(_:_:)` above already built, rather than from
+/// the catalog's hex strings: `background` is the one field this function
+/// changes, and reaching it after `theme(_:_:)` has resolved the ansi holes
+/// and the focus accent means those two are computed exactly the way the arm
+/// above computes them, off the *original* opaque background, and are not
+/// silently redone against a composited one that ghostty never hands them.
+///
+/// The well is ghostty's own compositing (`TerminalOverride.swift` maps
+/// ``BaiaSettings/Settings/backgroundOpacity`` to `background-opacity`), and it
+/// composites the background only: `foreground`, `focusedAccent` and `ansi` are
+/// never blended with anything behind the window. A wells-audit theme built by
+/// touching more than `background` would be measuring a compositor baia does
+/// not have.
+///
+/// White and black stand in for "the extremes any wallpaper region
+/// approaches", per the task, not for a claim about the owner's own desktop.
+/// `RGBA.composited(over:)` is the same formula spelled the other way round
+/// (`backdrop.blended(with: rgb, fraction: alpha)`); it is not reused here
+/// because it lives on ``RGBA``, and building one to throw away would be a
+/// second name for one blend.
+func welled(_ t: PaneTheme, over backdrop: RGB, at opacity: Double) -> PaneTheme {
+    var composited = t
+    composited.background = backdrop.blended(with: t.background, fraction: opacity)
+    return composited
+}
+
+/// The well opacity this audit exists to answer for. Not read off
+/// `Settings.defaultSettings`, which is the shipped 0.85 measured alongside it
+/// below: 0.42 is the value design v5 proposes and nothing in `BaiaSettings`
+/// names yet, so a settings default cannot stand in for it.
+let auditedWellOpacity = 0.42
+
+/// The shipped well, so the audit reports what changes rather than only what
+/// the proposal costs. Read off the settings default rather than pinned again
+/// here, so a changed default moves this measurement without an edit.
+let shippedWellOpacity = BaiaSettings.Settings.defaultSettings.backgroundOpacity
+
+/// One counted failure of a rule this file already grades, against a
+/// composited background rather than the opaque one.
+struct WellFailure {
+    let rule: String
+    let theme: String
+}
+
+/// Every promise the sweep above grades, re-measured for one `choice` against
+/// `row`, a theme already welled: its `background` is composited, its
+/// `focusedAccent` is not yet resolved for `choice`.
+///
+/// `row.accent(for: choice)` is called here rather than earlier, so the one
+/// derivation that reads `background` (``PaneChrome/PaneTheme/nightshadeAccent``)
+/// resolves against the welled colour exactly as ``PaneChrome/PaneTheme/accent(for:)``
+/// would if the app really were drawing over a 42% well; resolving it before
+/// welling would grade a `nightshade` nobody sees.
+///
+/// Threaded through the same functions the arm calls (`accent(for:)`,
+/// `attentionColour(_:behavior:)`, `ink(on:)`, `mutedInk(on:)`,
+/// `attentionSeparation(of:)` via `separation(_:in:)`) rather than a second
+/// copy of what they check, for the reason the header gives for driving the
+/// arm through them in the first place: a copy passes while the shipped
+/// derivation resolves something else.
+///
+/// Both `AlertBehavior` cases, the same pair and the same reason the arm's own
+/// loop names: `stock` is excluded there and here, unguarded by design and
+/// grading it would report on the value that promises nothing. `noCollision`
+/// is graded for ink, mutedInk and tier order — a collision it falls back to
+/// `alert` for is still a fill someone reads text on — but not for "the
+/// floor", which is `derive`'s promise alone; the README section this mirrors
+/// says why a `noCollision` miss is the setting doing what it says.
+@MainActor
+func gradeWell(_ row: PaneTheme, choice: FocusAccent, theme themeName: String, into hits: inout [WellFailure]) {
+    var row = row
+    row.focusedAccent = row.accent(for: choice)
+
+    let drawn = row.inkFocus.contrastRatio(against: row.barBackground)
+    if drawn < minimumTextContrast {
+        hits.append(.init(rule: "repair", theme: themeName))
+    }
+
+    for accent in AttentionAccent.allCases {
+        for behavior in [AlertBehavior.noCollision, .derive] {
+            let fill = row.attentionColour(accent, behavior: behavior)
+            if behavior == .derive, separation(fill, in: row) < minimumSeparation {
+                hits.append(.init(rule: "the floor/\(accent)", theme: themeName))
+            }
+            let ink = row.ink(on: fill)
+            let muted = row.mutedInk(on: fill)
+            if ink.contrastRatio(against: fill) < minimumTextContrast {
+                hits.append(.init(rule: "ink/\(accent)/\(behavior)", theme: themeName))
+            }
+            if muted.contrastRatio(against: fill) < minimumTextContrast {
+                hits.append(.init(rule: "mutedInk/\(accent)/\(behavior)", theme: themeName))
+            }
+            if muted.contrastRatio(against: fill) > ink.contrastRatio(against: fill) {
+                hits.append(.init(rule: "tierOrder/\(accent)/\(behavior)", theme: themeName))
+            }
+        }
+    }
+}
+
+/// One backdrop, one opacity, every theme, every accent, every promise: the
+/// row this report prints once per combination the task asks for (0.42 and
+/// 0.85, over white and over black) plus the opaque baseline the arm above
+/// already measured.
+///
+/// Built from ``theme(_:_:)`` the same way every row in the arm is, so
+/// `break-pins` fidelity and the ansi-hole fallback are shared rather than
+/// redone: the only new step is ``welled(_:over:at:)`` between that call and
+/// grading.
+@MainActor
+func sweepWells(over backdrop: RGB, at opacity: Double) -> [WellFailure] {
+    var hits: [WellFailure] = []
+    for definition in GhosttyThemeCatalog.allThemes {
+        for choice in FocusAccent.allCases {
+            let opaque = theme(definition, .accent) // .accent: overwritten per choice inside gradeWell
+            let row = opacity >= 1 ? opaque : welled(opaque, over: backdrop, at: opacity)
+            gradeWell(row, choice: choice, theme: definition.name, into: &hits)
+        }
+    }
+    return hits
+}
+
+// Runs only in `.sweep`: the four controls above exist to damage one colour
+// rule each, and re-running this section under them would either re-report
+// the same damage a second time under a different heading or, for
+// `break-pins`, silently launder it, since `theme(_:_:)` applies `breakPins`
+// globally and every well row already goes through that function. The wells
+// audit's job is to measure the shipped rules against a composited
+// background, not to re-derive whether the controls still damage them.
+if mode == .sweep {
+    print("\n== the wells audit: \(GhosttyThemeCatalog.allThemes.count) themes, "
+        + "\(FocusAccent.allCases.count) accents, composited at \(auditedWellOpacity) and "
+        + "\(shippedWellOpacity) over white and black, opaque as the baseline already measured above")
+
+    let white = RGB(red: 1, green: 1, blue: 1)
+    let black = RGB(red: 0, green: 0, blue: 0)
+
+    struct WellRun {
+        let label: String
+        let hits: [WellFailure]
+    }
+
+    let wellRuns: [WellRun] = [
+        .init(label: "opaque (baseline)", hits: sweepWells(over: white, at: 1)),
+        .init(label: "0.\(Int(shippedWellOpacity * 100)) over white (shipped)",
+              hits: sweepWells(over: white, at: shippedWellOpacity)),
+        .init(label: "0.\(Int(shippedWellOpacity * 100)) over black (shipped)",
+              hits: sweepWells(over: black, at: shippedWellOpacity)),
+        .init(label: "0.\(Int(auditedWellOpacity * 100)) over white (audited)",
+              hits: sweepWells(over: white, at: auditedWellOpacity)),
+        .init(label: "0.\(Int(auditedWellOpacity * 100)) over black (audited)",
+              hits: sweepWells(over: black, at: auditedWellOpacity)),
+    ]
+
+    for run in wellRuns {
+        let byRule = Dictionary(grouping: run.hits, by: \.rule)
+        print("\n  \(run.label): \(run.hits.count) failing rows")
+        if run.hits.isEmpty {
+            print("    clean")
+            continue
+        }
+        for (rule, hits) in byRule.sorted(by: { $0.key < $1.key }) {
+            let themes = Set(hits.map(\.theme)).sorted()
+            print("    \(padded(rule, 22))\(hits.count) rows, \(themes.count) themes")
+        }
+        let worst = Dictionary(grouping: run.hits, by: \.theme)
+            .mapValues(\.count)
+            .sorted { $0.value > $1.value }
+            .prefix(5)
+        print("    worst offenders: "
+            + worst.map { "\($0.key) (\($0.value))" }.joined(separator: ", "))
+    }
+
+    // This report is a measurement, not a rendering change: whatever the
+    // numbers say, whether 0.42 is safe to ship as a default is a decision
+    // for the owner with this output in hand, made in the vault hub rather
+    // than in this file's exit code. The wells audit therefore never calls
+    // `exit(1)` and never appends to `failures`; a promise that already fails
+    // opaque is caught by the arm above, and a promise that only fails once
+    // composited is exactly the finding this section exists to surface.
+}
