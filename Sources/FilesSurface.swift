@@ -35,14 +35,24 @@ final class FilesSurface: NSObject, WorkspaceSurface {
         didSet { fill() }
     }
 
+    /// Flat or glass, per Task 5. See ``WorkspaceSurface/resolvedChrome``.
+    var resolvedChrome: ResolvedChrome = .flat {
+        didSet {
+            guard resolvedChrome != oldValue else { return }
+            fill()
+        }
+    }
+
     /// The column's body, drawn once by the scroll view and never by the rows on
     /// top of it. See ``ChangesSurface/fill()``, which says what filling twice
-    /// costs now that the fill has an alpha.
+    /// costs now that the fill has an alpha, and what flat versus glass draws.
     private func fill() {
-        scrollView.backgroundColor = ChangesSurface.nsColor(
-            theme.background,
-            alpha: backgroundOpacity
-        )
+        switch resolvedChrome {
+        case .flat:
+            scrollView.backgroundColor = ChangesSurface.nsColor(theme.background, alpha: backgroundOpacity)
+        case let .glass(set):
+            scrollView.backgroundColor = ChangesSurface.nsColor(set.fillSidebar.rgb, alpha: set.fillSidebar.alpha)
+        }
     }
 
     /// The tree to draw.

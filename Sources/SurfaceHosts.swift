@@ -139,6 +139,20 @@ final class SidebarHost: NSViewController {
         }
     }
 
+    /// What each section's own scroll background draws, per Task 5: flat,
+    /// unchanged, or glass with the material set the live appearance picks.
+    ///
+    /// Pushed straight through to every ``Section/surface``, the same shape as
+    /// ``theme`` and ``backgroundOpacity`` immediately above: this host holds
+    /// nothing about what glass looks like, it only carries the resolution down
+    /// to the two surfaces that draw it.
+    var resolvedChrome: ResolvedChrome = .flat {
+        didSet {
+            guard resolvedChrome != oldValue else { return }
+            for section in sections { section.surface.resolvedChrome = resolvedChrome }
+        }
+    }
+
     private let divider = NSView()
 
     /// The draggable split between two stacked sections.
@@ -185,11 +199,13 @@ final class SidebarHost: NSViewController {
         tree: PaneTreeController,
         surfaces: [any WorkspaceSurface],
         theme: PaneTheme,
-        backgroundOpacity: Double
+        backgroundOpacity: Double,
+        resolvedChrome: ResolvedChrome
     ) {
         self.tree = tree
         self.theme = theme
         self.backgroundOpacity = backgroundOpacity
+        self.resolvedChrome = resolvedChrome
         super.init(nibName: nil, bundle: nil)
         sections = surfaces.map(Section.init(surface:))
     }
@@ -280,6 +296,7 @@ final class SidebarHost: NSViewController {
         for section in sections {
             section.surface.theme = theme
             section.surface.backgroundOpacity = backgroundOpacity
+            section.surface.resolvedChrome = resolvedChrome
             section.heading.title = section.surface.title
             section.heading.theme = theme
             section.heading.isWindowActive = isWindowActive

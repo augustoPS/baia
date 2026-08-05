@@ -313,7 +313,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             tree: tree,
             surfaces: surfaces(for: content, tree: tree),
             theme: configuration.paneTheme,
-            backgroundOpacity: configuration.settings.backgroundOpacity
+            backgroundOpacity: configuration.settings.backgroundOpacity,
+            resolvedChrome: configuration.resolvedChrome
         )
     }
 
@@ -914,6 +915,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // was closed and opened again.
             controller.sidebar.theme = configuration.paneTheme
             controller.sidebar.backgroundOpacity = configuration.settings.backgroundOpacity
+            // `resolvedChrome` is read fresh from `configuration` the same way
+            // `apply(to:)` reads it for a pane (Task 4): a dark/light or Reduce
+            // Transparency change reaches `onSettingsChange` through the same
+            // observer closure this loop is called from, so the sidebar's own
+            // material follows it here rather than waiting for an unrelated
+            // settings-file edit to force a reload.
+            controller.sidebar.resolvedChrome = configuration.resolvedChrome
         }
         palette.theme = configuration.paneTheme
         find.theme = configuration.paneTheme

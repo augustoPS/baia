@@ -40,6 +40,17 @@ protocol WorkspaceSurface: AnyObject {
     /// theme cannot know it: it comes from `backgroundOpacity`, which is a setting
     /// and reaches ghostty as a config override.
     var backgroundOpacity: Double { get set }
+
+    /// What the surface's own scroll background draws, per Task 5.
+    ///
+    /// Flat: unchanged, `theme.background` at ``backgroundOpacity``, exactly what
+    /// Plan 1 shipped. Glass: the material set's own `fillSidebar`, the same
+    /// resolution ``TerminalPaneController/resolvedChrome`` already applies to the
+    /// footer (Task 4). No accent or theme tint rides along with it: the v5 rule
+    /// against a tinted sidebar element is about not letting anything but this one
+    /// fill answer the question, which is why the type is ``PaneChrome/ResolvedChrome``
+    /// and not a colour the caller would have to derive twice.
+    var resolvedChrome: ResolvedChrome { get set }
 }
 
 /// What a section draws when it has no rows.

@@ -29,14 +29,33 @@ final class ChangesSurface: NSObject, WorkspaceSurface {
         didSet { fill() }
     }
 
+    /// Flat or glass, per Task 5. See ``WorkspaceSurface/resolvedChrome``.
+    var resolvedChrome: ResolvedChrome = .flat {
+        didSet {
+            guard resolvedChrome != oldValue else { return }
+            fill()
+        }
+    }
+
     /// The column's body, drawn once by the scroll view.
     ///
     /// **Once, not twice.** The rows used to fill their own bounds as well, which
     /// was invisible while the fill was opaque and would be a second 0.85 layer
     /// over the first now that it is not: two composites of the same colour land
     /// at 0.9775 and the column would sit a shade above every pane beside it.
+    ///
+    /// Flat fills at `theme.background` and ``backgroundOpacity``, byte-identical
+    /// to what Plan 1 shipped. Glass swaps in the resolved material set's own
+    /// `fillSidebar`, the same sidebar fill the footer's glass draws with its own
+    /// `fillChrome` (Task 4): one call either way, so flat's path through this
+    /// method never runs code the glass case added.
     private func fill() {
-        scrollView.backgroundColor = Self.nsColor(theme.background, alpha: backgroundOpacity)
+        switch resolvedChrome {
+        case .flat:
+            scrollView.backgroundColor = Self.nsColor(theme.background, alpha: backgroundOpacity)
+        case let .glass(set):
+            scrollView.backgroundColor = Self.nsColor(set.fillSidebar.rgb, alpha: set.fillSidebar.alpha)
+        }
     }
 
     /// What to draw. Assigning re-sorts, so the caller hands over git's order and
