@@ -226,9 +226,9 @@ final class TerminalPaneController: NSViewController {
     /// statement about a window that has the keyboard, while an unanswered agent
     /// in a background window is exactly the thing worth finding.
     ///
-    /// Both terms are `PaneStatusBarView.fillsBarForAttention`'s, so the frame and
-    /// the fill can only ever appear together. Splitting them would leave half of
-    /// level 2 on screen.
+    /// The volume term is what `AttentionStyle` still owns: both volumes draw the
+    /// footer's capsule (`PaneStatusBarView.showsCapsuleFill` is asking-only and
+    /// style-blind), and `loud` adds this frame on top as the cross-window carrier.
     private var drawsAttentionFrame: Bool {
         lastAttention == .asking && attentionStyle == .loud
     }
