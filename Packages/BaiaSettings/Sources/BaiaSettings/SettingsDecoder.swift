@@ -60,6 +60,7 @@ public enum SettingsDecoder {
         "attentionStyle",
         "attentionAccent",
         "alertBehavior",
+        "chromeStyle",
         "sidebar",
         "controlChannelEnabled",
         "controlAllowRun",
@@ -288,6 +289,19 @@ public enum SettingsDecoder {
                 settings.alertBehavior = behavior
             } else {
                 reader.reject("alertBehavior")
+            }
+        }
+
+        // A rejected value falls back to flat, the rendering this key's absence
+        // has always meant, rather than to whatever `ChromeStyle`'s declaration
+        // order would leave `defaultSettings` at. Flat is already the default, so
+        // this only matters for the report: `settings.chromeStyle` and
+        // `invalidKeys` both have to say the file's value did not apply.
+        if let style = reader.text("chromeStyle") {
+            if let style = ChromeStyle(rawValue: style) {
+                settings.chromeStyle = style
+            } else {
+                reader.reject("chromeStyle")
             }
         }
 

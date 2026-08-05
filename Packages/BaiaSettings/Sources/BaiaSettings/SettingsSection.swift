@@ -33,6 +33,7 @@ public enum SettingsSection: String, CaseIterable, Sendable {
                 .init(\.backgroundHex, "backgroundHex"),
                 .init(\.backgroundOpacity, "backgroundOpacity"),
                 .init(\.backgroundBlur, "backgroundBlur"),
+                .init(\.chromeStyle, "chromeStyle"),
             ]
         case .text: [
                 .init(\.fontFamily, "fontFamily"),

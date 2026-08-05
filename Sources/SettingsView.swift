@@ -118,6 +118,11 @@ struct SettingsView: View {
                         }
                     }
                     Toggle("Blur behind window", isOn: $model.draft.backgroundBlur)
+                    Picker("Chrome style", selection: $model.draft.chromeStyle) {
+                        ForEach(ChromeStyle.allCases, id: \.self) { value in
+                            Text(value.rawValue.capitalized).tag(value)
+                        }
+                    }
                 } header: {
                     heading(.theme)
                 }

@@ -50,13 +50,14 @@ enum SettingsWriter {
         "attentionStyle",
         "attentionAccent",
         "alertBehavior",
+        "chromeStyle",
         "sidebar",
         "controlChannelEnabled",
         "controlAllowRun",
         "controlAllowRead",
     ]
 
-    /// The fourteen keys the settings window owns.
+    /// The fifteen keys the settings window owns.
     ///
     /// Everything outside this set is carried through untouched: the nine the
     /// window does not show, and any key the owner added that the decoder already
@@ -80,6 +81,7 @@ enum SettingsWriter {
         "attentionStyle",
         "attentionAccent",
         "alertBehavior",
+        "chromeStyle",
     ]
 
     /// `document` with the appearance keys replaced from `settings`.
@@ -113,6 +115,7 @@ enum SettingsWriter {
         members["attentionStyle"] = .string(settings.attentionStyle.rawValue)
         members["attentionAccent"] = .string(settings.attentionAccent.rawValue)
         members["alertBehavior"] = .string(settings.alertBehavior.rawValue)
+        members["chromeStyle"] = .string(settings.chromeStyle.rawValue)
 
         return .object(members)
     }

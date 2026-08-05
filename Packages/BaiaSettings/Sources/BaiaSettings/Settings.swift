@@ -104,6 +104,15 @@ public struct Settings: Sendable, Equatable {
     /// same thing. See ``AlertBehavior``.
     public var alertBehavior: AlertBehavior
 
+    /// Whether the chrome renders flat or asks for the v5 glass materials. See
+    /// ``ChromeStyle``.
+    ///
+    /// Default `.flat`, so a config written before this key existed renders
+    /// byte-identically. Reduce Transparency overrides whatever this says; that
+    /// resolution happens in `PaneChrome`, not here, because it needs the live
+    /// accessibility flag this package has no way to read.
+    public var chromeStyle: ChromeStyle
+
     /// What the sidebar opens showing, or that there is none. See
     /// ``SidebarContent``.
     ///
@@ -200,6 +209,7 @@ public struct Settings: Sendable, Equatable {
         attentionStyle: .loud,
         attentionAccent: .alert,
         alertBehavior: .stock,
+        chromeStyle: .flat,
         sidebar: .off,
         controlChannelEnabled: true,
         controlAllowRun: false,

@@ -28,6 +28,7 @@ import Testing
         settings.windowPadding = 31
         settings.windowPaddingBalance = !Settings.defaultSettings.windowPaddingBalance
         settings.transparentTitlebar = !Settings.defaultSettings.transparentTitlebar
+        settings.chromeStyle = .glass
         settings.focusAccent = .twilight
         settings.attentionStyle = .quiet
         settings.attentionAccent = .accent
@@ -127,6 +128,7 @@ import Testing
             "theme.backgroundHex",
             "theme.backgroundOpacity",
             "theme.backgroundBlur",
+            "theme.chromeStyle",
             "text.fontFamily",
             "text.fontSize",
             "text.cursorStyle",

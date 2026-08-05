@@ -233,6 +233,7 @@ import Testing
         case "attentionStyle": settings.attentionStyle = .quiet
         case "attentionAccent": settings.attentionAccent = .accent
         case "alertBehavior": settings.alertBehavior = .derive
+        case "chromeStyle": settings.chromeStyle = .glass
         default: return nil
         }
         return settings

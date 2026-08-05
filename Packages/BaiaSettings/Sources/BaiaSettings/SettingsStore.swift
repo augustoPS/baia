@@ -202,6 +202,7 @@ public struct SettingsStore: Sendable {
       "attentionStyle": "loud",
       "attentionAccent": "alert",
       "alertBehavior": "stock",
+      "chromeStyle": "flat",
       "sidebar": "off",
       "controlChannelEnabled": true,
       "controlAllowRun": false,

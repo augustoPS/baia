@@ -1,5 +1,29 @@
 import Foundation
 
+/// Whether the chrome renders flat or asks for the v5 glass materials.
+///
+/// **Flat is the spec.** It is what Plan 1 shipped, and every frame `chromeStyle:
+/// "flat"` draws must stay byte-identical to that, which is also why it is the
+/// default: installing a release that reads this key must not move a pixel for a
+/// config file that predates it. `glass` is additive and reversible per frame, and
+/// Reduce Transparency forces flat regardless of what this says.
+///
+/// Never reaches ghostty, so a rename here costs nothing outside baia's own config
+/// file: unlike ``CursorStyle``, nothing downstream can reject a spelling this type
+/// stops using.
+public enum ChromeStyle: String, Sendable, Equatable, CaseIterable {
+    /// The shipped rendering: solid fills, the drawn hairline and capsule, no
+    /// backing material anywhere in the chrome.
+    case flat
+
+    /// The v5 material lift: translucent backing views under the footer and
+    /// sidebar, the focus lift's ring and shadow. Resolved against Reduce
+    /// Transparency and the system appearance by `PaneChrome`'s
+    /// `resolvedStyle(setting:appearance:)`, not read directly by anything that
+    /// draws state ink.
+    case glass
+}
+
 /// Which derivation the focus colour is resolved from.
 ///
 /// A name, never a hex. A user-settable colour would break the standing rule
