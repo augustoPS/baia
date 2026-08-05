@@ -126,6 +126,11 @@ import Testing
         #expect(TabTitle.tab(project: "vault", attention: .none) == "vault")
     }
 
+    @Test func aDonePaneEarnsNoTabGlyph() {
+        // The ✓ lives in the footer alone. The tab grammar is the shipped rule.
+        #expect(TabTitle.tab(project: "baia", attention: .done) == "baia")
+    }
+
     @Test func aBusyPaneReadsAsBusyOnlyWhileItIsNotAsking() {
         // Asking outranks busy: both are true of a pane whose agent just stopped
         // to ask, and only one of them is worth a tab's width.

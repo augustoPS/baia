@@ -92,6 +92,13 @@ public struct PaneStatus: Sendable, Equatable {
         /// enough to work beside, still visible from across the window.
         case acknowledged
 
+        /// The pane finished and nobody has been in it since. Drawn as a bare
+        /// `✓` on the bar, and gone the moment the pane takes focus: a finish
+        /// is a notification rather than a request, so being seen is the only
+        /// thing that can happen to it. Derived in `PaneActivity` (see
+        /// `PaneAttention.done`); this is that level's display name.
+        case done
+
         /// The level an agent value represents, and the only copy of that
         /// derivation anywhere.
         ///
@@ -101,8 +108,14 @@ public struct PaneStatus: Sendable, Equatable {
         /// rule is a copy that can disagree with ``PaneStatus/attention`` about
         /// whether a pane is asking.
         public init(_ agent: Agent?) {
-            guard let agent, agent.wantsAttention else { self = .none; return }
-            self = agent.isAcknowledged ? .acknowledged : .asking
+            guard let agent else { self = .none; return }
+            if agent.wantsAttention {
+                self = agent.isAcknowledged ? .acknowledged : .asking
+            } else if agent.hasFinishedUnseen {
+                self = .done
+            } else {
+                self = .none
+            }
         }
 
         /// This level, spelled for a reader. Nil for `none`, so a pane that is
@@ -114,6 +127,7 @@ public struct PaneStatus: Sendable, Equatable {
             case .none: nil
             case .asking: "asking"
             case .acknowledged: "acknowledged"
+            case .done: "done"
             }
         }
     }
@@ -145,18 +159,28 @@ public struct PaneStatus: Sendable, Equatable {
         /// time, so it must be the calmest thing in the app.
         public var isBusy: Bool
 
+        /// True when the pane reported it finished and the owner has not been
+        /// in it since. The third fact ``PaneStatus/Attention/init(_:)`` reads,
+        /// beside the request and its acknowledgement. Never true while
+        /// ``wantsAttention`` is: a pane that finished and then asked again is
+        /// asking, and `PaneAttention.overridden(byReportedBlock:message:seen:)`
+        /// already discards the finish on a raise.
+        public var hasFinishedUnseen: Bool
+
         /// Defaulted so that adding the two newer facts did not have to touch
         /// every call site that only ever knew about a label and a bell.
         public init(
             label: String,
             wantsAttention: Bool,
             isAcknowledged: Bool = false,
-            isBusy: Bool = false
+            isBusy: Bool = false,
+            hasFinishedUnseen: Bool = false
         ) {
             self.label = label
             self.wantsAttention = wantsAttention
             self.isAcknowledged = isAcknowledged
             self.isBusy = isBusy
+            self.hasFinishedUnseen = hasFinishedUnseen
         }
     }
 

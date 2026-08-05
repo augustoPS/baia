@@ -154,7 +154,7 @@ public enum TabTitle {
         // being worked in.
         switch attention {
         case .asking: title += "! "
-        case .acknowledged, .none: if isBusy { title += "\u{25D0} " }
+        case .acknowledged, .none, .done: if isBusy { title += "\u{25D0} " }
         }
 
         title += project

@@ -135,4 +135,30 @@ import Testing
         #expect(PaneStatus.Attention.name(of: .asking) == "asking")
         #expect(PaneStatus.Attention.name(of: .acknowledged) == "acknowledged")
     }
+
+    @Test func aFinishedUnseenAgentResolvesToDone() {
+        let agent = PaneStatus.Agent(
+            label: "claude", wantsAttention: false, hasFinishedUnseen: true
+        )
+        #expect(PaneStatus.Attention(agent) == .done)
+    }
+
+    @Test func aRequestOutranksAFinish() {
+        // The tracker never produces both, but the init decides the precedence
+        // rather than trusting that: a pane that is asking is asking.
+        let agent = PaneStatus.Agent(
+            label: "claude", wantsAttention: true, hasFinishedUnseen: true
+        )
+        #expect(PaneStatus.Attention(agent) == .asking)
+    }
+
+    @Test func aFinishedAgentDefaultIsUnfinished() {
+        // Every existing call site compiles unchanged and renders identically.
+        let agent = PaneStatus.Agent(label: "claude", wantsAttention: false)
+        #expect(PaneStatus.Attention(agent) == .none)
+    }
+
+    @Test func doneHasAWireName() {
+        #expect(PaneStatus.Attention.name(of: .done) == "done")
+    }
 }
