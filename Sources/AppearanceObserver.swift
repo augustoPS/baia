@@ -16,7 +16,8 @@ import PaneChrome
 ///
 /// Two independent sources feed one value: `NSWorkspace.shared`'s
 /// accessibility flags change on `accessibilityDisplayOptionsDidChangeNotification`,
-/// posted on `DistributedNotificationCenter`; the effective appearance changes
+/// posted on `NSWorkspace.shared.notificationCenter`, not the default center;
+/// the effective appearance changes
 /// on nothing NSWorkspace ever posts, because it is a property of whichever
 /// `NSApplication` (or, in principle, a specific view) is asked, so it is
 /// picked up by KVO on `NSApp.effectiveAppearance` instead. Missing either
@@ -48,7 +49,7 @@ final class AppearanceObserver: NSObject {
         // explicitly here costs nothing and removes any doubt for whichever
         // future refactor makes this object short-lived.
         effectiveAppearanceObservation?.invalidate()
-        NotificationCenter.default.removeObserver(self)
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
 
     private func startObserving() {
@@ -69,8 +70,10 @@ final class AppearanceObserver: NSObject {
         // `NSWorkspace.accessibilityDisplayOptionsDidChangeNotification`
         // fires for both Reduce Transparency and Reduce Motion, System
         // Settings > Accessibility > Display having no finer-grained
-        // notification for the two independently.
-        NotificationCenter.default.addObserver(
+        // notification for the two independently. AppKit posts it on
+        // `NSWorkspace.shared.notificationCenter`, never on the default
+        // center, so the subscription has to register there too.
+        NSWorkspace.shared.notificationCenter.addObserver(
             self,
             selector: #selector(accessibilityOptionsDidChange),
             name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
