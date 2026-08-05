@@ -206,6 +206,32 @@ import Testing
         #expect(segment(.agent, in: Sample.status(agent: .init(label: "", wantsAttention: true))) == nil)
     }
 
+    @Test func anAcknowledgedAgentDimsToContext() {
+        let status = PaneStatus(
+            anchorName: "baia",
+            anchorIsRepository: false,
+            isPinned: false,
+            workingDirectory: nil,
+            git: nil,
+            agent: .init(label: "waiting", wantsAttention: true, isAcknowledged: true)
+        )
+        let agent = PaneStatusSegments.build(from: status).first { $0.role == .agent }
+        #expect(agent?.emphasis == .context)
+    }
+
+    @Test func anUnacknowledgedAgentStaysAlert() {
+        let status = PaneStatus(
+            anchorName: "baia",
+            anchorIsRepository: false,
+            isPinned: false,
+            workingDirectory: nil,
+            git: nil,
+            agent: .init(label: "waiting", wantsAttention: true, isAcknowledged: false)
+        )
+        let agent = PaneStatusSegments.build(from: status).first { $0.role == .agent }
+        #expect(agent?.emphasis == .alert)
+    }
+
     @Test func namesTruncateFromTheTailAndPathsFromTheHead() {
         // A path cut at the tail leaves every deep directory in one project
         // looking identical, which is the opposite of what the segment is for.

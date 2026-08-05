@@ -116,7 +116,12 @@ public enum PaneStatusSegments {
                 // worth interrupting for. An agent merely working is tier 4: it
                 // is the state four panes are in most of the time, so it has to
                 // be the calmest thing in the app.
-                emphasis: agent.wantsAttention ? .alert : .context
+                //
+                // Alert only while unacknowledged. Once the owner has been in
+                // the pane the capsule keeps saying it is still asking, and a
+                // status word still in alert ink beside it would be the loud
+                // level wearing the quiet level's name (v5 §3).
+                emphasis: agent.wantsAttention && !agent.isAcknowledged ? .alert : .context
             ))
         }
 
