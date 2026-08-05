@@ -197,6 +197,45 @@ public enum ChromeMaterials {
         )
     }
 
+    /// The focused pane's lift, under glass: `PaneLiftView`'s ring, inner
+    /// highlight and shadow (Task 6).
+    ///
+    /// Unlike every other role in this file, these numbers are not
+    /// transcribed from `materials.css` or `appearance.css` — no lift role
+    /// exists in the vitreous token files (checked: neither file names
+    /// "lift" or a matching ring/shadow pair). The plan's Task 6 text is the
+    /// source of record instead: `0 0 0 0.5px rgba(255,255,255,0.22)` for the
+    /// ring, `inset 0 1px 0 rgba(255,255,255,0.30)` for the inner highlight,
+    /// `0 12px 34px rgba(0,0,0,0.6)` for the drop shadow. One appearance
+    /// only, because the ring and shadow read as depth cues rather than as a
+    /// material fill, and the plan's numbers do not carry a light variant the
+    /// way `materials.css`'s fills do.
+    public enum Lift {
+        /// The ring's spread, in points: a hairline the same shape
+        /// ``ChromeShadow/window(dropOffsetY:dropBlur:dropAlpha:ringSpread:ringAlpha:)``
+        /// already draws for `--shadow-window`.
+        public static let ringSpread: Double = 0.5
+
+        public static let ringAlpha: Double = 0.22
+
+        /// The inner highlight's vertical offset, in points: `inset 0 1px 0`,
+        /// no blur or spread.
+        public static let innerHighlightOffsetY: Double = 1
+
+        public static let innerHighlightAlpha: Double = 0.30
+
+        /// The lift's drop shadow. Carried as a ``ChromeShadow`` for the same
+        /// reason ``Dark/shadowWindow`` is: a consumer that already knows how
+        /// to draw a `ChromeShadow`'s drop layer draws this one the same way,
+        /// with the ring left at 0 because the lift draws its ring as its own
+        /// stroke (``ringSpread``/``ringAlpha`` above) rather than folding it
+        /// into this shadow.
+        public static let shadow = ChromeShadow.window(
+            dropOffsetY: 12, dropBlur: 34, dropAlpha: 0.6,
+            ringSpread: 0, ringAlpha: 0
+        )
+    }
+
     /// `motion.css`'s `:root` scope: the curve and the two durations the lift
     /// transition (Task 6) uses. Only the two durations that band names are
     /// carried here, not all five `--dur-*` steps, for the same

@@ -107,6 +107,12 @@ final class TerminalPaneController: NSViewController {
 
     private let edgeFrame = PaneEdgeFrameView(frame: .zero)
 
+    /// The focused pane's ring, inner highlight and shadow under glass
+    /// (Task 6). Covers the terminal and the footer both, the same span as
+    /// ``scrim`` and ``edgeFrame``: the lift marks the whole pane as the one
+    /// holding focus, not just its footer.
+    private let liftView = PaneLiftView(frame: .zero)
+
     /// The palette everything in this pane derives from. One property rather than
     /// one per view, so a theme change cannot land on the footer and miss the
     /// scrim.
@@ -128,16 +134,21 @@ final class TerminalPaneController: NSViewController {
         }
     }
 
-    /// What the footer should draw: flat, unchanged, or glass with a material
-    /// set, per `PaneChrome.resolvedStyle(setting:appearance:)`.
+    /// What the footer and the lift should draw: flat, unchanged, or glass
+    /// with a material set, per `PaneChrome.resolvedStyle(setting:appearance:)`.
     ///
-    /// Straight through to ``statusBar``, the same shape as ``bottomCorners``:
-    /// nothing else in this pane draws chrome material yet (the terminal grid
-    /// and the overlay family are Task 5's and Task 6's, not Task 4's), so
-    /// there is exactly one consumer and no reason to store a second copy here.
-    var resolvedChrome: ResolvedChrome {
-        get { statusBar.resolvedChrome }
-        set { statusBar.resolvedChrome = newValue }
+    /// Stored here, unlike ``bottomCorners``, because Task 6 gives it a
+    /// second reader: ``applyPresentation()`` has to know whether chrome is
+    /// glass to decide ``liftView``'s ``PaneLiftView/isVisible``, and a
+    /// passthrough straight to ``statusBar`` would leave that read with
+    /// nowhere to come from except unwrapping `statusBar.resolvedChrome`
+    /// back out, the same value stored a second time under a different name.
+    var resolvedChrome: ResolvedChrome = .flat {
+        didSet {
+            guard resolvedChrome != oldValue else { return }
+            statusBar.resolvedChrome = resolvedChrome
+            applyPresentation()
+        }
     }
 
     /// Which derivation the attention signal is drawn from, and what to do when it
@@ -179,6 +190,7 @@ final class TerminalPaneController: NSViewController {
         set {
             statusBar.bottomCorners = newValue
             edgeFrame.bottomCorners = newValue
+            liftView.bottomCorners = newValue
         }
     }
 
@@ -230,6 +242,15 @@ final class TerminalPaneController: NSViewController {
         // around the pane and the fill inside it cannot end up two colours.
         edgeFrame.colour = theme.attentionColour(attentionAccent, behavior: alertBehavior)
         edgeFrame.isVisible = drawsAttentionFrame
+        // The same `isFocused && isWindowActive` gate `PaneStatusBarView`
+        // computes internally as `framesForFocus` for its own thick-fill step,
+        // recomputed here because the lift lives outside the bar and has no
+        // other way to hear about focus or window activation. Glass-only:
+        // under flat (or Reduce Transparency, which `resolvedChrome` already
+        // folds into `.flat` upstream) the lift stays invisible and the
+        // footer's own stroke is the whole expression of focus, unchanged.
+        let isGlass = if case .glass = resolvedChrome { true } else { false }
+        liftView.isVisible = isPaneFocused && isWindowActive && isGlass
     }
 
     /// Whether this pane is asking loudly enough to wear a frame.
@@ -685,9 +706,13 @@ final class TerminalPaneController: NSViewController {
         statusBar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(terminalView)
         view.addSubview(statusBar)
-        // Added last so they sit above both. Neither can be hit, so ordering
-        // costs the terminal nothing.
-        for overlay in [scrim, edgeFrame] {
+        // Added last so they sit above both. None can be hit, so ordering
+        // costs the terminal nothing. liftView is added after edgeFrame, so
+        // an attention frame and the focused-pane lift never fight over which
+        // draws on top; in practice the two are mutually exclusive states
+        // (attention outranks focus) and this ordering is a tie-break that
+        // never triggers rather than a load-bearing one.
+        for overlay in [scrim, edgeFrame, liftView] {
             overlay.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(overlay)
         }
@@ -728,7 +753,7 @@ final class TerminalPaneController: NSViewController {
             preferredHeight,
         ])
 
-        for overlay in [scrim, edgeFrame] {
+        for overlay in [scrim, edgeFrame, liftView] {
             NSLayoutConstraint.activate([
                 overlay.topAnchor.constraint(equalTo: view.topAnchor),
                 overlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),

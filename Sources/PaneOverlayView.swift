@@ -199,3 +199,171 @@ final class PaneEdgeFrameView: PaneOverlayView {
         path.stroke()
     }
 }
+
+/// The focused pane's lift, under glass: the hairline ring, inner highlight
+/// and drop shadow design v5's Task 6 adds around the whole pane, replacing
+/// the footer-only stroke for exactly the states glass is on.
+///
+/// Under flat, and under Reduce Transparency (which forces flat regardless of
+/// the configured `chromeStyle`), this view stays invisible and the shipped
+/// 1.5-2 pt `FocusAccent` stroke inside the footer (``PaneStatusBarView/drawBarFrame(in:)``)
+/// remains the whole expression of focus, unchanged. `TerminalPaneController`
+/// never sets ``isVisible`` under those conditions, and this view's own
+/// nothing-drawn default (`isVisible = false`) is the same "no view drawn,
+/// not merely hidden" guarantee ``PaneStatusBarView/glassBacking`` makes: a
+/// lift that never shows keeps zero cost on a flat pane rather than an
+/// invisible layer macOS still composites.
+///
+/// The ring and the inner highlight are drawn as strokes, the same
+/// `draw(_:)` shape ``PaneEdgeFrameView`` uses; the drop shadow is a
+/// `CALayer` shadow, because a shadow soft enough to read at 34 pt of blur is
+/// not a shape `NSBezierPath.stroke()` can produce inside `draw(_:)` without
+/// building a second, larger backing store to blur into.
+final class PaneLiftView: PaneOverlayView {
+    /// Whether the lift shows at all. Only the focused pane of the key window
+    /// under a `glass`-resolved chrome ever sets this true;
+    /// `TerminalPaneController.applyPresentation` is the only caller and the
+    /// same three conditions (`isPaneFocused`, `isWindowActive`,
+    /// `resolvedChrome` is `.glass`) that gate the thick footer fill gate
+    /// this too, so the ring and the fill step never appear one without the
+    /// other.
+    var isVisible: Bool = false {
+        didSet {
+            guard isVisible != oldValue else { return }
+            apply(animated: true)
+        }
+    }
+
+    /// Which of the window's bottom corners this pane sits in, the same value
+    /// pushed to ``PaneEdgeFrameView`` and the footer, so the lift's outline
+    /// curves exactly where the window's own mask does and nowhere else.
+    var bottomCorners: BottomCorners = [] {
+        didSet {
+            guard bottomCorners != oldValue else { return }
+            needsDisplay = true
+            updateShadowPath()
+        }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        // The shadow is opacity-driven the same way the ring and highlight
+        // are, through this view's own layer, so one fade carries every part
+        // of the lift instead of the shadow and the strokes drifting apart
+        // mid-transition.
+        layer?.shadowColor = NSColor.black.cgColor
+        layer?.shadowOffset = NSSize(width: 0, height: ChromeMaterials.Lift.shadow.dropOffsetY)
+        layer?.shadowRadius = ChromeMaterials.Lift.shadow.dropBlur / 2
+        layer?.shadowOpacity = 0
+        layer?.opacity = 0
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
+        fatalError("baia does not use nibs")
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        updateShadowPath()
+    }
+
+    /// A `CGPath`, not a rectangle: an unclipped rectangular shadow would
+    /// square off the two corners the window itself rounds, the same
+    /// mismatch ``PaneStatusBarView/updateGlassMask()`` exists to avoid on
+    /// the footer's own glass backing.
+    private func updateShadowPath() {
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        layer?.shadowPath = WindowCorner.cgPath(in: bounds, corners: bottomCorners)
+    }
+
+    /// Crossfades the whole lift (ring, highlight and shadow together) to its
+    /// target opacity. Reduce Motion snaps, the same guard every other
+    /// overlay fade in this file makes.
+    ///
+    /// `--dur-2`/`--dur-3` name a 140-220 ms band rather than one number;
+    /// this picks the long end, because the lift crosses two panes on a
+    /// click (fading out on the one losing focus while fading in on the one
+    /// gaining it) and the short end was tuned for a single-layer fade, not
+    /// two running at once.
+    private func apply(animated: Bool) {
+        guard let layer else { return }
+        let targetOpacity: Float = isVisible ? 1 : 0
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+
+        updateShadowPath()
+        needsDisplay = true
+
+        guard animated, !reduceMotion else {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            layer.opacity = targetOpacity
+            layer.shadowOpacity = targetOpacity
+            CATransaction.commit()
+            return
+        }
+
+        let curve = CAMediaTimingFunction(controlPoints:
+            Float(ChromeMaterials.Motion.standardEase.0),
+            Float(ChromeMaterials.Motion.standardEase.1),
+            Float(ChromeMaterials.Motion.standardEase.2),
+            Float(ChromeMaterials.Motion.standardEase.3))
+        let duration = ChromeMaterials.Motion.liftDurationLong
+
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = layer.presentation()?.opacity ?? layer.opacity
+        fade.toValue = targetOpacity
+        fade.duration = duration
+        fade.timingFunction = curve
+
+        let shadowFade = CABasicAnimation(keyPath: "shadowOpacity")
+        shadowFade.fromValue = layer.presentation()?.shadowOpacity ?? layer.shadowOpacity
+        shadowFade.toValue = targetOpacity
+        shadowFade.duration = duration
+        shadowFade.timingFunction = curve
+
+        layer.opacity = targetOpacity
+        layer.shadowOpacity = targetOpacity
+        layer.add(fade, forKey: "baia.lift.opacity")
+        layer.add(shadowFade, forKey: "baia.lift.shadowOpacity")
+    }
+
+    /// The ring and the inner highlight. The drop shadow is not drawn here:
+    /// it is ``CALayer/shadowColor``/``shadowPath``/``shadowRadius`` on this
+    /// view's own layer, set up once in `init` and faded by ``apply(animated:)``.
+    override func draw(_: NSRect) {
+        // Painted unconditionally (`isVisible` gates the layer's `opacity`
+        // instead, the same split `PaneScrimView` and `PaneEdgeFrameView`'s
+        // `barFrame` sibling make): a `draw(_:)` that skipped painting while
+        // invisible would leave the fade animating an empty layer on the way
+        // in, one frame of nothing before the strokes exist to fade.
+        let ringWidth = ChromeMaterials.Lift.ringSpread
+        let ringPath = WindowCorner.path(
+            in: bounds,
+            corners: bottomCorners,
+            inset: ringWidth / 2
+        )
+        ringPath.lineWidth = ringWidth
+        nsColor(RGB.eightBit(255, 255, 255), alpha: ChromeMaterials.Lift.ringAlpha).setStroke()
+        ringPath.stroke()
+
+        // `inset 0 1px 0`: a highlight along the top edge only, not the full
+        // perimeter the ring takes. Clipped to the outline first so the
+        // highlight's own corners still follow the window's curve rather
+        // than squaring off where the pane meets it. This view is flipped
+        // (``PaneOverlayView/isFlipped``), so `y: 0` is the pane's top edge,
+        // the same convention ``PaneStatusBarView`` and ``PaneEdgeFrameView``
+        // draw under.
+        NSGraphicsContext.saveGraphicsState()
+        WindowCorner.path(in: bounds, corners: bottomCorners).addClip()
+        let highlight = NSRect(
+            x: bounds.minX,
+            y: 0,
+            width: bounds.width,
+            height: ChromeMaterials.Lift.innerHighlightOffsetY
+        )
+        nsColor(RGB.eightBit(255, 255, 255), alpha: ChromeMaterials.Lift.innerHighlightAlpha).setFill()
+        highlight.fill()
+        NSGraphicsContext.restoreGraphicsState()
+    }
+}

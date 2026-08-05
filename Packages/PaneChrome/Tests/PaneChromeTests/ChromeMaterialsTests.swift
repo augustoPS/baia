@@ -143,6 +143,40 @@ import Testing
         #expect(ChromeMaterials.Motion.liftDurationLong <= 0.220)
     }
 
+    // MARK: - Focus lift (Task 6's ring and shadow, on the focused pane under glass)
+
+    @Test func liftRingMatchesTheHairlineSpecTheTaskNames() {
+        // 0 0 0 0.5px rgba(255,255,255,0.22): a spread-only hairline ring, no
+        // offset or blur, transcribed with `ChromeShadow.window`'s same shape
+        // (a drop layer plus a ring layer) with the drop layer zeroed, since
+        // the lift's outer mark is the ring alone and the drop comes from
+        // ``liftShadow`` as its own, separate layer.
+        #expect(ChromeMaterials.Lift.ringSpread == 0.5)
+        #expect(ChromeMaterials.Lift.ringAlpha == 0.22)
+    }
+
+    @Test func liftInnerHighlightMatchesTheInsetSpecTheTaskNames() {
+        // inset 0 1px 0 rgba(255,255,255,0.30): a one-point top highlight drawn
+        // inside the lift's own outline, the same "bright top edge" shape the
+        // lens rim uses elsewhere in this design, carried here as its own pair
+        // because Task 6 spells its own alpha rather than reusing the rim's.
+        #expect(ChromeMaterials.Lift.innerHighlightOffsetY == 1)
+        #expect(ChromeMaterials.Lift.innerHighlightAlpha == 0.30)
+    }
+
+    @Test func liftShadowMatchesTheDropSpecTheTaskNames() {
+        // 0 12px 34px rgba(0,0,0,0.6)
+        let shadow = ChromeMaterials.Lift.shadow
+        #expect(shadow.dropOffsetY == 12)
+        #expect(shadow.dropBlur == 34)
+        #expect(shadow.dropAlpha == 0.6)
+        // No ring on this layer: the ring is `ringSpread`/`ringAlpha` above,
+        // drawn as its own stroke rather than folded into this shadow's own
+        // (unused) ring fields.
+        #expect(shadow.ringSpread == 0)
+        #expect(shadow.ringAlpha == 0)
+    }
+
     // MARK: - RGBA itself
 
     @Test func rgbaComponentsAreOnZeroToOneAndAlphaIsSeparate() {
