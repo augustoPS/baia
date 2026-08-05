@@ -46,15 +46,23 @@ final class ChangesSurface: NSObject, WorkspaceSurface {
     ///
     /// Flat fills at `theme.background` and ``backgroundOpacity``, byte-identical
     /// to what Plan 1 shipped. Glass swaps in the resolved material set's own
-    /// `fillSidebar`, the same sidebar fill the footer's glass draws with its own
-    /// `fillChrome` (Task 4): one call either way, so flat's path through this
-    /// method never runs code the glass case added.
+    /// `fillSidebar`, scaled by ``backgroundOpacity``: unlike the footer (Task 4,
+    /// which was opaque under flat and so has no owner-set alpha to preserve),
+    /// this surface was already translucent at `backgroundOpacity` before glass
+    /// existed, and the owner runs wells at 0.85 today. Dropping that factor on
+    /// the glass path would mean the setter still fires (the `didSet` above still
+    /// calls `fill()`) while the value it is supposed to control stopped
+    /// reaching the screen — live in name, inert in effect. Multiplying keeps
+    /// glass additive over the shipped translucency instead of replacing it.
     private func fill() {
         switch resolvedChrome {
         case .flat:
             scrollView.backgroundColor = Self.nsColor(theme.background, alpha: backgroundOpacity)
         case let .glass(set):
-            scrollView.backgroundColor = Self.nsColor(set.fillSidebar.rgb, alpha: set.fillSidebar.alpha)
+            scrollView.backgroundColor = Self.nsColor(
+                set.fillSidebar.rgb,
+                alpha: set.fillSidebar.alpha * backgroundOpacity
+            )
         }
     }
 

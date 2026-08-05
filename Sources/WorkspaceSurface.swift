@@ -44,9 +44,13 @@ protocol WorkspaceSurface: AnyObject {
     /// What the surface's own scroll background draws, per Task 5.
     ///
     /// Flat: unchanged, `theme.background` at ``backgroundOpacity``, exactly what
-    /// Plan 1 shipped. Glass: the material set's own `fillSidebar`, the same
-    /// resolution ``TerminalPaneController/resolvedChrome`` already applies to the
-    /// footer (Task 4). No accent or theme tint rides along with it: the v5 rule
+    /// Plan 1 shipped. Glass: the material set's own `fillSidebar`, scaled by
+    /// ``backgroundOpacity`` rather than drawn at the token's own fixed alpha.
+    /// Unlike the footer (Task 4), which was opaque under flat and so has no
+    /// owner-set alpha to carry forward, this surface was already translucent at
+    /// `backgroundOpacity` before glass existed — the owner runs wells at 0.85 —
+    /// so glass here has to stay additive over that setting rather than replace
+    /// it outright. No accent or theme tint rides along with it: the v5 rule
     /// against a tinted sidebar element is about not letting anything but this one
     /// fill answer the question, which is why the type is ``PaneChrome/ResolvedChrome``
     /// and not a colour the caller would have to derive twice.
