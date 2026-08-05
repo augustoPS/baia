@@ -88,6 +88,63 @@ public struct PaneStatusBarMetrics: Sendable, Equatable {
     /// beside it reads as a mistake rather than as a second signal.
     public static let attentionLine: Double = 2
 
+    /// The attention capsule, the leading mark on the bar (design v5 §3).
+    /// Concentric inside ``height``: capsule radius, centred vertically. The
+    /// only prominent element the bar carries, at any level.
+    public static let capsuleHeight: Double = 16
+
+    /// A capsule narrower than this reads as a dot rather than a control
+    /// surface. The v5 value, which is what a single `!` at 10 pt lands on
+    /// once padded.
+    public static let capsuleMinWidth: Double = 21
+
+    /// Room either side of the glyph inside the capsule.
+    public static let capsulePadding: Double = 6
+
+    /// The gap between the capsule (or the bare done glyph) and the first
+    /// segment after it.
+    public static let capsuleGap: Double = 6
+
+    /// Where the capsule draws, in the bar's own flipped coordinates.
+    ///
+    /// A pure function of the measured glyph width, so the fill layer, the
+    /// glyph drawing and the approval popover's anchor all read one answer.
+    /// Exposing this frame is v5 open item 2; the popover that consumes it
+    /// arrives with the overlays plan.
+    public struct CapsuleFrame: Sendable, Equatable {
+        public var x: Double
+        public var y: Double
+        public var width: Double
+        public var height: Double
+    }
+
+    public static func attentionCapsuleFrame(glyphWidth: Double) -> CapsuleFrame {
+        CapsuleFrame(
+            x: horizontalInset,
+            y: (height - capsuleHeight) / 2,
+            width: max(capsuleMinWidth, glyphWidth + capsulePadding * 2),
+            height: capsuleHeight
+        )
+    }
+
+    /// The width the leading mark takes from the segments, gap included.
+    ///
+    /// No `default:`. A fifth attention level has to decide what it does to
+    /// the bar's layout before this compiles, which is the same rule
+    /// `Attention.name(of:)` enforces for its wire name.
+    public static func attentionLeadingAdvance(
+        for attention: PaneStatus.Attention,
+        glyphWidth: Double,
+        doneGlyphWidth: Double
+    ) -> Double {
+        switch attention {
+        case .none: 0
+        case .asking, .acknowledged:
+            attentionCapsuleFrame(glyphWidth: glyphWidth).width + capsuleGap
+        case .done: doneGlyphWidth + capsuleGap
+        }
+    }
+
     /// Below this pane width the frame drops its left and right edges.
     ///
     /// A narrow frame is nearly square and reads as a chip rather than as a

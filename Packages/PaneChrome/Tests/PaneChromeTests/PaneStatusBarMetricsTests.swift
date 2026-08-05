@@ -96,4 +96,31 @@ import Testing
         #expect(grouped[.agent]?.count == 1)
         #expect(grouped[.context]?.count == 1)
     }
+
+    @Test func theCapsuleIsConcentricInTheBar() {
+        let frame = PaneStatusBarMetrics.attentionCapsuleFrame(glyphWidth: 5)
+        #expect(frame.y == 3)                                   // (22 - 16) / 2
+        #expect(frame.height == 16)
+        #expect(frame.x == PaneStatusBarMetrics.horizontalInset)
+    }
+
+    @Test func aNarrowGlyphStillEarnsTheMinimumWidth() {
+        #expect(PaneStatusBarMetrics.attentionCapsuleFrame(glyphWidth: 5).width == 21)
+    }
+
+    @Test func aWideGlyphGrowsTheCapsuleByItsPadding() {
+        #expect(PaneStatusBarMetrics.attentionCapsuleFrame(glyphWidth: 20).width == 32)
+    }
+
+    @Test func onlyTheCapsuleLevelsAdvanceTheSegments() {
+        let advance = { (a: PaneStatus.Attention) in
+            PaneStatusBarMetrics.attentionLeadingAdvance(
+                for: a, glyphWidth: 5, doneGlyphWidth: 7
+            )
+        }
+        #expect(advance(.none) == 0)
+        #expect(advance(.asking) == 27)        // capsule 21 + gap 6
+        #expect(advance(.acknowledged) == 27)
+        #expect(advance(.done) == 13)          // bare glyph 7 + gap 6
+    }
 }
