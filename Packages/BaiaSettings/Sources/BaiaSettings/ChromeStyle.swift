@@ -105,27 +105,23 @@ public extension FocusAccent {
 
 /// How hard an unacknowledged pane asks.
 ///
-/// Both levels of the attention model exist either way. This chooses only what
-/// the unacknowledged level looks like, because how much interruption is right
-/// depends on whether the owner is watching the panes or working in one.
+/// Both volumes draw the footer's attention capsule (design v5 §3): tinted
+/// while asking, clear once acknowledged, a bare ✓ when done. This chooses
+/// only whether the ask also leaves the footer, because how much interruption
+/// is right depends on whether the owner is watching the panes or working in
+/// one.
 ///
 /// Neither spelling ever reaches ghostty, nor does ``FocusAccent``'s, so both
 /// are baia's own. Renaming a case changes the config file baia reads and
 /// nothing else, which is also why nothing outside baia can reject a rename.
 public enum AttentionStyle: String, Sendable, Equatable, CaseIterable {
-    /// The footer fills with the alert colour and a 2 pt alert frame is drawn
-    /// around the whole pane.
+    /// The capsule, plus a 2 pt alert frame around the whole pane while the
+    /// ask is unacknowledged. The frame is the cross-window carrier: findable
+    /// across four panes without reading a single footer.
     case loud
 
-    /// A 2 pt alert line along the footer's top edge, and nothing else.
-    ///
-    /// The footer keeps its own background, which is what lets this be read
-    /// beside the focus frame. Both want the same two points of the top edge and
-    /// the frame is drawn above the text, so the line is pushed *inside* the
-    /// frame instead of being left under it: 2 pt of alert immediately within
-    /// 2 pt of focus, both readable. It has to be moved rather than covered,
-    /// because this level has no arrival pulse behind it, so a covered line is
-    /// an ask that is never announced at all.
+    /// The capsule alone. The pane says it is asking; nothing outside the
+    /// footer moves.
     case quiet
 }
 
