@@ -897,13 +897,16 @@ final class PaneTreeController: NSViewController {
         onSessionChange?()
     }
 
-    /// The projects of every pane currently asking for attention, in visual
-    /// order so the same set always reads the same way.
+    /// The projects of every pane asking and not yet seen, in visual order so
+    /// the same set always reads the same way. Unacknowledged only (v5 §2):
+    /// the title is the cross-window shout, and a pane the owner has stood in
+    /// since it asked has been shouted about enough. The footer capsule and
+    /// the channel keep saying it is still asking.
     var waitingProjects: [String] {
         workspace.tabs
             .flatMap { $0.tree.paneIDs }
             .compactMap { panes[$0] }
-            .filter(\.wantsAttention)
+            .filter { $0.attentionState == .asking }
             .map { $0.anchorTracker.anchor?.displayName ?? "baia" }
     }
 
