@@ -16,8 +16,26 @@ final class ConfigurationCenter {
 
     private(set) var settings: Settings
 
-    /// Raised after `settings` moves, for the app-level consumers that are not
-    /// panes: the project roots, session restore, and the notifier.
+    /// The live system state `resolvedStyle(setting:appearance:)` needs:
+    /// dark/light, Reduce Transparency, Reduce Motion. Held rather than read
+    /// fresh on every `resolvedChrome` access, so a burst of reads inside one
+    /// render pass sees one appearance rather than a value that could change
+    /// mid-frame if the observer fired between two of them.
+    ///
+    /// Constructor-injected, never a later assignment a caller can forget:
+    /// the `focusAccent` lesson (`PaneTheme+Palette.swift`) is exactly a
+    /// settings key that reached everything except the one line that read it,
+    /// and the fix there was moving resolution to where a parameter cannot be
+    /// skipped. `appearanceObserver` is the same shape applied one layer
+    /// earlier: nothing here can construct a `ConfigurationCenter` without
+    /// naming where its appearance comes from.
+    private let appearanceObserver: AppearanceObserver
+
+    /// Raised after `settings` or the live appearance moves, for the app-level
+    /// consumers that are not panes: the project roots, session restore, and
+    /// the notifier. Both sources feed the same callback because both change
+    /// what `resolvedChrome` answers, and a caller that only reacted to one
+    /// would draw glass a frame late after a Reduce Transparency toggle.
     var onSettingsChange: (() -> Void)?
 
     /// Every live pane, held weakly.
@@ -32,8 +50,12 @@ final class ConfigurationCenter {
     private var watcher: DispatchSourceFileSystemObject?
     private var reloadWorkItem: DispatchWorkItem?
 
-    init(store: SettingsStore = SettingsStore(fileURL: SettingsStore.defaultFileURL())) {
+    init(
+        store: SettingsStore = SettingsStore(fileURL: SettingsStore.defaultFileURL()),
+        appearanceObserver: AppearanceObserver = AppearanceObserver()
+    ) {
         self.store = store
+        self.appearanceObserver = appearanceObserver
         // Written before the first read, so a first launch leaves the owner a
         // fully populated file to edit rather than nothing at all. Never
         // overwrites, and races safely: the write is `O_EXCL`.
@@ -42,6 +64,26 @@ final class ConfigurationCenter {
         settings = result.settings
         Self.report(result)
         startWatching()
+        appearanceObserver.onAppearanceChange = { [weak self] _ in
+            self?.onSettingsChange?()
+        }
+    }
+
+    // MARK: - Chrome resolution
+
+    /// What the chrome should draw right now: flat, or glass with the
+    /// material set the live appearance picks.
+    ///
+    /// `PaneChrome.resolvedStyle(setting:appearance:)` does the actual
+    /// resolution and carries its own tests; this is the one line that calls
+    /// it with the two live inputs, `settings.chromeStyle` and the observer's
+    /// last-published `ChromeAppearance`. State ink never reads this: grep
+    /// `PaneStatusSegments.swift`, `PaneTheme.swift`, and
+    /// `PaneTheme+Palette.swift` for `ChromeAppearance` or `resolvedChrome`
+    /// and find nothing, the same acceptance `SettingsDerivations.paneTheme`
+    /// holds for `focusAccent`.
+    var resolvedChrome: ResolvedChrome {
+        resolvedStyle(setting: settings.chromeStyle, appearance: appearanceObserver.appearance)
     }
 
     // MARK: - Derivations
