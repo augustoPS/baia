@@ -247,14 +247,14 @@ final class SurfaceTitleView: NSView {
         }
 
         // Caps and tracking make the label a label rather than a title, so it stops
-        // competing with the row text below it at the same size. Regular rather
-        // than the medium it used to be: weight is the row's tier signal, not the
-        // heading's. Design v3 §4.1.
+        // competing with the row text below it at the same size. Weight 700 at
+        // 10 pt, tertiary ink: design v5 §5 (previously mono 11 pt regular,
+        // secondary ink, per design v3 §4.1).
         let label = NSAttributedString(
             string: title.uppercased(),
             attributes: [
                 .font: Self.labelFont,
-                .foregroundColor: nsColor(theme.inkContext),
+                .foregroundColor: nsColor(theme.inkFaint),
                 .kern: Self.tracking,
             ]
         )
@@ -347,10 +347,10 @@ final class SurfaceTitleView: NSView {
     private static let inset = ChangesRowsView.inset
     /// 6 pt between the label and its count, per design v3 §4.1.
     private static let countGap: Double = 6
-    private static let labelFont = ChangesRowsView.font
+    private static let labelFont = NSFont.systemFont(ofSize: 10, weight: .bold)
     private static let anchorFont = NSFont.systemFont(ofSize: 11, weight: .semibold)
     private static let totalsFont = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
-    /// +0.08em at 11 pt, which is what makes caps read as a label rather than as
-    /// shouting.
-    private static let tracking: Double = 0.88
+    /// .06em at 10 pt, design v5 §5, which is what makes caps read as a label
+    /// rather than shouting.
+    private static let tracking: Double = 10 * 0.06
 }
