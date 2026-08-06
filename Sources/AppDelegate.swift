@@ -312,13 +312,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// different thing and costs nothing, which is what ``SidebarHost/show(_:)`` is.
     private func sidebar(for tree: PaneTreeController) -> SidebarHost {
         let content = configuration.settings.sidebar
-        return SidebarHost(
+        let host = SidebarHost(
             tree: tree,
             surfaces: surfaces(for: content, tree: tree),
             theme: configuration.paneTheme,
             backgroundOpacity: configuration.settings.backgroundOpacity,
             resolvedChrome: configuration.resolvedChrome
         )
+        // The action row's click is wired below to the same shape as
+        // `newTab(_:)` (`joining: controller.window`), so its keycap has to
+        // read the menu's own binding for `.newTab` rather than assume one:
+        // see ``SidebarActionRowView/keycap``. Falls back to the view's own
+        // default if the bar ever ships with no shortcut for it.
+        if let keycap = MenuBarLayout.shortcutText(of: .newTab) {
+            host.newSessionKeycap = keycap
+        }
+        return host
     }
 
     /// The surfaces for a content, built fresh.

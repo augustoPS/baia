@@ -1,8 +1,8 @@
 import AppKit
 import PaneChrome
 
-/// The sidebar's bottom row: "New session" and a drawn `⌘N` keycap. Design v5
-/// §5.
+/// The sidebar's bottom row: "New session" and a drawn keycap naming the
+/// shortcut that opens it. Design v5 §5.
 ///
 /// **Drawn, not a control**, the same rule every other clickable thing in this
 /// column follows and for the same reason: `AppTerminalView.performKeyEquivalent`
@@ -14,6 +14,18 @@ import PaneChrome
 @MainActor
 final class SidebarActionRowView: NSView {
     var theme: PaneTheme = .darkPastel { didSet { needsDisplay = true } }
+
+    /// The keycap glyph drawn trailing, e.g. `⌘T`. Set by the caller from
+    /// `WorkspaceMenu.MenuBarLayout.shortcutText(of: .newTab)` rather than
+    /// hardcoded here: the row's click opens a tab
+    /// (``AppDelegate/openWindow(tree:joining:tabbing:)`` called with
+    /// `joining: controller.window`, the same shape as `newTab(_:)`), and a
+    /// caption written independently of the menu's own shortcut table is
+    /// exactly the drift `PaletteHints` was extracted to prevent: a hint that
+    /// names the wrong action is read once and believed. Defaults to `⌘T` so
+    /// a caller that forgets to set it still shows the right key rather than
+    /// the wrong one.
+    var keycap: String = "⌘T" { didSet { needsDisplay = true } }
 
     /// Fired on mouse-up inside the row. The tab opens beside whatever the
     /// caller decides "New session" means; this view knows only that it was
@@ -46,7 +58,7 @@ final class SidebarActionRowView: NSView {
         let labelY = (bounds.height - Self.labelFont.ascender + Self.labelFont.descender) / 2 - Self.labelFont.descender
         label.draw(at: NSPoint(x: Self.inset, y: labelY))
 
-        drawKeycap("⌘N", trailingAt: bounds.width - Self.inset)
+        drawKeycap(keycap, trailingAt: bounds.width - Self.inset)
     }
 
     /// A capsule-cornered outline with a centred glyph, right edge at `trailing`.

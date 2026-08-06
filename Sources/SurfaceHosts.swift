@@ -111,7 +111,7 @@ final class SidebarHost: NSViewController {
 
     private let sessionHeader = SidebarSessionHeaderView()
 
-    /// The bottom action row (32pt, design v5 §5): "New session" and its `⌘N`
+    /// The bottom action row (32pt, design v5 §5): "New session" and its
     /// keycap. Fired on click; what a new session means is the caller's
     /// business, the same split ``WorkspaceSurface/onSelect`` already keeps
     /// between a row that knows it was clicked and an owner that knows what
@@ -119,6 +119,14 @@ final class SidebarHost: NSViewController {
     var onNewSession: (() -> Void)? {
         get { actionRow.onNewSession }
         set { actionRow.onNewSession = newValue }
+    }
+
+    /// The keycap the action row draws. See ``SidebarActionRowView/keycap``:
+    /// the caller sets this from `WorkspaceMenu.MenuBarLayout.shortcutText(of:)`
+    /// so the row can never advertise a key its click does not perform.
+    var newSessionKeycap: String {
+        get { actionRow.keycap }
+        set { actionRow.keycap = newValue }
     }
 
     private let actionRow = SidebarActionRowView()
