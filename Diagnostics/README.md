@@ -53,6 +53,7 @@ responder inside a pane's window and silently kill every ghostty binding" is.
 | `find-in-pane/` | Whether the find panel breaks a responder inside a pane's window, or keeps a dead pane's shell alive |
 | `split-command/` | What ghostty actually does with the `command` config key, which its own documentation gets wrong, and therefore what `baia split --command` has to be given. Also the refusals, which need no app |
 | `footer-corners/` | The footer's corner geometry, including full screen |
+| `glass-backdrop/` | What a 22 pt `NSGlassEffectView` over a pane actually samples, and whether extending the surface under it costs the grid a row. Four render arms over a controlled white/black backdrop, plus a real-PTY grid measurement. Found that the shipped bar adapts strongly and falls to 1.5:1 text contrast over a bright desktop, which is the opposite of the flat-slab failure it was built to look for |
 | `fullscreen-strip/` | The strip that appears along the top in full screen |
 | `key-resize/` | ⌃⌘arrow divider steps under key repeat |
 | `pane-resize/` | Divider drag arithmetic |

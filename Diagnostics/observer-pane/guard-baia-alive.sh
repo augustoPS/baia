@@ -79,9 +79,25 @@ fi
 # pane that launched them, which is disruption of a different kind than the one
 # named here rather than an absence of it.
 #
+# **`glass-backdrop` is allowed, and it is the first member that is not
+# invisible.** Every other probe on this list opens no window at all or opens one
+# nothing composites; `glass-backdrop` puts real windows on screen for about
+# fifteen seconds, including a full-screen white/black backdrop it needs as a
+# controlled thing for glass to sample. It qualifies on the criterion this list
+# actually enforces, which is focus rather than invisibility: it is
+# `.accessory`, every window is `orderFrontRegardless()`, and it contains no
+# `makeKeyAndOrderFront`, no `activate`, and no `pkill`, so the keyboard never
+# leaves the pane that launched it. It spawns a real shell for the grid arm and
+# exits it.
+#
+# The distinction is worth stating rather than leaving to the reader, because a
+# later probe that flashes windows *and* takes focus would look like this one
+# from the outside. Focus is the line. A run of this one will visibly cover
+# whatever is in front for a few seconds and then put it back.
+#
 # Every probe named must be safe, so a command pairing a safe one with a real
 # driver is still denied.
-SAFE_PROBES='^(theme-catalog|app-icon|clip-layout|theme-refresh|pane-resize)$'
+SAFE_PROBES='^(theme-catalog|app-icon|clip-layout|theme-refresh|pane-resize|glass-backdrop)$'
 probes=$(printf '%s' "$COMMAND" | grep -oE 'Diagnostics/[a-zA-Z0-9_-]+/run\.sh' | sed -E 's|Diagnostics/([^/]+)/run\.sh|\1|')
 if [ -n "$probes" ]; then
   unsafe=0
@@ -91,7 +107,7 @@ if [ -n "$probes" ]; then
 $probes
 EOF
   if [ "$unsafe" = "1" ]; then
-    emit_deny "Blocked: this Diagnostics probe takes over the screen. footer-corners and fullscreen-strip open a key window and activate, and fullscreen-strip runs an event loop driving it in and out of full screen, so either would pull focus off this pane mid-run. Others quit any running baia and launch their own. Use 'make test' for package work, or theme-catalog, app-icon, clip-layout, theme-refresh and pane-resize, which take no focus."
+    emit_deny "Blocked: this Diagnostics probe takes over the screen. footer-corners and fullscreen-strip open a key window and activate, and fullscreen-strip runs an event loop driving it in and out of full screen, so either would pull focus off this pane mid-run. Others quit any running baia and launch their own. Use 'make test' for package work, or theme-catalog, app-icon, clip-layout, theme-refresh, pane-resize and glass-backdrop, which take no focus. (glass-backdrop does put windows on screen for about fifteen seconds; it never takes the keyboard.)"
   fi
 fi
 
