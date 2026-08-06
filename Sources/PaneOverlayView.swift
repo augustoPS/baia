@@ -245,16 +245,28 @@ final class PaneLiftView: PaneOverlayView {
         }
     }
 
+    /// The drop shadow, on a sublayer of its own, masked to the pane's
+    /// *exterior*. A `CALayer` shadow given an explicit `shadowPath` renders
+    /// the path's whole blurred silhouette, and on a transparent overlay
+    /// nothing covers the interior of that silhouette, so the "shadow" read
+    /// as a black veil over the focused pane's terminal (seen live
+    /// 2026-08-06, the first glass launch). The even-odd mask cuts the
+    /// interior out, leaving only the halo past the pane's edge, which is
+    /// the only part a drop shadow honestly is.
+    private let shadowLayer = CALayer()
+    private let shadowMask = CAShapeLayer()
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        // The shadow is opacity-driven the same way the ring and highlight
-        // are, through this view's own layer, so one fade carries every part
-        // of the lift instead of the shadow and the strokes drifting apart
-        // mid-transition.
-        layer?.shadowColor = NSColor.black.cgColor
-        layer?.shadowOffset = NSSize(width: 0, height: ChromeMaterials.Lift.shadow.dropOffsetY)
-        layer?.shadowRadius = ChromeMaterials.Lift.shadow.dropBlur / 2
-        layer?.shadowOpacity = 0
+        shadowLayer.shadowColor = NSColor.black.cgColor
+        shadowLayer.shadowOffset = CGSize(width: 0, height: ChromeMaterials.Lift.shadow.dropOffsetY)
+        shadowLayer.shadowRadius = ChromeMaterials.Lift.shadow.dropBlur / 2
+        shadowLayer.shadowOpacity = 0
+        shadowMask.fillRule = .evenOdd
+        shadowLayer.mask = shadowMask
+        // Below the view's own content, so the ring and highlight stroke over
+        // whatever sliver of halo lands inside the curve at the corners.
+        layer?.insertSublayer(shadowLayer, at: 0)
         layer?.opacity = 0
     }
 
@@ -274,7 +286,21 @@ final class PaneLiftView: PaneOverlayView {
     /// the footer's own glass backing.
     private func updateShadowPath() {
         guard bounds.width > 0, bounds.height > 0 else { return }
-        layer?.shadowPath = WindowCorner.cgPath(in: bounds, corners: bottomCorners)
+        let pane = WindowCorner.cgPath(in: bounds, corners: bottomCorners)
+        shadowLayer.frame = bounds
+        shadowLayer.shadowPath = pane
+        // The mask's outer bound reaches past every point the blur and offset
+        // can push the halo to, and the pane's own path is the even-odd
+        // cutout. Both paths are in this layer's coordinate space; a shape
+        // layer fills its path regardless of its frame, so the outer rect
+        // extending beyond the bounds costs nothing.
+        let reach = ChromeMaterials.Lift.shadow.dropBlur
+            + abs(ChromeMaterials.Lift.shadow.dropOffsetY)
+        let mask = CGMutablePath()
+        mask.addRect(bounds.insetBy(dx: -reach, dy: -reach))
+        mask.addPath(pane)
+        shadowMask.frame = bounds
+        shadowMask.path = mask
     }
 
     /// Crossfades the whole lift (ring, highlight and shadow together) to its
@@ -289,6 +315,9 @@ final class PaneLiftView: PaneOverlayView {
     private func apply(animated: Bool) {
         guard let layer else { return }
         let targetOpacity: Float = isVisible ? 1 : 0
+        // The spec's 0.6, not 1: the token's alpha is the shadow's whole
+        // strength, and the layer fade on top of it is only the transition.
+        let targetShadow: Float = isVisible ? Float(ChromeMaterials.Lift.shadow.dropAlpha) : 0
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
 
         updateShadowPath()
@@ -298,7 +327,7 @@ final class PaneLiftView: PaneOverlayView {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             layer.opacity = targetOpacity
-            layer.shadowOpacity = targetOpacity
+            shadowLayer.shadowOpacity = targetShadow
             CATransaction.commit()
             return
         }
@@ -317,15 +346,15 @@ final class PaneLiftView: PaneOverlayView {
         fade.timingFunction = curve
 
         let shadowFade = CABasicAnimation(keyPath: "shadowOpacity")
-        shadowFade.fromValue = layer.presentation()?.shadowOpacity ?? layer.shadowOpacity
-        shadowFade.toValue = targetOpacity
+        shadowFade.fromValue = shadowLayer.presentation()?.shadowOpacity ?? shadowLayer.shadowOpacity
+        shadowFade.toValue = targetShadow
         shadowFade.duration = duration
         shadowFade.timingFunction = curve
 
         layer.opacity = targetOpacity
-        layer.shadowOpacity = targetOpacity
+        shadowLayer.shadowOpacity = targetShadow
         layer.add(fade, forKey: "baia.lift.opacity")
-        layer.add(shadowFade, forKey: "baia.lift.shadowOpacity")
+        shadowLayer.add(shadowFade, forKey: "baia.lift.shadowOpacity")
     }
 
     /// The ring and the inner highlight. The drop shadow is not drawn here:
