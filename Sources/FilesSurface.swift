@@ -149,6 +149,10 @@ final class FilesSurface: NSObject, WorkspaceSurface {
     /// §4.1.
     var headingCount: Int? { nil }
 
+    /// None. A file tree counts paths, not lines, and has nothing for `+n −n`
+    /// to total. See ``WorkspaceSurface/headingTotals``.
+    var headingTotals: (adds: Int, deletes: Int)? { nil }
+
     /// Called with a repository-relative path when a row's name is clicked.
     ///
     /// The surface knows nothing about what happens next. Whether that path is
@@ -305,19 +309,27 @@ final class FileTreeRowsView: NSView {
         let y = Double(index) * Self.rowHeight
         let x = Self.inset + Double(row.depth) * Self.indent
 
+        // Radius 6, the same rounded fill ``ChangesRowsView`` draws (design v5
+        // §5): one row-selection surface across both sections of the column.
         if let fill = feedback.fill(index, in: theme) {
             ChangesSurface.nsColor(fill.colour, alpha: fill.alpha).setFill()
-            NSRect(x: 0, y: y, width: bounds.width, height: Self.rowHeight).fill()
+            NSBezierPath(
+                roundedRect: NSRect(x: 0, y: y, width: bounds.width, height: Self.rowHeight),
+                xRadius: ChangesRowsView.rowRadius,
+                yRadius: ChangesRowsView.rowRadius
+            ).fill()
         }
 
         drawGuides(of: row, atIndex: index, y: y)
 
         if row.node.isDirectory {
+            // 8pt tertiary, design v5 §5: was the row's own 11pt body size,
+            // which read as text rather than as a disclosure control.
             let chevron = expanded.contains(row.node.rawPath) ? "▾" : "▸"
             NSAttributedString(
                 string: chevron,
-                attributes: [.font: Self.font, .foregroundColor: nsColor(theme.inkFaint)]
-            ).draw(at: NSPoint(x: x, y: y + Self.textOrigin))
+                attributes: [.font: Self.disclosureFont, .foregroundColor: nsColor(theme.inkFaint)]
+            ).draw(at: NSPoint(x: x, y: y + Self.disclosureTextOrigin))
         }
 
         // The trailing status, drawn before the name so the name knows what room is
@@ -325,11 +337,22 @@ final class FileTreeRowsView: NSView {
         // column on that side would either push every name right by a quarter of
         // the depth budget or collide with the guides. Trailing costs the name
         // 14 pt at any depth and never moves as the tree expands.
+        //
+        // Design v5 §5 collapses ``FileChangeMark/staged``/`.unstaged` to one
+        // trailing `•`, the same vocabulary the footer's `*` already spends on a
+        // dirty tree, so the two read as one signal rather than two dot-shaped
+        // ones: caution ink for the ordinary case, ok-green only when a
+        // collapsed directory's rolled-up mark says nothing under it is still
+        // owed. `.untracked` keeps its own `?`, a fact ``FileChangeMark`` already
+        // distinguishes from a modification and one the dot's binary caution/
+        // ok-green vocabulary cannot carry; `.conflict` keeps `!` in attention
+        // ink outright, the state design v5 nowhere asks this column to quiet.
         let mark = marks[row.node.rawPath]
         if let mark {
+            let (glyph, ink) = Self.trailingGlyph(for: mark, in: theme)
             NSAttributedString(
-                string: String(mark.glyph),
-                attributes: [.font: Self.font, .foregroundColor: nsColor(colour(of: mark))]
+                string: String(glyph),
+                attributes: [.font: Self.font, .foregroundColor: nsColor(ink)]
             ).draw(at: NSPoint(
                 x: bounds.width - Self.inset - Self.statusColumn,
                 y: y + Self.textOrigin
@@ -360,6 +383,16 @@ final class FileTreeRowsView: NSView {
         ).draw(at: NSPoint(x: nameX, y: y + Self.textOrigin))
     }
 
+    /// The glyph and ink design v5 §5 draws for one tree mark.
+    private static func trailingGlyph(for mark: FileChangeMark, in theme: PaneTheme) -> (Character, RGB) {
+        switch mark {
+        case .staged: ("•", theme.colour(for: .added))
+        case .unstaged: ("•", theme.colour(for: .unstaged))
+        case .untracked: ("?", theme.colour(for: .untracked))
+        case .conflict: ("!", theme.alert)
+        }
+    }
+
     /// One vertical line per ancestor level, so depth is read rather than counted.
     ///
     /// Design v3 §5.1. Drawn in ``PaneTheme/divider``, the same colour and weight
@@ -382,16 +415,6 @@ final class FileTreeRowsView: NSView {
                 height: Self.rowHeight
             ).fill()
         }
-    }
-
-    private func colour(of mark: FileChangeMark) -> RGB {
-        let resolved: PaneTheme.ChangeMark = switch mark {
-        case .conflict: .conflict
-        case .unstaged: .unstaged
-        case .staged: .staged
-        case .untracked: .untracked
-        }
-        return theme.colour(for: resolved)
     }
 
     var onSelect: ((RepositoryPath) -> Bool)?
@@ -558,6 +581,16 @@ final class FileTreeRowsView: NSView {
     }
 
     private static let font = ChangesRowsView.font
+
+    /// Design v5 §5: 8pt, down from the row's own 11pt body size. A disclosure
+    /// glyph at body size reads as a character in the name; at 8pt it reads as
+    /// the control it is.
+    private static let disclosureFont = NSFont.monospacedSystemFont(ofSize: 8, weight: .regular)
+    /// The same cap-centring rule ``ChangesRowsView/textOrigin`` documents,
+    /// worked out for ``disclosureFont`` rather than ``font``: two glyphs of
+    /// different sizes centred by their own idea of middle sit off the shared
+    /// baseline by a fraction of a point, which reads as a mistake.
+    private static let disclosureTextOrigin = ChangesRowsView.rowBaseline - Double(disclosureFont.ascender)
 
     /// Both surfaces read one set of row metrics, so a row in the tree and a row
     /// in the changes list sit on the same baseline at the same inset when the two

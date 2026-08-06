@@ -31,6 +31,12 @@ protocol WorkspaceSurface: AnyObject {
     /// useful section and two rows under `CHANGES` is a broken one.
     var headingCount: Int? { get }
 
+    /// The heading's right-aligned `+n −n`, or nil for a surface with no line
+    /// counts to report. Design v5 §5, `CHANGED`'s own total; `FILES` answers
+    /// nil the same way it answers nil to ``headingCount``, since a file tree
+    /// counts paths and not lines.
+    var headingTotals: (adds: Int, deletes: Int)? { get }
+
     /// What the terminal's own background is drawn at, so a surface is filled with
     /// the same material a pane is.
     ///
@@ -188,6 +194,16 @@ final class SurfaceTitleView: NSView {
     /// twice would say there were two.
     var anchorName: String? { didSet { needsDisplay = true } }
 
+    /// The right-aligned `+n −n`, mono 10pt, adds in ``PaneChrome/PaneTheme/staged``
+    /// and deletes in ``PaneChrome/PaneTheme/alert`` (design v5 §5). Nil renders
+    /// nothing rather than `+0 −0`: see ``WorkspaceSurface/headingTotals``.
+    ///
+    /// Drawn in the same trailing slot ``anchorName`` used before design v5 moved
+    /// the repository name to ``SidebarSessionHeaderView``; the two are never both
+    /// non-nil on a shipping heading; where they would be, `totals` wins, since a
+    /// `CHANGED` heading with something to total is the case this exists for.
+    var totals: (adds: Int, deletes: Int)? { didSet { needsDisplay = true } }
+
     /// Gated the way the footer's focus frame is: an accent left bright on a
     /// window that is not key would compete with the window that is.
     var isWindowActive = true { didSet { needsDisplay = true } }
@@ -257,6 +273,31 @@ final class SurfaceTitleView: NSView {
             x += Double(String(count).count) * Self.labelFont.maximumAdvancement.width
         }
 
+        if let totals {
+            let run = NSMutableAttributedString()
+            if totals.adds > 0 {
+                run.append(NSAttributedString(
+                    string: "+\(totals.adds)",
+                    attributes: [.font: Self.totalsFont, .foregroundColor: nsColor(theme.staged)]
+                ))
+            }
+            if totals.deletes > 0 {
+                if run.length > 0 {
+                    run.append(NSAttributedString(string: " ", attributes: [.font: Self.totalsFont]))
+                }
+                run.append(NSAttributedString(
+                    string: "−\(totals.deletes)",
+                    attributes: [.font: Self.totalsFont, .foregroundColor: nsColor(theme.alert)]
+                ))
+            }
+            guard run.length > 0 else { return }
+            let width = run.size().width
+            let start = bounds.width - Self.inset - width
+            guard start > x + Self.countGap else { return }
+            run.draw(at: NSPoint(x: start, y: baseline(for: Self.totalsFont)))
+            return
+        }
+
         guard let anchorName else { return }
         let anchor = NSAttributedString(
             string: anchorName,
@@ -308,6 +349,7 @@ final class SurfaceTitleView: NSView {
     private static let countGap: Double = 6
     private static let labelFont = ChangesRowsView.font
     private static let anchorFont = NSFont.systemFont(ofSize: 11, weight: .semibold)
+    private static let totalsFont = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
     /// +0.08em at 11 pt, which is what makes caps read as a label rather than as
     /// shouting.
     private static let tracking: Double = 0.88

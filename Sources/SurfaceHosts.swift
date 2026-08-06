@@ -94,14 +94,44 @@ final class SidebarHost: NSViewController {
                 section.surface.theme = theme
                 section.heading.theme = theme
             }
+            sessionHeader.theme = theme
+            actionRow.theme = theme
             divider.layer?.backgroundColor = nsColor(theme.hairline).cgColor
         }
     }
 
-    /// The repository the column is describing, drawn by the first heading.
+    /// The session header row (28pt, design v5 §5), naming the same pane the
+    /// column's sections describe. Set by ``AppDelegate/refreshSidebar(of:)``
+    /// alongside ``anchorName``, from ``PaneChrome/PaneStatus`` directly rather
+    /// than from a second derivation: see ``SidebarSessionHeaderView``.
+    var sessionStatus: PaneStatus? {
+        get { sessionHeader.status }
+        set { sessionHeader.status = newValue }
+    }
+
+    private let sessionHeader = SidebarSessionHeaderView()
+
+    /// The bottom action row (32pt, design v5 §5): "New session" and its `⌘N`
+    /// keycap. Fired on click; what a new session means is the caller's
+    /// business, the same split ``WorkspaceSurface/onSelect`` already keeps
+    /// between a row that knows it was clicked and an owner that knows what
+    /// clicking it does.
+    var onNewSession: (() -> Void)? {
+        get { actionRow.onNewSession }
+        set { actionRow.onNewSession = newValue }
+    }
+
+    private let actionRow = SidebarActionRowView()
+
+    /// The repository the column is describing.
     ///
-    /// The first only: under ``SidebarContent/both`` the two sections are one
-    /// repository, and naming it twice would say there were two. Design v3 §4.2.
+    /// Design v3 §4.2 had the first heading draw this trailing, "the connector
+    /// between the footer and the sidebar". Design v5 §5 replaces that connector
+    /// with ``sessionStatus``'s own row, so ``refreshHeadings()`` no longer feeds
+    /// it to any heading; the property stays because ``SettingsPreviewColumn``
+    /// still themes `SurfaceTitleView.anchorName` directly, and removing the
+    /// value this host used to compute for it would be a change to that preview
+    /// dressed up as a rename.
     var anchorName: String? {
         didSet { refreshHeadings() }
     }
@@ -120,9 +150,9 @@ final class SidebarHost: NSViewController {
     /// count is a property of what was just assigned into them and nothing else
     /// changes it.
     func refreshHeadings() {
-        for (index, section) in sections.enumerated() {
+        for section in sections {
             section.heading.count = section.surface.headingCount
-            section.heading.anchorName = index == 0 ? anchorName : nil
+            section.heading.totals = section.surface.headingTotals
         }
     }
 
@@ -256,6 +286,11 @@ final class SidebarHost: NSViewController {
         widthDivider.wantsLayer = true
         view.addSubview(widthDivider)
 
+        sessionHeader.theme = theme
+        actionRow.theme = theme
+        view.addSubview(sessionHeader)
+        view.addSubview(actionRow)
+
         install()
         refreshHeadings()
     }
@@ -344,11 +379,33 @@ final class SidebarHost: NSViewController {
         tree.edgesCoveredByHost = sidebarWidth > 0 ? [.left] : []
         divider.isHidden = sidebarWidth == 0
 
-        layoutSections(in: NSRect(
+        // The session header and the bottom action row are chrome around the
+        // sections rather than sections themselves: fixed height, drawn even
+        // when the sidebar has nothing in it. Hidden with the column, the same
+        // rule the width divider follows, since a closed sidebar has no room
+        // for either. `sessionHeader.status` is left as it was even while
+        // hidden, so it needs no repopulating the moment the column reopens.
+        let hasSidebar = sidebarWidth > 0
+        sessionHeader.isHidden = !hasSidebar
+        actionRow.isHidden = !hasSidebar
+        sessionHeader.frame = NSRect(
+            x: bounds.minX,
+            y: bounds.maxY - Self.sessionHeaderHeight,
+            width: sidebarWidth,
+            height: Self.sessionHeaderHeight
+        )
+        actionRow.frame = NSRect(
             x: bounds.minX,
             y: bounds.minY,
             width: sidebarWidth,
-            height: bounds.height
+            height: Self.actionRowHeight
+        )
+
+        layoutSections(in: NSRect(
+            x: bounds.minX,
+            y: bounds.minY + (hasSidebar ? Self.actionRowHeight : 0),
+            width: sidebarWidth,
+            height: max(0, bounds.height - (hasSidebar ? Self.sessionHeaderHeight + Self.actionRowHeight : 0))
         ))
 
         let gutter = sidebarWidth > 0 ? Self.dividerWidth : 0
@@ -470,6 +527,12 @@ final class SidebarHost: NSViewController {
 
     /// A hairline, the same one the tree draws between panes.
     private static let dividerWidth: Double = 1
+
+    /// Named locally rather than read off ``SidebarSessionHeaderView/height``
+    /// at every call site above, which is what every other geometry constant
+    /// in this file already does for its own view.
+    private static let sessionHeaderHeight = SidebarSessionHeaderView.height
+    private static let actionRowHeight = SidebarActionRowView.height
 
     /// How little a stacked section may be dragged to.
     private static let minimumSectionHeight: Double = 48

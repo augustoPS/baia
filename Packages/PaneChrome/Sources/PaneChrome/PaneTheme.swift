@@ -490,11 +490,18 @@ public struct PaneTheme: Sendable, Equatable {
 
     /// The colour ``colour(for:)`` resolves a file's change state to.
     ///
-    /// One policy shared by the changes list's two-column marker and the file
-    /// tree's single glyph, which colour a `staged`/`unstaged` pair and a
-    /// rolled-up worst-case respectively but agree on what each state means.
+    /// One policy shared by the changes list's two-column marker, the CHANGED
+    /// row's fixed status letter, and the file tree's single glyph, which colour
+    /// a `staged`/`unstaged` pair, an `M`/`A`/`D` letter, and a rolled-up
+    /// worst-case respectively but agree on what each state means.
     public enum ChangeMark: Sendable, Equatable, CaseIterable {
         case staged, unstaged, untracked, conflict
+        /// An addition, drawn in ``staged``'s own green. Design v5 §5's `A`
+        /// letter and the file tree's collapsed-directory dot both call this
+        /// "ok-green", the same construction as ``staged`` and not a second
+        /// derivation, because a staged add and "this subtree gained a file"
+        /// are the same fact read at two grains.
+        case added
     }
 
     /// The colour a file's change state is drawn in, wherever it appears.
@@ -506,7 +513,7 @@ public struct PaneTheme: Sendable, Equatable {
         // Not `ok`, whose own documentation says it is never used for text.
         // `staged` is that green given `warn`'s construction, so the pair a
         // reader has to tell apart is one vocabulary rather than two.
-        case .staged: staged
+        case .staged, .added: staged
         case .unstaged: warn
         case .untracked: inkFaint
         case .conflict: alert

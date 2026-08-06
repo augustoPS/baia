@@ -16,5 +16,8 @@ import Testing
         #expect(theme.colour(for: .unstaged) == theme.warn)
         #expect(theme.colour(for: .untracked) == theme.inkFaint)
         #expect(theme.colour(for: .conflict) == theme.alert)
+        // Design v5 §5's "ok-green": the same construction as `.staged`, not a
+        // second derivation, since a staged add and an added file are one fact.
+        #expect(theme.colour(for: .added) == theme.staged)
     }
 }

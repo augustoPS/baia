@@ -369,6 +369,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Coalesced by the same timer every other session change goes through, so a
         // drag writes the file once when it settles rather than on every frame.
         controller.sidebar.onGeometryChange = { [weak self] in self?.scheduleSave() }
+        // The sidebar's own "New session" row (design v5 §5). Same shape as
+        // ``newTab(_:)`` (opens where the focused pane already is, joins the
+        // clicked sidebar's own window rather than whichever window is
+        // `focused`), captured on `controller`/`tree` rather than read through
+        // `self.tree`/`self.focused`: a click in a background window's sidebar
+        // must open a tab on *that* window, not steal one from whichever window
+        // the app considers focused.
+        controller.sidebar.onNewSession = { [weak self, weak controller, weak tree] in
+            guard let self, let controller, let tree else { return }
+            let directory = tree.focusedPane?.anchorTracker.workingDirectory?
+                .path(percentEncoded: false) ?? Self.defaultWorkingDirectory
+            openWindow(
+                tree: PaneTreeController(
+                    workingDirectory: directory,
+                    configuration: configuration,
+                    channel: control
+                ),
+                joining: controller.window
+            )
+        }
         windows.append(controller)
         controller.onClose = { [weak self, weak controller] in
             guard let self, let controller else { return }
@@ -721,6 +741,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 changes.hasRepository = pane?.gitStatus.git != nil
                 changes.changes = pane?.gitStatus.changes ?? []
                 changes.anchorPath = anchorPath
+                // Task 1's own read, from the same poller: see
+                // ``PaneGitStatus/stats``.
+                changes.stats = pane?.gitStatus.stats ?? RepositoryChangeStats(entries: [])
             }
             if let files = section.surface as? FilesSurface {
                 files.hasRoot = anchor != nil
@@ -749,6 +772,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // of what was just assigned into the section below it.
         controller.sidebar.anchorName = anchor?.displayName
         controller.sidebar.refreshHeadings()
+        // The session header (design v5 §5), read straight off the same
+        // `PaneStatus` the pane's own footer draws from rather than rebuilt from
+        // the anchor and the git poll separately: see
+        // ``SidebarSessionHeaderView``.
+        controller.sidebar.sessionStatus = pane?.statusBar.status
     }
 
     /// Puts a clicked path on the focused pane's prompt.

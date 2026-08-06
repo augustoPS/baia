@@ -72,6 +72,19 @@ final class ChangesSurface: NSObject, WorkspaceSurface {
         didSet { rows.changes = changes }
     }
 
+    /// Per-file line counts behind each row's `+n −n`, from
+    /// ``PaneGitStatus/stats``, Task 1's own `git diff --numstat` read. Assigned
+    /// alongside ``changes`` from the same poll; a row without an entry here
+    /// (this poller's answer has not landed yet, or the file's counts came back
+    /// binary) draws no `+n −n` at all rather than `+0 −0`, per Task 2's
+    /// acceptance: "unavailable counts render nothing rather than zeroes".
+    var stats = RepositoryChangeStats(entries: []) {
+        didSet {
+            guard stats != oldValue else { return }
+            rows.stats = stats
+        }
+    }
+
     /// True when the focused pane is not in a repository at all.
     ///
     /// Separate from an empty list, because "nothing changed" and "no repository" are
@@ -89,6 +102,18 @@ final class ChangesSurface: NSObject, WorkspaceSurface {
     /// How many files are waiting, which is what this list is for. Nothing to count
     /// outside a repository, where the section is answering a different question.
     var headingCount: Int? { hasRepository ? changes.count : nil }
+
+    /// The header's own `+n −n`, summed across every entry ``stats`` carries.
+    /// Nil outside a repository, the same gate ``headingCount`` uses, and nil
+    /// where both totals are zero: a clean tree with no lines to report draws no
+    /// empty `+0 −0` beside its own `0` count.
+    var headingTotals: (adds: Int, deletes: Int)? {
+        guard hasRepository else { return nil }
+        let adds = stats.totalAdditions
+        let deletes = stats.totalDeletions
+        guard adds > 0 || deletes > 0 else { return nil }
+        return (adds, deletes)
+    }
 
     /// Called with the changed file's path when a row is clicked.
     ///
@@ -146,6 +171,10 @@ final class ChangesRowsView: NSView {
     /// Where the pane is anchored, for the absent state to name. Nil while the
     /// anchor is a repository, where it is never drawn.
     var anchorPath: String? { didSet { needsDisplay = true } }
+
+    /// Per-file line counts, keyed by ``GitWorkspace/RepositoryChangeStats/entry(forPath:)``.
+    /// See ``ChangesSurface/stats``.
+    var stats = RepositoryChangeStats(entries: []) { didSet { needsDisplay = true } }
 
     var changes: [RepositoryFileChange] = [] {
         didSet {
@@ -381,41 +410,46 @@ final class ChangesRowsView: NSView {
     }
 
     private func draw(_ change: RepositoryFileChange, atIndex index: Int) {
+        // Radius 6, concentric with every other row-selection surface the
+        // sidebar draws (design v5 §5). `NSBezierPath` rather than `NSRect.fill`,
+        // which was the whole shape while the row had square corners; the
+        // rounded path is what makes a hovered or pressed row read as a control
+        // over a stripe.
         if let fill = feedback.fill(index, in: theme) {
             ChangesSurface.nsColor(fill.colour, alpha: fill.alpha).setFill()
-            NSRect(
-                x: 0,
-                y: Double(index) * Self.rowHeight,
-                width: bounds.width,
-                height: Self.rowHeight
+            NSBezierPath(
+                roundedRect: NSRect(
+                    x: 0,
+                    y: Double(index) * Self.rowHeight,
+                    width: bounds.width,
+                    height: Self.rowHeight
+                ),
+                xRadius: Self.rowRadius,
+                yRadius: Self.rowRadius
             ).fill()
         }
 
-        // One origin for both strings. The marker used to draw at `y + 3` and the
-        // path at `y + 1`, both top-origin in a flipped view, so the marker sat
-        // 2 pt below the path it labels. Design v3 §8/02.
         let y = Double(index) * Self.rowHeight + Self.textOrigin
-        let marker = Self.marker(for: change)
-        let columns = NSMutableAttributedString()
-        for column in [marker.index, marker.worktree] {
-            columns.append(NSAttributedString(
-                string: column.text,
-                attributes: [
-                    .font: Self.font,
-                    .foregroundColor: column.role.map {
-                        ChangesSurface.nsColor(Marker.colour($0, in: theme))
-                    } ?? .clear,
-                ]
-            ))
-        }
-        columns.draw(at: NSPoint(x: Self.inset, y: y))
+
+        // The fixed status-letter column: `M`/`A`/`D`, one letter rather than the
+        // two-column `XY` git prints, coloured through the same
+        // `PaneTheme.ChangeMark` vocabulary the footer's `*` and the file tree's
+        // dot already draw from (design v5 §5). `RowStatusLetter` picks the
+        // worktree column over the index column for a file that is both, same
+        // precedence `FileChangeMark` already uses for the tree's rollup glyph.
+        let letter = RowStatusLetter(change)
+        NSAttributedString(
+            string: String(Self.glyph(for: letter)),
+            attributes: [.font: Self.font, .foregroundColor: ChangesSurface.nsColor(Self.ink(for: letter, in: theme))]
+        ).draw(at: NSPoint(x: Self.inset, y: y))
 
         // The last component in the foreground ink and the directory ahead of it
         // faint, so a column of paths reads as a column of file names with context
         // rather than as a column of shared prefixes. Which half gives way when the
         // row is too narrow follows from that, and ``RowPath`` is the rule.
         let x = Self.inset + Self.markerColumn
-        let available = max(0, bounds.width - x - Self.inset)
+        let totals = totalsWidth(for: change)
+        let available = max(0, bounds.width - x - Self.inset - totals.width)
         let fitted = RowPath.fit(change.path, budget: Int(available / Self.advance))
 
         // A refusal takes the path's ink with it, blended by how far through the
@@ -443,81 +477,76 @@ final class ChangesRowsView: NSView {
         ))
 
         // `draw(at:)`, never `draw(in:)`. A rect wraps, `/` is a break opportunity,
-        // and the second line falls outside an 18 pt row, so what a rect clipped
-        // away was the file name the row exists to show. The width is answered
-        // before the string is built rather than by the drawing.
+        // and the second line falls outside the row, so what a rect clipped away
+        // was the file name the row exists to show. The width is answered before
+        // the string is built rather than by the drawing.
         line.draw(at: NSPoint(x: x, y: y))
+
+        guard let run = totals.run else { return }
+        run.draw(at: NSPoint(x: bounds.width - Self.inset - totals.width, y: y))
     }
 
-    /// The two-column `XY` git itself prints, so the marker is one the owner already
-    /// reads in `git status` rather than a vocabulary of baia's own.
+    /// The row's own `+n −n`, right-aligned mono 10pt, adds in
+    /// ``PaneChrome/PaneTheme/staged`` and deletes in ``PaneChrome/PaneTheme/alert``
+    /// (design v5 §5). Returns the built string alongside its width, so the path
+    /// budget above can reserve the room before the string is drawn rather than
+    /// clipping under it.
     ///
-    /// **Each column carries its own ink.** `X` is the index and `Y` is the working
-    /// tree, two independent facts, and one colour for the pair threw away the half
-    /// that matters: a file staged and since modified prints `MM`, and rendering
-    /// both letters as staged said the commit would contain the second `M` when it
-    /// will not. Coloured separately the marker teaches itself, left is in the
-    /// commit and right is not. Design v3 §2.1.
-    ///
-    /// An absent column is a space rather than a dot. The font is monospaced, so
-    /// position already says which of the two is missing, and a dot is a character
-    /// git does not print here.
-    private static func marker(for change: RepositoryFileChange) -> Marker {
-        switch change.kind {
-        case .untracked:
-            // Git prints a pair of the same glyph here rather than two states, and
-            // `RepositoryFileChange` carries none for an untracked file, so this is
-            // the one marker spelled out rather than read off the record.
-            Marker(index: .init("?", .untracked), worktree: .init("?", .untracked))
-        case .unmerged:
-            // The real letters rather than a hardcoded `UU`. Both columns are the
-            // conflict, so both are red, but a `DU` is a delete against an update
-            // and calling it `UU` is the same class of lie as colouring `MM` once.
-            Marker(
-                index: .init(change.index.map(\.rawValue) ?? "U", .conflict),
-                worktree: .init(change.worktree.map(\.rawValue) ?? "U", .conflict)
-            )
-        case .ordinary, .renamedOrCopied:
-            Marker(
-                index: change.index.map { .init($0.rawValue, .staged) } ?? .absent,
-                worktree: change.worktree.map { .init($0.rawValue, .unstaged) } ?? .absent
-            )
+    /// Nil where ``ChangesSurface/stats`` has no entry for the path, or where the
+    /// entry counts a binary file (`additions`/`deletions` both nil): per Task 2's
+    /// acceptance, an unavailable count renders nothing rather than `+0 −0`.
+    private func totalsWidth(for change: RepositoryFileChange) -> (run: NSAttributedString?, width: Double) {
+        guard let entry = stats.entry(forPath: change.rawPath),
+              entry.additions != nil || entry.deletions != nil
+        else { return (nil, 0) }
+
+        let run = NSMutableAttributedString()
+        if let adds = entry.additions, adds > 0 {
+            run.append(NSAttributedString(
+                string: "+\(adds)",
+                attributes: [.font: Self.totalsFont, .foregroundColor: ChangesSurface.nsColor(theme.staged)]
+            ))
+        }
+        if let deletes = entry.deletions, deletes > 0 {
+            if run.length > 0 {
+                run.append(NSAttributedString(string: " ", attributes: [.font: Self.totalsFont]))
+            }
+            run.append(NSAttributedString(
+                string: "−\(deletes)",
+                attributes: [.font: Self.totalsFont, .foregroundColor: ChangesSurface.nsColor(theme.alert)]
+            ))
+        }
+        guard run.length > 0 else { return (nil, 0) }
+        return (run, run.size().width + Self.totalsGap)
+    }
+
+    private static func glyph(for letter: RowStatusLetter) -> Character {
+        switch letter {
+        case .modified: "M"
+        case .added: "A"
+        case .deleted: "D"
+        case .conflict: "!"
         }
     }
 
-    private struct Marker {
-        let index: Column
-        let worktree: Column
-
-        struct Column {
-            let text: String
-            let role: Role?
-
-            init(_ character: Character, _ role: Role) {
-                text = String(character)
-                self.role = role
-            }
-
-            private init(absent: Bool) {
-                text = " "
-                role = nil
-            }
-
-            static let absent = Column(absent: true)
-        }
-
-        /// The theme's own vocabulary: see ``PaneChrome/PaneTheme/ChangeMark``,
-        /// which is what actually resolves a colour. Kept as a local alias
-        /// rather than named directly, so the columns above read as this
-        /// surface's own concept.
-        typealias Role = PaneTheme.ChangeMark
-
-        static func colour(_ role: Role, in theme: PaneTheme) -> RGB {
-            theme.colour(for: role)
+    /// `M` caution (the same derivation as the footer's `*`), `A` ok-green, `D`
+    /// attention (design v5 §5). `M` and `A` route through
+    /// ``PaneChrome/PaneTheme/ChangeMark`` so this column cannot drift from the
+    /// footer's or the tree's own inks; `D` and a real conflict both draw
+    /// ``PaneChrome/PaneTheme/alert`` directly rather than through
+    /// `ChangeMark.conflict`, since a plain deletion is not a merge conflict and
+    /// borrowing that case's name for it would be a label this column does not
+    /// mean.
+    private static func ink(for letter: RowStatusLetter, in theme: PaneTheme) -> RGB {
+        switch letter {
+        case .modified: theme.colour(for: .unstaged)
+        case .added: theme.colour(for: .added)
+        case .deleted, .conflict: theme.alert
         }
     }
 
     static let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+    private static let totalsFont = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
 
     /// The advance of one character, which is a number only because the font is
     /// monospaced. Every width budget in the sidebar is derived from it.
@@ -535,11 +564,18 @@ final class ChangesRowsView: NSView {
     /// a point apart, which does not read as a difference, it reads as a mistake.
     static let textOrigin = rowBaseline - Double(font.ascender)
 
-    static let rowHeight: Double = 18
-    /// Cap-centred in the row: (18 + 7.8) / 2, where 7.8 is the cap height.
-    static let rowBaseline: Double = 13
+    /// Design v5 §5: `--h-list-row`. Was 18 under design v3's two-column marker.
+    static let rowHeight: Double = 24
+    /// Cap-centred in the row: (24 + 7.8) / 2, where 7.8 is the cap height.
+    static let rowBaseline: Double = 16
     /// One inset for both surfaces and the heading above them. The tree used to
     /// use 10, so stacked it sat 2 pt out from everything else. Design v3 §8/03.
     static let inset: Double = 12
-    private static let markerColumn: Double = 26
+    /// Design v5 §5's row radius, shared with the file tree and both palette
+    /// rows.
+    static let rowRadius: Double = 6
+    /// One glyph's width and the gap before the name, replacing the two-column
+    /// `markerColumn` design v3 drew here.
+    private static let markerColumn: Double = 18
+    private static let totalsGap: Double = 8
 }
