@@ -15,6 +15,22 @@ final class PalettePanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+/// `NSGlassEffectView`, with the same refusals ``PaneStatusBarView``'s own
+/// backing makes.
+///
+/// The palette is a separate panel rather than a view inside a pane, so
+/// nothing here guards a ghostty key binding the way the footer's backing
+/// does; the refusals still matter because the glass view hit-tests itself by
+/// AppKit's default and would otherwise intercept clicks meant for the query
+/// field or a row underneath it.
+private final class PaletteGlassBacking: NSGlassEffectView {
+    override var acceptsFirstResponder: Bool { false }
+
+    override var canBecomeKeyView: Bool { false }
+
+    override func hitTest(_: NSPoint) -> NSView? { nil }
+}
+
 /// The ⌘K project palette.
 ///
 /// Owns the panel and the keyboard, and nothing else. Discovery, ranking and the
@@ -45,7 +61,31 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
             queryView.theme = theme
             listView.theme = theme
             hintsView.theme = theme
-            content.layer?.backgroundColor = nsColor(theme.panelBackground).cgColor
+            // Routed through the same switch `applyResolvedChrome()` uses
+            // rather than writing `panelBackground` unconditionally: a theme
+            // change while glass is active must not restore the opaque fill
+            // `applyResolvedChrome()` just cleared, which is exactly what the
+            // old unconditional write here did the first time the two crossed.
+            applyResolvedChrome()
+        }
+    }
+
+    /// Flat, unchanged, or glass with the material set the live appearance
+    /// picked, pushed from `AppDelegate` the same way it reaches the sidebar
+    /// (`configuration.resolvedChrome`, read on presenting and again on every
+    /// settings or appearance change).
+    ///
+    /// Under glass the panel wears the menu material — `ChromeMaterials`'
+    /// `fillMenu` role plus an `NSGlassEffectView` backing, design v5 §6's
+    /// "same pattern as the footer's". Flat keeps the opaque `panelBackground`
+    /// fill this panel has always drawn.
+    var resolvedChrome: ResolvedChrome = .flat {
+        didSet {
+            guard resolvedChrome != oldValue else { return }
+            queryView.resolvedChrome = resolvedChrome
+            listView.resolvedChrome = resolvedChrome
+            hintsView.resolvedChrome = resolvedChrome
+            applyResolvedChrome()
         }
     }
 
@@ -64,6 +104,12 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
     private let queryView = PaletteQueryView(frame: .zero)
     private let listView = PaletteListView(frame: .zero)
     private let hintsView = PaletteHintsView(frame: .zero)
+
+    /// The glass material under the three bands, or nil under flat. Created and
+    /// torn down by ``applyResolvedChrome()``, not merely hidden, for the same
+    /// "absence of the view is part of what byte-identical means" reason
+    /// ``PaneStatusBarView/glassBacking`` documents on its own copy.
+    private var glassBacking: PaletteGlassBacking?
 
     private var projects: [Project] = []
     private var recency: [String: Int] = [:]
@@ -136,6 +182,10 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
         content.layer?.borderColor = nsColor(theme.hairline).cgColor
         for view in [queryView, listView, hintsView] { content.addSubview(view) }
         panel.contentView = content
+
+        // `⌘K` is what summons this panel, unlike the find panel that shares
+        // this same header view and is never captioned with a keycap.
+        queryView.trailingKeycap = "\u{2318}K"
 
         queryView.field.delegate = self
         queryView.field.onCommand = { [weak self] selector in
@@ -262,6 +312,50 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
         )
         hintsView.frame = NSRect(x: 0, y: 0, width: Self.width, height: PaleteMetrics.hints)
         for view in [queryView, listView, hintsView] { view.needsDisplay = true }
+        // `content.layer.masksToBounds` already clips this to the panel's own
+        // rounded corners, so the backing needs no mask of its own the way the
+        // footer's does against the window's variable-corner squircle.
+        glassBacking?.frame = content.bounds
+    }
+
+    // MARK: - Chrome material
+
+    /// Creates or tears down ``glassBacking`` to match ``resolvedChrome``.
+    ///
+    /// Verified against the installed SDK the same way `PaneStatusBarView`'s
+    /// own copy was (Plan 2's Task 4 gate): `NSGlassEffectView.tintColor` and
+    /// `.style` compile against macOS 26, unguarded, matching `project.yml`'s
+    /// deployment target.
+    private func applyResolvedChrome() {
+        switch resolvedChrome {
+        case .flat:
+            glassBacking?.removeFromSuperview()
+            glassBacking = nil
+            content.layer?.backgroundColor = nsColor(theme.panelBackground).cgColor
+        case let .glass(set):
+            // Cleared rather than left at `panelBackground`: `content`'s own
+            // layer sits behind `glassBacking` in the same window, and an
+            // opaque colour there is exactly what the glass view would sample
+            // and composite, which reproduces the panel's old opaque fill
+            // underneath a blur nobody can see past. The three bands above
+            // still tile `content`'s bounds exactly (`layoutContent` sizes
+            // them to sum to the full height), so nothing is left unpainted.
+            content.layer?.backgroundColor = NSColor.clear.cgColor
+            let backing: PaletteGlassBacking
+            if let existing = glassBacking {
+                backing = existing
+            } else {
+                backing = PaletteGlassBacking(frame: content.bounds)
+                backing.style = .regular
+                backing.wantsLayer = true
+                // Below the three bands, which each draw the same translucent
+                // `fillMenu` fill on top of it (mirroring how the footer's
+                // glass backing sits under its own drawn fill).
+                content.addSubview(backing, positioned: .below, relativeTo: queryView)
+                glassBacking = backing
+            }
+            backing.tintColor = nsColor(set.fillMenu.rgb, alpha: set.fillMenu.alpha)
+        }
     }
 
     // MARK: - Filtering
@@ -468,8 +562,8 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
         }
     }
 
-    private func nsColor(_ rgb: RGB) -> NSColor {
-        NSColor(srgbRed: CGFloat(rgb.red), green: CGFloat(rgb.green), blue: CGFloat(rgb.blue), alpha: 1)
+    private func nsColor(_ rgb: RGB, alpha: Double = 1) -> NSColor {
+        NSColor(srgbRed: CGFloat(rgb.red), green: CGFloat(rgb.green), blue: CGFloat(rgb.blue), alpha: CGFloat(alpha))
     }
 
     private enum PaleteMetrics {
@@ -481,7 +575,8 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
         PaletteListView.height(forRowCount: count) + PaleteMetrics.query + PaleteMetrics.hints
     }
 
-    private static let width: Double = 620
+    /// Design v5 §6, `--w-palette` in `metrics.css`. Was 620.
+    private static let width: Double = 640
 
     /// How far below the window's top edge the panel sits. Clear of the titlebar
     /// and the tab bar, so the palette never covers the tabs it is about to add

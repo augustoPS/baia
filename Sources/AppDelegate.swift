@@ -55,6 +55,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var palette: CommandPaletteController = {
         let palette = CommandPaletteController()
         palette.theme = configuration.paneTheme
+        // Read once at construction, the same as `theme` above; `settingsDidChange()`
+        // keeps it current afterwards the way it already does for the sidebar.
+        palette.resolvedChrome = configuration.resolvedChrome
         palette.onOpen = { [weak self] project, action in
             self?.open(project, action: action)
         }
@@ -952,6 +955,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             controller.sidebar.resolvedChrome = configuration.resolvedChrome
         }
         palette.theme = configuration.paneTheme
+        // Same live-follow as the sidebar's own line above; the find panel is
+        // deliberately not given `resolvedChrome` here; it shares the palette's
+        // view types but was never asked for the glass restyle and stays flat.
+        palette.resolvedChrome = configuration.resolvedChrome
         find.theme = configuration.paneTheme
     }
 
