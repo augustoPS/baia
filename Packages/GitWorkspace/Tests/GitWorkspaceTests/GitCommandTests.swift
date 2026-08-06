@@ -275,6 +275,84 @@ import Testing
         #expect(changes.first?.kind == .renamedOrCopied)
     }
 
+    @Test func changeStatsCountsARealStagedAndUnstagedEdit() throws {
+        // Staged then edited again, the same file `countsRealStagedUnstagedAndUntrackedFiles`
+        // exercises against `status`, so the two reads agree about what "one
+        // file, touched twice" means.
+        let root = try repository("proj")
+        try fixture.file("proj/c.txt", contents: "base\nstaged\n")
+        run(["add", "c.txt"], in: "proj")
+        try fixture.file("proj/c.txt", contents: "base\nstaged\nedited\n")
+
+        let stats = git.changeStats(ofRepositoryRoot: root)
+
+        #expect(stats.entry(forPath: "c.txt")?.additions == 2)
+        #expect(stats.entry(forPath: "c.txt")?.deletions == 0)
+        #expect(stats.totalAdditions == 2)
+    }
+
+    @Test func changeStatsHasNoEntryForAnUntrackedFile() throws {
+        // An untracked file has no `HEAD` blob to diff against, so it must not
+        // appear here at all: a caller renders a missing entry as "no count",
+        // and a fabricated `+0 −0` would claim a line count that was never
+        // computed.
+        let root = try repository("proj")
+        try fixture.file("proj/new.txt", contents: "x\n")
+
+        let stats = git.changeStats(ofRepositoryRoot: root)
+
+        #expect(stats.entry(forPath: "new.txt") == nil)
+        #expect(stats.entries.isEmpty)
+    }
+
+    @Test func changeStatsIsEmptyForARealUnbornRepository() throws {
+        // No `HEAD` to diff against. git exits non-zero rather than inventing
+        // an empty tree, which `bytes(of:in:)` already turns into nil.
+        let root = try fixture.directory("fresh")
+        run(["init", "--quiet"], in: "fresh")
+        try fixture.file("fresh/f.txt", contents: "x\n")
+        run(["add", "f.txt"], in: "fresh")
+
+        #expect(git.changeStats(ofRepositoryRoot: root).entries.isEmpty)
+    }
+
+    @Test func changeStatsHasNilCountsForARealBinaryFile() throws {
+        let root = try repository("proj")
+        // A NUL byte anywhere in the first chunk of a file is git's own
+        // heuristic for "binary": no extension trick, no `.gitattributes`,
+        // the same signal a real image or archive trips.
+        try fixture.file("proj/photo.png", contents: "\0binary")
+        run(["add", "photo.png"], in: "proj")
+
+        let stats = git.changeStats(ofRepositoryRoot: root)
+
+        let entry = try #require(stats.entry(forPath: "photo.png"))
+        #expect(entry.additions == nil)
+        #expect(entry.deletions == nil)
+    }
+
+    /// A real rename that stayed above git's similarity threshold, so the
+    /// combined `--raw --numstat` read is exercised against git's own bytes
+    /// rather than a hand-built fixture: the original path is chosen to look
+    /// exactly like the start of a fresh raw record, the way
+    /// ``readsARealRenameWhoseOriginalPathLooksLikeARecord`` does for
+    /// `git status`.
+    @Test func changeStatsFollowsARealRenameWhoseOriginalPathLooksLikeARecord() throws {
+        let root = try repository("proj")
+        try fixture.file("proj/-100644 evil.txt", contents: "one\ntwo\nthree\n")
+        run(["add", "--", "-100644 evil.txt"], in: "proj")
+        run(["commit", "--quiet", "--no-verify", "-m", "add"], in: "proj")
+        run(["mv", "--", "-100644 evil.txt", "renamed.txt"], in: "proj")
+        try fixture.file("proj/renamed.txt", contents: "one\ntwo\nthree\nfour\n")
+
+        let stats = git.changeStats(ofRepositoryRoot: root)
+
+        #expect(stats.entries.count == 1)
+        #expect(stats.entries.first?.path == "renamed.txt")
+        #expect(stats.entries.first?.originalPath == "-100644 evil.txt")
+        #expect(stats.entries.first?.additions == 1)
+    }
+
     @Test func returnsNoStatusForADirectoryThatIsNotARepository() throws {
         let plain = try fixture.directory("notes")
         #expect(git.status(ofRepositoryRoot: plain) == nil)

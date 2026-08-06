@@ -229,6 +229,45 @@ public struct GitCommand: Sendable {
         return (status, GitStatusParser.changes(output))
     }
 
+    /// Per-file line counts against `HEAD`, staged and unstaged combined.
+    ///
+    /// `HEAD` rather than `--cached` or the bare worktree comparison, because
+    /// ``RepositoryFileChange`` also does not separate the two: one path there
+    /// carries one `index` state and one `worktree` state, and the sidebar row
+    /// it feeds shows one `+n −n` for the file, not two. `git diff HEAD` is the
+    /// single comparison that already sums a file staged and then edited again
+    /// the same way that row does.
+    ///
+    /// An untracked file has no `HEAD` blob to diff against and so never
+    /// appears here, which is deliberate rather than a gap: ``RepositoryChangeStats/entry(forPath:)``
+    /// answers nil for it, and a caller renders that as "no count available"
+    /// rather than `+0 −0`, which is what an untracked file's line count
+    /// actually is not.
+    ///
+    /// A repository with no commits yet has no `HEAD` to diff against either.
+    /// git exits non-zero rather than inventing an empty tree to compare, which
+    /// ``bytes(of:in:)`` already turns into nil, so this returns an empty
+    /// summary the same way it would for a directory that is not a repository.
+    ///
+    /// One invocation for every file in the repository, on the same cadence as
+    /// ``read(ofRepositoryRoot:)``, never one per row: a caller polling per pane
+    /// on a timer that forked a second process per changed file would turn a
+    /// window with a dozen dirty files into a dozen extra spawns every tick.
+    ///
+    /// `--raw` rides along with `--numstat` for the reason ``NumstatParser``
+    /// documents: numstat's own `-z` output carries no marker telling a rename's
+    /// second path apart from the next record, and the raw block's status
+    /// letter is what supplies it. `-M` is git's default since 2.9 and passed
+    /// anyway, for the same reason `GitCommand` spells out every flag it relies
+    /// on rather than trusting a version-dependent default.
+    public func changeStats(ofRepositoryRoot root: URL) -> RepositoryChangeStats {
+        guard let output = bytes(
+            of: ["--no-optional-locks", "diff", "--raw", "--numstat", "HEAD", "-z", "-M"],
+            in: root
+        ) else { return RepositoryChangeStats(entries: []) }
+        return RepositoryChangeStats(entries: NumstatParser.parse(output))
+    }
+
     /// The branch a remote calls this repository's default, or nil when no remote
     /// has ever said.
     ///
