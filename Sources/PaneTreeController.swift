@@ -62,6 +62,13 @@ final class PaneTreeController: NSViewController {
     /// away entirely.
     var onAttentionChange: (([String], String, String?) -> Void)?
 
+    /// Raised when a pane's attention capsule is clicked with something to
+    /// open, carrying the pane's own id alongside its
+    /// ``TerminalPaneController/ApprovalRequest`` so the owner can route
+    /// Approve/Deny back to the exact pane that was clicked without this type
+    /// having to know what a popover is.
+    var onApprovalRequested: ((PaneID, TerminalPaneController.ApprovalRequest) -> Void)?
+
     /// Raised whenever something worth persisting changes: the tree, the focus,
     /// a pin, or a pane's working directory. The owner debounces and writes.
     var onSessionChange: (() -> Void)?
@@ -730,6 +737,9 @@ final class PaneTreeController: NSViewController {
                 pane?.anchorTracker.anchor?.displayName ?? "baia",
                 pane?.attentionMessage
             )
+        }
+        pane.onApprovalRequested = { [weak self] request in
+            self?.onApprovalRequested?(id, request)
         }
         pane.onProcessClose = { [weak self] in
             guard let self else { return }

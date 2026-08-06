@@ -131,6 +131,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return find
     }()
 
+    /// The approval popover that springs from a footer's attention capsule.
+    /// One instance, built once and reused, the same as `find` and `palette`
+    /// above: it can be summoned from any pane in any window, and its
+    /// `onAction` is rewired to the clicked pane on every ``present(anchoredTo:in:title:message:onAction:)``.
+    private lazy var approvalPopover: ApprovalPopoverController = {
+        let popover = ApprovalPopoverController()
+        popover.theme = configuration.paneTheme
+        popover.resolvedChrome = configuration.resolvedChrome
+        return popover
+    }()
+
+    /// Presents the popover over `id`'s own request, and wires Approve/Deny
+    /// back to that exact pane.
+    ///
+    /// Looked up again by id at commit time rather than captured now: the
+    /// popover can sit open for a while, and a pane closed underneath it
+    /// (the shell exited, the tab closed) must not have its bytes written
+    /// into a `TerminalPaneController` that has already deallocated. The same
+    /// `paneNamed(_:)` lookup ``go(to:)`` uses for find results.
+    private func presentApprovalPopover(
+        for id: PaneID,
+        in controller: WorkspaceWindowController,
+        request: TerminalPaneController.ApprovalRequest
+    ) {
+        approvalPopover.present(
+            anchoredTo: request.capsuleFrame,
+            in: controller.window,
+            title: request.title,
+            message: ApprovalPopover.body(for: request.message)
+        ) { [weak self] action in
+            guard let self, let (_, pane) = paneNamed(id.rawValue) else { return }
+            pane.send(ApprovalPopover.bytes(for: action))
+        }
+    }
+
     /// The project list, discovered once and reused until something asks for it
     /// again.
     ///
@@ -451,6 +486,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.onAttentionChange = { [weak self, weak controller] project, message in
             self?.updateWindowTitles()
             self?.notifyIfUnfocused(controller, project: project, message: message)
+        }
+        controller.onApprovalRequested = { [weak self, weak controller] id, request in
+            guard let self, let controller else { return }
+            presentApprovalPopover(for: id, in: controller, request: request)
         }
         controller.show(joining: sibling)
         updateWindowTitles()
@@ -969,6 +1008,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // view types but was never asked for the glass restyle and stays flat.
         palette.resolvedChrome = configuration.resolvedChrome
         find.theme = configuration.paneTheme
+        approvalPopover.theme = configuration.paneTheme
+        approvalPopover.resolvedChrome = configuration.resolvedChrome
     }
 
     private func notifyIfUnfocused(

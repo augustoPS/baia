@@ -77,6 +77,25 @@ final class TerminalPaneController: NSViewController {
     /// wrong once a window holds several panes.
     var onProcessClose: (() -> Void)?
 
+    /// Raised when the footer's attention capsule is clicked while it has
+    /// something to open. Design v5 §6's approval popover: only the app
+    /// delegate owns a panel, so this pane's job ends at naming where the
+    /// popover should anchor and what it should say, and handing back the
+    /// click.
+    var onApprovalRequested: ((ApprovalRequest) -> Void)?
+
+    /// Everything the approval popover needs from the pane that was clicked,
+    /// gathered at the one place that knows all three: the frame this view
+    /// converted out of its own coordinates, the anchor's display name, and
+    /// the agent's reported message.
+    struct ApprovalRequest {
+        /// In the pane's window's own coordinate space, ready for
+        /// `NSWindow.convertToScreen`.
+        var capsuleFrame: NSRect
+        var title: String
+        var message: String?
+    }
+
     /// Non-private: the Pane menu actions drive the pin through it.
     lazy var anchorTracker = PaneAnchorTracker(
         foregroundPid: { [weak self] in self?.terminalView.foregroundPid },
@@ -786,6 +805,20 @@ final class TerminalPaneController: NSViewController {
         // is the only strong owner of a pane, and a leaked pane is a leaked
         // shell.
         statusBar.onClick = { [weak self] in self?.takeFocus() }
+        statusBar.onCapsuleClick = { [weak self] capsuleFrame in
+            guard let self else { return }
+            let inWindow = statusBar.convert(capsuleFrame, to: nil)
+            // `agent · repo`, or the bare repo name when nothing is running
+            // under this pane to give the popover an agent half of the title.
+            let anchorName = statusBar.status?.anchorName ?? "baia"
+            let agentLabel = statusBar.status?.agent?.label
+            let title = agentLabel.map { "\($0) · \(anchorName)" } ?? anchorName
+            onApprovalRequested?(ApprovalRequest(
+                capsuleFrame: inWindow,
+                title: title,
+                message: attentionMessage
+            ))
+        }
 
         activityTracker.onChange = { [weak self] in
             guard let self else { return }

@@ -1,0 +1,345 @@
+import AppKit
+import PaneChrome
+
+/// `NSGlassEffectView`, with the same refusals every other popover-owned glass
+/// backing in this app makes (``PaneStatusBarView``'s and the palette's own
+/// copies carry the identical doc comment): a plain `NSGlassEffectView`
+/// hit-tests itself, and this content view relies on the buttons underneath
+/// it receiving every click.
+private final class ApprovalPopoverGlassBacking: NSGlassEffectView {
+    override var acceptsFirstResponder: Bool { false }
+
+    override var canBecomeKeyView: Bool { false }
+
+    override func hitTest(_: NSPoint) -> NSView? { nil }
+}
+
+/// The approval popover's content: the title, the message, and the two
+/// buttons. Design v5 §6.
+///
+/// A plain `NSView` drawing everything itself rather than `NSButton`s for the
+/// two capsules. Nothing in this popover sits inside a pane — it is its own
+/// panel, the same as the palette and the find panel — so the first-responder
+/// rule that forbids `NSControl` in a pane does not reach here. Drawn anyway,
+/// for one reason specific to this surface: ⏎ and ⎋ are already bound to
+/// Approve and Deny while the popover holds the keyboard (the controller's own
+/// key handling), and a real `NSButton` bound to the same keys through
+/// `keyEquivalent` would fight the controller for which one answers a key
+/// press. Drawn buttons keep exactly one place deciding what a key does.
+final class ApprovalPopoverView: NSView {
+    var theme: PaneTheme = .darkPastel { didSet { needsDisplay = true } }
+
+    /// Flat, unchanged, or glass with the menu material, mirroring
+    /// ``PaneStatusBarView/resolvedChrome`` and the palette's own copy.
+    var resolvedChrome: ResolvedChrome = .flat {
+        didSet {
+            guard resolvedChrome != oldValue else { return }
+            applyResolvedChrome()
+        }
+    }
+
+    /// `agent · repo`, or the bare repo name when no agent is running.
+    var title: String = "" { didSet { needsDisplay = true } }
+
+    /// The attention message verbatim, or ``ApprovalPopover/body(for:)``'s
+    /// fallback. Set by the caller, which is the one place that knows both
+    /// the reported message and the fallback rule.
+    var messageText: String = "" { didSet { needsDisplay = true } }
+
+    /// Which button, if any, currently reads as pressed: the mouse is down
+    /// inside it. ⏎/⎋ commit straight through ``keyDown(with:)`` without ever
+    /// setting this — a key press dismisses the popover in the same turn, so
+    /// there is no frame in which a pressed key state would be seen. Drawn as
+    /// a filled highlight; nothing here is a real `NSControl` so there is no
+    /// system pressed state to inherit.
+    private var pressedAction: ApprovalPopover.Action?
+
+    var onAction: ((ApprovalPopover.Action) -> Void)?
+
+    private var glassBacking: ApprovalPopoverGlassBacking?
+
+    /// This view is first responder while the popover is up (the controller
+    /// makes it so on presenting), which is what design v5 §6's "⏎/⎋ map to
+    /// the buttons only while the popover is presented" needs: a borderless
+    /// `NSPanel` with no field inside it still routes key events to whatever
+    /// the window's first responder is, and this view is the only thing in
+    /// this window that could be it. Nothing here joins a pane's key view
+    /// loop or fights `AppTerminalView.performKeyEquivalent` for first
+    /// responder — this popover is its own window, the same exemption
+    /// ``PaletteQueryField`` already carries.
+    override var acceptsFirstResponder: Bool { true }
+
+    /// Escape does not reach `keyDown(with:)` as reliably as Return does,
+    /// because AppKit can route it through `cancelOperation(_:)` on the
+    /// responder chain first — the same fact ``PaletteQueryField`` documents
+    /// on its own copy of this override. Caught here as well so Deny answers
+    /// however Escape arrives.
+    override func cancelOperation(_: Any?) {
+        onAction?(.deny)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        switch event.keyCode {
+        case Self.returnKeyCode: onAction?(.approve)
+        case Self.escapeKeyCode: onAction?(.deny)
+        default: super.keyDown(with: event)
+        }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.cornerRadius = Self.cornerRadius
+        layer?.masksToBounds = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
+        fatalError("baia does not use nibs")
+    }
+
+    override var isFlipped: Bool { true }
+
+    // MARK: - Chrome material
+
+    private var materialSet: MaterialSet? {
+        switch resolvedChrome {
+        case .flat: nil
+        case let .glass(set): set
+        }
+    }
+
+    private func applyResolvedChrome() {
+        switch resolvedChrome {
+        case .flat:
+            glassBacking?.removeFromSuperview()
+            glassBacking = nil
+        case let .glass(set):
+            let backing: ApprovalPopoverGlassBacking
+            if let existing = glassBacking {
+                backing = existing
+            } else {
+                backing = ApprovalPopoverGlassBacking(frame: bounds)
+                backing.style = .regular
+                backing.wantsLayer = true
+                addSubview(backing, positioned: .below, relativeTo: nil)
+                glassBacking = backing
+            }
+            backing.frame = bounds
+            backing.tintColor = nsColor(set.fillMenu.rgb, alpha: set.fillMenu.alpha)
+        }
+        needsDisplay = true
+    }
+
+    override func layout() {
+        super.layout()
+        glassBacking?.frame = bounds
+    }
+
+    // MARK: - Drawing
+
+    override func draw(_: NSRect) {
+        if let set = materialSet {
+            nsColor(set.fillMenu.rgb, alpha: set.fillMenu.alpha).setFill()
+        } else {
+            nsColor(theme.panelBackground).setFill()
+        }
+        bounds.fill()
+
+        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: Self.cornerRadius, yRadius: Self.cornerRadius)
+        path.lineWidth = 1
+        nsColor(theme.hairline).setStroke()
+        path.stroke()
+
+        drawTitle()
+        drawBody()
+        drawButtons()
+    }
+
+    private func drawTitle() {
+        let string = NSAttributedString(string: title, attributes: [
+            .font: Self.titleFont,
+            .foregroundColor: nsColor(theme.foreground),
+        ])
+        string.draw(at: NSPoint(x: Self.inset, y: Self.inset))
+    }
+
+    /// The message, wrapped rather than truncated: it is the whole reason the
+    /// popover is open, and a body cut to one line could hide the part of the
+    /// prompt that matters.
+    private func drawBody() {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byWordWrapping
+        let string = NSAttributedString(string: messageText, attributes: [
+            .font: Self.bodyFont,
+            .foregroundColor: nsColor(theme.color(for: .normal, focused: true, on: effectiveBackground)),
+            .paragraphStyle: paragraph,
+        ])
+        string.draw(with: bodyRect, options: [.usesLineFragmentOrigin])
+    }
+
+    private func drawButtons() {
+        for action in ApprovalPopover.Action.allCases {
+            drawButton(action, in: rect(for: action))
+        }
+    }
+
+    private func drawButton(_ action: ApprovalPopover.Action, in rect: NSRect) {
+        let path = NSBezierPath(roundedRect: rect, xRadius: rect.height / 2, yRadius: rect.height / 2)
+        let pressed = pressedAction == action
+        let fill: RGB
+        let ink: RGB
+        switch action {
+        case .approve:
+            fill = pressed ? theme.focusedAccent.blended(with: theme.background, fraction: 0.12) : theme.focusedAccent
+            ink = theme.ink(on: theme.focusedAccent)
+            nsColor(fill).setFill()
+            path.fill()
+        case .deny:
+            // Clear fill: only the stroke, so Approve stays the one accented
+            // control in the overlay, per the plan. The pressed state still
+            // needs some fill to read as pressed at all, so it borrows the
+            // same neutral wash a selected row wears rather than reaching for
+            // the accent Deny is deliberately drawn without.
+            ink = theme.foreground
+            if pressed {
+                nsColor(theme.selectedRowBackground).setFill()
+                path.fill()
+            }
+            nsColor(theme.hairline).setStroke()
+            path.lineWidth = 1
+            path.stroke()
+        }
+
+        let label = "\(Self.title(for: action))  \(Self.glyph(for: action))"
+        let string = NSAttributedString(string: label, attributes: [
+            .font: Self.buttonFont,
+            .foregroundColor: nsColor(ink),
+        ])
+        let size = string.size()
+        string.draw(at: NSPoint(
+            x: rect.midX - size.width / 2,
+            y: rect.midY - size.height / 2
+        ))
+    }
+
+    private var effectiveBackground: RGB {
+        guard let set = materialSet else { return theme.panelBackground }
+        return set.fillMenu.composited(over: theme.background)
+    }
+
+    // MARK: - Mouse
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        pressedAction = ApprovalPopover.Action.allCases.first { rect(for: $0).contains(point) }
+        needsDisplay = true
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        defer {
+            pressedAction = nil
+            needsDisplay = true
+        }
+        let point = convert(event.locationInWindow, from: nil)
+        guard let action = pressedAction, rect(for: action).contains(point) else { return }
+        onAction?(action)
+    }
+
+    // MARK: - Layout
+
+    /// Where the button row's top edge sits, in this flipped view's
+    /// coordinates, measured down from the title and the wrapped body.
+    /// Recomputed from ``bounds`` and ``messageText`` rather than cached,
+    /// because ``draw(_:)`` and the two mouse handlers all need the same
+    /// answer and this view has no autolayout pass to keep a cached one
+    /// current when either input changes.
+    private var buttonRowY: Double {
+        Self.inset + Self.titleHeight + wrappedBodyHeight + Self.buttonRowGap
+    }
+
+    private var bodyRect: NSRect {
+        NSRect(
+            x: Self.inset,
+            y: Self.inset + Self.titleHeight,
+            width: bounds.width - Self.inset * 2,
+            height: wrappedBodyHeight
+        )
+    }
+
+    private var wrappedBodyHeight: Double {
+        Self.wrappedBodyHeight(for: messageText, width: bounds.width - Self.inset * 2)
+    }
+
+    private func rect(for action: ApprovalPopover.Action) -> NSRect {
+        let width = (bounds.width - Self.inset * 2 - Self.buttonGap) / 2
+        let x = Self.inset + (action == .deny ? 0 : width + Self.buttonGap)
+        return NSRect(x: x, y: buttonRowY, width: width, height: Self.buttonHeight)
+    }
+
+    private func nsColor(_ rgb: RGB, alpha: Double = 1) -> NSColor {
+        NSColor(srgbRed: CGFloat(rgb.red), green: CGFloat(rgb.green), blue: CGFloat(rgb.blue), alpha: CGFloat(alpha))
+    }
+
+    private static func title(for action: ApprovalPopover.Action) -> String {
+        switch action {
+        case .approve: "Approve"
+        case .deny: "Deny"
+        }
+    }
+
+    private static func glyph(for action: ApprovalPopover.Action) -> String {
+        switch action {
+        case .approve: "\u{23CE}" // ⏎
+        case .deny: "\u{238B}" // ⎋
+        }
+    }
+
+    private static let titleFont = NSFont.systemFont(ofSize: 11, weight: .semibold)
+    private static let bodyFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+    private static let buttonFont = NSFont.systemFont(ofSize: 11, weight: .medium)
+
+    static let width: Double = 300
+    static let cornerRadius: Double = 10
+    private static let inset: Double = 14
+    private static let titleHeight: Double = 20
+    static let buttonHeight: Double = 22
+    private static let buttonGap: Double = 10
+    private static let buttonRowGap: Double = 14
+
+    /// `messageText`'s height once wrapped to `width`, the one measurement
+    /// ``wrappedBodyHeight``, ``measuredHeight(forMessage:width:)`` and
+    /// ``bodyRect`` all need and must agree on. A static function of the
+    /// string and the width rather than a value read off `self` in two
+    /// places, so the panel the controller sizes before presenting and the
+    /// view drawn inside it cannot measure the same message two different
+    /// ways.
+    private static func wrappedBodyHeight(for text: String, width: Double) -> Double {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byWordWrapping
+        let string = NSAttributedString(string: text, attributes: [
+            .font: Self.bodyFont,
+            .paragraphStyle: paragraph,
+        ])
+        return string.boundingRect(
+            with: NSSize(width: width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin]
+        ).height
+    }
+
+    /// The total height this view needs to draw `messageText` in full: title,
+    /// wrapped body and button row stacked with their fixed insets. The
+    /// controller sizes the panel to this before presenting, so the message
+    /// is never clipped and the button row this view computes at draw time
+    /// lands exactly at the panel's own bottom inset.
+    static func measuredHeight(forMessage message: String, width: Double) -> Double {
+        let bodyHeight = wrappedBodyHeight(for: message, width: width - inset * 2)
+        return inset + titleHeight + bodyHeight + buttonRowGap + buttonHeight + inset
+    }
+
+    // Virtual key codes, `Carbon/HIToolbox`'s own constants (`kVK_Return` /
+    // `kVK_Escape`) spelled as literals: this target links no Carbon, and the
+    // two codes are stable ABI, unchanged since the original ADB keyboard map.
+    private static let returnKeyCode: UInt16 = 0x24
+    private static let escapeKeyCode: UInt16 = 0x35
+}

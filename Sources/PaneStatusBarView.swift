@@ -258,8 +258,19 @@ final class PaneStatusBarView: NSView {
 
     override var canBecomeKeyView: Bool { false }
 
-    /// Raised when the footer is clicked, so the pane can focus itself.
+    /// Raised when the footer is clicked outside the capsule (or the capsule
+    /// draws nothing pressable), so the pane can focus itself.
     var onClick: (() -> Void)?
+
+    /// Raised instead of ``onClick`` when the click lands inside the capsule's
+    /// own frame on a bar whose attention is asking or acknowledged — the one
+    /// case ``ApprovalPopover/presents(for:)`` says has something to open.
+    /// Carries the capsule's frame in this view's own coordinates, which is
+    /// what the caller converts to the screen to anchor the popover: this view
+    /// is the one thing that knows both the frame and the window it sits in,
+    /// and a caller re-deriving either would risk disagreeing with what was
+    /// actually drawn.
+    var onCapsuleClick: ((NSRect) -> Void)?
 
     /// The footer is 22 pt of opaque view over the pane, and the child content
     /// view returns nil from `hitTest` while this one did not, so a click landing
@@ -268,9 +279,22 @@ final class PaneStatusBarView: NSView {
     /// returning nil from `hitTest`, because the container underneath does
     /// nothing with the click either.
     ///
+    /// A click inside the capsule while it has something to open routes to
+    /// ``onCapsuleClick`` instead of ``onClick``, per the plan's "the rest of
+    /// the bar keeps its click-to-focus behaviour": the capsule is the one
+    /// pressable-looking thing on the bar, and everywhere else on it still
+    /// only focuses the pane.
+    ///
     /// Safe against the rule above: `acceptsFirstResponder` stays false, and
     /// AppKit does not make a view first responder for implementing `mouseDown`.
-    override func mouseDown(with _: NSEvent) {
+    override func mouseDown(with event: NSEvent) {
+        if let capsule = capsuleRect(), ApprovalPopover.presents(for: attention) {
+            let point = convert(event.locationInWindow, from: nil)
+            if capsule.contains(point) {
+                onCapsuleClick?(capsule)
+                return
+            }
+        }
         onClick?()
     }
 

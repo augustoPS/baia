@@ -30,6 +30,11 @@ final class WorkspaceWindowController: NSObject {
     /// banner names the pane that asked rather than the last one in the list.
     var onAttentionChange: ((String, String?) -> Void)?
 
+    /// Raised for a capsule click with something to open. Carries this
+    /// window's own pane id and request through unchanged; only the app
+    /// delegate owns the popover panel that answers it.
+    var onApprovalRequested: ((PaneID, TerminalPaneController.ApprovalRequest) -> Void)?
+
     /// The sidebar. Always present and always the window's content view, even when
     /// it is showing nothing: a host that came and went would have to swap
     /// `contentViewController`, and that reparents every live ghostty surface.
@@ -77,6 +82,9 @@ final class WorkspaceWindowController: NSObject {
         tree.onSessionChange = { [weak self] in self?.onSessionChange?() }
         tree.onAttentionChange = { [weak self] _, project, message in
             self?.onAttentionChange?(project, message)
+        }
+        tree.onApprovalRequested = { [weak self] id, request in
+            self?.onApprovalRequested?(id, request)
         }
         tree.onEmpty = { [weak self] in
             // The last pane of this tab exited. Close the tab rather than leaving
