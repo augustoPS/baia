@@ -18,16 +18,17 @@ import Testing
         #expect(ChromeStyle.allCases.map(\.rawValue) == ["flat", "glass"])
     }
 
-    @Test func flatIsTheDefault() {
-        // Flat is the spec Plan 1 shipped. A config written before this key
-        // existed must render byte-identically, so the default has to be the
-        // value that changes nothing.
-        #expect(Settings.defaultSettings.chromeStyle == .flat)
+    @Test func glassIsTheDefault() {
+        // Glass since 2026-08-06, the owner's call once the wells audit and
+        // the glass live pass both came back clean. Flat remains the Reduce
+        // Transparency rendering and `resolvedStyle` forces it there, so the
+        // default never costs legibility.
+        #expect(Settings.defaultSettings.chromeStyle == .glass)
     }
 
     @Test func anAbsentKeyLeavesTheDefaultAlone() {
         let result = decode("{}")
-        #expect(result.settings.chromeStyle == .flat)
+        #expect(result.settings.chromeStyle == .glass)
         #expect(result.invalidKeys.isEmpty)
         #expect(result.unknownKeys.isEmpty)
     }
@@ -39,20 +40,20 @@ import Testing
         #expect(result.invalidKeys.isEmpty)
     }
 
-    /// An unknown spelling falls back to `flat` rather than to whatever
-    /// `init(rawValue:)` would leave the default at, and it reports itself
+    /// An unknown spelling falls back to the default rather than to whatever
+    /// `init(rawValue:)` would leave the value at, and it reports itself
     /// invalid instead of failing silently the way `focusAccent` did for nine
     /// days.
-    @Test(arguments: ["Glass", "GLASS", "liquid", "translucent", ""])
-    func anUnknownSpellingFallsBackToFlatAndReportsItself(value: String) {
+    @Test(arguments: ["Flat ", "FLAT!", "liquid", "translucent", ""])
+    func anUnknownSpellingFallsBackToTheDefaultAndReportsItself(value: String) {
         let result = decode(#"{"chromeStyle": "\#(value)"}"#)
-        #expect(result.settings.chromeStyle == .flat)
+        #expect(result.settings.chromeStyle == .glass)
         #expect(result.invalidKeys.contains("chromeStyle"))
     }
 
     @Test func aBadChromeStyleLeavesEveryOtherFieldApplied() {
         let result = decode(#"{"chromeStyle": "liquid", "fontSize": 13}"#)
-        #expect(result.settings.chromeStyle == .flat)
+        #expect(result.settings.chromeStyle == .glass)
         #expect(result.settings.fontSize == 13)
         #expect(result.invalidKeys == ["chromeStyle"])
     }

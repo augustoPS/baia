@@ -72,7 +72,7 @@ import Testing
         #expect(value(session, "font-size") == "11.5")
         #expect(value(session, "window-padding-x") == "9")
         #expect(value(session, "window-padding-y") == "9")
-        #expect(value(session, "background-opacity") == "0.85")
+        #expect(value(session, "background-opacity") == "0.42")
         #expect(value(session, "background-blur") == "true")
         #expect(value(session, "macos-titlebar-style") == "transparent")
         #expect(value(session, "macos-option-as-alt") == "true")

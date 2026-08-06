@@ -16,7 +16,10 @@ import Testing
         #expect(defaults.windowPadding == 8)
         #expect(defaults.windowPaddingBalance)
         #expect(defaults.backgroundBlur)
-        #expect(defaults.backgroundOpacity == 0.85)
+        // 0.42 since 2026-08-06: design v5's well value, cleared by the wells
+        // audit. The one default that deliberately departs from the owner's
+        // ghostty config; everything around it still matches it.
+        #expect(defaults.backgroundOpacity == 0.42)
         #expect(defaults.transparentTitlebar)
         #expect(defaults.optionAsAlt)
     }

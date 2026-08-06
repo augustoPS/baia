@@ -14,7 +14,7 @@ import Testing
         #expect(Settings.defaultSettings.terminalOverrides == [
             TerminalOverride(key: "theme", value: "Dark Pastel"),
             TerminalOverride(key: "background", value: "#141414"),
-            TerminalOverride(key: "background-opacity", value: "0.85"),
+            TerminalOverride(key: "background-opacity", value: "0.42"),
             TerminalOverride(key: "background-blur", value: "true"),
             TerminalOverride(key: "font-size", value: "11.5"),
             TerminalOverride(key: "window-padding-x", value: "8"),

@@ -192,7 +192,11 @@ public struct Settings: Sendable, Equatable {
         fontSize: 11.5,
         themeName: "Dark Pastel",
         backgroundHex: "#141414",
-        backgroundOpacity: 0.85,
+        // 0.42 is design v5's well value, unblocked by the wells audit
+        // (2026-08-05: every repair-chain promise holds at 0.42 over both
+        // bounding backdrops, all 485 themes). 0.85 before that, the owner's
+        // ghostty parity value, which the audit also re-verified.
+        backgroundOpacity: 0.42,
         backgroundBlur: true,
         windowPadding: 8,
         windowPaddingBalance: true,
@@ -209,7 +213,11 @@ public struct Settings: Sendable, Equatable {
         attentionStyle: .loud,
         attentionAccent: .alert,
         alertBehavior: .stock,
-        chromeStyle: .flat,
+        // Glass by default since 2026-08-06, the owner's call with the wells
+        // audit and the glass live pass in hand. Reduce Transparency still
+        // forces flat through `resolvedStyle`, so this default never costs
+        // legibility.
+        chromeStyle: .glass,
         sidebar: .off,
         controlChannelEnabled: true,
         controlAllowRun: false,

@@ -221,7 +221,7 @@ import Testing
         switch key {
         case "themeName": settings.themeName = "Midnight"
         case "backgroundHex": settings.backgroundHex = "#0A0B0C"
-        case "backgroundOpacity": settings.backgroundOpacity = 0.42
+        case "backgroundOpacity": settings.backgroundOpacity = 0.6
         case "backgroundBlur": settings.backgroundBlur = false
         case "windowPadding": settings.windowPadding = 17
         case "windowPaddingBalance": settings.windowPaddingBalance = false
@@ -233,7 +233,7 @@ import Testing
         case "attentionStyle": settings.attentionStyle = .quiet
         case "attentionAccent": settings.attentionAccent = .accent
         case "alertBehavior": settings.alertBehavior = .derive
-        case "chromeStyle": settings.chromeStyle = .glass
+        case "chromeStyle": settings.chromeStyle = .flat
         default: return nil
         }
         return settings
