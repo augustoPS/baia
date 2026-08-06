@@ -4,9 +4,38 @@ import PaneChrome
 /// `NSGlassEffectView`, with the same refusals every other popover-owned glass
 /// backing in this app makes (``PaneStatusBarView``'s and the palette's own
 /// copies carry the identical doc comment): a plain `NSGlassEffectView`
-/// hit-tests itself, and this content view relies on the buttons underneath
-/// it receiving every click.
+/// hit-tests itself, and ``ApprovalPopoverView`` relies on the buttons
+/// underneath it (in ``ApprovalPopoverContentView``) receiving every click.
 private final class ApprovalPopoverGlassBacking: NSGlassEffectView {
+    override var acceptsFirstResponder: Bool { false }
+
+    override var canBecomeKeyView: Bool { false }
+
+    override func hitTest(_: NSPoint) -> NSView? { nil }
+}
+
+/// The title, body and buttons, drawn above ``ApprovalPopoverGlassBacking``
+/// rather than in ``ApprovalPopoverView/draw(_:)`` itself.
+///
+/// `draw(_:)` is a view's own base layer, which every subview (including a
+/// glass backing) renders above — the same fact `PaneStatusBarView.draw(_:)`
+/// documents on its own copy of this split. Content painted in the parent's
+/// `draw(_:)` would sit *under* the glass and be blurred and refracted along
+/// with it, so the title, the message and both capsules live in this sibling
+/// view instead, stacked above the backing.
+///
+/// Returns nil from `hitTest` for the same reason `PaneStatusContentView` and
+/// `CommandPaletteController`'s own content children do: the parent
+/// (``ApprovalPopoverView``) is what stays first responder and answers
+/// `mouseDown`/`mouseUp` for the buttons and ⏎/⎋, and a child that accepted
+/// hits would take the click before the parent ever saw it.
+private final class ApprovalPopoverContentView: NSView {
+    var render: ((NSRect) -> Void)?
+
+    override func draw(_: NSRect) { render?(bounds) }
+
+    override var isFlipped: Bool { true }
+
     override var acceptsFirstResponder: Bool { false }
 
     override var canBecomeKeyView: Bool { false }
@@ -27,7 +56,12 @@ private final class ApprovalPopoverGlassBacking: NSGlassEffectView {
 /// `keyEquivalent` would fight the controller for which one answers a key
 /// press. Drawn buttons keep exactly one place deciding what a key does.
 final class ApprovalPopoverView: NSView {
-    var theme: PaneTheme = .darkPastel { didSet { needsDisplay = true } }
+    var theme: PaneTheme = .darkPastel {
+        didSet {
+            needsDisplay = true
+            contentView.needsDisplay = true
+        }
+    }
 
     /// Flat, unchanged, or glass with the menu material, mirroring
     /// ``PaneStatusBarView/resolvedChrome`` and the palette's own copy.
@@ -39,12 +73,12 @@ final class ApprovalPopoverView: NSView {
     }
 
     /// `agent · repo`, or the bare repo name when no agent is running.
-    var title: String = "" { didSet { needsDisplay = true } }
+    var title: String = "" { didSet { contentView.needsDisplay = true } }
 
     /// The attention message verbatim, or ``ApprovalPopover/body(for:)``'s
     /// fallback. Set by the caller, which is the one place that knows both
     /// the reported message and the fallback rule.
-    var messageText: String = "" { didSet { needsDisplay = true } }
+    var messageText: String = "" { didSet { contentView.needsDisplay = true } }
 
     /// Which button, if any, currently reads as pressed: the mouse is down
     /// inside it. ⏎/⎋ commit straight through ``keyDown(with:)`` without ever
@@ -57,6 +91,14 @@ final class ApprovalPopoverView: NSView {
     var onAction: ((ApprovalPopover.Action) -> Void)?
 
     private var glassBacking: ApprovalPopoverGlassBacking?
+
+    /// Title, body and buttons, stacked above ``glassBacking`` so glass never
+    /// composites over them. See ``ApprovalPopoverContentView``'s own doc
+    /// comment for why this has to be a sibling rather than this view's own
+    /// `draw(_:)`. Always a subview (flat has no glass to sit above, but the
+    /// content still needs to live somewhere), added once in `init` and never
+    /// torn down the way ``glassBacking`` is.
+    private let contentView = ApprovalPopoverContentView(frame: .zero)
 
     /// This view is first responder while the popover is up (the controller
     /// makes it so on presenting), which is what design v5 §6's "⏎/⎋ map to
@@ -91,6 +133,9 @@ final class ApprovalPopoverView: NSView {
         wantsLayer = true
         layer?.cornerRadius = Self.cornerRadius
         layer?.masksToBounds = true
+
+        contentView.render = { [weak self] bounds in self?.drawContent(in: bounds) }
+        addSubview(contentView)
     }
 
     @available(*, unavailable)
@@ -122,22 +167,36 @@ final class ApprovalPopoverView: NSView {
                 backing = ApprovalPopoverGlassBacking(frame: bounds)
                 backing.style = .regular
                 backing.wantsLayer = true
-                addSubview(backing, positioned: .below, relativeTo: nil)
+                // Below `contentView`, not below every subview: `nil` here
+                // would still be above this view's own `draw(_:)` layer (an
+                // `NSView`'s base layer always renders under its subviews
+                // regardless of subview order), but ordering explicitly
+                // against `contentView` is what keeps the title, body and
+                // buttons stacked above the glass rather than under it.
+                addSubview(backing, positioned: .below, relativeTo: contentView)
                 glassBacking = backing
             }
             backing.frame = bounds
             backing.tintColor = nsColor(set.fillMenu.rgb, alpha: set.fillMenu.alpha)
         }
         needsDisplay = true
+        // `effectiveBackground` (and so the body's ink) depends on
+        // `materialSet`, which just changed.
+        contentView.needsDisplay = true
     }
 
     override func layout() {
         super.layout()
         glassBacking?.frame = bounds
+        contentView.frame = bounds
     }
 
     // MARK: - Drawing
 
+    /// This view's own base layer: the material (or flat) fill and the
+    /// hairline stroke only. Everything else lives in ``contentView``, a
+    /// sibling stacked above ``glassBacking`` — see
+    /// ``ApprovalPopoverContentView``'s doc comment for why the split exists.
     override func draw(_: NSRect) {
         if let set = materialSet {
             nsColor(set.fillMenu.rgb, alpha: set.fillMenu.alpha).setFill()
@@ -150,7 +209,9 @@ final class ApprovalPopoverView: NSView {
         path.lineWidth = 1
         nsColor(theme.hairline).setStroke()
         path.stroke()
+    }
 
+    private func drawContent(in _: NSRect) {
         drawTitle()
         drawBody()
         drawButtons()
@@ -233,13 +294,13 @@ final class ApprovalPopoverView: NSView {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         pressedAction = ApprovalPopover.Action.allCases.first { rect(for: $0).contains(point) }
-        needsDisplay = true
+        contentView.needsDisplay = true
     }
 
     override func mouseUp(with event: NSEvent) {
         defer {
             pressedAction = nil
-            needsDisplay = true
+            contentView.needsDisplay = true
         }
         let point = convert(event.locationInWindow, from: nil)
         guard let action = pressedAction, rect(for: action).contains(point) else { return }
