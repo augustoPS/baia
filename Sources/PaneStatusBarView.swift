@@ -351,10 +351,13 @@ final class PaneStatusBarView: NSView {
     /// **Untinted glass (Task 2).** Nothing below reads ``MaterialSet/fillChrome``
     /// or ``MaterialSet/fillThick`` any more: the footer's glass backing draws
     /// no fill of its own and carries no tint (see ``updateGlassTint()``), and
-    /// `draw(_:)` no longer paints a material fill under glass either. This
-    /// property is kept because a later task's rim/lift work still needs the
-    /// resolved set; it is no longer a source of anything this file fills or
-    /// tints with.
+    /// `draw(_:)` no longer paints a material fill under glass either. Every
+    /// remaining read of this property (`draw(_:)`'s own) only asks whether it
+    /// is `nil`, i.e. whether chrome is flat or glass at all — none reads the
+    /// `MaterialSet`'s fields. It is kept as a resolved value, rather than
+    /// narrowed to a `Bool`, because a later task's rim/lift work needs the
+    /// resolved set itself; today it is not a source of anything this file
+    /// fills or tints with.
     private var materialSet: MaterialSet? {
         switch resolvedChrome {
         case .flat: nil

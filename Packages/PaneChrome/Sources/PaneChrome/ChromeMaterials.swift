@@ -33,15 +33,24 @@ public struct RGBA: Sendable, Equatable {
     /// interpolation towards `self` by `alpha` is exactly `backdrop * (1-alpha) +
     /// self * alpha`).
     ///
-    /// Task 4's honest approximation for a glass fill's text contrast: this
-    /// package cannot see what the window compositor actually draws under a
-    /// translucent bar (the desktop, another window, the terminal's own scrolled
-    /// content), so it flattens the material onto `theme.background`, which is
-    /// the nearest surface the package can compute without AppKit. The result
-    /// feeds `PaneTheme.color(for:focused:on:)` the same way `barBackground`
-    /// already does for the flat bar, so the repair chain judges glass text
-    /// against a real colour rather than skipping the check because the true
-    /// backdrop is unknowable here.
+    /// General alpha-over-opaque compositing, kept and tested independently of
+    /// any caller. **No call site uses this for glass ink repair any more.**
+    ///
+    /// Task 4 built this as an approximation for a glass fill's text contrast:
+    /// flatten the material onto `theme.background` (the nearest surface the
+    /// package can compute without AppKit) and grade ink against the result,
+    /// the same way `barBackground` grades ink for the flat bar. Task 2's
+    /// glass-backdrop spike (`Diagnostics/glass-backdrop/README.md`) measured
+    /// that approximation against the real thing and found it wrong by more
+    /// than a factor of four in the direction that matters: ink graded against
+    /// a flattened well swatch scored 2.09:1 over a bright desktop, while the
+    /// same ink on the actual glass measured 9.49:1. Real vitreous glass
+    /// supplies its own legibility through the compositor's own vibrancy and
+    /// adaptation, which a flattened swatch cannot see and actively fights.
+    /// Owner decision, following that measurement: glass paths take theme ink
+    /// ungraded, and the repair chain (`PaneTheme.color(for:focused:on:)`
+    /// grading against a fill) now applies to the flat/Reduce-Transparency
+    /// rendering only.
     public func composited(over backdrop: RGB) -> RGB {
         backdrop.blended(with: rgb, fraction: alpha)
     }
@@ -127,18 +136,51 @@ public enum ChromeMaterials {
     /// undeclared `[data-appearance]` defaults to dark per `color.css`).
     public enum Dark {
         /// `--mat-fill-chrome: rgba(18, 20, 24, 0.44)`. Titlebar, toolbar,
-        /// status bar — the footer's glass fill.
+        /// status bar in `materials.css`, the vitreous spec of record.
+        ///
+        /// **Retired from every live draw path as of Task 2 (untinted glass).**
+        /// The footer's `NSGlassEffectView` draws no tint and its own
+        /// `draw(_:)` draws no fill on the glass path; nothing in `Sources/`
+        /// reads this constant for a live fill or tint any more. Kept as the
+        /// tested transcription of the CSS token and as the source for any
+        /// future flat/Reduce-Transparency vitreous rendering — it is not
+        /// itself that rendering, since flat's own fill is `theme.barBackground`,
+        /// not this token.
         public static let fillChrome = RGBA(red: 18, green: 20, blue: 24, alpha: 0.44)
 
-        /// `--mat-fill-sidebar: rgba(18, 20, 24, 0.34)`. Source lists.
+        /// `--mat-fill-sidebar: rgba(18, 20, 24, 0.34)`. Source lists in
+        /// `materials.css`, the vitreous spec of record.
+        ///
+        /// **Retired from every live draw path as of Task 2 (untinted glass).**
+        /// The sidebar was never backed by an `NSGlassEffectView`; its glass
+        /// case in `FilesSurface`/`ChangesSurface` used to swap this in as the
+        /// scroll view's flat `backgroundColor`, and Task 2 dropped that swap
+        /// (both cases now paint `theme.background`). Kept as the tested
+        /// transcription of the CSS token, not as anything a live path draws.
         public static let fillSidebar = RGBA(red: 18, green: 20, blue: 24, alpha: 0.34)
 
-        /// `--mat-fill-thick: rgba(22, 24, 28, 0.52)`. Sheets, alerts, the
-        /// footer's focused-pane step (Task 6).
+        /// `--mat-fill-thick: rgba(22, 24, 28, 0.52)`. Sheets, alerts in
+        /// `materials.css`, the vitreous spec of record.
+        ///
+        /// **Retired from every live draw path as of Task 2 (untinted glass).**
+        /// This was the footer's focused-pane step, read through
+        /// `PaneStatusBarView.effectiveFillMaterial`; Task 2 deleted that
+        /// property along with the tint and fill it fed, since an untinted
+        /// glass backing has no fill to step. Kept as the tested transcription
+        /// of the CSS token and as the source for any future flat/
+        /// Reduce-Transparency vitreous rendering that wants a "thick" tier.
         public static let fillThick = RGBA(red: 22, green: 24, blue: 28, alpha: 0.52)
 
-        /// `--mat-fill-menu: rgba(30, 32, 37, 0.58)`. Menus, popovers, the
-        /// command palette.
+        /// `--mat-fill-menu: rgba(30, 32, 37, 0.58)`. Menus, popovers in
+        /// `materials.css`, the vitreous spec of record.
+        ///
+        /// **Retired from every live draw path as of Task 2 (untinted glass).**
+        /// This tinted the palette's and the popover's `NSGlassEffectView`
+        /// backings and was drawn a second time as each palette band's own
+        /// fill; Task 2 dropped both uses. Kept as the tested transcription of
+        /// the CSS token and as the source for any future flat/
+        /// Reduce-Transparency vitreous rendering — it is not itself that
+        /// rendering, since flat's own fill is `theme.panelBackground`.
         public static let fillMenu = RGBA(red: 30, green: 32, blue: 37, alpha: 0.58)
 
         /// `--lens-rim`'s bright leading edge, `var(--rim-top)`. `color.css`

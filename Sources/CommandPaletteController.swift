@@ -330,9 +330,11 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
     /// **Untinted glass (Task 2).** `backing.tintColor` used to carry
     /// `set.fillMenu`; it is left at its default nil now, the same untinted
     /// `regular` glass ``PaneStatusBarView``'s own copy resolves to, and the
-    /// `set` this switch's `.glass` case carries is otherwise unused here —
-    /// the three bands above still draw their own fill (Task 6's follow-on
-    /// work; unaffected by this task) rather than reading it from this method.
+    /// `set` this switch's `.glass` case carries is otherwise unused here.
+    /// The three bands above (``PaletteQueryView``, ``PaletteListView``,
+    /// ``PaletteHintsView``) used to draw `fillMenu` a second time as their
+    /// own fill; Task 2 removed that too, so nothing downstream of this
+    /// method paints `fillMenu` any more — see each band's own `draw(_:)`.
     private func applyResolvedChrome() {
         switch resolvedChrome {
         case .flat:
@@ -355,11 +357,11 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
                 backing = PaletteGlassBacking(frame: content.bounds)
                 backing.style = .regular
                 backing.wantsLayer = true
-                // Below the three bands. Untinted, unlike the fill those bands
-                // still draw on top of it — see ``PaletteQueryView/draw(_:)``
-                // and its siblings, which are the ones Task 2 leaves alone
-                // (they are the bands' own drawn content, not this glass
-                // backing's tint).
+                // Below the three bands, and untinted the same way they draw
+                // no fill of their own any more (Task 2) — see
+                // ``PaletteQueryView/draw(_:)`` and its siblings. Nothing
+                // between this backing and the terminal beneath paints
+                // `fillMenu`, or any fill, on the glass path.
                 content.addSubview(backing, positioned: .below, relativeTo: queryView)
                 glassBacking = backing
             }
