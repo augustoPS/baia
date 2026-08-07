@@ -67,6 +67,36 @@ final class SettingsDraft {
 /// once there is something to look at, and a visual choice made here would be a
 /// choice made before the comparison it is supposed to come from.
 struct SettingsView: View {
+    /// A slider that quantizes without drawing tick marks.
+    ///
+    /// **Why not `Slider(value:in:step:)`.** On macOS, supplying `step:` makes
+    /// the slider draw a tick mark per step: 101 dots under Opacity, 33 under
+    /// Padding. The owner asked for the dots gone, and they are the only thing
+    /// `step:` was ever wanted for here — what the original comment on Opacity
+    /// actually needed was the *quantization*, so a drag could not write
+    /// `"backgroundOpacity": 0.6008831521739131` into a file meant to be read
+    /// and edited by hand.
+    ///
+    /// So the rounding moves into the binding and `step:` goes away. The
+    /// continuous slider writes through this setter, which snaps to the same
+    /// grid the `step:` argument used to enforce, and the stored value is
+    /// identical to what the stepped slider produced. `rounded()` rather than
+    /// truncation, so 0.615 lands on 0.62 and not 0.61.
+    ///
+    /// The `get` is deliberately un-snapped. Rounding on read as well would
+    /// fight a value the config file already holds off-grid (a hand-edited
+    /// `0.615`) by silently rewriting it on the first draw of a window that was
+    /// only opened to look, which is an edit the owner never made.
+    private static func quantized(
+        _ source: Binding<Double>,
+        by step: Double
+    ) -> Binding<Double> {
+        Binding(
+            get: { source.wrappedValue },
+            set: { source.wrappedValue = ($0 / step).rounded() * step }
+        )
+    }
+
     @Bindable var model: SettingsDraft
     let onApply: () -> Void
     let onAccept: () -> Void
@@ -124,12 +154,15 @@ struct SettingsView: View {
                     // the settings window behind it, so both will flatter.
                     LabeledContent("Opacity") {
                         HStack {
-                            // Stepped, like padding and size. Without it a drag
-                            // writes the full Double into a file meant to be read
-                            // and edited by hand, and the writer round-trips it
-                            // faithfully: a real config came back carrying
-                            // `"backgroundOpacity": 0.6008831521739131`.
-                            Slider(value: $model.draft.backgroundOpacity, in: 0 ... 1, step: 0.01)
+                            // Quantized to 0.01 through the binding rather than
+                            // through `step:`. Without the rounding a drag
+                            // writes the full Double into a file meant to be
+                            // read and edited by hand, and the writer
+                            // round-trips it faithfully: a real config came
+                            // back carrying `"backgroundOpacity":
+                            // 0.6008831521739131`. With `step:` it also drew
+                            // 101 tick marks. See ``quantized(_:by:)``.
+                            Slider(value: Self.quantized($model.draft.backgroundOpacity, by: 0.01), in: 0 ... 1)
                             Text(model.draft.backgroundOpacity, format: .number.precision(.fractionLength(2)))
                                 .monospacedDigit()
                                 .frame(width: 44, alignment: .trailing)
@@ -158,7 +191,7 @@ struct SettingsView: View {
                     )
                     LabeledContent("Size") {
                         HStack {
-                            Slider(value: $model.draft.fontSize, in: 8 ... 24, step: 0.5)
+                            Slider(value: Self.quantized($model.draft.fontSize, by: 0.5), in: 8 ... 24)
                             Text(model.draft.fontSize, format: .number.precision(.fractionLength(1)))
                                 .monospacedDigit()
                                 .frame(width: 44, alignment: .trailing)
@@ -176,7 +209,7 @@ struct SettingsView: View {
                 Section {
                     LabeledContent("Padding") {
                         HStack {
-                            Slider(value: $model.draft.windowPadding, in: 0 ... 32, step: 1)
+                            Slider(value: Self.quantized($model.draft.windowPadding, by: 1), in: 0 ... 32)
                             Text(model.draft.windowPadding, format: .number.precision(.fractionLength(0)))
                                 .monospacedDigit()
                                 .frame(width: 44, alignment: .trailing)
