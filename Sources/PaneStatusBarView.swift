@@ -511,8 +511,10 @@ final class PaneStatusBarView: NSView {
     /// second hue would be a second tint competing with it; the same ink at a
     /// lower alpha is the *same* mark, letting the material it sits on show
     /// through, which is what "part of the glass" means here. It also keeps the
-    /// frame agreeing with `TerminalPaneController`'s pane frame, which is
-    /// derived from the same `inkFocus` call.
+    /// frame agreeing with the pane's cursor accent and `BAIA_ACCENT`, which
+    /// derive from the same `inkFocus` call. (The pane's edge frame is a
+    /// different mark: it draws the attention colour, and attention outranks
+    /// focus.)
     ///
     /// 0.55 rather than a lighter value: this mark's whole job is answering
     /// "which pane am I typing in", so it has to stay the most legible thing on

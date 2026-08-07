@@ -138,10 +138,9 @@ public struct Settings: Sendable, Equatable {
     /// the key would be unobservable from the diagnostic that has to prove it
     /// works.
     ///
-    /// Nothing reads this yet. The server that does arrives with the control
-    /// channel itself, and the criterion for calling this key finished is the
-    /// diagnostic flipping it live and asserting the wire answer changes, not a
-    /// test showing the value survives a decode.
+    /// Read by `ControlServer` (seeded at startup through the same
+    /// `settingsChanged` call the reload path uses, since 2026-08-07). When
+    /// false, every verb answers `disabled`.
     public var controlChannelEnabled: Bool
 
     /// Whether the control channel's `run` verb is offered.
@@ -157,7 +156,8 @@ public struct Settings: Sendable, Equatable {
     /// `unknownVerb`, a test flipping the key would pass, and the key would
     /// still reach nothing.
     ///
-    /// Nothing reads this yet either. Same criterion as above.
+    /// Read by `ControlVerb`/`ControlServer`, seeded and reloaded alongside
+    /// ``controlChannelEnabled``.
     public var controlAllowRun: Bool
 
     /// Whether `read` may answer with a descendant pane's lines.

@@ -260,8 +260,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// instance with no channel is a working workspace whose panes are told there
     /// is nothing to talk to, which the CLI reports in one sentence.
     private func startControlChannel() {
-        control.isChannelEnabled = configuration.settings.controlChannelEnabled
-        control.isRunAllowed = configuration.settings.controlAllowRun
+        // Through the same call the reload path uses, so startup and reload
+        // cannot drift. The previous two direct writes never seeded
+        // `isReadAllowed`, and `controlAllowRead: false` was ignored until the
+        // first real settings change: the server's default happened to match
+        // the settings default, so the gap was invisible until audited.
+        control.settingsChanged(
+            channelEnabled: configuration.settings.controlChannelEnabled,
+            allowRun: configuration.settings.controlAllowRun,
+            allowRead: configuration.settings.controlAllowRead
+        )
         // Attached before the socket is bound, so the first request cannot arrive
         // at a server with no workspace to apply it to.
         control.bridge = controlAdapter
