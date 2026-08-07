@@ -116,6 +116,14 @@ final class SurfaceStandIn: NSView {
     /// any other alpha would grade the arms against a pane that does not ship.
     static let wellOpacity: CGFloat = 0.42
 
+    /// This instance's well opacity, defaulting to the shipped value.
+    ///
+    /// Per-instance rather than the static alone, because the opacity sweep needs
+    /// the *same* arm-3 arrangement rendered at several opacities in one run. Every
+    /// arm above leaves this at ``wellOpacity``, so nothing that grades the shipped
+    /// state can silently drift onto a value that does not ship.
+    var opacity: CGFloat = SurfaceStandIn.wellOpacity
+
     var themeBackground: NSColor = .init(
         srgbRed: 18.0 / 255, green: 20.0 / 255, blue: 24.0 / 255, alpha: 1
     )
@@ -123,7 +131,7 @@ final class SurfaceStandIn: NSView {
     override var isFlipped: Bool { true }
 
     override func draw(_: NSRect) {
-        themeBackground.withAlphaComponent(Self.wellOpacity).setFill()
+        themeBackground.withAlphaComponent(opacity).setFill()
         bounds.fill()
 
         // Text at the same scale the terminal draws, because legibility through
@@ -228,7 +236,10 @@ final class ProbeWindow: NSWindow {
     private let surface = SurfaceStandIn()
     private var bar: NSView?
 
-    init(arm: Arm, contentRect: NSRect) {
+    /// - Parameter wellOpacity: the surface stand-in's alpha. Defaults to the
+    ///   shipped 0.42; the opacity sweep is the only caller that passes anything
+    ///   else.
+    init(arm: Arm, contentRect: NSRect, wellOpacity: CGFloat = SurfaceStandIn.wellOpacity) {
         self.arm = arm
         super.init(
             contentRect: contentRect,
@@ -257,6 +268,8 @@ final class ProbeWindow: NSWindow {
         let content = NSView(frame: NSRect(origin: .zero, size: contentRect.size))
         content.wantsLayer = true
         contentView = content
+
+        surface.opacity = wellOpacity
 
         let barHeight = PaneStatusBarMetrics.height
 
@@ -678,10 +691,11 @@ func runScreencapture(_ arguments: [String], to path: String) -> Bool {
 /// brightness key is not a measurement.
 ///
 /// So: `-l` is the file the README's numbers come from, and the well is flattened
-/// in *analysis* (`flatten(rgba:over:)`) against the backdrop this probe controls
-/// and therefore knows exactly. `-R` is written to `<name>-screen.png` as the
-/// cross-check that the two methods agree on hue and ordering, never as a source
-/// of absolute values.
+/// in *analysis* — see ``flatten(rgba:over:)`` for the arithmetic and
+/// ``selfTestFlatten()`` for the case that pins it — against the backdrop this
+/// probe controls and therefore knows exactly. `-R` is written to
+/// `<name>-screen.png` as the cross-check that the two methods agree on hue and
+/// ordering, never as a source of absolute values.
 ///
 /// `-o` stays absent from the `-R` arm: it suppresses the windows behind, and the
 /// backdrop behind is the thing being sampled.
@@ -696,15 +710,85 @@ func capture(window: NSWindow, to path: String) -> Bool {
     // visible frame, which excludes the menu bar and would shift every capture
     // down by its height) is the conversion. The rect is the window's exact
     // frame, so no shadow margin enters the crop.
+    //
+    // **Each edge is rounded, and the size derived from the rounded edges**, so
+    // the `-R` files are at least consistent with each other (all 642 px tall for
+    // a 320 pt window at 2x). Rounding origin and size independently let that
+    // drift per-window.
+    //
+    // It does **not** make `-R` agree with `-l`, and it cannot. `screencapture -l`
+    // sizes its output to the window's *rendered* bounds, which include whatever
+    // the window's own layers overdraw: arms 1 and both capsule windows come back
+    // 642 px tall while arms 2-4 come back 640, from the same 320 pt frame. The
+    // rect passed here has no influence on that. The two routes therefore land on
+    // different pixel grids for some arms, and the README documents a separate
+    // sample band per route rather than pretending one band fits both.
     if let main = NSScreen.screens.first {
         let frame = window.frame
-        let flippedY = main.frame.maxY - frame.maxY
-        let rect = "\(Int(frame.origin.x.rounded())),\(Int(flippedY.rounded()))," +
-            "\(Int(frame.width.rounded())),\(Int(frame.height.rounded()))"
+        let left = frame.minX.rounded()
+        let right = frame.maxX.rounded()
+        let top = (main.frame.maxY - frame.maxY).rounded()
+        let bottom = (main.frame.maxY - frame.minY).rounded()
+        let rect = "\(Int(left)),\(Int(top)),\(Int(right - left)),\(Int(bottom - top))"
         let screenPath = path.replacingOccurrences(of: ".png", with: "-screen.png")
         // Best-effort: the cross-check is diagnostic, and losing it must not fail
         // a run whose measured `-l` file was written.
         _ = runScreencapture(["-R", rect], to: screenPath)
+    }
+    return true
+}
+
+/// Composites an unpremultiplied RGBA sample over a known opaque grey.
+///
+/// The source-over arithmetic, per channel:
+///
+/// ```
+/// out = rgb * alpha + backdrop * (1 - alpha)
+/// ```
+///
+/// This is what turns a `-l` capture's well band into the pixel an owner sees.
+/// `-l` returns the window's own buffer, so the 0.42 well arrives as the theme
+/// colour at its own alpha with no trace of what it sits over: `(19, 19, 24,
+/// α=107)` on *both* halves of the backdrop. Because this probe *controls* the
+/// backdrop — pure white on one side of the seam, pure black on the other — the
+/// missing operand is known exactly rather than estimated, and the composite can
+/// be finished in analysis.
+///
+/// Kept as a function the reader can inspect and the binary can check, rather than
+/// as arithmetic performed once by hand off-screen: the arm-3 well number is load-
+/// bearing for the verdict, and a hand-computed figure in a README is not
+/// checkable. `Diagnostics/lib/pixel.py` performs the same operation when it reads
+/// the captures; this is the copy that gets exercised on every run.
+func flatten(rgba: (Int, Int, Int, Int), over backdrop: Int) -> (Int, Int, Int) {
+    let alpha = Double(rgba.3) / 255
+    func channel(_ value: Int) -> Int {
+        Int((Double(value) * alpha + Double(backdrop) * (1 - alpha)).rounded())
+    }
+    return (channel(rgba.0), channel(rgba.1), channel(rgba.2))
+}
+
+/// Pins ``flatten(rgba:over:)`` to the two values the README quotes.
+///
+/// The well band this probe measured under `-l` was `(19, 19, 24, α=107)`, and the
+/// adversarial review predicted independently that it must composite to `≈#9b9c9e`
+/// over the white half and `≈#08080a` over the black half. Both are reproduced
+/// here, so a future edit that breaks the arithmetic fails the run rather than
+/// quietly moving a number the verdict rests on.
+func selfTestFlatten() -> Bool {
+    let well = (19, 19, 24, 107)
+    let overWhite = flatten(rgba: well, over: 255)
+    let overBlack = flatten(rgba: well, over: 0)
+    guard overWhite == (156, 156, 158) else {
+        FileHandle.standardError.write(
+            "flatten self-test failed over white: \(overWhite)\n".data(using: .utf8)!
+        )
+        return false
+    }
+    guard overBlack == (8, 8, 10) else {
+        FileHandle.standardError.write(
+            "flatten self-test failed over black: \(overBlack)\n".data(using: .utf8)!
+        )
+        return false
     }
     return true
 }
@@ -829,6 +913,13 @@ settle(0.6)
 
 var failures = 0
 
+// The flatten arithmetic before any capture is taken. It costs nothing, and the
+// arm-3 well figure the verdict rests on is derived through it.
+if !selfTestFlatten() {
+    print("FAILED flatten self-test")
+    failures += 1
+}
+
 /// How long a window is given to compose before it is photographed.
 ///
 /// **A fixed budget is not enough and the sidebar arm proved it.** `settle(0.8)`
@@ -946,6 +1037,34 @@ recordSampled(sidebar, "sidebar-untinted-glass") {
     sampledAcross($0, left: sidebarSeam * 0.35, right: sidebarSeam * 1.65, y: 0.5)
 }
 sidebar.orderOut(nil)
+
+// The well-opacity sweep for arm 3.
+//
+// (B) puts the well between the glass and the desktop, so the well's opacity is
+// the knob that decides how much desktop reaches the bar. The shipped 0.42 is one
+// point on that curve and the owner has to pick the shipped value from the whole
+// curve, which means the curve has to exist as measurement rather than as
+// intuition.
+//
+// Arm 3's arrangement exactly — untinted `regular` glass over the surface's bottom
+// 22 pt — rendered at each opacity. Only the stand-in's alpha changes between
+// them, so a difference between two captures is the opacity and nothing else.
+//
+// The cost the numbers do not carry: every step darkens the well over the desktop.
+// The pane reads less like a window onto the wallpaper and more like a panel, which
+// is a move away from the ghostty-parity look. That is the tradeoff the owner is
+// weighing, and the probe can only supply one side of it.
+let sweepOpacities: [CGFloat] = [0.42, 0.46, 0.50, 0.55, 0.60]
+for opacity in sweepOpacities {
+    let name = String(format: "sweep-well-%03d", Int((opacity * 100).rounded()))
+    let window = ProbeWindow(
+        arm: .untintedOverSurface, contentRect: paneFrame, wellOpacity: opacity
+    )
+    recordSampled(window, name) {
+        sampledAcross($0, left: 0.2, right: 0.8, y: barBandY)
+    }
+    window.orderOut(nil)
+}
 
 // The inactive-state pair for arms 2 and 3.
 //

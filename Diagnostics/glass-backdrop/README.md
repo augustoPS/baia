@@ -1,6 +1,6 @@
 # Glass backdrop probe
 
-`./run.sh [output-directory]` from anywhere. Writes nine captures, a `-screen.png`
+`./run.sh [output-directory]` from anywhere. Writes fourteen captures, a `-screen.png`
 companion for each, and a grid measurement; exits non-zero if a capture fails, if a
 material never samples its backdrop, or if a grid arm misses its number.
 
@@ -119,9 +119,25 @@ seam differ. That check is what caught the sidebar arm.
 ## Findings
 
 All numbers below are measured with `Diagnostics/lib/pixel.py` over the capture
-files this probe writes, read through the route named in the table above. Sample
-regions: the bar over the white half is x 0.10-0.30, over the black half
-x 0.72-0.92, both at y 0.96-0.99.
+files this probe writes, read through the route named in the table above.
+
+**Sample region: x 0.10-0.30 over the white half, x 0.72-0.92 over the black half,
+both at y 0.980-0.997.** Every part of that band is load-bearing:
+
+- **The y band must miss the bar's own text.** The bar draws its ink at
+  `#ebebeb`, and the glyph rows sit at roughly y 0.951-0.977. An earlier band of
+  y 0.96-0.99 ran straight through them, so the "fill" it averaged was part ink —
+  and the contrast figure then compared `#ebebeb` against a region containing
+  `#ebebeb`, which inflates it. y 0.980-0.997 is below the glyphs and inside the
+  bar: for a 22 pt bar on a 320 pt window at 2x it is rows 31-42 of the bar's 44,
+  in **both** capture routes.
+- **The band is quoted as a fraction because the two routes differ in height.**
+  `-l` sizes its output to the window's *rendered* bounds, which include each
+  window's own overdraw: arm 1 and both capsule windows come back 642 px tall
+  from the same 320 pt frame where arms 2-4 come back 640. The bar is
+  bottom-anchored and both routes end at the same bottom fraction, so the *same*
+  y-fractions land on the same rows of the bar in every file. Absolute pixel rows
+  do not transfer between files; fractions do.
 
 **Arm 1 is the shipped bar in all three of its layers**, which the first version of
 this probe did not reproduce and which changes the headline result. `PaneStatusBarView`
@@ -139,23 +155,30 @@ is not captured.
 
 | Arm | bar over white | bar over black | luminance spread |
 |---|---|---|---|
-| 1 shipped tinted (faithful) | `#686a6c` | `#313437` | **27.9** |
-| 2 untinted beside | `#b6b6b6` | `#141414` | 117.5 |
-| 3 untinted over surface | `#6a6b6f` | `#27272e` | 32.3 |
-| 4 `NSVisualEffectView` | `#5d5e5e` | `#2d2d2d` | 21.7 |
+| 1 shipped tinted (faithful) | `#3a3d40` | `#313437` | **3.1** |
+| 2 untinted beside | `#a6a6a6` | `#141414` | 95.5 |
+| 3 untinted over surface | `#3a3a3f` | `#27272e` | 5.6 |
+| 4 `NSVisualEffectView` | *see note* | *see note* | *see note* |
+
+**Arm 4's absolutes are deliberately not quoted.** It is the one arm readable only
+through `-R`, and `-R` carries the display's brightness and EDR response at capture
+time — which moves between runs, not just between machines. Two runs minutes apart
+measured its bright half at `#545555` and `#333434`, a 6.27:1 versus 10.48:1 swing
+from the same code against the same backdrop. Its *role* survives that (finding 4
+compares it to arm 3 within a single capture, where the tone curve cancels); its
+absolute numbers do not belong in a table a reader is invited to reproduce. Re-run
+the probe and read arm 4 against arm 3 in the same run.
 
 Arm 2 — a bare untinted `NSGlassEffectView` over the transparent window region —
 tracks its backdrop across a 117-unit luminance range. §6.2's empty-backdrop
 diagnosis does not hold for this material: there *is* a backdrop, and it is the
 desktop.
 
-**Arm 1's range is 27.9, not the 160 first reported.** The correction is the 0.44
+**Arm 1's range is 3.1, not the 160 first reported.** The correction is the 0.44
 `fillChrome` pass the first version omitted. That fill is opaque enough to
-dominate what the glass above it can contribute, so the shipped bar is already a
-mostly-self-coloured slab that moves only ~28 units between a white and a black
-desktop. The measured `#686a6c` over white sits between the one-pass prediction
-(`#979899`, backdrop + drawn fill) and the two-pass prediction (`#5c5e60`, plus the
-tint), which is where a drawn fill under a tinted glass pass should land.
+dominate what the glass above it can contribute, so the shipped bar is very nearly
+a *fixed* slab: it moves ~3 units between a white and a black desktop. Whatever
+else is true of the shipped footer, it does not track the desktop.
 
 ### 2. The tint is NOT inert. It is the single largest term in the bar's appearance.
 
@@ -163,18 +186,18 @@ Arm 1 minus arm 2, sampled at six x-positions across the bar:
 
 ```
      x      arm1      arm2   delta(R,G,B)
-  0.05   #7f8082   #c1c1c1   [-66, -65, -63]
-   0.2   #656769   #b5b5b5   [-80, -78, -76]
-  0.35   #77797a   #bcbcbd   [-69, -67, -67]
-   0.5   #313437   #4f4f4f   [-30, -27, -24]
-  0.65   #313437   #141414   [ 29,  32,  35]
-   0.8   #313437   #141414   [ 29,  32,  35]
+  0.05   #383b3e   #a8a8a8   [-112, -109, -106]
+   0.2   #3a3c3f   #a6a6a6   [-108, -106, -103]
+  0.35   #36393b   #a1a1a2   [-107, -104, -103]
+   0.5   #313437   #4d4d4d   [ -28,  -25,  -22]
+  0.65   #313437   #141414   [  29,   32,   35]
+   0.8   #313437   #141414   [  29,   32,   35]
 ```
 
 **This overturns the previous finding.** The old table reported a uniform +9..+11
 lift and concluded the tint was "achromatic and nearly inert". Measured against a
-faithful arm 1, the delta is **-80 to +35** depending on the backdrop: the shipped
-treatment *darkens* the bar by up to 80/255 over a bright desktop and *lightens* it
+faithful arm 1, the delta is **-112 to +35** depending on the backdrop: the shipped
+treatment *darkens* the bar by up to 112/255 over a bright desktop and *lightens* it
 by ~32/255 over a dark one. It is not a tidy-up. It is the mechanism that pins the
 bar near mid-grey regardless of what is behind it.
 
@@ -186,7 +209,7 @@ survives.
 
 But the magnitude claim does not. **Plan 4's untinting is not a ~10/255
 cosmetic shift. Removing the drawn fill and the tint is what moves arm 1 to arm 2,
-which is a 90-unit swing in adaptation range and — see finding 3 — the difference
+which is a 92-unit swing in adaptation range and — see finding 3 — the difference
 between a bar that clears WCAG AA over a bright desktop and one that does not.**
 
 ### 3. The shipped bar clears 4.5:1 over a bright desktop. Untinting it is what breaks that.
@@ -195,27 +218,26 @@ Contrast of the bar's text ink (`#ebebeb`) against the bar fill beneath it:
 
 | Arm | over white | over black |
 |---|---|---|
-| 1 shipped tinted (faithful) | **4.56:1** | 10.50:1 |
-| 2 untinted beside | **1.70:1** | 15.45:1 |
-| 3 untinted over surface | **4.46:1** | 12.44:1 |
-| 4 `NSVisualEffectView` | 5.46:1 | 11.55:1 |
+| 1 shipped tinted (faithful) | **9.17:1** | 10.50:1 |
+| 2 untinted beside | **2.04:1** | 15.45:1 |
+| 3 untinted over surface | **9.49:1** | 12.44:1 |
+| 4 `NSVisualEffectView` | *see note* | *see note* |
 
 **This inverts the spike's central claim.** The old table put arm 1 at 1.54:1 and
 called the shipped bar a real, unreadable, already-shipping bug. It is not: the
-faithful arm 1 measures **4.56:1** over a pure-white backdrop, which clears WCAG
-AA's 4.5:1 body-text floor. The 1.54:1 figure was an artifact of modelling the
+faithful arm 1 measures **9.17:1** over a pure-white backdrop, comfortably clear of
+WCAG AA's 4.5:1 body-text floor. The 1.54:1 figure was an artifact of modelling the
 shipped bar without its own 0.44 fill.
 
 What the number now says is the reverse. The shipped bar is legible over a bright
 desktop *because of* the fill-plus-tint stack the plan proposes to remove. Arm 2 —
-resolution (A), the tint off with no other change — falls to **1.70:1**. That is
+resolution (A), the tint off with no other change — falls to **2.04:1**. That is
 the arrangement that would ship a legibility regression, and it would be introduced
 by Plan 4, not fixed by it.
 
-Arm 3 (resolution **(B)**) holds **4.46:1** over white and 12.44:1 over black by
-putting the 0.42 well between the glass and the desktop. That is **0.04 short of
-4.5:1** — it does not clear the AA floor, it lands on it. See the verdict for what
-that costs and what closes the gap.
+Arm 3 (resolution **(B)**) holds **9.49:1** over white and 12.44:1 over black by
+putting the 0.42 well between the glass and the desktop. It clears the AA floor
+with room to spare, and it is marginally *better* than what ships today.
 
 ### 3b. What arm 3 actually puts under the glass
 
@@ -231,22 +253,23 @@ This is the number Task 2 needs and the one the first version could not produce
 (under `-l` the well read as its own unflattened paint on both halves). **A 0.42
 well over a white desktop is `#a3a4a5`, a light mid-grey.** Ink judged against the
 well by Task 2's approximation therefore fails badly over a bright desktop — 2.09:1
-— even though the *glass over that well* reaches 4.46:1. The glass is doing the
+— even though the *glass over that well* reaches 9.49:1. The glass is doing the
 legibility work, not the well. Any Task 2 approximation that reasons about ink
 against the well colour alone will be wrong over a bright desktop by more than a
-factor of two.
+factor of four.
 
 ### 4. Arm 3 is still glass, not blur.
 
-Arm 4 is the control that makes arm 3's number mean something. Over the black
-half, arm 3 reaches `#27272e` against `NSVisualEffectView`'s `#2d2d2d`: glass
-admits more of the backdrop, and it carries a slight blue cast (`2e` blue against
-`27` red) where the control is flat neutral (`2d/2d/2d`). Arm 3 is not merely arm 4
-with extra steps.
+Arm 4 is the control that makes arm 3's number mean something, and the comparison
+that survives `-R`'s instability is the one made *within a single run*. In the run
+these findings were written from, arm 3 reached `#27272e` over the black half
+against `NSVisualEffectView`'s `#2d2d2d`: glass admits more of the backdrop, and it
+carries a slight blue cast (`2e` blue against `27` red) where the control is flat
+neutral (`2d/2d/2d`). Arm 3 is not merely arm 4 with extra steps.
 
-Read the arm-4 row with its route in mind: it is the only arm whose numbers come
-from the `-R` screen grab, so its absolutes carry that capture's tone curve and are
-not directly comparable to arms 1-3 in magnitude. The hue and ordering are.
+That relationship — glass darker and faintly blue, blur flatter and neutral — held
+across every run. The absolute pair did not. Compare the two arms inside one run's
+output; do not carry either number between runs.
 
 ### 5. The capsule: glass-in-container and drawn-on-glass are indistinguishable here.
 
@@ -277,28 +300,33 @@ uniform `#141414` — the one measurement the sidebar question could not use.
 
 Measured across the column (seam at x-fraction 0.120, column ends at 0.239):
 
-| Sample | x | glass |
-|---|---|---|
-| bright half | 0.03 | `#4b4b4b` |
-| bright half | 0.08 | `#494949` |
-| dark half | 0.16 | `#2f2f2f` |
-| dark half | 0.22 | `#2e2e2e` |
+| Sample | x | glass (one run) | glass (another run) |
+|---|---|---|---|
+| bright half | 0.03 | `#4b4b4b` | `#474747` |
+| bright half | 0.08 | `#494949` | `#464646` |
+| dark half | 0.16 | `#2f2f2f` | `#2a2a2a` |
+| dark half | 0.22 | `#2e2e2e` | `#292929` |
 
-Contrast of the sidebar's own ink against that glass:
+Contrast of the sidebar's own ink against that glass, both runs:
 
 | Half | file rows `#e6e6e6` | CHANGED header `#9e9e9e` |
 |---|---|---|
-| bright | 6.99:1 | **3.26:1** |
-| dark | 10.57:1 | 4.93:1 |
+| bright | 6.99:1 / 7.44:1 | **3.26:1 / 3.47:1** |
+| dark | 10.57:1 / 11.50:1 | 4.93:1 / 5.36:1 |
 
-The file rows hold comfortably on both halves. **The CHANGED header fails over the
-bright half at 3.26:1**, under the 4.5:1 body-text floor though above the 3:1
-large-text floor — and at 10 pt bold it is not large text. The header would need to
-reach `#bbbbbb` or lighter to clear 4.5:1 against `#4b4b4b`.
+Two runs are shown because the sidebar, like arm 4, is readable only through `-R`
+and therefore carries the display's brightness response at capture time. The
+absolutes move a few units between runs; **the conclusion does not**, which is why
+it is safe to draw one:
 
-Note the sidebar's numbers come from the `-R` route, so their absolutes carry that
-capture's tone curve; the bright-versus-dark *ordering* and the ~2x ratio between
-the halves are the reliable part.
+The file rows hold comfortably on both halves in both runs. **The CHANGED header
+fails over the bright half — 3.26:1 and 3.47:1** — under the 4.5:1 body-text floor
+though above the 3:1 large-text floor, and at 10 pt bold it is not large text. The
+header needs roughly `#bbbbbb` or lighter to clear 4.5:1 against a bright-half glass
+in this range.
+
+Re-run the probe before quoting a sidebar absolute; the bright-versus-dark ordering
+and the ~2x ratio between the halves are what transfer.
 
 ## The grid measurement for arm 3
 
@@ -367,64 +395,80 @@ also flattens.
 
 ## Verdict
 
-### (A) or (B): **(B)**, but it does not clear 4.5:1 on its own, and the bug it was chosen to fix does not exist.
+### (A) or (B): **(B)**, and it clears WCAG AA on its own. The bug it was chosen to fix does not exist.
 
-**Adopt (B) — the terminal surface extends under the bar, with `window-padding-y`
-raised by half the bar height (+11) to hold the grid — and pair it with an ink
-change, because (B) alone lands at 4.46:1, not above 4.5:1.**
+**Adopt (B): the terminal surface extends under the bar, with `window-padding-y`
+raised by half the bar height (+11) to hold the grid. No legibility repair is
+required to clear the floor.**
 
 Two earlier conclusions are overturned, both by the faithful arm 1:
 
-1. **The shipped bar is not broken over a bright desktop.** It measures 4.56:1,
-   which clears WCAG AA. The previous verdict called it "a real shipped bug" that
-   "any owner with a light wallpaper cannot read"; that was an artifact of an arm 1
-   built without `PaneStatusBarView`'s own 0.44 `fillChrome` pass. Nothing needs
-   rescuing today.
+1. **The shipped bar is not broken over a bright desktop.** It measures 9.17:1,
+   comfortably clear of WCAG AA. The previous verdict called it "a real shipped
+   bug" that "any owner with a light wallpaper cannot read"; that was an artifact
+   of an arm 1 built without `PaneStatusBarView`'s own 0.44 `fillChrome` pass.
+   Nothing needs rescuing today.
 2. **(A) is the regression, not the status quo.** Untinting the bar without
-   changing its backdrop (arm 2) drops it to 1.70:1. Plan 4 as written would
+   changing its backdrop (arm 2) drops it to 2.04:1. Plan 4 as written would
    *introduce* the unreadable-over-bright-desktop bug the spike thought it was
    fixing.
 
-So the question is no longer "which arrangement rescues a broken bar" but "which
+So the question is not "which arrangement rescues a broken bar" but "which
 arrangement preserves a working one while getting the HIG-correct untinted glass".
-On that question (B) is still the answer and (A) is still disqualified, but (B)'s
-margin is thin:
+(B) is the answer and (A) is disqualified:
 
 | | over white | verdict |
 |---|---|---|
-| shipped today (arm 1) | 4.56:1 | clears |
-| (A) untinted beside (arm 2) | 1.70:1 | fails badly |
-| (B) untinted over surface (arm 3) | 4.46:1 | **0.04 short** |
+| shipped today (arm 1) | 9.17:1 | clears |
+| (A) untinted beside (arm 2) | 2.04:1 | fails badly |
+| (B) untinted over surface (arm 3) | **9.49:1** | clears, and marginally better than today |
 
-**Does (B) clear 4.5:1? No — it misses by 0.04.** At the measurement's precision
-that is a tie with the floor rather than a pass, and it is worse than what ships
-today. Three things close the gap, cheapest first:
+**Does (B) clear 4.5:1? Yes, at 9.49:1 — roughly twice the floor**, and slightly
+better than what ships. An earlier revision of this README reported 4.46:1 and
+called (B) "0.04 short"; that figure came from a sample band that ran through the
+bar's own `#ebebeb` glyph rows, so it compared the ink against a region containing
+that same ink. The band now sits below the glyphs (see the sample-region note under
+Findings) and the number roughly doubles for every arm.
 
-- **Lighten the bar's ink.** Against arm 3's `#6a6b6f` bright-half fill, ink at
-  `#ececec` or lighter clears 4.51:1. The bar draws `#ebebeb` today, so this is a
-  one-unit change to a single constant and it is the cheapest fix on the list. It
-  buys no margin, though: it clears by 0.01.
-- **Raise the well opacity above 0.42.** A darker well under the glass pulls the
-  bright-half fill down and buys real margin rather than a rounding win. This is
-  the change with the widest blast radius (it is the shipped default from
-  `ac22f14` and it affects every pane, not the footer) and it should be measured
-  before it is adopted.
-- **A scrim behind the bar's content.** Buys the most margin and is the most
-  visible departure from the material; the HIG's own guidance is to avoid stacking
-  opacity under glass. Last resort.
+The grid measurement says (B) is affordable: 0 rows delta at +11 padding, verified
+against a real PTY, with the naive +22 shown to cost a row.
 
-**Do not ship (B) without one of them.** The plan's Task 3 builds on the assumption
-that (B) is legible; on these numbers it is marginal, and the margin is on the
-wrong side of the floor.
+### The well-opacity sweep
 
-The grid measurement says (B) is affordable regardless: 0 rows delta at +11
-padding, verified against a real PTY, with the naive +22 shown to cost a row.
+The owner's chosen pairing for (B) is a well opacity above the shipped 0.42. Arm
+3's arrangement rendered at five opacities, same bar, same untinted `regular` glass,
+same sample discipline — only the stand-in's alpha differs between captures:
+
+| well opacity | bar over white | ink contrast, bright half | bar over black | ink contrast, dark half | well over white |
+|---|---|---|---|---|---|
+| **0.42** (shipped) | `#3a3a3f` | **9.49:1** | `#27272e` | 12.44:1 | `#a3a4a5` |
+| 0.46 | `#36393e` | 9.72:1 | `#25282e` | 12.39:1 | `#9b9c9d` |
+| 0.50 | `#36383d` | 9.84:1 | `#25282e` | 12.39:1 | `#939395` |
+| 0.55 | `#35373c` | 9.99:1 | `#26282d` | 12.37:1 | `#88898b` |
+| 0.60 | `#34363a` | **10.15:1** | `#26282d` | 12.37:1 | `#7e7f81` |
+
+**First value clearing 4.5:1: 0.42 — the shipped default already does.** First
+clearing 4.7:1: **0.42** as well. Every opacity in the sweep clears both thresholds,
+so no value on this curve can be justified *on legibility grounds*.
+
+The curve is nearly flat: 0.42 to 0.60 buys **0.66 of contrast** (9.49 → 10.15),
+about 7%, for a 43% increase in well opacity. That is the same fact finding 3b
+states from the other direction — the glass is doing the legibility work, not the
+well — and it means the opacity decision is an aesthetic one, not an accessibility
+one.
+
+**The cost the table does not carry.** Each step darkens the well over the desktop:
+`#a3a4a5` at 0.42 through to `#7e7f81` at 0.60. The pane reads progressively less
+like a window onto the wallpaper and more like an opaque panel, which is a move
+away from the ghostty-parity look. That is the axis the choice actually turns on,
+and the probe can only supply the other side of it. **The final default is the
+owner's pick.**
 
 **And a warning for Task 2's approximation.** Finding 3b measures the well itself
 at `#a3a4a5` over a white desktop, where the ink scores 2.09:1. The glass over that
-well reaches 4.46:1 — the glass is doing the legibility work, not the well. An
+well reaches 9.49:1 — the glass is doing the legibility work, not the well. An
 approximation that judges ink against the well colour will be wrong over a bright
-desktop by more than a factor of two.
+desktop by more than a factor of four.
 
 ### The capsule: **drawn-on-glass**, on the current evidence.
 
@@ -487,6 +531,7 @@ arm-4-nsvisualeffect-control.png      arm 4, the blur control
 capsule-container-beside.png          glass capsule in a container, over (A)
 capsule-container-over-surface.png    glass capsule in a container, over (B)
 sidebar-untinted-glass.png            the sidebar question
+sweep-well-0{42,46,50,55,60}.png      the well-opacity sweep for (B)
 inactive-2-untinted-beside.png        see "what inactive means here"
 inactive-3-untinted-over-surface.png  see "what inactive means here"
 <name>-screen.png                     the `-R` screen-composite companion for each
