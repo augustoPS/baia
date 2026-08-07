@@ -1,7 +1,7 @@
 import AppKit
 import PaneChrome
 
-/// Watches the two system inputs `resolvedStyle(setting:appearance:)` needs
+/// Watches the two system inputs `resolvedStyle(setting:materialIsDark:appearance:)` needs
 /// and republishes a `ChromeAppearance` whenever either moves.
 ///
 /// **The only place in the app that reads `NSApp.effectiveAppearance` or

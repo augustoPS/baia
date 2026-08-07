@@ -41,6 +41,26 @@ final class ApprovalPopoverController: NSObject {
         didSet { contentView.resolvedChrome = resolvedChrome }
     }
 
+    /// Whether this popover's window-level appearance is dark — what AppKit
+    /// reads when it renders the `NSGlassEffectView` behind the content and
+    /// anything else drawn from `NSWindow.appearance`.
+    ///
+    /// The palette's own ``CommandPaletteController/isDark`` carries the
+    /// reasoning; this is the same property on the other floating panel, fed
+    /// from the same `ConfigurationCenter.windowIsDark`. Chrome follows the
+    /// theme, never the system.
+    ///
+    /// This is an `NSWindow` (``PalettePanel``) rather than an `NSPopover`
+    /// despite the name — see this type's own header — so the appearance is set
+    /// the same way the palette and the workspace window set theirs, not through
+    /// `NSPopover.appearance`.
+    var isDark: Bool = true {
+        didSet {
+            guard isDark != oldValue else { return }
+            applyAppearance()
+        }
+    }
+
     override init() {
         panel = PalettePanel(
             contentRect: NSRect(x: 0, y: 0, width: ApprovalPopoverView.width, height: 100),
@@ -77,6 +97,11 @@ final class ApprovalPopoverController: NSObject {
         // the find panel already set, not a Reduce Motion branch, since
         // neither of those two carries one either.
         panel.animationBehavior = .none
+        // Written by hand once, because a property observer is silent during
+        // initialisation; `AppDelegate` overwrites it with
+        // `configuration.windowIsDark` immediately after, alongside `theme` and
+        // `resolvedChrome`. See ``CommandPaletteController``'s identical line.
+        applyAppearance()
 
         contentView.frame = NSRect(x: 0, y: 0, width: ApprovalPopoverView.width, height: 100)
         panel.contentView = contentView
@@ -84,6 +109,12 @@ final class ApprovalPopoverController: NSObject {
         contentView.onAction = { [weak self] action in
             self?.commit(action)
         }
+    }
+
+    /// Writes ``isDark`` onto the panel. `.darkAqua` / `.aqua` only, for the
+    /// reason `WorkspaceWindowController.applyAppearance()` states.
+    private func applyAppearance() {
+        panel.appearance = NSAppearance(named: isDark ? .darkAqua : .aqua)
     }
 
     // No `deinit` removing `resignObserver`, for the reason the palette's own

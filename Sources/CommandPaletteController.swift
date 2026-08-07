@@ -70,7 +70,7 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
         }
     }
 
-    /// Flat, unchanged, or glass with the material set the live appearance
+    /// Flat, unchanged, or glass with the material set the theme's own darkness
     /// picked, pushed from `AppDelegate` the same way it reaches the sidebar
     /// (`configuration.resolvedChrome`, read on presenting and again on every
     /// settings or appearance change).
@@ -86,6 +86,43 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
             listView.resolvedChrome = resolvedChrome
             hintsView.resolvedChrome = resolvedChrome
             applyResolvedChrome()
+        }
+    }
+
+    /// Whether this panel's window-level appearance is dark — what AppKit reads
+    /// when it renders the `NSGlassEffectView` under the three bands, the focus
+    /// ring on the query field, and anything else drawn from
+    /// `NSWindow.appearance` rather than from a colour this controller sets.
+    ///
+    /// **Follows the theme, never the system**, the same rule and the same one
+    /// line ``WorkspaceWindowController/isDark`` states at length: chrome
+    /// matches the theme, and this panel is chrome. Fed from
+    /// `ConfigurationCenter.windowIsDark`, the same derivation the workspace
+    /// window's own titlebar and the glass material set below both take, so the
+    /// panel cannot render its material for one appearance and its glass for the
+    /// other. Before this, the panel inherited `NSApp.effectiveAppearance` and a
+    /// dark theme under a light system drew light system chrome around dark
+    /// glass.
+    ///
+    /// Window-scoped rather than `NSApp.appearance` for the reason the workspace
+    /// window gives: nothing here has an opinion about the settings window's
+    /// live preview or the find panel, and `NSWindow.appearance` is the
+    /// platform's own way to scope the override to one window.
+    ///
+    /// Applied on creation as well as on change, so a panel summoned once and
+    /// never re-themed is not the one that renders wrong.
+    ///
+    /// Defaults `true` rather than `false` to agree with ``theme``'s own
+    /// `.darkPastel` default one property up — that theme's background *is*
+    /// dark, and a pair of defaults that disagreed would put the panel in the
+    /// mismatched state this property exists to remove, for the one instant
+    /// before `AppDelegate` writes both. ``WorkspaceWindowController/isDark``
+    /// stores `false` instead only because it takes its value as an `init`
+    /// parameter and so never renders on the stored one.
+    var isDark: Bool = true {
+        didSet {
+            guard isDark != oldValue else { return }
+            applyAppearance()
         }
     }
 
@@ -189,6 +226,13 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
         // window on every open regardless.
         panel.isMovable = true
         panel.animationBehavior = .none
+        // The `didSet` on ``isDark`` cannot have run — a property's observer is
+        // silent during initialisation — so the stored default has to be written
+        // onto the panel by hand once here. `AppDelegate` overwrites it with
+        // `configuration.windowIsDark` a moment later, the same way it does
+        // `theme` and `resolvedChrome`; this only ensures the panel is never in
+        // an appearance nothing chose.
+        applyAppearance()
 
         content.wantsLayer = true
         content.layer?.backgroundColor = nsColor(theme.panelBackground).cgColor
@@ -335,6 +379,18 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
     }
 
     // MARK: - Chrome material
+
+    /// Writes ``isDark`` onto the panel.
+    ///
+    /// `.darkAqua` / `.aqua` and nothing else, for the reason
+    /// `WorkspaceWindowController.applyAppearance()` gives on its own identical
+    /// line: the vibrant and high-contrast variants are accessibility choices
+    /// this panel has no opinion on, and these two are what
+    /// `AppearanceObserver.readCurrentAppearance()` already resolves a system
+    /// read down to.
+    private func applyAppearance() {
+        panel.appearance = NSAppearance(named: isDark ? .darkAqua : .aqua)
+    }
 
     /// Creates or tears down ``glassBacking`` to match ``resolvedChrome``.
     ///

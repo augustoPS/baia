@@ -314,7 +314,7 @@ final class WorkspaceWindowController: NSObject {
     ///
     /// Reduce Transparency needs no separate handling here and that is worth
     /// stating rather than leaving to be rediscovered:
-    /// `PaneChrome.resolvedStyle(setting:appearance:)` already forces `.flat`
+    /// `PaneChrome.resolvedStyle(setting:materialIsDark:appearance:)` already forces `.flat`
     /// when the accessibility setting is on, so this gate covers it through
     /// the same path every other glass surface is covered by.
     var resolvedChrome: ResolvedChrome = .flat {

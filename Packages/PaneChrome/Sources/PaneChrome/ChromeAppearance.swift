@@ -1,8 +1,8 @@
 import BaiaSettings
 import Foundation
 
-/// The live system state ``resolvedStyle(setting:appearance:)`` needs to turn a
-/// ``BaiaSettings/ChromeStyle`` into a ``ResolvedChrome``.
+/// The live system state ``resolvedStyle(setting:materialIsDark:appearance:)``
+/// needs to turn a ``BaiaSettings/ChromeStyle`` into a ``ResolvedChrome``.
 ///
 /// A value type rather than a live read of `NSApp` or `NSWorkspace`, for the
 /// same reason ``SettingsDerivations`` takes a `Settings` value instead of a
@@ -22,9 +22,25 @@ import Foundation
 /// finding nothing is part of Task 3's acceptance, not an incidental fact
 /// about it.
 public struct ChromeAppearance: Sendable, Equatable {
-    /// Whether the effective appearance is dark. Picks between
-    /// ``MaterialSet/dark`` and ``MaterialSet/light``, and nothing else: it
-    /// must never reach a colour a pane's own theme draws.
+    /// Whether the *system's* effective appearance is dark:
+    /// ``AppearanceObserver``'s `NSApp.effectiveAppearance` read, resolved down
+    /// to `.darkAqua` / `.aqua`.
+    ///
+    /// **No material selection reads this, and none may.** It picked between
+    /// ``MaterialSet/dark`` and ``MaterialSet/light`` until the glass materials
+    /// were moved onto the theme, and
+    /// ``resolvedStyle(setting:materialIsDark:appearance:)`` takes `materialIsDark`
+    /// as its own parameter for exactly that reason — its doc comment carries
+    /// the argument, and `ChromeAppearanceTests` pins it as an equality across
+    /// both values of this field. Nothing else in the app reads it either, so
+    /// this is the honest publication of what the system appearance *is* rather
+    /// than a value anything currently branches on. `AppearanceObserver` reads
+    /// all three fields in one place and republishes them together, and dropping
+    /// this one would leave that read partial and the next consumer of the system
+    /// appearance rebuilding it somewhere less controlled.
+    ///
+    /// It must never reach a colour a pane's own theme draws, which is the wider
+    /// version of the same rule this type's own header states.
     public var isDark: Bool
 
     /// `NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency`.
@@ -34,8 +50,8 @@ public struct ChromeAppearance: Sendable, Equatable {
 
     /// `NSWorkspace.shared.accessibilityDisplayShouldReduceMotion`. Carried
     /// here because it arrives on the same observer and the same notification
-    /// as the other two, but ``resolvedStyle(setting:appearance:)`` does not
-    /// read it: it governs the lift's transition timing (Task 6), not whether
+    /// as the other two, but ``resolvedStyle(setting:materialIsDark:appearance:)``
+    /// does not read it: it governs the lift's transition timing (Task 6), not whether
     /// glass renders at all, so this field is inert to *which* `ResolvedChrome`
     /// comes back and `ChromeAppearanceTests` pins that directly.
     public var reduceMotion: Bool
@@ -53,7 +69,8 @@ public struct ChromeAppearance: Sendable, Equatable {
 /// A struct rather than reaching for ``ChromeMaterials/Dark`` or
 /// ``ChromeMaterials/Light`` directly at every call site, so a consumer
 /// (Tasks 4-6) takes one value instead of an appearance flag it would have to
-/// re-branch on beside the one ``resolvedStyle(setting:appearance:)`` already
+/// re-branch on beside the one
+/// ``resolvedStyle(setting:materialIsDark:appearance:)`` already
 /// resolved. The two static members below are the only two that exist,
 /// mirroring ``ChromeMaterials``' own dark/light split, and each is pinned
 /// against its source table by ``ChromeAppearanceTests`` rather than
@@ -95,9 +112,10 @@ public struct MaterialSet: Sendable, Equatable {
     )
 }
 
-/// What a frame draws, after ``resolvedStyle(setting:appearance:)`` has
-/// weighed the configured ``BaiaSettings/ChromeStyle`` against the live
-/// ``ChromeAppearance``.
+/// What a frame draws, after
+/// ``resolvedStyle(setting:materialIsDark:appearance:)`` has weighed the
+/// configured ``BaiaSettings/ChromeStyle`` against the live
+/// ``ChromeAppearance`` and the theme's own darkness.
 ///
 /// An enum with the material set carried on the `glass` case, rather than a
 /// `ChromeStyle` plus a `MaterialSet?` pair, so a consumer cannot hold
@@ -121,17 +139,45 @@ public enum ResolvedChrome: Sendable, Equatable {
 /// function, the material tables it draws from, the views that consume its
 /// result — is exercised by `make test` with no window, no Metal, no signing.
 ///
-/// **Reduce Transparency forces `flat` for any setting.** That is the one
+/// **`materialIsDark` is an input rather than `appearance.isDark`, and that is
+/// the same rule ``windowIsDark(paneTheme:)`` below already carries reaching
+/// the glass materials.** The material set decides what the footer, the
+/// sidebar column, the palette and the popover are *filled* with, and those are
+/// chrome; the standing rule (`PaneTheme`'s own header) is that chrome matches
+/// the theme and never the system. Reading `ChromeAppearance.isDark` here wired
+/// them to `NSApp.effectiveAppearance` instead, so a dark theme under a light
+/// system appearance drew light glass over dark panes — the identical mismatch
+/// the titlebar had until `windowIsDark` was added, one surface over. Making it
+/// a parameter rather than reading a theme here keeps this function's purity and
+/// keeps the caller naming where darkness comes from:
+/// `ConfigurationCenter.resolvedChrome` passes `windowIsDark(paneTheme:)`, so
+/// the window's own chrome and the glass inside it cannot disagree about which
+/// appearance the app is in.
+///
+/// **Reduce Transparency still forces `flat` for any setting, and
+/// `materialIsDark` cannot reach past it.** That override lives on
+/// ``ChromeAppearance`` and stays there: the guard is above the material branch,
+/// so an accessibility answer is never traded for a theme one. It is the one
 /// override this rule makes; Reduce Motion is carried on ``ChromeAppearance``
 /// for ``AppearanceObserver`` to publish in one place, but this function does
 /// not read it; see the field's own doc comment.
-public func resolvedStyle(setting: ChromeStyle, appearance: ChromeAppearance) -> ResolvedChrome {
+///
+/// The `appearance` parameter therefore reaches this function for
+/// `reduceTransparency` alone. It stays a whole ``ChromeAppearance`` rather than
+/// a bare `Bool` because that type is what ``AppearanceObserver`` publishes and
+/// what the two window gates below take, and three gates that take the same
+/// value are three gates a caller cannot feed inconsistently.
+public func resolvedStyle(
+    setting: ChromeStyle,
+    materialIsDark: Bool,
+    appearance: ChromeAppearance
+) -> ResolvedChrome {
     switch setting {
     case .flat:
         return .flat
     case .glass:
         guard !appearance.reduceTransparency else { return .flat }
-        return .glass(appearance.isDark ? .dark : .light)
+        return .glass(materialIsDark ? .dark : .light)
     }
 }
 
@@ -151,7 +197,8 @@ public func resolvedStyle(setting: ChromeStyle, appearance: ChromeAppearance) ->
 /// flags the drawing code never reads.
 ///
 /// **Reduce Transparency forces opaque, and that is deliberately the same
-/// override ``resolvedStyle(setting:appearance:)`` makes one function above.**
+/// override ``resolvedStyle(setting:materialIsDark:appearance:)`` makes one
+/// function above.**
 /// Both gates read `appearance.reduceTransparency` and both resolve toward the
 /// solid answer, so someone who turns the accessibility setting on gets a
 /// window with nothing showing through it *and* flat chrome, rather than one
@@ -171,17 +218,28 @@ public func windowIsTransparent(backgroundOpacity: Double, appearance: ChromeApp
 /// bar, and anything else AppKit draws from `NSWindow.appearance` rather than
 /// from a view this app owns — should render dark.
 ///
-/// **Reads the pane theme's background, not ``ChromeAppearance/isDark``, and
-/// that is the whole point of this function existing separately from
-/// ``resolvedStyle(setting:appearance:)``.** `ChromeAppearance.isDark` is
-/// `AppearanceObserver`'s read of `NSApp.effectiveAppearance` — the *system*
-/// appearance — which is exactly the signal the standing rule (`Settings.swift`'s
-/// own doc, and every derivation in ``PaneTheme``) says chrome must never
-/// follow. `PaneTheme`'s own header states the rule for ink: "the standing rule
-/// in this workspace is to match chrome to the theme and never the reverse."
-/// The titlebar is chrome, so the owner's request is that same rule reaching
-/// one more surface, and reading `ChromeAppearance.isDark` here would be
-/// wiring it to the one signal the rule forbids.
+/// **Reads the pane theme's background, never ``ChromeAppearance/isDark``.**
+/// `ChromeAppearance.isDark` is `AppearanceObserver`'s read of
+/// `NSApp.effectiveAppearance` — the *system* appearance — which is exactly the
+/// signal the standing rule (`Settings.swift`'s own doc, and every derivation in
+/// ``PaneTheme``) says chrome must never follow. `PaneTheme`'s own header states
+/// the rule for ink: "the standing rule in this workspace is to match chrome to
+/// the theme and never the reverse." The titlebar is chrome, so the owner's
+/// request is that same rule reaching one more surface, and reading
+/// `ChromeAppearance.isDark` here would be wiring it to the one signal the rule
+/// forbids.
+///
+/// **This is now the source for the glass materials too, not only for the
+/// window's own chrome.** It was written as the lone exception among the three
+/// window gates while ``resolvedStyle(setting:materialIsDark:appearance:)``
+/// still branched on `ChromeAppearance.isDark`, which meant a dark theme under a
+/// light system appearance produced a correctly-dark titlebar over
+/// light-material glass. `ConfigurationCenter.resolvedChrome` passes this
+/// function's answer as `materialIsDark`, so the two cannot disagree: one read
+/// of the theme's background decides the window's appearance and the material
+/// set together. That is why the *system* appearance changing while the theme
+/// stays put moves nothing a person can see, and a theme change moves both in
+/// the same frame.
 ///
 /// ``RGB/isDark`` rather than a second luminance formula: that property's own
 /// doc comment is the reason — it "mirrors libghostty's own dark test... so

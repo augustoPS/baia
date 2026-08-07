@@ -58,6 +58,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Read once at construction, the same as `theme` above; `settingsDidChange()`
         // keeps it current afterwards the way it already does for the sidebar.
         palette.resolvedChrome = configuration.resolvedChrome
+        // The panel's own window appearance, from the same derivation the
+        // workspace window's titlebar takes and the same one that now picks the
+        // glass material set inside this panel. See
+        // ``CommandPaletteController/isDark``.
+        palette.isDark = configuration.windowIsDark
         palette.onOpen = { [weak self] project, action in
             self?.open(project, action: action)
         }
@@ -139,6 +144,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let popover = ApprovalPopoverController()
         popover.theme = configuration.paneTheme
         popover.resolvedChrome = configuration.resolvedChrome
+        // Same as the palette's own line above. See
+        // ``ApprovalPopoverController/isDark``.
+        popover.isDark = configuration.windowIsDark
         return popover
     }()
 
@@ -1082,9 +1090,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // deliberately not given `resolvedChrome` here; it shares the palette's
         // view types but was never asked for the glass restyle and stays flat.
         palette.resolvedChrome = configuration.resolvedChrome
+        // The two floating panels' own window appearance, live-followed on this
+        // same loop rather than through a separate `onSettingsChange`
+        // registration. This method *is* the registered handler for everything
+        // the delegate owns (the windows, the sidebars, the palette's theme and
+        // chrome, the popover's), so a second registration would run the same
+        // work at a second point in the same notification with no ordering
+        // guarantee between them — exactly what `onSettingsChange`'s own doc
+        // comment says no consumer may depend on. It also keeps every panel
+        // property the delegate writes visible in one place.
+        //
+        // Reads `windowIsDark`, so a theme edit moves the panels' appearance in
+        // the same frame it moves their glass material and the panes' ink; a
+        // system light/dark switch with the theme unmoved moves neither. The
+        // find panel is left out here for the same reason it is left out of the
+        // `resolvedChrome` line above: its flat exemption stands.
+        palette.isDark = configuration.windowIsDark
         find.theme = configuration.paneTheme
         approvalPopover.theme = configuration.paneTheme
         approvalPopover.resolvedChrome = configuration.resolvedChrome
+        approvalPopover.isDark = configuration.windowIsDark
     }
 
     private func notifyIfUnfocused(

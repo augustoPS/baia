@@ -4,9 +4,9 @@ import Testing
 
 @testable import PaneChrome
 
-/// ``ChromeAppearance`` and ``resolvedStyle(setting:appearance:)``: the rule
-/// that decides whether a frame draws flat or glass, and which material set
-/// glass resolves to.
+/// ``ChromeAppearance`` and ``resolvedStyle(setting:materialIsDark:appearance:)``:
+/// the rule that decides whether a frame draws flat or glass, and which material
+/// set glass resolves to.
 ///
 /// This suite is the whole reason the rule lives here rather than beside
 /// `AppearanceObserver` in the app target: the app target has no test bundle,
@@ -20,43 +20,120 @@ import Testing
 
     @Test func flatSettingResolvesToFlatRegardlessOfAppearance() {
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
-        #expect(resolvedStyle(setting: .flat, appearance: appearance) == .flat)
+        #expect(resolvedStyle(setting: .flat, materialIsDark: true, appearance: appearance) == .flat)
     }
 
     @Test func flatSettingResolvesToFlatInLightToo() {
         let appearance = ChromeAppearance(isDark: false, reduceTransparency: false, reduceMotion: false)
-        #expect(resolvedStyle(setting: .flat, appearance: appearance) == .flat)
+        #expect(resolvedStyle(setting: .flat, materialIsDark: false, appearance: appearance) == .flat)
     }
 
     // MARK: - Glass setting, ordinary path
 
     @Test func glassSettingResolvesToGlassWhenTransparencyIsNotReduced() {
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
-        #expect(resolvedStyle(setting: .glass, appearance: appearance) == .glass(.dark))
+        #expect(resolvedStyle(setting: .glass, materialIsDark: true, appearance: appearance) == .glass(.dark))
     }
 
     @Test func glassSettingPicksTheLightMaterialSetUnderALightAppearance() {
         let appearance = ChromeAppearance(isDark: false, reduceTransparency: false, reduceMotion: false)
-        #expect(resolvedStyle(setting: .glass, appearance: appearance) == .glass(.light))
+        #expect(resolvedStyle(setting: .glass, materialIsDark: false, appearance: appearance) == .glass(.light))
+    }
+
+    // MARK: - The material set follows `materialIsDark`, never the system appearance
+
+    @Test func aDarkThemeUnderALightSystemStillPicksTheDarkMaterialSet() {
+        // The mismatched case, and the whole reason `materialIsDark` is its own
+        // parameter: `ChromeAppearance.isDark` here is the *system's* light
+        // appearance, and the material must follow the theme anyway. Before this
+        // parameter existed this case resolved to `.glass(.light)` — a light
+        // footer and sidebar over dark panes, which is the same mismatch
+        // `windowIsDark(paneTheme:)` was added to fix one surface over.
+        let lightSystem = ChromeAppearance(isDark: false, reduceTransparency: false, reduceMotion: false)
+        #expect(resolvedStyle(setting: .glass, materialIsDark: true, appearance: lightSystem) == .glass(.dark))
+    }
+
+    @Test func aLightThemeUnderADarkSystemStillPicksTheLightMaterialSet() {
+        // The mirror of the case above, pinned separately rather than trusted to
+        // fall out of it: a rule written as "follow the theme unless the system
+        // is dark" would pass one of these two and fail the other.
+        let darkSystem = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
+        #expect(resolvedStyle(setting: .glass, materialIsDark: false, appearance: darkSystem) == .glass(.light))
+    }
+
+    @Test func theSystemAppearanceMovingAloneDoesNotMoveTheMaterialSet() {
+        // Stated as an equality across the two system appearances at one fixed
+        // theme darkness, which is the acceptance in one line: the system
+        // light/dark switch flipping while the theme stays put must resolve to
+        // the same material both ways. `ChromeAppearance.isDark` is the only
+        // field that differs between these two values.
+        let darkSystem = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
+        let lightSystem = ChromeAppearance(isDark: false, reduceTransparency: false, reduceMotion: false)
+        #expect(
+            resolvedStyle(setting: .glass, materialIsDark: true, appearance: darkSystem)
+                == resolvedStyle(setting: .glass, materialIsDark: true, appearance: lightSystem)
+        )
+        #expect(
+            resolvedStyle(setting: .glass, materialIsDark: false, appearance: darkSystem)
+                == resolvedStyle(setting: .glass, materialIsDark: false, appearance: lightSystem)
+        )
+    }
+
+    @Test func chromeAppearanceIsDarkHasNoMaterialConsumerLeft() {
+        // The grep this suite can actually run. `ChromeAppearance.isDark` is
+        // still published by `AppearanceObserver` — it is the honest read of
+        // `NSApp.effectiveAppearance` and the field's own doc comment says what
+        // it is for — but no material selection may read it again. Written as
+        // "every combination of the two darkness flags resolves by the theme's",
+        // so a re-introduced `appearance.isDark` branch fails here whichever way
+        // round it is written.
+        for systemIsDark in [true, false] {
+            let appearance = ChromeAppearance(
+                isDark: systemIsDark,
+                reduceTransparency: false,
+                reduceMotion: false
+            )
+            #expect(resolvedStyle(setting: .glass, materialIsDark: true, appearance: appearance) == .glass(.dark))
+            #expect(resolvedStyle(setting: .glass, materialIsDark: false, appearance: appearance) == .glass(.light))
+        }
     }
 
     // MARK: - Reduce Transparency forces flat
 
     @Test func reduceTransparencyForcesFlatUnderGlassInDark() {
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: true, reduceMotion: false)
-        #expect(resolvedStyle(setting: .glass, appearance: appearance) == .flat)
+        #expect(resolvedStyle(setting: .glass, materialIsDark: true, appearance: appearance) == .flat)
     }
 
     @Test func reduceTransparencyForcesFlatUnderGlassInLight() {
         let appearance = ChromeAppearance(isDark: false, reduceTransparency: true, reduceMotion: false)
-        #expect(resolvedStyle(setting: .glass, appearance: appearance) == .flat)
+        #expect(resolvedStyle(setting: .glass, materialIsDark: false, appearance: appearance) == .flat)
+    }
+
+    @Test func reduceTransparencyForcesFlatForEitherMaterialDarknessAndEitherSystemAppearance() {
+        // Reduce Transparency keeps its authority over the new parameter too,
+        // which is the one thing `materialIsDark` must not be able to reach past:
+        // the override lives on `ChromeAppearance` and stays there. All four
+        // combinations, so a guard moved below the material branch fails here.
+        for systemIsDark in [true, false] {
+            for materialIsDark in [true, false] {
+                let appearance = ChromeAppearance(
+                    isDark: systemIsDark,
+                    reduceTransparency: true,
+                    reduceMotion: false
+                )
+                #expect(
+                    resolvedStyle(setting: .glass, materialIsDark: materialIsDark, appearance: appearance) == .flat
+                )
+            }
+        }
     }
 
     @Test func reduceTransparencyIsInertUnderFlat() {
         // Flat plus Reduce Transparency is still flat: the flag has nothing to
         // override when the setting already draws nothing translucent.
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: true, reduceMotion: false)
-        #expect(resolvedStyle(setting: .flat, appearance: appearance) == .flat)
+        #expect(resolvedStyle(setting: .flat, materialIsDark: true, appearance: appearance) == .flat)
     }
 
     // MARK: - Window transparency follows the opacity setting, not the chrome
@@ -89,7 +166,7 @@ import Testing
         // pins that the same opacity answers the same way whatever the chrome
         // beside it resolved to.
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
-        #expect(resolvedStyle(setting: .flat, appearance: appearance) == .flat)
+        #expect(resolvedStyle(setting: .flat, materialIsDark: true, appearance: appearance) == .flat)
         #expect(windowIsTransparent(backgroundOpacity: 0.42, appearance: appearance))
     }
 
@@ -98,7 +175,7 @@ import Testing
         // expectation over both so a change to either that leaves the other
         // behind fails here rather than on screen.
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: true, reduceMotion: false)
-        #expect(resolvedStyle(setting: .glass, appearance: appearance) == .flat)
+        #expect(resolvedStyle(setting: .glass, materialIsDark: true, appearance: appearance) == .flat)
         #expect(!windowIsTransparent(backgroundOpacity: 0.42, appearance: appearance))
     }
 
@@ -216,7 +293,7 @@ import Testing
         // screen: flat chrome, an opaque window, and no backdrop blur are one
         // answer to one setting.
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: true, reduceMotion: false)
-        #expect(resolvedStyle(setting: .glass, appearance: appearance) == .flat)
+        #expect(resolvedStyle(setting: .glass, materialIsDark: true, appearance: appearance) == .flat)
         #expect(!windowIsTransparent(backgroundOpacity: 0.42, appearance: appearance))
         #expect(windowBlurRadius(backgroundBlur: true, backgroundOpacity: 0.42, appearance: appearance) == 0)
     }
@@ -226,7 +303,7 @@ import Testing
         // this follows the terminal settings, so flat chrome over blurred,
         // translucent wells is a supported look rather than a contradiction.
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
-        #expect(resolvedStyle(setting: .flat, appearance: appearance) == .flat)
+        #expect(resolvedStyle(setting: .flat, materialIsDark: true, appearance: appearance) == .flat)
         #expect(
             windowBlurRadius(backgroundBlur: true, backgroundOpacity: 0.42, appearance: appearance)
                 == parityBlurRadius
@@ -241,7 +318,10 @@ import Testing
         // resolution.
         let withMotion = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
         let reduced = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: true)
-        #expect(resolvedStyle(setting: .glass, appearance: withMotion) == resolvedStyle(setting: .glass, appearance: reduced))
+        #expect(
+            resolvedStyle(setting: .glass, materialIsDark: true, appearance: withMotion)
+                == resolvedStyle(setting: .glass, materialIsDark: true, appearance: reduced)
+        )
     }
 
     // MARK: - MaterialSet carries the right token table

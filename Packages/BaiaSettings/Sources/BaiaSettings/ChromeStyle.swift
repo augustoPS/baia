@@ -19,7 +19,7 @@ public enum ChromeStyle: String, Sendable, Equatable, CaseIterable {
     /// The v5 material lift: translucent backing views under the footer and
     /// sidebar, the focus lift's ring and shadow. Resolved against Reduce
     /// Transparency and the system appearance by `PaneChrome`'s
-    /// `resolvedStyle(setting:appearance:)`, not read directly by anything that
+    /// `resolvedStyle(setting:materialIsDark:appearance:)`, not read directly by anything that
     /// draws state ink.
     case glass
 }

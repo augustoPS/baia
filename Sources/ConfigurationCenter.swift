@@ -16,11 +16,15 @@ final class ConfigurationCenter {
 
     private(set) var settings: Settings
 
-    /// The live system state `resolvedStyle(setting:appearance:)` needs:
-    /// dark/light, Reduce Transparency, Reduce Motion. Held rather than read
-    /// fresh on every `resolvedChrome` access, so a burst of reads inside one
-    /// render pass sees one appearance rather than a value that could change
-    /// mid-frame if the observer fired between two of them.
+    /// The live system state the window gates need: dark/light, Reduce
+    /// Transparency, Reduce Motion. Held rather than read fresh on every
+    /// `resolvedChrome` access, so a burst of reads inside one render pass sees
+    /// one appearance rather than a value that could change mid-frame if the
+    /// observer fired between two of them.
+    ///
+    /// Of the three fields, `reduceTransparency` is the one that reaches
+    /// ``resolvedChrome`` — `isDark` no longer picks a material set, and no
+    /// consumer of it is left; see `ChromeAppearance.isDark`'s own doc comment.
     ///
     /// Constructor-injected, never a later assignment a caller can forget:
     /// the `focusAccent` lesson (`PaneTheme+Palette.swift`) is exactly a
@@ -119,19 +123,38 @@ final class ConfigurationCenter {
 
     // MARK: - Chrome resolution
 
-    /// What the chrome should draw right now: flat, or glass with the
-    /// material set the live appearance picks.
+    /// What the chrome should draw right now: flat, or glass with the material
+    /// set the *theme's* own darkness picks.
     ///
-    /// `PaneChrome.resolvedStyle(setting:appearance:)` does the actual
-    /// resolution and carries its own tests; this is the one line that calls
-    /// it with the two live inputs, `settings.chromeStyle` and the observer's
-    /// last-published `ChromeAppearance`. State ink never reads this: grep
-    /// `PaneStatusSegments.swift`, `PaneTheme.swift`, and
-    /// `PaneTheme+Palette.swift` for `ChromeAppearance` or `resolvedChrome`
-    /// and find nothing, the same acceptance `SettingsDerivations.paneTheme`
-    /// holds for `focusAccent`.
+    /// `PaneChrome.resolvedStyle(setting:materialIsDark:appearance:)` does the
+    /// actual resolution and carries its own tests; this is the one line that
+    /// calls it with the three live inputs.
+    ///
+    /// **`materialIsDark` is ``windowIsDark`` — this line's own neighbour below
+    /// — rather than the observer's `isDark`, which is what makes this property
+    /// read the way this comment has always promised: the chrome follows the
+    /// theme.** Until that parameter existed, the observer's
+    /// `NSApp.effectiveAppearance` read chose the material set, so a dark theme
+    /// under a light system appearance drew light glass in the footer, the
+    /// sidebar, the palette and the popover while the titlebar above them —
+    /// already on `windowIsDark` — rendered correctly dark. Passing one
+    /// derivation to both is what stops the two disagreeing, and it is why a
+    /// system light/dark switch with the theme unmoved now repaints nothing.
+    ///
+    /// `appearanceObserver.appearance` is still passed and still matters: Reduce
+    /// Transparency lives there and keeps its authority to force `.flat`, which
+    /// no theme may override.
+    ///
+    /// State ink never reads this: grep `PaneStatusSegments.swift`,
+    /// `PaneTheme.swift`, and `PaneTheme+Palette.swift` for `ChromeAppearance`
+    /// or `resolvedChrome` and find nothing, the same acceptance
+    /// `SettingsDerivations.paneTheme` holds for `focusAccent`.
     var resolvedChrome: ResolvedChrome {
-        resolvedStyle(setting: settings.chromeStyle, appearance: appearanceObserver.appearance)
+        resolvedStyle(
+            setting: settings.chromeStyle,
+            materialIsDark: windowIsDark,
+            appearance: appearanceObserver.appearance
+        )
     }
 
     /// Whether the workspace window should be non-opaque right now.
@@ -153,16 +176,20 @@ final class ConfigurationCenter {
     /// Whether the workspace window's own chrome — titlebar material, tab bar —
     /// should render dark right now.
     ///
-    /// Reads ``paneTheme`` rather than ``resolvedChrome``'s
-    /// `appearanceObserver.appearance`, and that is the one thing to notice
-    /// about this derivation next to ``resolvedChrome`` and
-    /// ``windowIsTransparent`` immediately above it: those two are legitimately
-    /// keyed off the *system* appearance and Reduce Transparency, but the
-    /// titlebar is chrome, and the standing rule (`PaneTheme`'s own header) is
-    /// that chrome matches the theme and never the system. So this is the one
-    /// window-level derivation in this trio that must not take
-    /// `appearanceObserver.appearance` as an input, and `PaneChrome.windowIsDark(paneTheme:)`
+    /// Reads ``paneTheme`` and takes no `appearanceObserver.appearance` at all,
+    /// which is what separates it from ``windowIsTransparent`` and
+    /// ``windowBlurRadius`` beside it: those two are legitimately keyed off the
+    /// *system* appearance and Reduce Transparency, but the titlebar is chrome,
+    /// and the standing rule (`PaneTheme`'s own header) is that chrome matches
+    /// the theme and never the system. `PaneChrome.windowIsDark(paneTheme:)`
     /// carries the rest of that reasoning and the tests.
+    ///
+    /// **Read twice, and deliberately: ``resolvedChrome`` above passes this
+    /// value as its `materialIsDark`.** So the window's own appearance and the
+    /// glass material inside it come from one derivation rather than from two
+    /// that could drift, and a theme edit moves both in the frame that
+    /// `applyToEveryPane()` and `notifySettingsChanged()` already re-theme the
+    /// panes in.
     var windowIsDark: Bool {
         PaneChrome.windowIsDark(paneTheme: paneTheme)
     }

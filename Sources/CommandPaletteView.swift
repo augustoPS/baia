@@ -26,7 +26,7 @@ final class PaletteQueryView: NSView {
 
     var theme: PaneTheme = .darkPastel { didSet { needsDisplay = true } }
 
-    /// Flat, unchanged, or glass with the material set the live appearance
+    /// Flat, unchanged, or glass with the material set the theme's own darkness
     /// picked, exactly the input ``PaneStatusBarView/resolvedChrome`` reads.
     /// The find panel leaves this at its default `.flat` — nothing sets it —
     /// so sharing this view costs the find panel nothing: it draws the same
@@ -249,7 +249,7 @@ final class PaletteQueryField: NSTextField {
 final class PaletteListView: NSView {
     var theme: PaneTheme = .darkPastel { didSet { needsDisplay = true } }
 
-    /// Flat, unchanged, or glass with the material set the live appearance
+    /// Flat, unchanged, or glass with the material set the theme's own darkness
     /// picked. See ``PaletteQueryView/resolvedChrome`` for why the find panel,
     /// which reuses this view too, is unaffected: it never sets this and stays
     /// at the `.flat` default.
@@ -570,7 +570,7 @@ final class PaletteListView: NSView {
 final class PaletteHintsView: NSView {
     var theme: PaneTheme = .darkPastel { didSet { needsDisplay = true } }
 
-    /// Flat, unchanged, or glass with the material set the live appearance
+    /// Flat, unchanged, or glass with the material set the theme's own darkness
     /// picked. See ``PaletteQueryView/resolvedChrome``; the find panel that
     /// also owns one of these never sets it and stays flat.
     var resolvedChrome: ResolvedChrome = .flat { didSet { needsDisplay = true } }

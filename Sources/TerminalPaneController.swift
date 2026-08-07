@@ -154,7 +154,7 @@ final class TerminalPaneController: NSViewController {
     }
 
     /// What the footer and the lift should draw: flat, unchanged, or glass
-    /// with a material set, per `PaneChrome.resolvedStyle(setting:appearance:)`.
+    /// with a material set, per `PaneChrome.resolvedStyle(setting:materialIsDark:appearance:)`.
     ///
     /// Stored here, unlike ``bottomCorners``, because Task 6 gives it a
     /// second reader: ``applyPresentation()`` has to know whether chrome is
