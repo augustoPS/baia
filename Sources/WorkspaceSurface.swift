@@ -193,6 +193,33 @@ final class SurfaceTitleView: NSView {
     /// a bright-desktop glass sample, under the 4.5:1 floor for 10 pt bold
     /// text. `#bbbbbb` clears it against the same measured glass.
     ///
+    /// **What the sidebar's opacity wash does to that number, stated rather
+    /// than silently re-graded.** `SidebarGlassWash` now lays
+    /// `theme.background` at `backgroundOpacity` over this glass, so the
+    /// backdrop this ink is judged against is no longer the bare glass finding
+    /// 6 measured. The wash only ever *darkens* it — `#141414` is darker than
+    /// every sample in that finding — so contrast for light ink moves
+    /// monotonically up and this override cannot become a legibility
+    /// regression at any opacity. Recomputed against finding 6's own measured
+    /// samples, worst (brightest) half, both runs:
+    ///
+    /// | opacity | bare glass | `#9e9e9e` | `#bbbbbb` |
+    /// |---|---|---|---|
+    /// | 0 (before) | `#4b4b4b`–`#464646` | 3.26–3.52 | 4.54–4.92 |
+    /// | 0.10 | `#46`–`#41` | 3.55–3.81 | 4.96–5.32 |
+    /// | 0.42 | `#34`–`#31` | 4.65–4.86 | 6.49–6.78 |
+    /// | 0.85 | `#1c` | 6.34–6.40 | 8.85–8.92 |
+    ///
+    /// **So at the shipped 0.42 this override is no longer load-bearing**:
+    /// `theme.inkFaint` itself clears 4.5:1 (4.65–4.86) on the half that
+    /// motivated the repair. It stays anyway, and the reason is the low end of
+    /// the range rather than the shipped value — at 0.10 the flat ink is back
+    /// to 3.55–3.81 and still fails, and `backgroundOpacity` is a live knob the
+    /// owner drags. An override that holds across the whole range is worth more
+    /// than one tuned to the default and wrong at a setting one drag away.
+    /// Removing it would be safe only if the wash were also floored, which
+    /// would be a second, worse coupling.
+    ///
     /// A fixed override rather than a repair run through
     /// `theme.color(for:focused:on:)`: the owner's decision recorded in the
     /// v5-4 plan's amendment is "no [contrast-repair] pairing on glass paths"

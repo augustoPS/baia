@@ -19,6 +19,51 @@ private final class SidebarGlassBacking: NSGlassEffectView {
     override func hitTest(_: NSPoint) -> NSView? { nil }
 }
 
+/// The `theme.background`-at-`backgroundOpacity` wash over
+/// ``SidebarGlassBacking``, so the column tracks the same knob the wells do.
+///
+/// **Why this exists at all.** Task 2 dropped every fill on the sidebar's glass
+/// path and Task 3b left it dropped, which was right for the fills it removed —
+/// they were opaque or vitreous paint sitting between the glass and what it
+/// samples. But it left `backgroundOpacity` reaching nothing in this column:
+/// each pane's well darkens with the slider because ghostty composites
+/// `background` at `background-opacity`, while the sidebar beside it stayed
+/// bare glass at every setting. Dialling opacity moved the panes and left the
+/// column behind, which is the defect.
+///
+/// This is the same composite the wells produce, expressed the only way it can
+/// be here: the glass lenses the desktop, and a translucent `theme.background`
+/// above it dims and tints the lensed result. It is *not* the fill Task 2
+/// removed. That one was `MaterialSet.fillSidebar`, a vitreous tint standing in
+/// for glass that did not exist; this is the terminal's own background colour at
+/// the terminal's own opacity, and it sits above a real `NSGlassEffectView`
+/// rather than instead of one.
+///
+/// Above the backing rather than inside it as `contentView`: the glass view
+/// composites its content *before* its own material, so a fill handed over that
+/// way would be blurred and vibrancy-shifted rather than laid over the result.
+/// Hit-transparent for the same reason the backing is — every click in this
+/// column belongs to a row, a heading or a grab strip underneath it.
+private final class SidebarGlassWash: NSView {
+    var colour: NSColor = .clear {
+        didSet {
+            guard colour != oldValue else { return }
+            needsDisplay = true
+        }
+    }
+
+    override var acceptsFirstResponder: Bool { false }
+
+    override var canBecomeKeyView: Bool { false }
+
+    override func hitTest(_: NSPoint) -> NSView? { nil }
+
+    override func draw(_: NSRect) {
+        colour.setFill()
+        bounds.fill()
+    }
+}
+
 /// One or more surfaces in the window, beside the panes.
 ///
 /// Becomes the window's `contentViewController`, with the pane tree as a child, so
@@ -114,6 +159,9 @@ final class SidebarHost: NSViewController {
             sessionHeader.theme = theme
             actionRow.theme = theme
             divider.layer?.backgroundColor = nsColor(theme.hairline).cgColor
+            // The wash is `theme.background` at `backgroundOpacity`, so a live
+            // theme edit has to reach it here as well as the surfaces above.
+            updateGlassWash()
         }
     }
 
@@ -191,6 +239,10 @@ final class SidebarHost: NSViewController {
     var backgroundOpacity: Double = 1 {
         didSet {
             for section in sections { section.surface.backgroundOpacity = backgroundOpacity }
+            // The defect this key had in the column: under glass the surfaces
+            // above draw no fill at all, so without this the slider moved every
+            // pane's well and left the sidebar beside them unchanged.
+            updateGlassWash()
         }
     }
 
@@ -244,6 +296,24 @@ final class SidebarHost: NSViewController {
     /// actually requires; a glass view stacked *above* the sections would
     /// sample the sections instead and read as an opaque tint over them.
     private var glassBacking: SidebarGlassBacking?
+
+    /// The opacity wash over ``glassBacking``, built and torn down with it.
+    /// See ``SidebarGlassWash`` for why the column needs one at all.
+    private var glassWash: SidebarGlassWash?
+
+    /// What ``glassWash`` paints: the terminal's own background at the
+    /// terminal's own opacity, the same pair each pane's well composites.
+    ///
+    /// Reads the two properties the host already holds, so a live edit to
+    /// either repaints through the same call rather than through a second path
+    /// that could disagree with this one.
+    private func updateGlassWash() {
+        // `ChangesSurface.nsColor` rather than this file's own helper, which
+        // takes no alpha: it is the same call both sidebar surfaces already
+        // make for the flat fill, so the glass wash and the flat fill cannot
+        // resolve one colour two ways.
+        glassWash?.colour = ChangesSurface.nsColor(theme.background, alpha: backgroundOpacity)
+    }
 
     /// `NSGlassEffectView.tintColor` untinted, unconditionally.
     ///
@@ -449,6 +519,12 @@ final class SidebarHost: NSViewController {
         case .flat:
             glassBacking?.removeFromSuperview()
             glassBacking = nil
+            // Torn down with the backing rather than left behind: under flat
+            // each surface fills its own scroll view again (see
+            // `ChangesSurface.fill()`), so a wash still hanging here would be
+            // that same colour composited a second time over it.
+            glassWash?.removeFromSuperview()
+            glassWash = nil
         case .glass:
             guard glassBacking == nil else { break }
             let backing = SidebarGlassBacking(frame: .zero)
@@ -463,6 +539,14 @@ final class SidebarHost: NSViewController {
             // app's other views.
             view.addSubview(backing, positioned: .below, relativeTo: nil)
             glassBacking = backing
+
+            // Directly above the backing and below everything else, so it
+            // washes the glass without ever coming between a row and the eye.
+            let wash = SidebarGlassWash(frame: .zero)
+            wash.wantsLayer = true
+            view.addSubview(wash, positioned: .above, relativeTo: backing)
+            glassWash = wash
+            updateGlassWash()
         }
         view.needsLayout = true
     }
@@ -523,6 +607,11 @@ final class SidebarHost: NSViewController {
                 width: sidebarWidth,
                 height: bounds.height
             )
+            // Exactly the backing's own frame, so the wash can neither fall
+            // short of the glass it is washing nor spill past the column onto
+            // the panes, which carry their own well and need no second one.
+            glassWash?.isHidden = glassBacking.isHidden
+            glassWash?.frame = glassBacking.frame
         }
 
         // The session header and the bottom action row are chrome around the
