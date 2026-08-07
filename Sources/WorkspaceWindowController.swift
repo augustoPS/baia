@@ -1,6 +1,58 @@
 import AppKit
 import WorkspaceLayout
 
+/// A connection to the window server, as `CGSDefaultConnectionForThread` returns
+/// one. Opaque on purpose: nothing here inspects it, it is obtained and handed
+/// straight back to ``CGSSetWindowBackgroundBlurRadius(_:_:_:)``.
+private typealias CGSConnectionID = UInt32
+
+/// **Private Apple SPI.** Not in any public SDK header, not covered by any
+/// compatibility promise, and reached here by `@_silgen_name` because there is
+/// no import that declares it.
+///
+/// There is no public API for this. `NSVisualEffectView` and `NSGlassEffectView`
+/// blur what is behind a *view inside this process*; nothing in AppKit blurs
+/// what the compositor has behind the window itself, which is the only thing
+/// that can frost the desktop showing through a translucent terminal. Every
+/// macOS terminal that offers the feature uses this same pair of symbols:
+/// **ghostty** (`ghostty_set_window_background_blur` in
+/// `src/apprt/embedded.zig`, which is the call this file mirrors), **iTerm2**,
+/// and **Alacritty**.
+///
+/// **App Store implication: an app calling this cannot ship on the Mac App
+/// Store**, which rejects private API use. baia is not an App Store app — it is
+/// built by `make install` into `/Applications` and distributed to nobody — so
+/// the cost is one baia does not pay. It is worth naming that the vendored
+/// `libghostty-spm` checkout under `upstream/` patches this exact call *out* of
+/// ghostty for that reason (`Patches/ghostty/0004-ios-fixes.sh`, "Disable
+/// private window blur API (App Store compliance)"), which is precisely why
+/// baia has to make the call itself: the engine it embeds no longer will.
+///
+/// **Failure is silent and harmless.** The returned `CGError` is discarded at
+/// the one call site. If a future macOS drops the symbol the process fails to
+/// launch rather than misbehaving, which is loud and immediate; if it keeps the
+/// symbol and refuses the request, the window simply renders unblurred and
+/// everything else about it is untouched. The worst case is no blur, never a
+/// crash and never a wrong pixel elsewhere.
+@_silgen_name("CGSDefaultConnectionForThread")
+private func CGSDefaultConnectionForThread() -> CGSConnectionID
+
+/// **Private Apple SPI.** See ``CGSDefaultConnectionForThread()`` directly
+/// above for what that means here, who else relies on it, and why it is safe to
+/// ignore what it returns.
+///
+/// The signature matches ghostty's own `extern "c" fn
+/// CGSSetWindowBackgroundBlurRadius(*anyopaque, usize, c_int) i32`, with the
+/// window identified by `NSWindow.windowNumber` and a radius in points. Radius
+/// `0` removes the blur, which is what makes this reversible on a live window.
+@_silgen_name("CGSSetWindowBackgroundBlurRadius")
+@discardableResult
+private func CGSSetWindowBackgroundBlurRadius(
+    _ connection: CGSConnectionID,
+    _ windowNumber: Int,
+    _ radius: Int
+) -> CGError
+
 /// One window, which is also one tab.
 ///
 /// Tabs are native `NSWindow` tabs rather than a bar baia draws. Drag to reorder,
@@ -67,10 +119,10 @@ final class WorkspaceWindowController: NSObject {
     /// chrome *drawing* paths — the fills, rims and backing views a surface
     /// creates — and none of them read these two flags.
     ///
-    /// `backgroundBlur` remains unimplemented at the window level: it decodes,
-    /// writes, and reaches ghostty as `background-blur`, but blurring what
-    /// shows *through* this transparency needs the private CGS window-backdrop
-    /// API, which is a separate decision.
+    /// Blurring what shows through this transparency is ``blurRadius``, one
+    /// property below. The two are one feature in two halves: this decides
+    /// whether the desktop is visible at all, that decides whether it is
+    /// frosted, and the second is gated on the first.
     ///
     /// **Safe to move on a live window, unlike the pane arrangement.** A pane's
     /// glass arrangement is frozen at spawn (see
@@ -90,15 +142,64 @@ final class WorkspaceWindowController: NSObject {
         }
     }
 
-    /// `isTransparent` is a parameter rather than a later assignment for the
-    /// reason ``ConfigurationCenter`` states about its own appearance observer:
-    /// a caller cannot forget what it must name. It is also the reason
-    /// ``SidebarHost`` takes its chrome. A window built opaque and made
-    /// transparent a moment later would show one solid frame first.
-    init(tree: PaneTreeController, sidebar: SidebarHost, isTransparent: Bool) {
+    /// How far the compositor blurs what is behind this window, in points, or
+    /// `0` for no blur.
+    ///
+    /// The other half of ``isTransparent``. That one lets the desktop through;
+    /// this frosts what comes through, which is the look the owner's ghostty
+    /// config produces with `background-blur = true` and the one baia's sidebar
+    /// glass already gets for its own column. Both halves are needed: blur
+    /// behind an opaque window is invisible, which is why
+    /// ``PaneChrome/windowBlurRadius(backgroundBlur:backgroundOpacity:appearance:)``
+    /// gates this on the transparency rule rather than on the setting alone,
+    /// and it carries the whole decision including where the number 20 comes
+    /// from.
+    ///
+    /// **Applied through private SPI, and it needs a window number that is only
+    /// valid once the window is on screen.** `NSWindow.windowNumber` is `0` for
+    /// a window the window server has not created a backing surface for, and
+    /// this window is built in ``init(tree:sidebar:isTransparent:blurRadius:)``
+    /// long before `AppDelegate` calls ``show(joining:)``. Passing `0` to
+    /// ``CGSSetWindowBackgroundBlurRadius(_:_:_:)`` addresses no window at all,
+    /// so it fails silently and the blur simply never appears — the failure
+    /// mode of this SPI is exactly the one that leaves no trace. So this is
+    /// *stored* at init, deliberately unlike ``isTransparent`` which is written
+    /// onto the window immediately, and ``show(joining:)`` applies it right
+    /// after `makeKeyAndOrderFront` when the number exists. A later assignment
+    /// (the settings-file path) applies at once, because by then the window has
+    /// long been shown.
+    ///
+    /// **A window number can change, and this is why reapplying is cheap.** The
+    /// number belongs to the window server's surface, not to this object, so a
+    /// window that is ordered out and back in can be given a different one.
+    /// Nothing here caches it: every application reads `window.windowNumber`
+    /// fresh at the moment it calls, and the settings path reapplies to every
+    /// live window on every change. baia never rebuilds an `NSWindow` in place
+    /// — a rebuilt window is a new `WorkspaceWindowController` that goes
+    /// through `init` and `show(joining:)` again — so there is no path where a
+    /// stale number is written.
+    ///
+    /// **Safe to move on a live window, for ``isTransparent``'s reason.** This
+    /// is a compositor property of the window's backdrop. It feeds no layout
+    /// pass, no view frame and no ghostty config key, so no surface changes
+    /// size and nothing running in a pane is signalled.
+    var blurRadius: Int = 0 {
+        didSet {
+            guard blurRadius != oldValue else { return }
+            applyBlur()
+        }
+    }
+
+    /// `isTransparent` and `blurRadius` are parameters rather than later
+    /// assignments for the reason ``ConfigurationCenter`` states about its own
+    /// appearance observer: a caller cannot forget what it must name. It is also
+    /// the reason ``SidebarHost`` takes its chrome. A window built opaque and
+    /// made transparent a moment later would show one solid frame first.
+    init(tree: PaneTreeController, sidebar: SidebarHost, isTransparent: Bool, blurRadius: Int) {
         self.tree = tree
         self.sidebar = sidebar
         self.isTransparent = isTransparent
+        self.blurRadius = blurRadius
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1024, height: 680),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -173,12 +274,46 @@ final class WorkspaceWindowController: NSObject {
         window.backgroundColor = isTransparent ? .clear : .windowBackgroundColor
     }
 
+    /// Writes ``blurRadius`` onto the window through the private CGS backdrop
+    /// SPI.
+    ///
+    /// Reads `window.windowNumber` fresh rather than holding one, for the
+    /// reason ``blurRadius`` states: the number belongs to the window server's
+    /// surface and is `0` until there is one. The guard is not defensive
+    /// tidiness — it is what stops a call before ``show(joining:)`` from being
+    /// silently addressed at nothing, and it is why the *result* of that call
+    /// can be discarded without hiding anything. `0` for a radius is a real
+    /// request meaning "no blur", so this still calls in that case, on a real
+    /// window number: it is how the blur is *removed* when the setting is
+    /// turned off on a running window.
+    ///
+    /// The returned `CGError` is deliberately ignored, which
+    /// ``CGSSetWindowBackgroundBlurRadius(_:_:_:)``'s own doc comment explains:
+    /// there is no recovery, and the worst outcome is a window that renders
+    /// unblurred.
+    private func applyBlur() {
+        let number = window.windowNumber
+        guard number != 0 else { return }
+        CGSSetWindowBackgroundBlurRadius(CGSDefaultConnectionForThread(), number, blurRadius)
+    }
+
     /// Joins `other`'s tab group, or opens standalone when there is none.
     func show(joining other: NSWindow?) {
         if let other, other !== window {
             other.addTabbedWindow(window, ordered: .above)
         }
         window.makeKeyAndOrderFront(nil)
+
+        // The first moment `window.windowNumber` is real, and so the first
+        // moment the blur can be applied at all: the window server creates the
+        // backing surface as the window is ordered in, and every call before
+        // this one addressed window `0`. Applied here rather than from the
+        // property's `didSet`, which cannot help — the value is assigned in
+        // `init`, where `didSet` does not run and the number would be `0`
+        // anyway. Unconditional, matching `applyTransparency()`'s call in
+        // `init`: at radius 0 this writes what the window already has.
+        applyBlur()
+
         tree.focusedPane?.takeFocus()
     }
 

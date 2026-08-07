@@ -112,6 +112,24 @@ final class ConfigurationCenter {
         )
     }
 
+    /// How far the compositor should blur what shows through the workspace
+    /// window right now, or `0` for no blur.
+    ///
+    /// The third of these one-line derivations and the same shape as the two
+    /// above: `PaneChrome.windowBlurRadius(backgroundBlur:backgroundOpacity:appearance:)`
+    /// holds the rule and the tests, and this passes it the three live inputs.
+    /// It reads `settings.backgroundBlur` *and* `settings.backgroundOpacity`
+    /// because blur is gated on the window being transparent at all — see that
+    /// function's own doc comment — which is also how Reduce Transparency
+    /// reaches it without this line mentioning the flag.
+    var windowBlurRadius: Int {
+        PaneChrome.windowBlurRadius(
+            backgroundBlur: settings.backgroundBlur,
+            backgroundOpacity: settings.backgroundOpacity,
+            appearance: appearanceObserver.appearance
+        )
+    }
+
     // MARK: - Derivations
 
     /// The theme currently in effect.

@@ -102,6 +102,75 @@ import Testing
         #expect(!windowIsTransparent(backgroundOpacity: 0.42, appearance: appearance))
     }
 
+    // MARK: - Backdrop blur needs the setting *and* a window to see through
+
+    @Test func blurAppliesTheParityRadiusWhenTheSettingAndTheWindowBothAllowIt() {
+        let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
+        #expect(
+            windowBlurRadius(backgroundBlur: true, backgroundOpacity: 0.42, appearance: appearance)
+                == parityBlurRadius
+        )
+    }
+
+    @Test func theParityRadiusIsGhosttysOwnDefaultForBackgroundBlurTrue() {
+        // Pinned as a number rather than only referred to by name, because the
+        // number is the whole point: ghostty 1.3.1 documents `background-blur =
+        // true` as "the default blur intensity of 20", and baia's setting is the
+        // same boolean. A change here is a decision to stop matching the
+        // terminal this app replaces, and it should have to be typed.
+        #expect(parityBlurRadius == 20)
+    }
+
+    @Test func theBlurSettingOffMeansNoBlurEvenThroughATransparentWindow() {
+        let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
+        #expect(windowIsTransparent(backgroundOpacity: 0.42, appearance: appearance))
+        #expect(
+            windowBlurRadius(backgroundBlur: false, backgroundOpacity: 0.42, appearance: appearance) == 0
+        )
+    }
+
+    @Test func anOpaqueWindowGetsNoBlurEvenWithTheSettingOn() {
+        // There is nothing behind an opaque window to blur, so this would be a
+        // compositor pass with no visible effect — the same reason
+        // `windowIsTransparent` leaves that case alone.
+        let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
+        #expect(windowBlurRadius(backgroundBlur: true, backgroundOpacity: 1, appearance: appearance) == 0)
+    }
+
+    @Test func reduceTransparencyForcesNoBlurThroughTheTransparencyGate() {
+        // The third gate reading `reduceTransparency`, and the reason it does not
+        // read the flag itself: it defers to `windowIsTransparent`, which already
+        // resolves to opaque here. Kept beside the other two so all three
+        // accessibility answers are visible at once.
+        let appearance = ChromeAppearance(isDark: true, reduceTransparency: true, reduceMotion: false)
+        #expect(!windowIsTransparent(backgroundOpacity: 0.42, appearance: appearance))
+        #expect(windowBlurRadius(backgroundBlur: true, backgroundOpacity: 0.42, appearance: appearance) == 0)
+    }
+
+    @Test func allThreeAccessibilityGatesAgreeUnderReduceTransparency() {
+        // The `theTwoAccessibilityGatesAgreeUnderReduceTransparency` expectation
+        // above, widened as the third gate landed. One test over all three so a
+        // change to any that leaves the others behind fails here rather than on
+        // screen: flat chrome, an opaque window, and no backdrop blur are one
+        // answer to one setting.
+        let appearance = ChromeAppearance(isDark: true, reduceTransparency: true, reduceMotion: false)
+        #expect(resolvedStyle(setting: .glass, appearance: appearance) == .flat)
+        #expect(!windowIsTransparent(backgroundOpacity: 0.42, appearance: appearance))
+        #expect(windowBlurRadius(backgroundBlur: true, backgroundOpacity: 0.42, appearance: appearance) == 0)
+    }
+
+    @Test func blurIgnoresTheChromeStyleTheSameWayTransparencyDoes() {
+        // Takes no `ChromeStyle`, for the reason `windowIsTransparent` does not:
+        // this follows the terminal settings, so flat chrome over blurred,
+        // translucent wells is a supported look rather than a contradiction.
+        let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
+        #expect(resolvedStyle(setting: .flat, appearance: appearance) == .flat)
+        #expect(
+            windowBlurRadius(backgroundBlur: true, backgroundOpacity: 0.42, appearance: appearance)
+                == parityBlurRadius
+        )
+    }
+
     // MARK: - Reduce Motion does not affect the resolved style
 
     @Test func reduceMotionDoesNotChangeWhichStyleResolves() {

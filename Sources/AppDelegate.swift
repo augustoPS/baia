@@ -421,7 +421,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // *window*, so a transparent backing over an opaque window lenses
             // this app's own fill. See
             // ``WorkspaceWindowController/isTransparent``.
-            isTransparent: configuration.windowIsTransparent
+            isTransparent: configuration.windowIsTransparent,
+            // Stored now, applied by `show(joining:)` a few lines below, because
+            // the SPI behind it needs a `windowNumber` the window server has not
+            // issued yet. See ``WorkspaceWindowController/blurRadius``.
+            blurRadius: configuration.windowBlurRadius
         )
         controller.window.tabbingMode = tabbing
         // Coalesced by the same timer every other session change goes through, so a
@@ -1023,6 +1027,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // `isOpaque`/`backgroundColor` feed no layout at all. See
             // ``WorkspaceWindowController/isTransparent``.
             controller.isTransparent = configuration.windowIsTransparent
+            // And the blur behind it, on the same live path and for the same
+            // reason: `backgroundBlur` and `backgroundOpacity` are both settings
+            // the owner edits under a running app, and a window left on the
+            // radius it opened with would need closing and reopening to follow.
+            // Safe to write directly here, unlike at construction: this loop only
+            // ever reaches windows that have been shown, so the `windowNumber`
+            // the SPI needs already exists.
+            controller.blurRadius = configuration.windowBlurRadius
         }
         palette.theme = configuration.paneTheme
         // Same live-follow as the sidebar's own line above; the find panel is

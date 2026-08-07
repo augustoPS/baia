@@ -166,3 +166,51 @@ public func windowIsTransparent(backgroundOpacity: Double, appearance: ChromeApp
     guard !appearance.reduceTransparency else { return false }
     return backgroundOpacity < 1
 }
+
+/// The radius the compositor should blur what shows *through* a transparent
+/// workspace window, or `0` for no blur at all.
+///
+/// The companion of ``windowIsTransparent(backgroundOpacity:appearance:)``
+/// directly above, and deliberately built on top of it rather than beside it:
+/// blur is what the desktop looks like *behind* this window, so there is
+/// nothing to blur unless the window is letting the desktop through. A blurred
+/// backdrop under an opaque window is invisible and still costs the compositor
+/// a pass, and calling it with `backgroundOpacity == 1` is the shape of a bug
+/// rather than a request. So the gate is both: the setting says yes *and* the
+/// window is transparent by the rule one function up. That also means the
+/// Reduce Transparency override arrives here for free — it forces the window
+/// opaque, which forces this to `0` — and the two accessibility gates stay the
+/// single fact they are rather than a rule restated in a second place that can
+/// drift from the first.
+///
+/// ``parityBlurRadius`` is the value, and its own doc comment carries why 20.
+public func windowBlurRadius(
+    backgroundBlur: Bool,
+    backgroundOpacity: Double,
+    appearance: ChromeAppearance
+) -> Int {
+    guard backgroundBlur else { return 0 }
+    guard windowIsTransparent(backgroundOpacity: backgroundOpacity, appearance: appearance) else {
+        return 0
+    }
+    return parityBlurRadius
+}
+
+/// The blur radius ghostty's own `background-blur = true` means.
+///
+/// ``BaiaSettings/Settings/backgroundBlur`` is a `Bool` because the owner's
+/// ghostty config writes the boolean, and ghostty resolves that boolean to a
+/// radius rather than treating it as an on/off switch over some other default.
+/// Confirmed against the shipped Ghostty 1.3.1 on this machine rather than
+/// guessed: `ghostty +show-config --default --docs` documents `background-blur`
+/// as "true, equivalent to the default blur intensity of 20", the man page in
+/// `Ghostty.app/Contents/Resources/man` says the same, and the string is
+/// compiled into the shipped binary. `false` is `0` there too, which is what
+/// ``windowBlurRadius(backgroundBlur:backgroundOpacity:appearance:)`` returns
+/// for every one of its off cases.
+///
+/// A named constant rather than a literal at the call site because parity is
+/// the entire justification for the number: 20 is not a value baia tuned, and
+/// anyone changing it is choosing to stop matching the terminal this app exists
+/// to replace.
+public let parityBlurRadius = 20
