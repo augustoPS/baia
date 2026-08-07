@@ -31,12 +31,50 @@ final class ConfigurationCenter {
     /// naming where its appearance comes from.
     private let appearanceObserver: AppearanceObserver
 
-    /// Raised after `settings` or the live appearance moves, for the app-level
-    /// consumers that are not panes: the project roots, session restore, and
-    /// the notifier. Both sources feed the same callback because both change
-    /// what `resolvedChrome` answers, and a caller that only reacted to one
-    /// would draw glass a frame late after a Reduce Transparency toggle.
-    var onSettingsChange: (() -> Void)?
+    /// Everything to run after `settings` or the live appearance moves, for the
+    /// app-level consumers that are not panes: the project roots, session
+    /// restore, the notifier, and the settings window's "Current" sample. Both
+    /// sources feed the same list because both change what `resolvedChrome`
+    /// answers, and a caller that only reacted to one would draw glass a frame
+    /// late after a Reduce Transparency toggle.
+    ///
+    /// A list rather than the single `var onSettingsChange` this was until the
+    /// settings window needed one too. A second consumer assigning over the
+    /// property would have silently unwired `AppDelegate.settingsDidChange()`,
+    /// which is a whole app's worth of live-following (`AppDelegate.swift`'s own
+    /// loop over every window) going quiet with nothing on screen to say so.
+    private var settingsChangeHandlers: [() -> Void] = []
+
+    /// Registers `handler` to run on every subsequent change.
+    ///
+    /// **Returns nothing, and there is no way to unregister**, which is a choice
+    /// with a known cost rather than an oversight. Every consumer either outlives
+    /// this object (`AppDelegate`) or captures itself weakly and no-ops once it
+    /// has gone (`SettingsWindowController`), so nothing is kept alive by being
+    /// registered and no handler can write into a torn-down surface.
+    ///
+    /// What it does cost: `AppDelegate.showSettings(_:)` rebuilds its controller
+    /// on every ⌘, so the list gains one dead entry per visit to Settings and
+    /// never gives one back. A dead entry is a weak load and a branch, and the
+    /// count is bounded by how many times a person opens a settings window
+    /// between relaunches, so this is measured in nanoseconds and tens of bytes.
+    /// The alternative bought with a token type and a bookkeeping dictionary is
+    /// not worth it yet. Revisit if a consumer ever registers from something
+    /// created per pane, per window, or on a timer, where the bound stops being
+    /// a human pressing a key.
+    func onSettingsChange(_ handler: @escaping () -> Void) {
+        settingsChangeHandlers.append(handler)
+    }
+
+    /// Runs every registered handler, in registration order.
+    ///
+    /// The order is not load-bearing and no handler may make it so: the two fire
+    /// sites are a settings reload and an appearance change, and a consumer that
+    /// needed to run before or after another would be reaching across a boundary
+    /// this list exists to keep flat.
+    private func notifySettingsChanged() {
+        for handler in settingsChangeHandlers { handler() }
+    }
 
     /// Every live pane, held weakly.
     ///
@@ -72,10 +110,10 @@ final class ConfigurationCenter {
             // Without this, dark/light and Reduce Transparency moved the value
             // `resolvedChrome` answers but no pane redrew until some unrelated
             // settings-file edit forced a reload, which is exactly the stale
-            // frame `onSettingsChange`'s own doc comment says both sources must
-            // not leave behind.
+            // frame `settingsChangeHandlers`' own doc comment says both sources
+            // must not leave behind.
             applyToEveryPane()
-            onSettingsChange?()
+            notifySettingsChanged()
         }
     }
 
@@ -359,7 +397,7 @@ final class ConfigurationCenter {
         guard result.settings != settings else { return }
         settings = result.settings
         applyToEveryPane()
-        onSettingsChange?()
+        notifySettingsChanged()
     }
 
     /// Says what it could not use, on stderr.

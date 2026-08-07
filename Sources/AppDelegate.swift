@@ -22,7 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// libghostty's defaults.
     private lazy var configuration: ConfigurationCenter = {
         let center = ConfigurationCenter()
-        center.onSettingsChange = { [weak self] in self?.settingsDidChange() }
+        center.onSettingsChange { [weak self] in self?.settingsDidChange() }
         return center
     }()
 

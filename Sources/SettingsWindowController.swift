@@ -21,8 +21,19 @@ final class SettingsWindowController: NSWindowController {
     private let before = SettingsPreviewColumn()
     private let after = SettingsPreviewColumn()
 
-    /// Kept so the observation can be re-armed. `withObservationTracking` fires
-    /// once and forgets, so each change re-registers the next one.
+    /// Whether this window's surfaces are live, and so whether either sample may
+    /// be written.
+    ///
+    /// Two jobs, and the second is why it is set in `init` rather than only by
+    /// ``startObserving()``. It re-arms the draft observation, which
+    /// `withObservationTracking` needs because it fires once and forgets; and it
+    /// gates ``applyCommittedToSample()``, whose callback is registered on the
+    /// center and therefore outlives the close — `AppDelegate` holds the last
+    /// settings window until the next ⌘, so "closed" and "deallocated" are not
+    /// the same moment here and a weak capture alone would not cover the gap.
+    ///
+    /// Cleared in ``windowWillClose(_:)`` rather than in a `close()` override,
+    /// because the red button never calls the latter. See that method.
     private var isObserving = false
 
     init(center: ConfigurationCenter) {
@@ -37,6 +48,13 @@ final class SettingsWindowController: NSWindowController {
         )
         window.title = "Settings"
         super.init(window: window)
+        // The one channel that catches *every* close. The red button sends
+        // `performClose:`, which calls `NSWindow.close()` directly and never
+        // routes through this controller's `close()` override, so the override
+        // alone left `isObserving` true on the one close path a person is most
+        // likely to take. Same shape as ``WorkspaceWindowController``, which
+        // takes the delegate for the same reason.
+        window.delegate = self
 
         let form = NSHostingView(rootView: SettingsView(
             model: model,
@@ -75,13 +93,16 @@ final class SettingsWindowController: NSWindowController {
         ])
         window.contentView = content
 
-        // The left column never moves: it is what is in effect. Applied once.
-        before.apply(
-            center.terminalConfiguration,
-            theme: center.terminalTheme,
-            chrome: center.paneTheme,
-            settings: center.settings
-        )
+        // Before the first paint, because `applyCommittedToSample()` is gated on
+        // it: the flag means "this window's surfaces are live", which is true
+        // from here until the window closes, and not merely "the draft is being
+        // tracked".
+        // `startObserving()` sets it again at the bottom, which costs nothing.
+        isObserving = true
+        // The left column is what is in effect, so it moves exactly when that
+        // does: once now, and again on every change the center announces.
+        applyCommittedToSample()
+        center.onSettingsChange { [weak self] in self?.applyCommittedToSample() }
         applyDraftToSample()
         startObserving()
     }
@@ -104,6 +125,39 @@ final class SettingsWindowController: NSWindowController {
             sample.trailingAnchor.constraint(equalTo: column.trailingAnchor),
         ])
         return column
+    }
+
+    /// Re-themes the left sample from what the center currently has committed.
+    ///
+    /// **Registered on the center rather than called from ``apply()``**, and
+    /// that is the whole point of the arrangement. ``write()`` deliberately
+    /// applies nothing itself: it moves the file, the watcher notices, and
+    /// `reload` re-derives. So at the moment Apply returns, `center.settings` is
+    /// still the *old* value and a refresh there would repaint the column with
+    /// what it already showed. Hanging off the center's own announcement waits
+    /// for the round trip and, for free, catches the other way the column goes
+    /// stale: a hand-edit to `~/.config/baia/config.json` while this window is
+    /// open, which no button here will ever be pressed for.
+    ///
+    /// Reads the four values fresh off `center` on every call, the same four the
+    /// init passed, so a change to any one of them lands.
+    ///
+    /// **Safe after the window closes, and it takes both halves to be so.** The
+    /// registration captures `self` weakly, which covers the controller having
+    /// been released; but `AppDelegate` holds the last settings window in a
+    /// property until the *next* ⌘, so a closed controller is typically still
+    /// alive and a weak capture alone would let a hand-edit re-theme surfaces
+    /// that are on their way out. `isObserving` is the half that covers that,
+    /// which is the same flag and the same reasoning as ``startObserving()``'s
+    /// re-arm; ``windowWillClose(_:)`` clears it on every close path there is.
+    private func applyCommittedToSample() {
+        guard isObserving else { return }
+        before.apply(
+            center.terminalConfiguration,
+            theme: center.terminalTheme,
+            chrome: center.paneTheme,
+            settings: center.settings
+        )
     }
 
     /// Re-themes the right sample from the draft.
@@ -169,18 +223,32 @@ final class SettingsWindowController: NSWindowController {
     ///
     /// Rebases `model`'s dirty comparison onto the just-written values, so the
     /// button goes idle again until the next edit rather than staying armed on a
-    /// draft that is now what is on disk. The left-hand sample is left alone: it
-    /// already renders from `center`, which the watcher will re-derive from the
-    /// same file this just wrote.
+    /// draft that is now what is on disk.
+    ///
+    /// Touches the left-hand sample not at all, and must not: it follows the
+    /// center's committed state, which this write reaches only once the watcher
+    /// has re-read the file. ``applyCommittedToSample()`` is registered for that
+    /// announcement and carries the reasoning.
     private func apply() {
         guard write() else { return }
         model.markApplied()
     }
 
-    override func close() {
-        // Stops the observation before the surfaces go, so a change landing
-        // during teardown cannot re-theme a view that is on its way out.
+}
+
+extension SettingsWindowController: NSWindowDelegate {
+    /// Stops both the draft observation and the center's committed-settings
+    /// callback before the surfaces go, so a change landing during teardown — or
+    /// a hand-edit to the config file long after this window was closed — cannot
+    /// re-theme a view that is on its way out. See ``isObserving``.
+    ///
+    /// **Here rather than in a `close()` override**, which is what this was and
+    /// what left the gap. `NSWindowController.close()` is not on the path the red
+    /// button takes: `performClose:` calls `NSWindow.close()` directly. The
+    /// notification is the one thing every path posts, the override included, so
+    /// this covers Cancel, Accept, `AppDelegate.showSettings(_:)`'s programmatic
+    /// close on reopen, and the title-bar button alike.
+    func windowWillClose(_: Notification) {
         isObserving = false
-        super.close()
     }
 }

@@ -26,9 +26,14 @@ import PaneChrome
 @MainActor
 final class AppearanceObserver: NSObject {
     /// Raised on the main thread whenever the published `ChromeAppearance`
-    /// would compare unequal to the last one sent, mirroring
-    /// `ConfigurationCenter.onSettingsChange`'s shape so a caller wires both
-    /// the same way.
+    /// would compare unequal to the last one sent.
+    ///
+    /// A single settable closure rather than the register-many shape
+    /// `ConfigurationCenter.onSettingsChange(_:)` grew into, because this one
+    /// has exactly one consumer and always will: the center owns the observer
+    /// and is the only object that can reach it. Everything downstream of the
+    /// appearance arrives through the center's own multicast, which is where a
+    /// second listener would register.
     var onAppearanceChange: ((ChromeAppearance) -> Void)?
 
     private(set) var appearance: ChromeAppearance
