@@ -439,7 +439,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // this window's chrome, never the system appearance. See
             // ``WorkspaceWindowController/isDark`` and
             // ``PaneChrome/windowIsDark(paneTheme:)``.
-            isDark: configuration.windowIsDark
+            isDark: configuration.windowIsDark,
+            // The titlebar's own treatment, and the one window property here
+            // that follows `chromeStyle` rather than `backgroundOpacity`: a
+            // glass view is chrome. Under flat this window keeps the system
+            // titlebar `78aadfe` shipped. See
+            // ``WorkspaceWindowController/resolvedChrome``.
+            resolvedChrome: configuration.resolvedChrome,
+            // What that glass is washed with, so the band dims with the wells
+            // instead of staying put while the opacity knob moves them — the
+            // defect `51c4434` fixed one surface over, in the sidebar.
+            theme: configuration.paneTheme,
+            backgroundOpacity: configuration.settings.backgroundOpacity
         )
         controller.window.tabbingMode = tabbing
         // Coalesced by the same timer every other session change goes through, so a
@@ -1056,6 +1067,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // to be closed and reopened. See
             // ``WorkspaceWindowController/isDark``.
             controller.isDark = configuration.windowIsDark
+            // The titlebar's glass and the wash over it, live-followed the same
+            // way. All three matter under a running app: `chromeStyle` decides
+            // whether the band is glass at all, and the theme and the opacity
+            // knob are both things the owner drags with windows open. The
+            // window controller's own `didSet`s make each of these a no-op when
+            // the value has not moved.
+            controller.resolvedChrome = configuration.resolvedChrome
+            controller.theme = configuration.paneTheme
+            controller.backgroundOpacity = configuration.settings.backgroundOpacity
         }
         palette.theme = configuration.paneTheme
         // Same live-follow as the sidebar's own line above; the find panel is

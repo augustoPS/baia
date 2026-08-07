@@ -16,7 +16,8 @@ follow.
 
 ## The question
 
-Twice, and the second time is why this file was rewritten.
+Three times, and each rewrite is a previous answer turning out to have answered
+a narrower question than the owner was asking.
 
 **First**: once the workspace window became genuinely non-opaque (`331b7ec`), the
 titlebar region had no material in it, and the research record
@@ -33,30 +34,46 @@ with content starting below `contentLayoutRect`, so the titlebar band has nothin
 beneath it. The arms had been giving the material something to composite against
 that the app never had.
 
+**Third**: the material came back, the owner looked at it, and said "titlebar is
+not glass/transparent." What generations one and two restored is the *system*
+titlebar — a solid slab that blocks the desktop completely (band spread 0.04,
+flat all the way down, unmoved by the opacity knob) while every other chrome
+surface in the app wears untinted `NSGlassEffectView` and shows the desktop
+through. "There is a titlebar" had been the whole question, and it was the
+wrong one. Generation three asks which arrangement makes the band read like the
+rest of the chrome. Answered below, and shipped in the commit that added these
+arms.
+
 ## The arms
 
-Ten, in two generations. The first four are the original question; the rest
-reproduce the shipped window and test candidate fixes against it.
+Thirteen, in three generations. The first four are the original question, the
+next five reproduce the shipped window and test candidate fixes against it, and
+the last three ask what makes the band glass rather than a slab.
 
 Re-run the probe before quoting an absolute from this table. A show-through
-arm's spread is a function of whatever wallpaper sits behind the window at
-capture time, so the absolutes move between runs; what transfers is the
-ordering and the two-orders-of-magnitude gap between show-through (tens) and
-material (~0.0), which is what `spread.py` grades on.
+arm's spread is a function of whatever sits behind the window at capture time,
+so the absolutes move between runs; what transfers is the ordering and the gap
+between the three clusters, which is what `spread.py` grades on.
 
-| arm | band spread | verdict |
-|---|---|---|
-| bare desktop (no window) | 36.7 | — |
-| `no-toolbar` | 64.3 | show-through |
-| `unified` | 64.3 | show-through |
-| `unified-compact` | 64.3 | show-through |
-| `unified-transparent-titlebar` | 64.3 | show-through |
-| `shipped-clear` | 64.3 | show-through |
-| `clear-fullsize` | 63.6 | show-through |
-| `background-alpha` (0.42) | 0.0 | MATERIAL |
-| `background-alpha-fullsize` | 0.0 | MATERIAL |
-| `opaque-baseline` | 0.1 | MATERIAL, wells opaque |
-| `minimal-alpha` (0.005) | 0.0 | MATERIAL |
+Numbers below are one run, on a textured wallpaper with the capture region
+clear (see **Measuring** for why that second condition is not automatic).
+
+| arm | band spread | band mean | verdict |
+|---|---|---|---|
+| bare desktop (no window) | 64.9 | 153.1 | — |
+| `no-toolbar` | 23.7 | 101.4 | show-through |
+| `unified` | 27.3 | 99.2 | show-through |
+| `unified-compact` | 26.7 | 99.7 | show-through |
+| `unified-transparent-titlebar` | 27.3 | 99.2 | show-through |
+| `shipped-clear` | 26.7 | 99.7 | show-through |
+| `clear-fullsize` | 22.1 | 102.7 | show-through |
+| `background-alpha` (0.42) | 0.0 | 36.9 | MATERIAL |
+| `background-alpha-fullsize` | 0.0 | 39.8 | MATERIAL |
+| `opaque-baseline` | 0.1 | 38.7 | MATERIAL, wells opaque |
+| `minimal-alpha` (0.005) | 0.0 | 36.9 | MATERIAL |
+| `transparent-no-glass` | 26.6 | 99.4 | show-through |
+| `glass-in-content` | 4.2 | 69.7 | MATERIAL (and moves geometry) |
+| `glass-in-frame` | 5.8 | 68.9 | **GLASS** |
 
 ## The verdicts
 
@@ -93,6 +110,41 @@ single 8-bit level and cannot be seen.
 `transparentTitlebar` setting.** That arm has a toolbar and still reads
 show-through: the flag undoes the fix the toolbar exists to make.
 
+**The slab is not glass, and the difference is measurable rather than a matter
+of taste.** `minimal-alpha` — what shipped — holds one value down the whole
+band (spread 0.0) and does not move when `backgroundOpacity` does. Measured on
+the live dev build at the owner's own settings, the shipped band read the same
+whether the knob was at 0.09 or 0.85. Every other chrome surface tracks that
+knob. That gap is what "titlebar is not glass/transparent" names.
+
+**`titlebarAppearsTransparent` plus a real glass view is the arrangement, and
+the flag's earlier acquittal still stands.** `5f3b88c` ruled the flag out and
+was right about the window it measured: over a `.clear` background it removes
+the material and leaves bare wallpaper. `transparent-no-glass` reproduces
+exactly that and still grades show-through at 26.6 — the control that proves
+the flag really does stop the slab, so a glass arm's reading is the glass and
+not a slab surviving underneath it. What changed is that the band is no longer
+empty afterwards. The toolbar stays and measurably must: with the flag set, the
+band is still 40 pt, the toolbar still reports visible, and the title and
+subtitle are both still present. The probe asserts all four.
+
+**The frame view, not `fullSizeContentView`.** Both glass arms produce glass;
+they are told apart by what they cost. `glass-in-content` parents the backing in
+the contentViewController's own view, which needs `.fullSizeContentView` to
+reach the band, and that drops `contentLayoutRect` from 292 to 220 pt. The pane
+tree lays out against that rect, so adopting it would resize every ghostty grid
+and `SIGWINCH` every running shell. `glass-in-frame` parents into
+`contentView.superview`, needs no style-mask change, and leaves the rect
+untouched. `spread.py` asserts both halves of that trade, so neither is
+re-derived and a future macOS that stops charging for the first shows up as a
+failure here.
+
+**Glass reads dimmer than bare show-through and that is the point.** The band
+mean sits between the slab's and the raw wallpaper's because the glass is
+lensing rather than blocking or passing through. The verdict does not test that
+mean — see **Measuring** — but it is reported because it is the number that
+makes the three clusters legible at a glance.
+
 ## Measuring
 
 The verdict is **luminance spread down the band**, not its mean, and that
@@ -102,15 +154,76 @@ the first generation of this probe recorded a bare titlebar as "one flat neutral
 (23,23,23)" and called it fixed. Walking down the strip separates them: material
 holds one value, show-through tracks whatever is behind the window.
 
-`spread.py` grades every arm and fails the run if `minimal-alpha` loses its
-material, if it stops showing the desktop through, or if `shipped-clear` starts
-reading as material — the last because a probe that no longer reproduces the
-defect has stopped explaining anything.
+**Glass is a third state, and spread alone cannot name it.** Generation two
+separated slab from wallpaper on spread, which worked because those two differ
+by three orders of magnitude. Glass sits between them: it keeps the backdrop's
+structure but softens it, here by about 4.5x. It landed at 5.8 against a
+threshold of 5.0 drawn for a different question, so the first version of this
+grader failed the winning arrangement by a hair. The verdict is now the
+*ratio* of the band's spread to the backdrop's — how much structure survived —
+which needs no absolute and moves with the wallpaper the way the arms do.
 
-It also asserts the SIGWINCH property. Flipping the background between `.clear`
-and the shipped alpha must move no geometry, since a pane tree lays out against
-`contentLayoutRect` and one point of movement there is a live grid resize and a
-`SIGWINCH` to every running shell. The probe flips it four times on a real window
-with a real toolbar and prints `contentView`, `contentLayoutRect` and the window
-frame each time; all five rows must be identical, and they are. That is what
-makes the fix safe to apply live rather than only at window creation.
+**The band's mean is reported and deliberately not tested.** An earlier version
+of the glass check also required the band's mean to sit near the bare desktop's.
+That is unsound: the baseline samples the whole strip of uncovered wallpaper
+while an arm's band samples whatever is behind the window at its own position,
+so the two means describe different backdrops. A bright baseline duly failed a
+band that was visibly, correctly glass.
+
+**A textured backdrop is a precondition, and "bare desktop" is a claim about
+the screen rather than something the probe can arrange.** The baseline is one
+fixed screen rect, and whatever is parked there is what gets measured. The first
+plain-backdrop run of this grader turned out to be a *terminal window* sitting
+at that spot, its text averaging to a flat grey — not a plain wallpaper at all,
+and with nothing to lens the glass arm read 1.3 and graded "flat slab". So
+`spread.py` checks the baseline's own spread first and skips the glass
+assertions, saying so, when the backdrop cannot answer the question. Clear the
+capture region before trusting a GLASS verdict.
+
+`spread.py` grades every arm and fails the run if `minimal-alpha` loses its
+material, if it stops showing the desktop through, if `shipped-clear` starts
+reading as material — that one because a probe that no longer reproduces the
+defect has stopped explaining anything — if `transparent-no-glass` stops
+reading as show-through, if `glass-in-frame` stops reading as glass or costs
+content height, or if `glass-in-content` stops costing it.
+
+It also asserts the SIGWINCH property, now twice. A pane tree lays out against
+`contentLayoutRect`, so one point of movement there is a live grid resize and a
+`SIGWINCH` to every running shell. The probe flips each candidate four times on
+a real window with a real toolbar and prints `contentView`, `contentLayoutRect`
+and the window frame each time; all five rows of each block must be identical,
+and they are.
+
+- **the background flip**, `.clear` against the shipped alpha, which is what
+  made `ea7a223` safe to apply live rather than only at window creation.
+- **the titlebar-glass flip**, `titlebarAppearsTransparent` plus adding and
+  *removing* the frame-view backing, which is what makes the glass safe to
+  toggle from a live settings edit. Removal is included rather than hiding,
+  because that is the path `applyTitlebarGlass()` takes under flat.
+
+## Why not ghostty parity (arrangement B)
+
+Extending the terminal surface under the titlebar the way the footer does is
+the other way to make the band read as terminal rather than as chrome, and it is
+ruled out here rather than measured.
+
+The premise it was proposed on is false and worth correcting: `window-padding-y`
+is **not** restricted to one symmetric value. Ghostty 1.3.1 documents
+`window-padding-y = top,bottom` (`ghostty +show-config --default --docs`), and
+`TerminalConfigCommand.custom` can emit any string, so an asymmetric top
+compensation is expressible. `PaneStatusBarMetrics.glassWindowPaddingBump`'s
+doc comment says "`window-padding-y` is symmetric", which is true of how baia
+*emits* it today and not of the key. The arithmetic therefore does not rule (B)
+out: a 40 pt titlebar wants `+40` on top, and `window-padding-y = 40+p,p` says
+exactly that.
+
+What rules it out is the window's shape. The footer's compensation works because
+every pane has its own footer, so the bump is per-pane and uniform. The titlebar
+spans the whole window above a *sidebar column plus a split pane tree*: only the
+top row of panes touches the band, the sidebar touches it too and has no ghostty
+grid to compensate with, and the compensation would have to be recomputed per
+pane on every split and every drag. Each of those recomputations is a
+`window-padding-y` change on a live surface, which is the live grid resize
+`spawnedUnderGlass` exists to prevent. Arrangement (A) costs none of it: the
+glass is a window-level view over chrome AppKit already owned, and the probe
+measures `contentLayoutRect` unmoved across the flip.

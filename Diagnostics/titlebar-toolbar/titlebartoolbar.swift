@@ -17,10 +17,27 @@ import AppKit
 // — at 0.99 the wells are near-solid and the titlebar is still bare wallpaper,
 // at exactly 1.0 it is fine — which points at the window *background* rather
 // than at content sampling. These arms separate the two.
+//
+// Generation three (10...12) exists because generation two shipped and the
+// owner's verdict was "titlebar is not glass/transparent". The material
+// generation two restored is the *system* titlebar slab: opaque-reading, and
+// nothing like the untinted `NSGlassEffectView` every other chrome surface in
+// this app wears. These arms ask whether the sidebar's own treatment —
+// `titlebarAppearsTransparent` to stop the slab painting, a real glass backing
+// spanning the band, and a `theme.background`-at-`backgroundOpacity` wash over
+// it — reads as glass in the band while the toolbar's 40 pt metric, the title,
+// the subtitle and the tab bar all survive.
+//
+// The two ownership candidates are separate arms because the answer decides
+// where the view lives in the app: `glass-in-content` puts the backing in the
+// contentViewController's own view with `.fullSizeContentView` extending it
+// under the band, and `glass-in-frame` puts it in the window's frame view (the
+// `contentView`'s superview) with no style-mask change at all.
 enum Arm: Int, CaseIterable {
     case none, unified, unifiedCompact, unifiedTransparentTitlebar
     case shippedClear, clearFullSize, backgroundAlpha, backgroundAlphaFullSize, opaqueBaseline
     case minimalAlpha
+    case transparentNoGlass, glassInContent, glassInFrame
 
     var label: String {
         switch self {
@@ -34,6 +51,27 @@ enum Arm: Int, CaseIterable {
         case .backgroundAlphaFullSize: return "background-alpha-fullsize"
         case .opaqueBaseline: return "opaque-baseline"
         case .minimalAlpha: return "minimal-alpha"
+        case .transparentNoGlass: return "transparent-no-glass"
+        case .glassInContent: return "glass-in-content"
+        case .glassInFrame: return "glass-in-frame"
+        }
+    }
+
+    /// Generation-three arms keep the shipped window shape (non-opaque, minimal
+    /// alpha background, toolbar present) and add `titlebarAppearsTransparent`.
+    /// `transparentNoGlass` is the control: the slab stopped painting and
+    /// nothing replaced it, so the band must read show-through. The two glass
+    /// arms must read as *neither* the slab nor bare wallpaper.
+    var isGlassGeneration: Bool { rawValue >= Arm.transparentNoGlass.rawValue }
+
+    /// Where the glass backing is parented, or `nil` for an arm that adds none.
+    enum GlassOwner { case contentView, frameView }
+
+    var glassOwner: GlassOwner? {
+        switch self {
+        case .glassInContent: return .contentView
+        case .glassInFrame: return .frameView
+        default: return nil
         }
     }
 
@@ -41,6 +79,12 @@ enum Arm: Int, CaseIterable {
     /// in the titlebar band by the app, so whatever reads there came from
     /// AppKit.
     var isShippedShape: Bool { rawValue >= Arm.shippedClear.rawValue }
+
+    /// The glass generation keeps the shipped fix's own background, since it is
+    /// testing what to put *over* that window rather than revisiting it.
+    var wantsTransparentTitlebar: Bool {
+        self == .unifiedTransparentTitlebar || isGlassGeneration
+    }
 
     /// `.clear` is the shipped value whenever `backgroundOpacity < 1`. The
     /// alpha arms ask whether a non-clear window background restores the
@@ -53,7 +97,7 @@ enum Arm: Int, CaseIterable {
         // own arm because it is the shipped fix: it separates "the material
         // needs a non-clear background" from "the material needs a *dark*
         // background", and only this arm shows the first is the whole rule.
-        case .minimalAlpha:
+        case .minimalAlpha, .transparentNoGlass, .glassInContent, .glassInFrame:
             return NSColor(calibratedWhite: 0.09, alpha: 0.005)
         case .opaqueBaseline:
             return .windowBackgroundColor
@@ -65,8 +109,30 @@ enum Arm: Int, CaseIterable {
     var isOpaqueWindow: Bool { self == .opaqueBaseline }
 
     var wantsFullSizeContentView: Bool {
-        self == .clearFullSize || self == .backgroundAlphaFullSize
+        self == .clearFullSize || self == .backgroundAlphaFullSize || self == .glassInContent
     }
+}
+
+/// The probe's stand-in for `SidebarGlassBacking`: an untinted `.regular`
+/// `NSGlassEffectView` that refuses hit testing, exactly what
+/// `Sources/SurfaceHosts.swift` builds for the sidebar column.
+private func makeTitlebarGlass() -> NSGlassEffectView {
+    let glass = NSGlassEffectView(frame: .zero)
+    glass.style = .regular
+    glass.cornerRadius = 0
+    glass.tintColor = nil
+    glass.wantsLayer = true
+    return glass
+}
+
+/// The probe's stand-in for `SidebarGlassWash`, at the same default the owner
+/// runs: `theme.background` at `backgroundOpacity`. A plain layer-backed fill
+/// rather than a `draw(_:)` override, because the probe only needs the pixels.
+private func makeWash() -> NSView {
+    let wash = NSView(frame: .zero)
+    wash.wantsLayer = true
+    wash.layer?.backgroundColor = NSColor(calibratedWhite: 0.09, alpha: 0.42).cgColor
+    return wash
 }
 
 /// A flat fill standing in for a terminal well, so an arm can be judged on
@@ -89,6 +155,11 @@ final class Delegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
     /// alive on its own, and a deallocated toolbar takes the material with it —
     /// the same retention the workspace controller documents.
     var toolbars: [NSToolbar] = []
+
+    /// Held for the run for the toolbars' reason: a glass view whose only
+    /// strong reference is its superview is fine, but holding them here makes
+    /// the retention explicit and keeps the arm inspectable after capture.
+    var glasses: [NSGlassEffectView] = []
 
     func applicationDidFinishLaunching(_: Notification) {
         var out: [String] = []
@@ -147,7 +218,55 @@ final class Delegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
                 default: w.toolbarStyle = .unifiedCompact
                 }
             }
-            if arm == .unifiedTransparentTitlebar { w.titlebarAppearsTransparent = true }
+            if arm.wantsTransparentTitlebar { w.titlebarAppearsTransparent = true }
+
+            // Generation three: the glass backing and its wash, spanning the
+            // titlebar band, in whichever of the two candidate owners this arm
+            // is testing.
+            //
+            // The band's height is read from the window rather than hardcoded
+            // at 40, because that is the number under test: an arm whose
+            // toolbar metric collapsed would otherwise be measured with a
+            // 40 pt strip over a 32 pt band and read as a partial success.
+            if let owner = arm.glassOwner {
+                let bandHeight = w.frame.height - w.contentLayoutRect.height
+                let glass = makeTitlebarGlass()
+                let wash = makeWash()
+                self.glasses.append(glass)
+
+                switch owner {
+                case .contentView:
+                    // `.fullSizeContentView` is already in this arm's style
+                    // mask, so `content` spans the whole window and the band is
+                    // its top `bandHeight` points. The well is anchored to the
+                    // safe area above, so the visible layout does not move.
+                    guard let content = w.contentView else { break }
+                    glass.frame = NSRect(
+                        x: 0, y: content.bounds.height - bandHeight,
+                        width: content.bounds.width, height: bandHeight)
+                    glass.autoresizingMask = [.width, .minYMargin]
+                    wash.frame = glass.frame
+                    wash.autoresizingMask = glass.autoresizingMask
+                    content.addSubview(glass, positioned: .below, relativeTo: nil)
+                    content.addSubview(wash, positioned: .above, relativeTo: glass)
+
+                case .frameView:
+                    // The window's frame view — `contentView.superview` — is
+                    // the whole window including its titlebar, so no style-mask
+                    // change is needed to reach the band. This is the AppKit
+                    // internal the arm exists to judge: it works, and it is a
+                    // view no public API names.
+                    guard let frameView = w.contentView?.superview else { break }
+                    glass.frame = NSRect(
+                        x: 0, y: frameView.bounds.height - bandHeight,
+                        width: frameView.bounds.width, height: bandHeight)
+                    glass.autoresizingMask = [.width, .minYMargin]
+                    wash.frame = glass.frame
+                    wash.autoresizingMask = glass.autoresizingMask
+                    frameView.addSubview(glass, positioned: .below, relativeTo: nil)
+                    frameView.addSubview(wash, positioned: .above, relativeTo: glass)
+                }
+            }
 
             // Arms are stacked at one position and shown one at a time. Nine
             // 620x260 windows do not fit on a screen without touching, and an
@@ -184,7 +303,17 @@ final class Delegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
                         + "contentLayoutH=\(Int(w.contentLayoutRect.height)) "
                         + "opaque=\(w.isOpaque) "
                         + "bgAlpha=\(String(format: "%.2f", w.backgroundColor.alphaComponent)) "
-                        + "fullSize=\(w.styleMask.contains(.fullSizeContentView))")
+                        + "fullSize=\(w.styleMask.contains(.fullSizeContentView)) "
+                        // The survival facts, measured rather than eyeballed
+                        // off the capture. `titlebarAppearsTransparent` is the
+                        // flag under test in generation three and the question
+                        // is whether it costs the toolbar's metric or the
+                        // title: an arm that reads as glass but drops the band
+                        // to 32 pt has moved the content, not restyled it.
+                        + "transparentTitlebar=\(w.titlebarAppearsTransparent) "
+                        + "toolbarVisible=\(w.toolbar?.isVisible ?? false) "
+                        + "title=\(w.title.isEmpty ? "GONE" : w.title) "
+                        + "subtitle=\(w.subtitle.isEmpty ? "GONE" : w.subtitle)")
                 }
 
                 // Screen coordinates for `screencapture` are top-left origin;
@@ -246,10 +375,65 @@ final class Delegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
             }
             DispatchQueue.main.sync { self.windows[Arm.minimalAlpha.rawValue].orderOut(nil) }
 
+            // The same question asked of the *new* arrangement, because the
+            // first flip only covers the background colour and generation
+            // three changes two more things: `titlebarAppearsTransparent` and
+            // a subview added to the frame view. Either could in principle
+            // move `contentLayoutRect`, which is what the pane tree lays out
+            // against, so a single point of movement here is a live grid
+            // resize and a `SIGWINCH` to every running shell.
+            //
+            // Flipped on the frame-view arm, since that is the one the app
+            // adopts: the backing is added and removed the way
+            // `applyResolvedChrome()` does it rather than merely hidden, so
+            // the measurement covers the teardown path too.
+            DispatchQueue.main.sync {
+                let w = self.windows[Arm.glassInFrame.rawValue]
+                w.makeKeyAndOrderFront(nil)
+                w.orderFrontRegardless()
+            }
+            Thread.sleep(forTimeInterval: 0.6)
+
+            var glassGeometry: [String] = []
+            for label in ["glass on (shipped)", "glass off", "glass on again",
+                          "glass off again", "glass on, settled"] {
+                DispatchQueue.main.sync {
+                    let w = self.windows[Arm.glassInFrame.rawValue]
+                    let on = label.hasPrefix("glass on")
+                    w.titlebarAppearsTransparent = on
+                    if let frameView = w.contentView?.superview {
+                        let existing = frameView.subviews.compactMap { $0 as? NSGlassEffectView }
+                        if on, existing.isEmpty {
+                            let glass = makeTitlebarGlass()
+                            let band = w.frame.height - w.contentLayoutRect.height
+                            glass.frame = NSRect(
+                                x: 0, y: frameView.bounds.height - band,
+                                width: frameView.bounds.width, height: band)
+                            frameView.addSubview(glass, positioned: .below, relativeTo: nil)
+                        } else if !on {
+                            for glass in existing { glass.removeFromSuperview() }
+                        }
+                    }
+                    w.contentView?.layoutSubtreeIfNeeded()
+                    let f = w.contentView?.frame ?? .zero
+                    let layout = w.contentLayoutRect
+                    let pad = label.padding(toLength: 24, withPad: " ", startingAt: 0)
+                    glassGeometry.append(
+                        "\(pad) contentView=\(Int(f.width))x\(Int(f.height)) "
+                        + "contentLayoutRect=\(Int(layout.width))x\(Int(layout.height))"
+                        + "@\(Int(layout.minX)),\(Int(layout.minY)) "
+                        + "frame=\(Int(w.frame.width))x\(Int(w.frame.height))")
+                }
+                Thread.sleep(forTimeInterval: 0.2)
+            }
+            DispatchQueue.main.sync { self.windows[Arm.glassInFrame.rawValue].orderOut(nil) }
+
             DispatchQueue.main.sync {
                 for line in out { print(line) }
                 print("--- geometry across the background flip (must not move) ---")
                 for line in geometry { print(line) }
+                print("--- geometry across the titlebar-glass flip (must not move) ---")
+                for line in glassGeometry { print(line) }
                 fflush(stdout)
                 NSApp.terminate(nil)
             }

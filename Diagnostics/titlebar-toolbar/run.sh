@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Renders nine titlebar arrangements and measures whether each carries material.
+# Renders thirteen titlebar arrangements and measures what each band carries:
+# nothing, the system material slab, or glass.
 #
 #   ./Diagnostics/titlebar-toolbar/run.sh [output-directory]
 #

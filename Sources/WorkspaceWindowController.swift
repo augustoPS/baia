@@ -1,4 +1,5 @@
 import AppKit
+import PaneChrome
 import WorkspaceLayout
 
 /// A connection to the window server, as `CGSDefaultConnectionForThread` returns
@@ -55,6 +56,56 @@ private func CGSSetWindowBackgroundBlurRadius(
     _ windowNumber: Int,
     _ radius: Int
 ) -> CGError
+
+/// The untinted glass spanning the titlebar band, so the window's top edge
+/// wears the same treatment as every other chrome surface in this app.
+///
+/// The sidebar's ``SidebarGlassBacking`` with one difference, and the
+/// difference is where it lives rather than what it is: this one is parented
+/// in the window's *frame view* (`contentView.superview`) because the titlebar
+/// band is above `contentView` and no public API hands it over. See
+/// ``WorkspaceWindowController/applyTitlebarGlass()`` for why that parent was
+/// chosen over the two alternatives, both measured.
+private final class TitlebarGlassBacking: NSGlassEffectView {
+    override var acceptsFirstResponder: Bool { false }
+
+    override var canBecomeKeyView: Bool { false }
+
+    /// Refuses every click, which matters more here than it does in the
+    /// sidebar. This view lies over the traffic lights, the title, the
+    /// toolbar and the tab bar — every one of them a control AppKit owns and
+    /// this app must not intercept. A glass view that answered a hit test here
+    /// would swallow window close and tab switching.
+    override func hitTest(_: NSPoint) -> NSView? { nil }
+}
+
+/// The `theme.background`-at-`backgroundOpacity` wash over
+/// ``TitlebarGlassBacking``, so the band tracks the same knob the wells do.
+///
+/// Identical in role to ``SidebarGlassWash`` (`Sources/SurfaceHosts.swift`),
+/// and identical in why it is a sibling above the glass rather than the glass
+/// view's `contentView`: a glass view composites its content *before* its own
+/// material, so a fill handed over that way is blurred and vibrancy-shifted
+/// rather than laid over the lensed result.
+private final class TitlebarGlassWash: NSView {
+    var colour: NSColor = .clear {
+        didSet {
+            guard colour != oldValue else { return }
+            needsDisplay = true
+        }
+    }
+
+    override var acceptsFirstResponder: Bool { false }
+
+    override var canBecomeKeyView: Bool { false }
+
+    override func hitTest(_: NSPoint) -> NSView? { nil }
+
+    override func draw(_: NSRect) {
+        colour.setFill()
+        bounds.fill()
+    }
+}
 
 /// One window, which is also one tab.
 ///
@@ -235,6 +286,72 @@ final class WorkspaceWindowController: NSObject {
         }
     }
 
+    /// Whether this window's titlebar wears glass or the system's own material.
+    ///
+    /// **The owner's verdict on `78aadfe` was "titlebar is not
+    /// glass/transparent," and this is the property that answers it.** Three
+    /// commits got the *system* titlebar working — a toolbar to ask for it
+    /// (`5f3b88c`), a non-clear background to composite it against
+    /// (`ea7a223`), the theme's own appearance to render it in (`78aadfe`) —
+    /// and what they produced is a solid slab. Measured in
+    /// `Diagnostics/titlebar-toolbar`: the shipped band holds one luminance
+    /// down its whole height (spread 0.0) while the desktop behind the window
+    /// spreads 60+, so nothing of what is behind the window reaches the band.
+    /// Confirmed on the live dev build at the owner's own settings, which is
+    /// the sharper version of the same fact: the shipped band did not move
+    /// when `backgroundOpacity` went from 0.09 to 0.85, while every other
+    /// chrome surface did. The footer, the sidebar column, the palette and the
+    /// approval popover all wear untinted `NSGlassEffectView` and show the
+    /// desktop through. The titlebar was the one that did not.
+    ///
+    /// Gated on ``PaneChrome/ResolvedChrome`` and nothing else, unlike
+    /// ``isTransparent`` one property up. That asymmetry is deliberate and is
+    /// the same split the sidebar already draws: window *transparency* follows
+    /// `backgroundOpacity` because translucent wells under flat chrome is a
+    /// look the owner asked for, but a glass *view* is chrome, and chrome
+    /// follows `chromeStyle`. Under flat this window keeps the system slab
+    /// exactly as `78aadfe` left it, which is the correct treatment there.
+    ///
+    /// Reduce Transparency needs no separate handling here and that is worth
+    /// stating rather than leaving to be rediscovered:
+    /// `PaneChrome.resolvedStyle(setting:appearance:)` already forces `.flat`
+    /// when the accessibility setting is on, so this gate covers it through
+    /// the same path every other glass surface is covered by.
+    var resolvedChrome: ResolvedChrome = .flat {
+        didSet {
+            guard resolvedChrome != oldValue else { return }
+            applyTitlebarGlass()
+        }
+    }
+
+    /// The palette the titlebar's wash paints from, following the theme the
+    /// panes use for the reason ``isDark`` states: chrome matches the theme,
+    /// never the system.
+    var theme: PaneTheme {
+        didSet {
+            guard theme != oldValue else { return }
+            updateTitlebarWash()
+        }
+    }
+
+    /// How opaque the terminal's own background is, which the titlebar's wash
+    /// tracks so the band dims with the wells instead of staying put while
+    /// they move.
+    ///
+    /// The defect `51c4434` fixed in the sidebar, one surface over: dialling
+    /// the knob moved every pane and left the chrome behind.
+    var backgroundOpacity: Double {
+        didSet {
+            guard backgroundOpacity != oldValue else { return }
+            updateTitlebarWash()
+        }
+    }
+
+    /// The glass under the titlebar band, and the wash over it. Built and torn
+    /// down together by ``applyTitlebarGlass()``, both `nil` under flat.
+    private var titlebarGlass: TitlebarGlassBacking?
+    private var titlebarWash: TitlebarGlassWash?
+
     /// `isTransparent`, `blurRadius`, and `isDark` are parameters rather than
     /// later assignments for the reason ``ConfigurationCenter`` states about
     /// its own appearance observer: a caller cannot forget what it must name.
@@ -242,12 +359,24 @@ final class WorkspaceWindowController: NSObject {
     /// opaque and made transparent a moment later would show one solid frame
     /// first, and the same is true of one built in the wrong titlebar
     /// appearance and corrected only on the next settings change.
-    init(tree: PaneTreeController, sidebar: SidebarHost, isTransparent: Bool, blurRadius: Int, isDark: Bool) {
+    init(
+        tree: PaneTreeController,
+        sidebar: SidebarHost,
+        isTransparent: Bool,
+        blurRadius: Int,
+        isDark: Bool,
+        resolvedChrome: ResolvedChrome,
+        theme: PaneTheme,
+        backgroundOpacity: Double
+    ) {
         self.tree = tree
         self.sidebar = sidebar
         self.isTransparent = isTransparent
         self.blurRadius = blurRadius
         self.isDark = isDark
+        self.resolvedChrome = resolvedChrome
+        self.theme = theme
+        self.backgroundOpacity = backgroundOpacity
         toolbar = NSToolbar(identifier: "baia.workspace.toolbar")
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1024, height: 680),
@@ -349,6 +478,12 @@ final class WorkspaceWindowController: NSObject {
         // AppKit's own default appearance until the first settings change wrote
         // one.
         applyAppearance()
+        // And the same again for the titlebar's glass. Called after
+        // `contentViewController` is assigned above, which is what gives the
+        // window a `contentView` and therefore a frame view to parent into;
+        // called before the window is ever shown, so no frame of the system
+        // slab is visible under a glass build.
+        applyTitlebarGlass()
 
         tree.onFocusedPaneChange = { [weak self] in self?.onFocusedPaneChange?() }
         tree.onSessionChange = { [weak self] in self?.onSessionChange?() }
@@ -471,6 +606,136 @@ final class WorkspaceWindowController: NSObject {
         window.appearance = NSAppearance(named: isDark ? .darkAqua : .aqua)
     }
 
+    /// Builds or tears down the titlebar's glass to match ``resolvedChrome``.
+    ///
+    /// The same shape `SidebarHost.applyResolvedChrome()` and
+    /// `PaneStatusBarView.applyResolvedChrome()` take: flat *removes* the views
+    /// rather than hiding them, and glass creates them only if none exist, so a
+    /// chrome change that toggles glass-flat-glass does not rebuild views that
+    /// did not need to move. Removal rather than hiding is load-bearing here
+    /// for the same reason it is in the sidebar — under flat the system slab
+    /// paints the band again, and a hidden-but-present glass view would be a
+    /// second treatment stacked under it the moment anything unhid it.
+    ///
+    /// **`titlebarAppearsTransparent` is what stops the slab, and this is the
+    /// one place its meaning is settled.** `5f3b88c` ruled the flag out by
+    /// measurement and was right to, in the window it measured: over a `.clear`
+    /// background it undid the material the toolbar existed to produce and left
+    /// bare wallpaper. The probe's `transparent-no-glass` arm reproduces
+    /// exactly that and still grades show-through. What changed is that the
+    /// band is no longer empty afterwards — the flag removes the slab and this
+    /// view replaces it, which is the arrangement the earlier commit had no
+    /// reason to try. The toolbar stays regardless, and measurably must: it is
+    /// what buys the 40 pt `.unifiedCompact` metric, and the probe asserts the
+    /// band is still 40 pt with the flag set, the title and subtitle still
+    /// present, and the toolbar still reporting visible.
+    ///
+    /// **Why the frame view, which is an AppKit internal.** The band sits
+    /// *above* `contentView`, and there are three ways to reach it. Parenting
+    /// in the contentViewController's own view needs `.fullSizeContentView` to
+    /// extend that view under the titlebar, and the probe's `glass-in-content`
+    /// arm measures what that costs: `contentLayoutRect` drops from 292 to 220
+    /// pt. That rect is what the pane tree lays out against, so adopting it
+    /// would resize every ghostty grid and `SIGWINCH` every running shell —
+    /// disqualifying on its own, and the arm is kept in the probe with an
+    /// assertion so the trade is not re-derived. A toolbar item filling the
+    /// band would be the third way and is refused on the owner's "go full
+    /// macOS" rule: it means inventing a fake item to carry a background,
+    /// which is mimicry of chrome the platform already draws.
+    ///
+    /// So `contentView.superview`. It is undocumented in the sense that no
+    /// header names it, and it is not fragile in the way that usually implies:
+    /// it is reached through a public property (`NSView.superview`), the code
+    /// degrades to the current system titlebar if it is ever `nil` rather than
+    /// crashing or drawing wrong, and nothing here depends on its class, its
+    /// subview order, or any selector it responds to. The `guard` below is the
+    /// whole failure path.
+    ///
+    /// **No geometry moves**, which the probe asserts rather than this comment
+    /// claiming: adding and removing the backing on a live window, four times,
+    /// leaves `contentView`, `contentLayoutRect` and the window frame identical
+    /// across all five states. The band this covers is chrome AppKit already
+    /// owned; the pane tree's rect is untouched, so no grid resizes and nothing
+    /// running in a pane is signalled. That is what makes this safe to toggle
+    /// live from a settings edit rather than only at window creation.
+    private func applyTitlebarGlass() {
+        switch resolvedChrome {
+        case .flat:
+            // Back to the system's own titlebar, byte for byte what `78aadfe`
+            // shipped: the flag off means AppKit paints the slab again.
+            window.titlebarAppearsTransparent = false
+            titlebarGlass?.removeFromSuperview()
+            titlebarGlass = nil
+            titlebarWash?.removeFromSuperview()
+            titlebarWash = nil
+
+        case .glass:
+            window.titlebarAppearsTransparent = true
+            guard titlebarGlass == nil, let frameView = window.contentView?.superview else { break }
+
+            let backing = TitlebarGlassBacking(frame: .zero)
+            backing.style = .regular
+            backing.cornerRadius = 0
+            backing.tintColor = Self.titlebarGlassTint
+            backing.wantsLayer = true
+            // Below every sibling, so the traffic lights, the title, the
+            // toolbar and the tab bar all render over it rather than under it.
+            // The sidebar's backing takes the same position in its own host and
+            // for the same reason: glass that is not at the back samples this
+            // app's views instead of what is behind the window.
+            frameView.addSubview(backing, positioned: .below, relativeTo: nil)
+            titlebarGlass = backing
+
+            let wash = TitlebarGlassWash(frame: .zero)
+            wash.wantsLayer = true
+            frameView.addSubview(wash, positioned: .above, relativeTo: backing)
+            titlebarWash = wash
+
+            updateTitlebarWash()
+            layoutTitlebarGlass()
+        }
+    }
+
+    /// Frames the glass and its wash to the titlebar band.
+    ///
+    /// The band's height is derived rather than written as 40: it is whatever
+    /// the window is currently spending on chrome, so a toolbar style change or
+    /// a system metric this app does not control cannot leave the glass short
+    /// of the band it is backing. Called from ``applyTitlebarGlass()`` and from
+    /// the resize delegate, since the width tracks the window and an
+    /// autoresizing mask alone would not survive the band's height changing
+    /// when a tab bar appears.
+    private func layoutTitlebarGlass() {
+        guard let titlebarGlass, let frameView = titlebarGlass.superview else { return }
+        let bandHeight = window.frame.height - window.contentLayoutRect.height
+        let band = NSRect(
+            x: 0,
+            y: frameView.bounds.height - bandHeight,
+            width: frameView.bounds.width,
+            height: bandHeight
+        )
+        titlebarGlass.frame = band
+        titlebarWash?.frame = band
+    }
+
+    /// What ``titlebarWash`` paints: the terminal's own background at the
+    /// terminal's own opacity, the same pair each pane's well composites and
+    /// the same call `SidebarHost.updateGlassWash()` makes.
+    ///
+    /// `ChangesSurface.nsColor` rather than a second helper, so the sidebar's
+    /// wash and this one cannot resolve one colour two ways.
+    private func updateTitlebarWash() {
+        titlebarWash?.colour = ChangesSurface.nsColor(theme.background, alpha: backgroundOpacity)
+    }
+
+    /// `NSGlassEffectView.tintColor` untinted, unconditionally.
+    ///
+    /// Spelled out rather than left at the type's default for the reason
+    /// `SidebarHost.sidebarGlassTint` gives: the "never set a tint" rule this
+    /// design line established is better defended by a line that says why it
+    /// must stay nil than by a silent default nobody has to contradict.
+    private static let titlebarGlassTint: NSColor? = nil
+
     /// Writes ``blurRadius`` onto the window through the private CGS backdrop
     /// SPI.
     ///
@@ -537,6 +802,11 @@ extension WorkspaceWindowController: NSWindowDelegate {
     }
 
     func windowDidResize(_: Notification) {
+        // The band spans the window's width and its height changes when a tab
+        // bar joins or leaves, so the glass is reframed here rather than left
+        // to an autoresizing mask, which could follow the width and not the
+        // height. No-op under flat, where there is no glass to frame.
+        layoutTitlebarGlass()
         onSessionChange?()
     }
 

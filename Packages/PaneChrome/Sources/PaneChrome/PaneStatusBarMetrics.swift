@@ -168,9 +168,23 @@ public struct PaneStatusBarMetrics: Sendable, Equatable {
     /// terminal surface extends under the bar instead of stopping above it
     /// (design v5, the glass-backdrop spike's verdict).
     ///
-    /// Half of ``height``, not all of it. `window-padding-y` is symmetric —
-    /// ghostty applies it to the top edge and the bottom edge both, so raising
-    /// it by `n` removes `2n` points of drawable height. A ``height``-tall bar
+    /// Half of ``height``, not all of it, because baia emits
+    /// `window-padding-y` as a single value and ghostty then applies it to the
+    /// top edge and the bottom edge both, so raising it by `n` removes `2n`
+    /// points of drawable height.
+    ///
+    /// **The key itself is not symmetric, and an earlier version of this
+    /// comment said it was.** ghostty accepts `window-padding-y = top,bottom`
+    /// (documented in `ghostty +show-config --default --docs`), and
+    /// `TerminalConfigCommand.custom` can emit that form. Only baia's own
+    /// emission is symmetric — `TerminalOverride.windowPadding` writes one
+    /// value — which is what makes the halving correct *here* while leaving
+    /// asymmetric compensation available to anything that needs it. The
+    /// distinction was load-bearing when the titlebar was considered for the
+    /// same treatment; see `Diagnostics/titlebar-toolbar/README.md`, which
+    /// rules that out on the window's shape rather than on this arithmetic.
+    ///
+    /// A ``height``-tall bar
     /// at the *bottom* edge is bought back with half of that, `+11`, not `+22`:
     /// the full value overshoots and silently costs the grid a row. Measured
     /// against a real PTY at `Diagnostics/glass-backdrop/gridtest.swift` —
