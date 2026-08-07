@@ -74,7 +74,9 @@ import Testing
         #expect(value(session, "window-padding-y") == "9")
         #expect(value(session, "background-opacity") == "0.42")
         #expect(value(session, "background-blur") == "true")
-        #expect(value(session, "macos-titlebar-style") == "transparent")
+        // `macos-titlebar-style` is deliberately absent from every layer: it is
+        // retired, not remapped. See `TerminalOverrideTests`.
+        #expect(!keys(session).contains("macos-titlebar-style"))
         #expect(value(session, "macos-option-as-alt") == "true")
         #expect(value(session, "cursor-style") == "block")
     }

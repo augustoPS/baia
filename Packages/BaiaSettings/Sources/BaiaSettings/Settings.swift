@@ -48,9 +48,17 @@ public struct Settings: Sendable, Equatable {
     /// them against one edge, so a resized window stays visually centred.
     public var windowPaddingBalance: Bool
 
-    /// Hides the titlebar chrome while keeping the traffic lights and the native
-    /// rounded corners. `window-decoration = none` is the alternative and it
-    /// loses both.
+    /// **Retired, and kept only so existing config files keep decoding.**
+    ///
+    /// This was forwarded to ghostty as `macos-titlebar-style`, where it was
+    /// read by nothing: that key configures a window ghostty created, and
+    /// ghostty creates no window in baia. The platform titlebar is the treatment
+    /// now — the workspace window carries an `NSToolbar` and takes the system's
+    /// material and metrics — so there is nothing for this flag to select
+    /// between. ``Settings/terminalOverrides`` carries the full reasoning.
+    ///
+    /// Decoding, writing and round-tripping are all unchanged, so a config that
+    /// sets it is still valid and simply has no effect.
     public var transparentTitlebar: Bool
 
     /// Keeps `alt+f` and `alt+b` word jump alive on non-US keyboard layouts,

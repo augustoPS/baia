@@ -95,6 +95,11 @@ final class WorkspaceWindowController: NSObject {
     /// `contentViewController`, and that reparents every live ghostty surface.
     let sidebar: SidebarHost
 
+    /// Held because `NSWindow.toolbar` is `weak`-adjacent in practice: the window
+    /// does not keep a toolbar alive on its own once nothing else references it,
+    /// and a deallocated toolbar takes the titlebar material with it.
+    private let toolbar: NSToolbar
+
     /// Whether the window itself is transparent, so glass in it can sample the
     /// desktop rather than this app's own darkness.
     ///
@@ -203,6 +208,7 @@ final class WorkspaceWindowController: NSObject {
         self.sidebar = sidebar
         self.isTransparent = isTransparent
         self.blurRadius = blurRadius
+        toolbar = NSToolbar(identifier: "baia.workspace.toolbar")
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1024, height: 680),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -216,6 +222,54 @@ final class WorkspaceWindowController: NSObject {
         // Showing nothing is a column of zero width, not a different content view.
         window.contentViewController = sidebar
         window.title = "baia"
+
+        // **An empty toolbar, which is what gives the window a titlebar at all
+        // on macOS 26.**
+        //
+        // Since the window became genuinely non-opaque (`331b7ec`, `isOpaque =
+        // false` and a clear `backgroundColor` whenever `backgroundOpacity <
+        // 1`), the titlebar region had no material in it: the traffic lights and
+        // the title floated on whatever the desktop happened to show behind the
+        // window. A titled `NSWindow` does not draw its own titlebar material on
+        // 26 — the material arrives with an `NSToolbar`, per the research record
+        // (`vault/projects/baia/liquid-glass-research.md` §4: "the glass comes
+        // from `NSToolbar` and window style, not new window flags").
+        //
+        // Measured in `Diagnostics/titlebar-toolbar`, sampling a column clear of
+        // the traffic lights: with no toolbar the strip reads the content behind
+        // it and varies down its height (21,22,25 → 28,32,42), and with a
+        // toolbar it reads one flat neutral (23,23,23) all the way down, which
+        // is the system material compositing over whatever is behind the window.
+        //
+        // **Empty on purpose, and empty is honest.** baia's controls live in the
+        // footer and the command palette by design; the toolbar exists here for
+        // the material and the standard titlebar metrics, not to hold anything.
+        // The owner's principle is to go full macOS and not mimic anything that
+        // has a standard function, so inventing toolbar buttons to justify the
+        // toolbar would be the same mistake as hand-drawing a scrim. No delegate
+        // is set, which is what keeps it item-less: a toolbar with no delegate
+        // and no items renders as bare titlebar, and the title still shows.
+        //
+        // **Unconditional, unlike everything else on this window.** The
+        // transparency and blur above are settings-driven; this is not part of
+        // the glass/flat split. At `backgroundOpacity == 1` the window is opaque
+        // and the toolbar's material over it is simply the standard macOS
+        // titlebar, which is the correct look there too, so there is nothing to
+        // gate on.
+        window.toolbar = toolbar
+
+        // `.unifiedCompact` rather than `.unified`. Both produce the material —
+        // the two arms measured identically flat in the probe — and they differ
+        // only in the chrome height they cost the content: 40 pt against 52 pt,
+        // where no toolbar at all is 32 pt. baia's own chrome is built at the
+        // 22 pt footer scale, and this is a terminal workspace where every point
+        // taken off the titlebar is a row of cells given back to the grid, so
+        // the compact metric is the one that matches.
+        //
+        // Both styles stack `window.title` over `window.subtitle`, which is what
+        // `AppDelegate` writes the project path into, so neither loses the
+        // project name; compact simply spends less height doing it.
+        window.toolbarStyle = .unifiedCompact
 
         // Assigning a contentViewController makes the window adopt the content's
         // fitting size and discard the contentRect above, so the size is set

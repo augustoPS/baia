@@ -54,16 +54,25 @@ public extension Settings {
             )
         )
 
-        // `transparent` keeps the traffic lights and the native rounded corners
-        // while removing the drag area. `hidden` and `window-decoration = none`
-        // both lose the corners, so the opposite of transparent is the plain
-        // native bar rather than nothing.
-        overrides.append(
-            TerminalOverride(
-                key: "macos-titlebar-style",
-                value: transparentTitlebar ? "transparent" : "native"
-            )
-        )
+        // `macos-titlebar-style` is deliberately not emitted, and
+        // ``Settings/transparentTitlebar`` deliberately still decodes. The key
+        // only means something to a window ghostty created, and ghostty creates
+        // no window here: baia owns the `NSWindow` and hands the engine a
+        // surface to draw into, so this override was read by nothing for as long
+        // as it was sent.
+        //
+        // The honest treatment is now the platform's. The workspace window
+        // carries an `NSToolbar` (see
+        // ``WorkspaceWindowController``), which is what supplies the titlebar
+        // material on macOS 26; a titlebar the content shows through is the
+        // thing that toolbar exists to fix, so there is no setting left to point
+        // at. Mapping it to `titlebarAppearsTransparent` was the alternative and
+        // it was measured to undo the fix exactly: with that flag set, the strip
+        // goes back to reading the content behind it.
+        //
+        // The field stays for file compatibility. A config that sets
+        // `transparentTitlebar` keeps decoding, keeps round-tripping through the
+        // writer, and now simply changes nothing.
         overrides.append(
             TerminalOverride(key: "macos-option-as-alt", value: Self.configText(optionAsAlt))
         )

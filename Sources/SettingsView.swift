@@ -216,7 +216,12 @@ struct SettingsView: View {
                         }
                     }
                     Toggle("Balance padding", isOn: $model.draft.windowPaddingBalance)
-                    Toggle("Transparent titlebar", isOn: $model.draft.transparentTitlebar)
+                    // No "Transparent titlebar" toggle. The setting still
+                    // decodes and still round-trips (see
+                    // ``Settings/transparentTitlebar``), but it drives nothing
+                    // now that the platform titlebar is the treatment, and a
+                    // switch that visibly does nothing is worse than an absent
+                    // one.
                 } header: {
                     heading(.window)
                 }

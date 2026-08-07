@@ -20,7 +20,6 @@ import Testing
             TerminalOverride(key: "window-padding-x", value: "8"),
             TerminalOverride(key: "window-padding-y", value: "8"),
             TerminalOverride(key: "window-padding-balance", value: "true"),
-            TerminalOverride(key: "macos-titlebar-style", value: "transparent"),
             TerminalOverride(key: "macos-option-as-alt", value: "true"),
             TerminalOverride(key: "cursor-style", value: "block"),
         ])
@@ -73,13 +72,17 @@ import Testing
         #expect(!settings.terminalOverrides.contains { $0.key == "font-family" })
     }
 
-    @Test func theOppositeOfATransparentTitlebarIsTheNativeBar() {
-        // Not `hidden` and not `window-decoration = none`: both of those also lose
-        // the native rounded corners, which the transparent style keeps.
-        var settings = Settings.defaultSettings
-        settings.transparentTitlebar = false
-        #expect(settings.terminalOverrides
-            .contains(TerminalOverride(key: "macos-titlebar-style", value: "native")))
+    @Test func theTitlebarStyleReachesGhosttyInNeitherDirection() {
+        // Retired rather than remapped. `macos-titlebar-style` configures a
+        // window ghostty created and baia gives it none, so the key was read by
+        // nothing; the platform titlebar (an `NSToolbar` on the workspace
+        // window) is the treatment now. The setting still decodes, so both
+        // spellings are checked here: neither may reach the engine.
+        for flag in [true, false] {
+            var settings = Settings.defaultSettings
+            settings.transparentTitlebar = flag
+            #expect(!settings.terminalOverrides.contains { $0.key == "macos-titlebar-style" })
+        }
     }
 
     @Test func everyBooleanHasAFalseSpellingToo() {
