@@ -1,43 +1,50 @@
 #!/usr/bin/env bash
-# Renders four titlebar arrangements side by side and measures the strip.
+# Renders nine titlebar arrangements and measures whether each carries material.
 #
 #   ./Diagnostics/titlebar-toolbar/run.sh [output-directory]
 #
-# Launches nothing of baia's and quits nothing: the arms are four throwaway
-# `NSWindow`s this probe builds itself, so it is safe to run from inside a baia
-# pane. Writes one capture per arm plus the measured greys, and exits non-zero if
-# an arm that must carry material reads as show-through.
+# **Activates and takes the keyboard, so it must run from OUTSIDE a baia pane.**
+# It launches nothing of baia's and quits nothing, which is true and is not the
+# hazard: the probe calls `setActivationPolicy(.regular)` and
+# `makeKeyAndOrderFront`, so it steals focus from whatever is frontmost, and an
+# agent driving it from inside a pane loses the keyboard mid-run. That is what
+# `SAFE_PROBES` in `guard-baia-alive.sh` guards, and the guard correctly blocks
+# this probe from a pane. The earlier version of this comment reasoned from
+# "launches nothing of baia's" to "safe from inside a pane", which does not
+# follow.
+#
+# The probe shows one arm at a time at a fixed position and captures each alone,
+# so no arm's chrome is ever inside another's measured band. This script reads
+# those captures: the titlebar band, the well below it, and the same desktop
+# with no window over it.
 set -uo pipefail
 
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 OUT="${1:-$REPO/.build/titlebar-toolbar}"
+PIXEL="$REPO/Diagnostics/lib/pixel.py"
+rm -rf "$OUT"
 mkdir -p "$OUT"
 
 BIN="$REPO/.build/titlebartoolbar"
 swiftc -O "$REPO/Diagnostics/titlebar-toolbar/titlebartoolbar.swift" -o "$BIN" || exit 1
 
-"$BIN" > "$OUT/arms.log" 2>&1 &
-PROBE=$!
-trap 'kill $PROBE 2>/dev/null' EXIT
-sleep 4
+# The arms all stand at the same place, so one capture of that rectangle with no
+# window over it is the baseline every band is read against. Taken first, while
+# the screen is still bare.
+screencapture -x -o -R"200,280,620,350" "$OUT/baseline.png"
 
-# The arms are identified by window height, not by AX order: AppKit reports the
-# four in whatever order the window server hands them back, and the heights are
-# unique per arm (32 pt of chrome for no toolbar, 40 for unifiedCompact, 52 for
-# unified).
-n=$(osascript -e 'tell application "System Events" to tell process "titlebartoolbar" to count windows' 2>/dev/null)
-echo "arms on screen: $n"
-for i in $(seq 1 "${n:-0}"); do
-    geom=$(osascript -e "tell application \"System Events\" to tell process \"titlebartoolbar\" to get {position, size} of window $i" 2>/dev/null)
-    x=$(echo "$geom" | cut -d, -f1 | tr -d ' ')
-    y=$(echo "$geom" | cut -d, -f2 | tr -d ' ')
-    w=$(echo "$geom" | cut -d, -f3 | tr -d ' ')
-    h=$(echo "$geom" | cut -d, -f4 | tr -d ' ')
-    screencapture -x -o -R"$x,$y,$w,60" "$OUT/arm-h$h.png"
-    echo "  window $i  ${w}x${h} -> arm-h$h.png"
-done
+PROBE_OUT="$OUT" "$BIN" > "$OUT/arms.log" 2>&1
+echo
 
+# The verdict metric, and the one the original probe already reasoned in:
+# luminance spread down the band. Material reads ONE value all the way down, so
+# a materialed band spreads ~0; a bare band tracks whatever is behind the window
+# and spreads with the wallpaper. A mean alone cannot tell those apart — a dark
+# wallpaper and a dark material average to the same grey — which is why the
+# verdict is the spread and the mean is only reported alongside.
+python3 "$REPO/Diagnostics/titlebar-toolbar/spread.py" "$OUT" || exit 1
+
+echo
 cat "$OUT/arms.log"
 echo
-echo "Chrome heights above are the decision: 32 pt is no toolbar (no material),"
-echo "40 pt is .unifiedCompact, 52 pt is .unified. Captures in $OUT."
+echo "Captures in $OUT."

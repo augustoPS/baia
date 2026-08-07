@@ -1,62 +1,110 @@
 # Titlebar toolbar probe
 
-`./run.sh [output-directory]` from anywhere. Builds four throwaway windows,
-captures each titlebar strip, and prints the chrome height each arrangement
-costs. Launches and quits nothing of baia's, so it is safe from inside a pane.
+`./run.sh [output-directory]` from anywhere. Builds ten throwaway windows, shows
+them one at a time, captures each alone, and grades every arm on whether its
+titlebar carries material.
+
+**Run this from outside a baia pane.** It launches nothing of baia's and quits
+nothing, which is true and is not the point: it calls
+`setActivationPolicy(.regular)` and `makeKeyAndOrderFront`, so it activates and
+takes the keyboard from whatever is frontmost. An agent driving it from inside a
+pane loses its shell mid-run. That is the hazard `SAFE_PROBES` in
+`guard-baia-alive.sh` guards, and the guard correctly refuses this probe from a
+pane; it does not belong on that list. An earlier version of this file reasoned
+from "launches nothing of baia's" to "safe from inside a pane", which does not
+follow.
 
 ## The question
 
-Once the workspace window became genuinely non-opaque (`331b7ec`: `isOpaque =
-false` and a clear `backgroundColor` whenever `backgroundOpacity < 1`), the
-titlebar region had no material in it. The traffic lights and the title floated
-on whatever was behind the window. The owner's ruling was to go full macOS and
-adopt the platform treatment rather than hand-draw a scrim, which on macOS 26
-means an `NSToolbar`: the research record
-(`vault/projects/baia/liquid-glass-research.md` §4) states that the titlebar
-material "comes from `NSToolbar` and window style, not new window flags".
+Twice, and the second time is why this file was rewritten.
 
-Two things had to be decided from pixels rather than guessed:
+**First**: once the workspace window became genuinely non-opaque (`331b7ec`), the
+titlebar region had no material in it, and the research record
+(`vault/projects/baia/liquid-glass-research.md` §4) says the material "comes from
+`NSToolbar` and window style, not new window flags". So: does an *empty* toolbar
+produce it, and `.unified` or `.unifiedCompact`? Answered below, and shipped in
+`5f3b88c`.
 
-- Does an **empty** toolbar (no delegate, no items) produce the material at all,
-  or does AppKit need items to draw a titlebar?
-- `.unified` or `.unifiedCompact`?
-
-And one had to be ruled out: whether the retired `transparentTitlebar` setting
-should map to `titlebarAppearsTransparent`.
+**Second**: that shipped and the owner still saw no titlebar — "what titlebar" —
+at 0.1, at 0.62, and at 0.99. The first generation of arms had measured the wrong
+window. Every one of them filled its whole content view with a dark translucent
+fill, and the real workspace window does not: it is `backgroundColor = .clear`
+with content starting below `contentLayoutRect`, so the titlebar band has nothing
+beneath it. The arms had been giving the material something to composite against
+that the app never had.
 
 ## The arms
 
-| arm | chrome height | strip reads |
+Ten, in two generations. The first four are the original question; the rest
+reproduce the shipped window and test candidate fixes against it.
+
+| arm | band spread | verdict |
 |---|---|---|
-| no toolbar | 32 pt | the content behind the window, varying down its height |
-| empty toolbar, `.unified` | 52 pt | one flat neutral |
-| empty toolbar, `.unifiedCompact` | 40 pt | one flat neutral |
-| empty toolbar + `titlebarAppearsTransparent` | 52 pt | back to show-through |
+| bare desktop (no window) | 36.7 | — |
+| `no-toolbar` | 64.3 | show-through |
+| `unified` | 64.3 | show-through |
+| `unified-compact` | 64.3 | show-through |
+| `unified-transparent-titlebar` | 64.3 | show-through |
+| `shipped-clear` | 64.3 | show-through |
+| `clear-fullsize` | 63.6 | show-through |
+| `background-alpha` (0.42) | 0.0 | MATERIAL |
+| `background-alpha-fullsize` | 0.0 | MATERIAL |
+| `opaque-baseline` | 0.1 | MATERIAL, wells opaque |
+| `minimal-alpha` (0.005) | 0.0 | MATERIAL |
 
 ## The verdicts
 
-**An empty toolbar is enough.** No delegate is set and no items exist, and the
-material is there anyway, with the title still displayed. That is what let the
-app take the platform titlebar without inventing toolbar buttons it does not
-want — baia's controls live in the footer and the command palette.
+**An empty toolbar is enough, and `.unifiedCompact` is the metric.** No delegate,
+no items, material anyway, title still displayed. Compact spends 40 pt against
+unified's 52 where no toolbar is 32, and in a terminal every point off the
+titlebar is a row returned to the grid. Unchanged from the first generation.
 
-**`.unifiedCompact`.** Both toolbar arms measured identically flat, so the
-material was not the tiebreaker; the cost was. Compact spends 40 pt of chrome
-against unified's 52, which matters in a terminal where every point off the
-titlebar is a row of cells returned to the grid, and it matches the 22 pt scale
-baia's own chrome is built at.
+**The toolbar was necessary and not sufficient. The material needs a non-clear
+window background.** `backgroundColor = .clear` leaves AppKit nothing to
+composite the titlebar material against, so it draws nothing at all. The failure
+is binary on that flip, not proportional to opacity: every `.clear` arm spreads
+64 and every arm with *any* non-zero alpha spreads 0.0, including 0.005. There is
+no ramp. That is why the opacity knob never moved it and why 0.99 looked as
+broken as 0.1 while exactly 1.0 was fine — at 1.0 the window is opaque and the
+background is `.windowBackgroundColor`.
 
-**`titlebarAppearsTransparent` is not the meaning of `transparentTitlebar`.**
-The fourth arm has a toolbar and still reads as show-through: that flag undoes
-precisely the fix the toolbar exists to make. So the setting was retired from the
-ghostty emission rather than remapped (it configured a window ghostty never
-created, and was read by nothing), keeping its decoding for file compatibility.
+**Not `fullSizeContentView`.** The platform recipe for chrome over content is
+content extending under the titlebar, and that was the first hypothesis. The
+`clear-fullsize` arm does exactly it — the style mask set, the well anchored to
+the safe area so the backing extends while the visible layout stays put — and its
+band spreads 63.6, the bare-titlebar number. Content beneath the band is not what
+the material samples. The arm is kept rather than deleted, because the next
+reader will otherwise re-derive it.
+
+**The smallest non-zero alpha is the right one, because the wells are the cost.**
+`minimal-alpha` at 0.005 keeps a well spread of 50.0 against the shipped `.clear`
+arm's 50.1: the desktop shows through exactly as much as it did. The 0.42 arm
+restores the material just as completely and drops the wells to 29.1. The alpha
+exists to be non-zero, not to tint — at 0.005 over a 0.09 white it is under a
+single 8-bit level and cannot be seen.
+
+**`titlebarAppearsTransparent` is not the meaning of the retired
+`transparentTitlebar` setting.** That arm has a toolbar and still reads
+show-through: the flag undoes the fix the toolbar exists to make.
 
 ## Measuring
 
-Sample a column clear of the traffic lights and walk down the strip. Material
-reads one value all the way down; an unmaterialed titlebar tracks whatever is
-behind the window and varies. Measured on the live app for confirmation: at
-`backgroundOpacity = 1` the strip is flat and solid, and at the owner's `0.1` it
-is deliberately translucent — the material is doing its job over a non-opaque
-window, which is the arrangement working rather than a failure.
+The verdict is **luminance spread down the band**, not its mean, and that
+distinction is why the defect shipped. The material is a flat neutral and so is a
+dark wallpaper behind a bare titlebar; both average to about the same grey, and
+the first generation of this probe recorded a bare titlebar as "one flat neutral
+(23,23,23)" and called it fixed. Walking down the strip separates them: material
+holds one value, show-through tracks whatever is behind the window.
+
+`spread.py` grades every arm and fails the run if `minimal-alpha` loses its
+material, if it stops showing the desktop through, or if `shipped-clear` starts
+reading as material — the last because a probe that no longer reproduces the
+defect has stopped explaining anything.
+
+It also asserts the SIGWINCH property. Flipping the background between `.clear`
+and the shipped alpha must move no geometry, since a pane tree lays out against
+`contentLayoutRect` and one point of movement there is a live grid resize and a
+`SIGWINCH` to every running shell. The probe flips it four times on a real window
+with a real toolbar and prints `contentView`, `contentLayoutRect` and the window
+frame each time; all five rows must be identical, and they are. That is what
+makes the fix safe to apply live rather than only at window creation.

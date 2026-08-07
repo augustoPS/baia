@@ -237,9 +237,16 @@ final class WorkspaceWindowController: NSObject {
         //
         // Measured in `Diagnostics/titlebar-toolbar`, sampling a column clear of
         // the traffic lights: with no toolbar the strip reads the content behind
-        // it and varies down its height (21,22,25 → 28,32,42), and with a
-        // toolbar it reads one flat neutral (23,23,23) all the way down, which
-        // is the system material compositing over whatever is behind the window.
+        // it and varies down its height, and with a toolbar it reads one flat
+        // neutral all the way down, which is the system material compositing
+        // over whatever is behind the window.
+        //
+        // **The toolbar is necessary and was not sufficient.** This shipped in
+        // `5f3b88c` and the owner still saw no titlebar, because the material
+        // also needs a non-clear window background to composite against — see
+        // ``applyTransparency()``, which carries that measurement. The toolbar
+        // is still what asks for the material; that is what makes it possible
+        // to draw at all.
         //
         // **Empty on purpose, and empty is honest.** baia's controls live in the
         // footer and the command palette by design; the toolbar exists here for
@@ -326,10 +333,75 @@ final class WorkspaceWindowController: NSObject {
     /// Restores `.windowBackgroundColor` rather than remembering what was
     /// there: that is the value an `NSWindow` of this style mask is born with,
     /// and nothing in this file has ever assigned another.
+    ///
+    /// **Transparent is a background one step off clear, not `.clear`, and that
+    /// one step is what the titlebar is made of.** `5f3b88c` gave the window an
+    /// empty `NSToolbar` so macOS would supply the titlebar material, and
+    /// structurally it worked — the band takes its 40 pt, `contentLayoutRect`
+    /// insets, the title and subtitle land in toolbar positions. Visually
+    /// nothing arrived: the traffic lights and the title floated on the
+    /// wallpaper at every opacity the owner tried. The material was not being
+    /// drawn at all.
+    ///
+    /// The cause is this line, and it is binary rather than proportional.
+    /// AppKit composites the titlebar material against the window's own
+    /// background, so `backgroundColor = .clear` leaves it nothing to draw onto
+    /// and it renders as nothing. That is why the opacity knob never moved it:
+    /// at `0.99` the wells are near-solid and the band is still bare wallpaper,
+    /// and at exactly `1.0` the window is opaque and the titlebar has always
+    /// been fine. The variable was never the opacity, it was the `.clear`.
+    ///
+    /// `Diagnostics/titlebar-toolbar` measures it as luminance spread down the
+    /// band, since the material and a dark wallpaper have the same *mean* and
+    /// only the material holds one value all the way down. Every `.clear` arm
+    /// spreads 64; every arm with a non-zero background alpha spreads 0.0,
+    /// including `0.005`. There is no ramp between them.
+    ///
+    /// So the alpha here is deliberately the smallest one that is not zero
+    /// rather than a tint. It exists to be non-clear and nothing else: at
+    /// `0.005` over a 0.09 white it contributes about one part in 200 of a very
+    /// dark grey, which is under a single 8-bit level and cannot be seen. The
+    /// probe measures the wells keeping a spread of 50.0 against the shipped
+    /// `.clear` arm's 50.1 — the desktop shows through exactly as much as it
+    /// did, which is the property the whole non-opaque window exists for. A
+    /// larger alpha would work equally well for the titlebar and would start
+    /// paying for it in the wells: the same probe's `0.42` arm restores the
+    /// material and drops the wells to 29.1.
+    ///
+    /// **Not `fullSizeContentView`, which was the first hypothesis and is
+    /// measurably not the fix.** The platform recipe for chrome over content is
+    /// content extending under the titlebar, so the probe carries an arm that
+    /// does exactly that — `.fullSizeContentView` with the well anchored to the
+    /// safe area, so the backing extends while the visible layout does not
+    /// move. Its band spreads 63.6, which is the bare-titlebar number. Content
+    /// beneath the band is not what the material samples; the window background
+    /// is. That arm is kept in the probe rather than deleted, because "we tried
+    /// the obvious platform arrangement and measured it not working" is the
+    /// part a later reader will otherwise re-derive.
+    ///
+    /// **Nothing changes at `backgroundOpacity == 1`.** That path is the `else`
+    /// here and still writes `.windowBackgroundColor` on an opaque window,
+    /// which is byte-for-byte what it has always written. The toolbar already
+    /// worked there.
     private func applyTransparency() {
         window.isOpaque = !isTransparent
-        window.backgroundColor = isTransparent ? .clear : .windowBackgroundColor
+        window.backgroundColor = isTransparent ? Self.transparentBackground : .windowBackgroundColor
     }
+
+    /// The window background that is transparent to the eye and non-clear to
+    /// AppKit's titlebar compositing.
+    ///
+    /// A named constant rather than a literal at the use site because the
+    /// number is load-bearing in a way its value does not show: this is not a
+    /// colour choice that can be nudged, it is the smallest non-zero alpha, and
+    /// the one property it must keep is being non-zero. Setting it to `0` is
+    /// the defect, and a diff against a line that says so is the point.
+    ///
+    /// White `0.09` matches the neutral the probe's wells and the rest of this
+    /// design line use, so the constant reads as "the app's dark, at a hair of
+    /// alpha" rather than as an arbitrary colour. At this alpha the hue is
+    /// unobservable; only the non-zero-ness is doing work.
+    private static let transparentBackground = NSColor(calibratedWhite: 0.09, alpha: 0.005)
 
     /// Writes ``blurRadius`` onto the window through the private CGS backdrop
     /// SPI.
