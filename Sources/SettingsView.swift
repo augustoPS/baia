@@ -7,8 +7,9 @@ import SwiftUI
 /// The settings window's own copy of the settings.
 ///
 /// The real panes stay on the committed values until accept, so this is the only
-/// thing an edit moves. `committed` is kept beside `draft` because the left-hand
-/// sample renders from it: the comparison is the point of the window.
+/// thing an edit moves. `committed` is kept beside `draft` as the dirty-comparison
+/// baseline; the left-hand sample renders from `ConfigurationCenter`, not from
+/// this value (see the controller's `apply()` comment).
 ///
 /// `committed` is mutable rather than `let` for Apply: Apply writes the draft
 /// exactly like Accept but leaves the window open, and the dirty comparison has
@@ -31,9 +32,10 @@ final class SettingsDraft {
 
     /// Rebase the dirty comparison onto the just-written draft.
     ///
-    /// Called after a successful Apply. The left-hand sample keeps rendering from
-    /// `committed`, so this is also what lets it catch up to what is now actually
-    /// on disk and in effect.
+    /// Called after a successful Apply, so every subsequent edit is compared
+    /// against what is now on disk. This does not refresh the left-hand sample:
+    /// that column renders from `ConfigurationCenter`, applied once at window
+    /// init, and stays on the window-open values by design.
     func markApplied() {
         committed = draft
     }
