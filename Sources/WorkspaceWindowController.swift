@@ -649,7 +649,10 @@ final class WorkspaceWindowController: NSObject {
     /// degrades to the current system titlebar if it is ever `nil` rather than
     /// crashing or drawing wrong, and nothing here depends on its class, its
     /// subview order, or any selector it responds to. The `guard` below is the
-    /// whole failure path.
+    /// whole *caught* failure path, and it covers the frame view being absent;
+    /// a frame view whose layout semantics change under a future macOS is an
+    /// uncaught, visual-only failure (glass clipped or mis-stacked, never a
+    /// crash or a resize), which is what to re-check on each macOS major.
     ///
     /// **No geometry moves**, which the probe asserts rather than this comment
     /// claiming: adding and removing the backing on a live window, four times,
