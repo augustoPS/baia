@@ -171,7 +171,23 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
-        panel.isMovable = false
+        // `isMovable = true` deliberately, against the 26.2 regression in §6.8:
+        // glass inside a borderless *non-movable* transparent window stops
+        // re-sampling as content moves beneath it (forums 810314), and the
+        // documented partial workaround is exactly this flag — the same one the
+        // glass-backdrop spike's probe set on all three window types
+        // (`Diagnostics/glass-backdrop/backdroptest.swift`). This panel wears
+        // glass under `resolvedChrome == .glass`, so it needs the workaround.
+        //
+        // `isMovableByWindowBackground` is never set and so stays AppKit's
+        // `false` default, and `content` has no title bar and no
+        // `mouseDown`/`performDrag` of its own (`PaletteListView.mouseDown`
+        // only sets the row selection) — so a user still cannot drag this
+        // panel by clicking its background or any row. `isMovable = true` on
+        // its own only permits a drag that some view has to initiate; nothing
+        // here does, and `position()` re-anchors the panel under the summoning
+        // window on every open regardless.
+        panel.isMovable = true
         panel.animationBehavior = .none
 
         content.wantsLayer = true

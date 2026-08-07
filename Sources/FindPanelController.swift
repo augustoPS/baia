@@ -118,6 +118,15 @@ final class FindPanelController: NSObject, NSTextFieldDelegate {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
+        // Left `false`, unlike the palette's and the popover's own panels. Both of
+        // those set `true` against the 26.2 regression in §6.8 (glass in a
+        // borderless, non-movable transparent window stops re-sampling as content
+        // moves beneath it, forums 810314) — but this panel never sets
+        // `resolvedChrome` on itself or on `queryView`/`listView`/`hintsView`, so
+        // it never gets a `glassBacking` and always draws the flat, opaque
+        // `panelBackground` fill. A panel with no glass has nothing for the
+        // regression to break. Do not "fix" this to match the other two without
+        // first giving the find panel glass.
         panel.isMovable = false
         panel.animationBehavior = .none
 

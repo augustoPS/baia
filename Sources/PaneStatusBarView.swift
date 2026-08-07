@@ -375,6 +375,19 @@ final class PaneStatusBarView: NSView {
     /// unguarded, matching `project.yml`'s deployment target, so this is the
     /// real glass view rather than the `NSVisualEffectView` fallback the plan
     /// named for the case a member was missing.
+    ///
+    /// **Sibling-glass audit (Task 5).** This footer draws exactly one glass
+    /// view today — ``glassBacking`` — so an `NSGlassEffectContainerView` here
+    /// buys nothing: the HIG's ban is on *stacked* glass (glass sampling
+    /// glass), and a container with one child cannot violate it. The app's
+    /// other glass-wearing surfaces do not change that: each pane's footer
+    /// backing is confined to that pane's own bounds (panes tile with no
+    /// overlap), `SidebarHost.glassBacking` is sized to the sidebar column
+    /// only and never reaches into the pane area, and the palette's and the
+    /// popover's own backings live in their own separate `NSPanel`s, not as
+    /// subviews of this window at all. None of the four ever overlaps another.
+    /// The moment a second glass element joins *this* footer, both belong
+    /// inside one `NSGlassEffectContainerView`, per the plan.
     private func applyResolvedChrome() {
         switch resolvedChrome {
         case .flat:

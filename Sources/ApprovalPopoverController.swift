@@ -56,7 +56,22 @@ final class ApprovalPopoverController: NSObject {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
-        panel.isMovable = false
+        // `isMovable = true` deliberately, against the 26.2 regression in §6.8:
+        // glass inside a borderless *non-movable* transparent window stops
+        // re-sampling as content moves beneath it (forums 810314), and the
+        // documented partial workaround is exactly this flag — the same one the
+        // glass-backdrop spike's probe set on all three window types
+        // (`Diagnostics/glass-backdrop/backdroptest.swift`). This popover wears
+        // glass under `resolvedChrome == .glass`, so it needs the workaround.
+        //
+        // `isMovableByWindowBackground` is never set and stays AppKit's `false`
+        // default, and `contentView`'s `mouseDown`/`mouseUp`
+        // (`ApprovalPopoverView` above) only track which button is pressed —
+        // neither calls `performDrag` or falls through to one. So a user still
+        // cannot drag this popover; it stays anchored to the capsule that
+        // spawned it, and `present(anchoredTo:...)` repositions it fresh on
+        // every summon regardless.
+        panel.isMovable = true
         // No animation either way, per the plan's "appears and dismisses
         // without animation": the same unconditional `.none` the palette and
         // the find panel already set, not a Reduce Motion branch, since
