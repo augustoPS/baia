@@ -96,6 +96,22 @@ final class ConfigurationCenter {
         resolvedStyle(setting: settings.chromeStyle, appearance: appearanceObserver.appearance)
     }
 
+    /// Whether the workspace window should be non-opaque right now.
+    ///
+    /// The companion of ``resolvedChrome`` immediately above, and the same
+    /// shape: `PaneChrome.windowIsTransparent(backgroundOpacity:appearance:)`
+    /// makes the decision and carries the tests, this is the one line that
+    /// calls it with the two live inputs. Deliberately reads
+    /// `settings.backgroundOpacity` rather than `chromeStyle` — window
+    /// transparency follows the opacity setting, not the chrome style (owner
+    /// decision, 2026-08-07); see that function's own doc comment.
+    var windowIsTransparent: Bool {
+        PaneChrome.windowIsTransparent(
+            backgroundOpacity: settings.backgroundOpacity,
+            appearance: appearanceObserver.appearance
+        )
+    }
+
     // MARK: - Derivations
 
     /// The theme currently in effect.

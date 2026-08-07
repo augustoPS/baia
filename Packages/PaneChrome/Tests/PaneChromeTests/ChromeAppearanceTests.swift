@@ -59,6 +59,49 @@ import Testing
         #expect(resolvedStyle(setting: .flat, appearance: appearance) == .flat)
     }
 
+    // MARK: - Window transparency follows the opacity setting, not the chrome
+
+    @Test func aTranslucentBackgroundMakesTheWindowTransparent() {
+        let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
+        #expect(windowIsTransparent(backgroundOpacity: 0.42, appearance: appearance))
+    }
+
+    @Test func anOpaqueBackgroundLeavesTheWindowOpaque() {
+        // Nothing to see through, so a non-opaque window would be a compositing
+        // cost with no visible effect.
+        let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
+        #expect(!windowIsTransparent(backgroundOpacity: 1, appearance: appearance))
+    }
+
+    @Test func reduceTransparencyForcesTheWindowOpaqueEvenAtALowOpacity() {
+        // The same override `resolvedStyle` makes one function above, and the
+        // reason the two live side by side: accessibility intent has to win on
+        // both, or someone who turns it on gets flat chrome over a window the
+        // desktop still shows through.
+        let appearance = ChromeAppearance(isDark: true, reduceTransparency: true, reduceMotion: false)
+        #expect(!windowIsTransparent(backgroundOpacity: 0.42, appearance: appearance))
+    }
+
+    @Test func windowTransparencyIgnoresTheChromeStyleEntirely() {
+        // Owner decision, 2026-08-07: this follows `backgroundOpacity`, so flat
+        // chrome over translucent wells is a supported look. The function takes
+        // no `ChromeStyle` at all, which is what makes that unforgettable; this
+        // pins that the same opacity answers the same way whatever the chrome
+        // beside it resolved to.
+        let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
+        #expect(resolvedStyle(setting: .flat, appearance: appearance) == .flat)
+        #expect(windowIsTransparent(backgroundOpacity: 0.42, appearance: appearance))
+    }
+
+    @Test func theTwoAccessibilityGatesAgreeUnderReduceTransparency() {
+        // Both resolve toward the solid answer together. Written as one
+        // expectation over both so a change to either that leaves the other
+        // behind fails here rather than on screen.
+        let appearance = ChromeAppearance(isDark: true, reduceTransparency: true, reduceMotion: false)
+        #expect(resolvedStyle(setting: .glass, appearance: appearance) == .flat)
+        #expect(!windowIsTransparent(backgroundOpacity: 0.42, appearance: appearance))
+    }
+
     // MARK: - Reduce Motion does not affect the resolved style
 
     @Test func reduceMotionDoesNotChangeWhichStyleResolves() {

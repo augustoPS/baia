@@ -411,7 +411,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         joining sibling: NSWindow?,
         tabbing: NSWindow.TabbingMode = .preferred
     ) -> WorkspaceWindowController {
-        let controller = WorkspaceWindowController(tree: tree, sidebar: sidebar(for: tree))
+        let controller = WorkspaceWindowController(
+            tree: tree,
+            sidebar: sidebar(for: tree),
+            // Not the chrome the sidebar just took: window transparency follows
+            // `backgroundOpacity` rather than `chromeStyle` (owner decision,
+            // 2026-08-07). It has to reach the window and not only the column in
+            // it, because the sidebar's glass samples what is behind its
+            // *window*, so a transparent backing over an opaque window lenses
+            // this app's own fill. See
+            // ``WorkspaceWindowController/isTransparent``.
+            isTransparent: configuration.windowIsTransparent
+        )
         controller.window.tabbingMode = tabbing
         // Coalesced by the same timer every other session change goes through, so a
         // drag writes the file once when it settles rather than on every frame.
@@ -1001,6 +1012,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // material follows it here rather than waiting for an unrelated
             // settings-file edit to force a reload.
             controller.sidebar.resolvedChrome = configuration.resolvedChrome
+            // The window under that sidebar, which is what the sidebar's glass
+            // actually samples through. Reads `windowIsTransparent` rather than
+            // the `resolvedChrome` on the line above, because an edit to
+            // `backgroundOpacity` alone moves this and leaves the chrome where
+            // it was. Live-following is safe here in a way the pane arrangement
+            // deliberately is not: `refreshTheme()` and `apply(to:)` keep a
+            // running pane on the padding it spawned with because moving it is a
+            // live grid resize and a `SIGWINCH`, whereas a window's
+            // `isOpaque`/`backgroundColor` feed no layout at all. See
+            // ``WorkspaceWindowController/isTransparent``.
+            controller.isTransparent = configuration.windowIsTransparent
         }
         palette.theme = configuration.paneTheme
         // Same live-follow as the sidebar's own line above; the find panel is

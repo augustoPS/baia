@@ -134,3 +134,35 @@ public func resolvedStyle(setting: ChromeStyle, appearance: ChromeAppearance) ->
         return .glass(appearance.isDark ? .dark : .light)
     }
 }
+
+/// Whether the workspace window itself should be non-opaque, so what it draws
+/// composites against the desktop rather than against a fill of its own.
+///
+/// **Driven by ``BaiaSettings/Settings/backgroundOpacity``, not by
+/// ``BaiaSettings/ChromeStyle``** (owner decision, 2026-08-07). Ghostty parity
+/// is the rationale: a translucent background is a *terminal* setting, and the
+/// settings have always promised one, so someone running flat chrome with
+/// `backgroundOpacity: 0.42` gets the translucent wells they asked for. Flat
+/// chrome over translucent wells is the vitreous look rather than a
+/// contradiction. This does not disturb the "flat renders byte-identically"
+/// invariant ``ResolvedChrome/flat`` states: that invariant is scoped to the
+/// chrome *drawing* paths — which fills, rims and backing views a surface
+/// creates — and this decides none of them. It sets two window compositing
+/// flags the drawing code never reads.
+///
+/// **Reduce Transparency forces opaque, and that is deliberately the same
+/// override ``resolvedStyle(setting:appearance:)`` makes one function above.**
+/// Both gates read `appearance.reduceTransparency` and both resolve toward the
+/// solid answer, so someone who turns the accessibility setting on gets a
+/// window with nothing showing through it *and* flat chrome, rather than one
+/// of the two. They are kept adjacent, and pinned together by
+/// `ChromeAppearanceTests`, precisely so a change to one is not made without
+/// seeing the other.
+///
+/// At `backgroundOpacity == 1` the window stays opaque, which is what it has
+/// always been: there is nothing to see through, and a non-opaque window is a
+/// compositing cost with no visible effect.
+public func windowIsTransparent(backgroundOpacity: Double, appearance: ChromeAppearance) -> Bool {
+    guard !appearance.reduceTransparency else { return false }
+    return backgroundOpacity < 1
+}
