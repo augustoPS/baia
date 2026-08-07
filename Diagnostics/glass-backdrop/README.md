@@ -1,7 +1,8 @@
 # Glass backdrop probe
 
-`./run.sh [output-directory]` from anywhere. Writes nine captures and a grid
-measurement; exits non-zero if a capture fails or a grid arm misses its number.
+`./run.sh [output-directory]` from anywhere. Writes nine captures, a `-screen.png`
+companion for each, and a grid measurement; exits non-zero if a capture fails, if a
+material never samples its backdrop, or if a grid arm misses its number.
 
 ## The question
 
@@ -42,13 +43,20 @@ stand-in at the shipped 0.42 well opacity over a non-opaque window.
 
 | Arm | Bar | Backdrop |
 |---|---|---|
-| 1 `arm-1-shipped-tinted` | `NSGlassEffectView`, `tintColor` = `MaterialSet.dark.fillChrome` | beside the surface (transparent window region) |
-| 2 `arm-2-untinted-beside` | `NSGlassEffectView`, no tint | beside the surface — this is **(A)** |
-| 3 `arm-3-untinted-over-surface` | `NSGlassEffectView`, no tint | over the surface's bottom 22 pt — this is **(B)** |
+| 1 `arm-1-shipped-tinted` | drawn `fillChrome` fill (α 0.44) + `NSGlassEffectView` above it, `tintColor` = `MaterialSet.dark.fillChrome`, content a sibling above the glass — the shipped hierarchy, **unfocused** | beside the surface (transparent window region) |
+| 2 `arm-2-untinted-beside` | `NSGlassEffectView`, no tint, no fill, content as `contentView` | beside the surface — this is **(A)** |
+| 3 `arm-3-untinted-over-surface` | `NSGlassEffectView`, no tint, no fill, content as `contentView` | over the surface's bottom 22 pt — this is **(B)** |
 | 4 `arm-4-nsvisualeffect-control` | `NSVisualEffectView`, `.underWindowBackground` | beside the surface |
 
 Arm 4 is not a candidate. It is the control that says how much of any difference
 between the others is glass rather than blur.
+
+Arm 1 models the **present** and arms 2-3 the **future**, and they are built
+differently on purpose. Arm 1 reproduces `PaneStatusBarView`'s hierarchy including
+the drawn fill and the sibling-above-glass content placement; arms 2-3 use
+`contentView`, which is what the research report says the adopted arrangement
+should use. Grading the shipped bar through `contentView` would have measured
+AppKit legibility treatments the shipped path never receives.
 
 The values are read off `PaneChrome` at run time (`PaneStatusBarMetrics.height`,
 `MaterialSet.dark.fillChrome`) rather than transcribed, so the arm claiming to
@@ -57,114 +65,240 @@ reproduce the shipped footer cannot grade against numbers that have moved.
 ### The controlled backdrop
 
 A full-screen window of pure white beside pure black is ordered below the probe
-window, and the pane is centred on the seam so every capture carries both halves.
-The desktop cannot be the backdrop: glass adapts to what is behind it, so an arm
-graded against the owner's wallpaper is different on every machine and different
-again next week.
+window, and the pane is centred on the **vertical seam** where the two halves
+meet, so every capture carries the bright half on the left and the dark half on
+the right in one frame. The desktop cannot be the backdrop: glass adapts to what
+is behind it, so an arm graded against the owner's wallpaper is different on every
+machine and different again next week.
+
+### How the captures are read, and why it takes two of them
+
+Each window is photographed twice: `screencapture -l <windowid>` as
+`<name>.png`, and `screencapture -R <rect>` over the same frame as
+`<name>-screen.png`. Neither route alone is trustworthy, and the first version of
+this probe used only `-l` and published a wrong arm-3 number because of it.
+
+- **`-l` returns the window's own backing store**, alpha intact, before the window
+  server composited anything under it. These windows are `isOpaque = false` over a
+  0.42 well, so the surface band came back `(19, 19, 24, α=107)` on *both* halves
+  of the backdrop: the unpremultiplied theme colour at the well's own alpha,
+  carrying no trace of what it sits over. Anything read *through* the well was the
+  stand-in's paint rather than a composite.
+- **`-R` composites correctly but applies the display's brightness and EDR tone
+  response.** Measured here at one instant, over the same borderless full-screen
+  window painted pure `NSColor.white` beside pure `NSColor.black`:
+
+  ```
+  -l   white half #ffffff   black half #000000
+  -R   white half #373737   black half #111111
+  ```
+
+  `-R` crushes pure white to 21% luminance. Absolute numbers off an `-R` file move
+  with the brightness slider and are not reproducible tomorrow or on another
+  machine.
+
+So the two routes are used for different things, and which one a given material
+must be read through is not a choice:
+
+| Material | Read through | Why |
+|---|---|---|
+| `NSGlassEffectView` (arms 1-3, both capsule windows) | `-l`, well flattened in analysis | Glass composites its sampled backdrop into its *own* window's buffer, so `-l` sees the adaptation. The 0.42 well is flattened against the backdrop this probe controls and therefore knows exactly. |
+| `NSVisualEffectView` `.behindWindow` (arm 4), and the sidebar's glass | `-R` | These composite at the *window-server* level. Their `-l` files are flat slabs however long the probe waits — both sat out six escalating settles unchanged — and only the screen grab carries their adaptation. |
+
+The flatten is validated against the review's own arithmetic: the old `-l` surface
+band `(19,19,24,α=107)` flattens to `#9c9c9e` over white and `#08080a` over black,
+matching the predicted `≈#9b9c9e` / `≈#08080a`. The `-l`-versus-`-R` cross-check
+agrees on hue and on ordering (brighter over the white half) for all four arms;
+they disagree on magnitude only, in the direction `-R`'s tone curve predicts.
+
+Because a flat slab and a sampled gradient are tens of units apart, the probe now
+*verifies* sampling before accepting a capture rather than trusting a fixed
+`settle()`: `recordSampled` re-settles and re-captures until the two sides of the
+seam differ. That check is what caught the sidebar arm.
 
 ## Findings
 
 All numbers below are measured with `Diagnostics/lib/pixel.py` over the capture
-files this probe writes. Sample regions: the bar over the white half is
-x 0.10-0.30, over the black half x 0.72-0.92, both at y 0.96-0.99.
+files this probe writes, read through the route named in the table above. Sample
+regions: the bar over the white half is x 0.10-0.30, over the black half
+x 0.72-0.92, both at y 0.96-0.99.
 
-### 1. Glass does adapt. The empty backdrop was not the failure.
+**Arm 1 is the shipped bar in all three of its layers**, which the first version of
+this probe did not reproduce and which changes the headline result. `PaneStatusBarView`
+fills the whole bar with `effectiveFillMaterial` (`fillChrome`, `rgb(18,20,24)` at
+α 0.44) in `draw(_:)`, puts `glassBacking` above that as a subview, and draws its
+segments as siblings *above* the glass. The first version modelled only the tint,
+skipped the 0.44 fill, and assigned the label as the glass's `contentView` (which
+invites AppKit legibility treatments the shipped path never gets). Arms 2-3 keep
+`contentView` deliberately: they model the *future* arrangement the research report
+asks for. **Arm 1 is the unfocused bar**; `effectiveFillMaterial` steps to
+`fillThick` (α 0.52 over `rgb(22,24,28)`) when the pane is focused, and that state
+is not captured.
+
+### 1. Glass adapts. The empty backdrop was not the failure — but the shipped bar's own fill damps it hard.
 
 | Arm | bar over white | bar over black | luminance spread |
 |---|---|---|---|
-| 1 shipped tinted | `#bfbfbf` | `#1f1f1f` | 160.0 |
-| 2 untinted beside | `#b6b6b6` | `#141414` | 162.0 |
-| 3 untinted over surface | `#6a6b6f` | `#27272e` | 67.6 |
-| 4 `NSVisualEffectView` | `#6d6d6e` | `#484849` | 37.0 |
+| 1 shipped tinted (faithful) | `#686a6c` | `#313437` | **27.9** |
+| 2 untinted beside | `#b6b6b6` | `#141414` | 117.5 |
+| 3 untinted over surface | `#6a6b6f` | `#27272e` | 32.3 |
+| 4 `NSVisualEffectView` | `#5d5e5e` | `#2d2d2d` | 21.7 |
 
-Arms 1 and 2 track their backdrop across a 160-unit luminance range. Whatever
-else is wrong with the shipped bar, it is sampling the desktop through the
-transparent window region and responding to it strongly. §6.2's empty-backdrop
-diagnosis does not hold for this bar: there *is* a backdrop, and it is the
+Arm 2 — a bare untinted `NSGlassEffectView` over the transparent window region —
+tracks its backdrop across a 117-unit luminance range. §6.2's empty-backdrop
+diagnosis does not hold for this material: there *is* a backdrop, and it is the
 desktop.
 
-### 2. The tint is achromatic and nearly inert. The colored-slab diagnosis does not hold either.
+**Arm 1's range is 27.9, not the 160 first reported.** The correction is the 0.44
+`fillChrome` pass the first version omitted. That fill is opaque enough to
+dominate what the glass above it can contribute, so the shipped bar is already a
+mostly-self-coloured slab that moves only ~28 units between a white and a black
+desktop. The measured `#686a6c` over white sits between the one-pass prediction
+(`#979899`, backdrop + drawn fill) and the two-pass prediction (`#5c5e60`, plus the
+tint), which is where a drawn fill under a tinted glass pass should land.
+
+### 2. The tint is NOT inert. It is the single largest term in the bar's appearance.
 
 Arm 1 minus arm 2, sampled at six x-positions across the bar:
 
 ```
      x      arm1      arm2   delta(R,G,B)
-  0.05   #bebebf   #b6b5b6   [8, 9, 9]
-   0.2   #bfbfbf   #b6b6b6   [9, 9, 9]
-  0.35   #888888   #7f7f7f   [9, 9, 9]
-   0.5   #4c4c4c   #414141   [11, 11, 11]
-  0.65   #1f1f1f   #141414   [11, 11, 11]
-   0.8   #1f1f1f   #141414   [11, 11, 11]
+  0.05   #7f8082   #c1c1c1   [-66, -65, -63]
+   0.2   #656769   #b5b5b5   [-80, -78, -76]
+  0.35   #77797a   #bcbcbd   [-69, -67, -67]
+   0.5   #313437   #4f4f4f   [-30, -27, -24]
+  0.65   #313437   #141414   [ 29,  32,  35]
+   0.8   #313437   #141414   [ 29,  32,  35]
 ```
 
-The tint's whole effect is a uniform +9 to +11 lift on all three channels. It is
-**achromatic** — no hue is introduced, because `fillChrome` is `rgb(18,20,24)`,
-a near-neutral, at 0.44. Ghostty's red-cast reports (discussion #11805) came from
-tinting toward a *saturated* theme background; baia's chrome fill is grey, so the
-same mechanism produces a slight darkening and no cast at all.
+**This overturns the previous finding.** The old table reported a uniform +9..+11
+lift and concluded the tint was "achromatic and nearly inert". Measured against a
+faithful arm 1, the delta is **-80 to +35** depending on the backdrop: the shipped
+treatment *darkens* the bar by up to 80/255 over a bright desktop and *lightens* it
+by ~32/255 over a dark one. It is not a tidy-up. It is the mechanism that pins the
+bar near mid-grey regardless of what is behind it.
 
-Removing the tint is still right — it is free, it is what the HIG asks for, and it
-protects against a future theme whose `fillChrome` is not neutral — but it is a
-tidy-up, not the fix. **Anyone expecting Plan 4's untinting to visibly change the
-bar should expect a ~10/255 shift and nothing more.**
+The delta is still **achromatic** — the three channels move within a few units of
+each other, because `fillChrome` is `rgb(18,20,24)`, a near-neutral. Ghostty's
+red-cast reports (#11805) came from tinting toward a *saturated* theme background;
+baia's chrome fill is grey, so no hue is introduced. That part of the old finding
+survives.
 
-### 3. The real failure is legibility over bright backdrops, and only arm 3 survives it.
+But the magnitude claim does not. **Plan 4's untinting is not a ~10/255
+cosmetic shift. Removing the drawn fill and the tint is what moves arm 1 to arm 2,
+which is a 90-unit swing in adaptation range and — see finding 3 — the difference
+between a bar that clears WCAG AA over a bright desktop and one that does not.**
+
+### 3. The shipped bar clears 4.5:1 over a bright desktop. Untinting it is what breaks that.
 
 Contrast of the bar's text ink (`#ebebeb`) against the bar fill beneath it:
 
 | Arm | over white | over black |
 |---|---|---|
-| 1 shipped tinted | **1.54:1** | 13.83:1 |
+| 1 shipped tinted (faithful) | **4.56:1** | 10.50:1 |
 | 2 untinted beside | **1.70:1** | 15.45:1 |
 | 3 untinted over surface | **4.46:1** | 12.44:1 |
-| 4 `NSVisualEffectView` | 4.34:1 | 7.66:1 |
+| 4 `NSVisualEffectView` | 5.46:1 | 11.55:1 |
 
-This is the finding that decides the spike. Arms 1 and 2 adapt *so* strongly that
-over a bright desktop the bar becomes a near-white slab under light text: 1.54:1
-and 1.70:1 are far under WCAG AA's 4.5:1 for body text and under even the 3:1
-large-text floor. The bar is unreadable over a light wallpaper. That is a real
-shipped bug, and it is the opposite of the flat-slab problem the plan expected:
-the glass is not failing to adapt, it is adapting to a backdrop it should not be
-sampling.
+**This inverts the spike's central claim.** The old table put arm 1 at 1.54:1 and
+called the shipped bar a real, unreadable, already-shipping bug. It is not: the
+faithful arm 1 measures **4.56:1** over a pure-white backdrop, which clears WCAG
+AA's 4.5:1 body-text floor. The 1.54:1 figure was an artifact of modelling the
+shipped bar without its own 0.44 fill.
 
-Arm 3 holds 4.46:1 over white and 12.44:1 over black. Extending the surface under
-the bar puts a 0.42 dark well between the glass and the desktop, which is what
-keeps the sampled backdrop inside a range the bar's ink was designed against.
-Arm 3's spread (67.6) is less than half arm 2's (162) for the same reason, and the
-narrower spread *is* the desirable property here.
+What the number now says is the reverse. The shipped bar is legible over a bright
+desktop *because of* the fill-plus-tint stack the plan proposes to remove. Arm 2 —
+resolution (A), the tint off with no other change — falls to **1.70:1**. That is
+the arrangement that would ship a legibility regression, and it would be introduced
+by Plan 4, not fixed by it.
+
+Arm 3 (resolution **(B)**) holds **4.46:1** over white and 12.44:1 over black by
+putting the 0.42 well between the glass and the desktop. That is **0.04 short of
+4.5:1** — it does not clear the AA floor, it lands on it. See the verdict for what
+that costs and what closes the gap.
+
+### 3b. What arm 3 actually puts under the glass
+
+Measured on the surface band above the bar in the arm-3 capture, flattened over the
+controlled backdrop:
+
+| Backdrop half | well colour | ink `#ebebeb` against the well |
+|---|---|---|
+| white | `#a3a4a5` | **2.09:1** |
+| black | `#07080a` | 16.81:1 |
+
+This is the number Task 2 needs and the one the first version could not produce
+(under `-l` the well read as its own unflattened paint on both halves). **A 0.42
+well over a white desktop is `#a3a4a5`, a light mid-grey.** Ink judged against the
+well by Task 2's approximation therefore fails badly over a bright desktop — 2.09:1
+— even though the *glass over that well* reaches 4.46:1. The glass is doing the
+legibility work, not the well. Any Task 2 approximation that reasons about ink
+against the well colour alone will be wrong over a bright desktop by more than a
+factor of two.
 
 ### 4. Arm 3 is still glass, not blur.
 
 Arm 4 is the control that makes arm 3's number mean something. Over the black
-half, arm 3 reaches `#27272e` against `NSVisualEffectView`'s `#484849`: glass
-goes materially darker and admits more of the backdrop, and it carries a slight
-blue cast (`2e` blue against `27` red) where the control is flat neutral
-(`48/48/49`). Arm 3 is not merely arm 4 with extra steps.
+half, arm 3 reaches `#27272e` against `NSVisualEffectView`'s `#2d2d2d`: glass
+admits more of the backdrop, and it carries a slight blue cast (`2e` blue against
+`27` red) where the control is flat neutral (`2d/2d/2d`). Arm 3 is not merely arm 4
+with extra steps.
+
+Read the arm-4 row with its route in mind: it is the only arm whose numbers come
+from the `-R` screen grab, so its absolutes carry that capture's tone curve and are
+not directly comparable to arms 1-3 in magnitude. The hue and ordering are.
 
 ### 5. The capsule: glass-in-container and drawn-on-glass are indistinguishable here.
 
 Capsule region against adjacent bar, measured as chroma (max channel minus min):
 
-| Capture | capsule | chroma | adjacent bar | chroma delta |
+| Capture | capsule | chroma | adjacent bar | chroma |
 |---|---|---|---|---|
-| arm 1, drawn capsule | `#d19557` | 122 | `#bfbfbf` | 122 |
-| arm 3, drawn capsule | `#c28648` | 122 | `#69696d` | 118 |
-| `capsule-container-beside`, glass capsule in container | `#d3985a` | 121 | `#b6b6b6` | 121 |
-| `capsule-container-over-surface`, glass capsule in container | `#c68b4d` | 121 | `#69696d` | 117 |
+| arm 1, drawn capsule | `#c4894b` | 121 | `#686a6c` | 4 |
+| arm 3, drawn capsule | `#c3884b` | 120 | `#6a6b6f` | 5 |
+| `capsule-container-beside`, glass capsule in container | `#d2975a` | 120 | `#b6b6b6` | 0 |
+| `capsule-container-over-surface`, glass capsule in container | `#c78c4e` | 121 | `#6a6b6e` | 4 |
 
 A tinted `NSGlassEffectView` capsule inside an `NSGlassEffectContainerView`
-renders within 1-2 units of a drawn capsule at every sample. The container's
-managed merge does not dissolve the capsule into the bar (`spacing = 0` keeps
-them as distinct shapes sharing one sampling pass), and it does not make it more
-vivid either.
+renders within 1-2 chroma units of a drawn capsule at every sample. The
+container's managed merge does not dissolve the capsule into the bar
+(`spacing = 0` keeps them as distinct shapes sharing one sampling pass), and it
+does not make it more vivid either. This finding is unchanged by the capture fix:
+it compares two capsules within the same capture, so the tone curve and the well
+flatten cancel.
 
-### 6. The sidebar reads with its own untinted glass.
+### 6. The sidebar adapts strongly and fails over the bright half.
 
-`sidebar-untinted-glass.png`: a 220 pt column of untinted `regular` glass over the
-transparent window region, beside a pane at 0.42. The CHANGED header and the five
-file rows are legible, the column is clearly a distinct surface from the pane
-beside it, and nothing about the arrangement requires the split-view accessory
-controller.
+`sidebar-untinted-glass-screen.png`: a 220 pt column of untinted `regular` glass
+over the transparent window region, beside a pane at 0.42, now positioned so the
+**column** straddles the seam rather than the window. The first version centred the
+*window* on the seam, which left the entire 220 pt column over the dark half at a
+uniform `#141414` — the one measurement the sidebar question could not use.
+
+Measured across the column (seam at x-fraction 0.120, column ends at 0.239):
+
+| Sample | x | glass |
+|---|---|---|
+| bright half | 0.03 | `#4b4b4b` |
+| bright half | 0.08 | `#494949` |
+| dark half | 0.16 | `#2f2f2f` |
+| dark half | 0.22 | `#2e2e2e` |
+
+Contrast of the sidebar's own ink against that glass:
+
+| Half | file rows `#e6e6e6` | CHANGED header `#9e9e9e` |
+|---|---|---|
+| bright | 6.99:1 | **3.26:1** |
+| dark | 10.57:1 | 4.93:1 |
+
+The file rows hold comfortably on both halves. **The CHANGED header fails over the
+bright half at 3.26:1**, under the 4.5:1 body-text floor though above the 3:1
+large-text floor — and at 10 pt bold it is not large text. The header would need to
+reach `#bbbbbb` or lighter to clear 4.5:1 against `#4b4b4b`.
+
+Note the sidebar's numbers come from the `-R` route, so their absolutes carry that
+capture's tone curve; the bright-versus-dark *ordering* and the ~2x ratio between
+the halves are the reliable part.
 
 ## The grid measurement for arm 3
 
@@ -233,24 +367,64 @@ also flattens.
 
 ## Verdict
 
-### (A) or (B): **(B)**, and the reason is not the one the plan expected.
+### (A) or (B): **(B)**, but it does not clear 4.5:1 on its own, and the bug it was chosen to fix does not exist.
 
-**Adopt (B): the terminal surface extends under the bar, with
-`window-padding-y` raised by half the bar height (+11) to hold the grid.**
+**Adopt (B) — the terminal surface extends under the bar, with `window-padding-y`
+raised by half the bar height (+11) to hold the grid — and pair it with an ink
+change, because (B) alone lands at 4.46:1, not above 4.5:1.**
 
-The plan framed this as an optics question — which arrangement lenses. The
-captures say both lens fine, and that (A) is *actively broken* in a way nobody had
-named: over a bright desktop, glass whose backdrop is the desktop adapts to a
-near-white slab and the bar's light ink falls to 1.5-1.7:1 contrast. Any owner
-with a light wallpaper cannot read their footer today. (B) puts the 0.42 well
-between the glass and the desktop and holds 4.46:1 over the same backdrop.
+Two earlier conclusions are overturned, both by the faithful arm 1:
 
-The grid measurement says (B) is affordable: 0 rows delta at +11 padding, verified
-against a real PTY, with the naive +22 shown to cost a row.
+1. **The shipped bar is not broken over a bright desktop.** It measures 4.56:1,
+   which clears WCAG AA. The previous verdict called it "a real shipped bug" that
+   "any owner with a light wallpaper cannot read"; that was an artifact of an arm 1
+   built without `PaneStatusBarView`'s own 0.44 `fillChrome` pass. Nothing needs
+   rescuing today.
+2. **(A) is the regression, not the status quo.** Untinting the bar without
+   changing its backdrop (arm 2) drops it to 1.70:1. Plan 4 as written would
+   *introduce* the unreadable-over-bright-desktop bug the spike thought it was
+   fixing.
 
-This is a stronger result than a tie on optics would have been, and it inverts the
-plan's stated preference ordering: (A) does not merely fail to be better, it
-fails.
+So the question is no longer "which arrangement rescues a broken bar" but "which
+arrangement preserves a working one while getting the HIG-correct untinted glass".
+On that question (B) is still the answer and (A) is still disqualified, but (B)'s
+margin is thin:
+
+| | over white | verdict |
+|---|---|---|
+| shipped today (arm 1) | 4.56:1 | clears |
+| (A) untinted beside (arm 2) | 1.70:1 | fails badly |
+| (B) untinted over surface (arm 3) | 4.46:1 | **0.04 short** |
+
+**Does (B) clear 4.5:1? No — it misses by 0.04.** At the measurement's precision
+that is a tie with the floor rather than a pass, and it is worse than what ships
+today. Three things close the gap, cheapest first:
+
+- **Lighten the bar's ink.** Against arm 3's `#6a6b6f` bright-half fill, ink at
+  `#ececec` or lighter clears 4.51:1. The bar draws `#ebebeb` today, so this is a
+  one-unit change to a single constant and it is the cheapest fix on the list. It
+  buys no margin, though: it clears by 0.01.
+- **Raise the well opacity above 0.42.** A darker well under the glass pulls the
+  bright-half fill down and buys real margin rather than a rounding win. This is
+  the change with the widest blast radius (it is the shipped default from
+  `ac22f14` and it affects every pane, not the footer) and it should be measured
+  before it is adopted.
+- **A scrim behind the bar's content.** Buys the most margin and is the most
+  visible departure from the material; the HIG's own guidance is to avoid stacking
+  opacity under glass. Last resort.
+
+**Do not ship (B) without one of them.** The plan's Task 3 builds on the assumption
+that (B) is legible; on these numbers it is marginal, and the margin is on the
+wrong side of the floor.
+
+The grid measurement says (B) is affordable regardless: 0 rows delta at +11
+padding, verified against a real PTY, with the naive +22 shown to cost a row.
+
+**And a warning for Task 2's approximation.** Finding 3b measures the well itself
+at `#a3a4a5` over a white desktop, where the ink scores 2.09:1. The glass over that
+well reaches 4.46:1 — the glass is doing the legibility work, not the well. An
+approximation that judges ink against the well colour will be wrong over a bright
+desktop by more than a factor of two.
 
 ### The capsule: **drawn-on-glass**, on the current evidence.
 
@@ -273,20 +447,32 @@ specular edge the drawn one lacks, that is a reason to pay for the container tha
 these numbers cannot see, and it overrides the verdict above. If the outlines
 match, the drawn capsule wins on cost.
 
-### The sidebar: **no restructure.**
+### The sidebar: **still no restructure — but the header ink has to change.**
 
-`sidebar-untinted-glass.png` shows the sidebar reading correctly with its own
-untinted `regular` glass over the transparent window region. The
-`NSSplitViewItemAccessoryViewController` restructure — with its session-restore
-and focus-rule blast radius — is not needed, and Tasks 2-6 should not take it.
+With the column straddling the seam (finding 6), the sidebar's own untinted
+`regular` glass over the transparent window region carries the file rows fine on
+both halves (6.99:1 bright, 10.57:1 dark). The
+`NSSplitViewItemAccessoryViewController` restructure — with its session-restore and
+focus-rule blast radius — is **not** justified by these numbers, and Tasks 2-6
+should not take it.
 
-One caveat carried forward rather than buried: the sidebar in that capture sits
-over the dark half of the backdrop. Finding 3 says glass over the *desktop* is
-exactly the arrangement that fails over bright wallpaper, and a 220 pt sidebar
-has far more area to go white than a 22 pt strip. **Task 5 should re-run this
-probe with the sidebar centred on the seam before trusting the sidebar over a
-light desktop**, or apply the same fix (a well behind it) that (B) applies to the
-bar.
+What does fail is narrower than the restructure and is fixed far more cheaply.
+**The CHANGED header reads 3.26:1 over the bright half**, under the 4.5:1 floor for
+10 pt bold text. In the order the plan should try them:
+
+1. **Lighten the header ink.** It draws `#9e9e9e` (`NSColor(white: 0.62)`) today;
+   `#bbbbbb` or lighter clears 4.5:1 against the measured `#4b4b4b`. This is a
+   single constant and it is the whole fix for the only thing that failed.
+2. **Whatever legibility repair the bar takes.** If the bar's remedy ends up being
+   a darker well or a scrim, the same treatment applies behind the sidebar and
+   moves both halves at once.
+3. **The accessory-controller restructure.** Last resort, and nothing measured here
+   asks for it.
+
+The earlier caveat — that the sidebar capture sat entirely over the dark half and
+so could not speak to bright desktops — is now discharged rather than carried
+forward. It has been measured, and the answer is "one ink constant", not "a
+restructure".
 
 ## Files
 
@@ -303,6 +489,9 @@ capsule-container-over-surface.png    glass capsule in a container, over (B)
 sidebar-untinted-glass.png            the sidebar question
 inactive-2-untinted-beside.png        see "what inactive means here"
 inactive-3-untinted-over-surface.png  see "what inactive means here"
+<name>-screen.png                     the `-R` screen-composite companion for each
+                                      of the above; the ONLY route that sees arm 4
+                                      and the sidebar (see "how the captures are read")
 grid-measurement.txt                  the four grid arms
 ```
 
@@ -323,7 +512,9 @@ before it was built. Three things changed the design:
    rather than assumed. It does.
 2. **Their tint bugs are not reproducible here.** #11805's red cast came from
    tinting toward a saturated theme background; `fillChrome` is a near-neutral
-   grey, which is why finding 2 measures an achromatic +10 rather than a cast.
+   grey, which is why finding 2 measures an achromatic delta rather than a cast.
+   The delta's *magnitude* is large (-80 to +35 depending on backdrop); its
+   *hue* is nil, and it is the hue that #11805 was about.
 3. **The unfocus flattening (#10170) is real and is OS behaviour**, and Ghostty
    shipped a manual `isKeyWindow` tint overlay to hide it. This probe cannot
    measure it (see "what inactive means here"), which is why that section warns

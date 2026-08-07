@@ -36,8 +36,9 @@ import PaneChrome
 ///
 /// The boundary is the measurement. A material that merely blurs leaves the
 /// white/black edge straight and fuzzy; a material that refracts displaces it.
-/// That is why the halves are split vertically through the middle of the bar
-/// rather than being two separate captures over two flat fields.
+/// That is why the two halves meet at a *vertical seam* the bar crosses
+/// left-to-right — one half on the left, the other on the right — rather than
+/// being two separate captures over two flat fields.
 final class BackdropWindow: NSWindow {
     static func make(covering frame: NSRect) -> BackdropWindow {
         let window = BackdropWindow(
@@ -151,12 +152,18 @@ final class SurfaceStandIn: NSView {
 // MARK: - the arms
 
 enum Arm: String, CaseIterable {
-    /// Arm 1. The current shipped state, reproduced rather than described:
+    /// Arm 1. The current shipped state, reproduced rather than described, and
+    /// reproduced in all three of its layers: `PaneStatusBarView.draw(_:)` fills
+    /// the bar with `effectiveFillMaterial` (`fillChrome`, α 0.44),
     /// `PaneStatusGlassBacking` is an `NSGlassEffectView` with `style = .regular`
-    /// and `tintColor` written from `MaterialSet.fillChrome`, sitting in a 22 pt
-    /// strip *below* the terminal view with nothing behind it but the window.
-    /// Both failures at once, which is the point: it is the control every other
-    /// arm is read against.
+    /// and `tintColor` from the same `fillChrome` sitting *above* that fill, and
+    /// the drawn segments are siblings above the glass rather than its
+    /// `contentView`. The whole assembly sits in a 22 pt strip *below* the
+    /// terminal view with nothing behind it but the window. Both failures at once,
+    /// which is the point: it is the control every other arm is read against.
+    ///
+    /// Unfocused. `effectiveFillMaterial` steps to `fillThick` on the focused
+    /// pane's bar, and this arm does not capture that state.
     case shippedTinted = "1-shipped-tinted"
 
     /// Arm 2. Resolution (A). The tint comes off; the bar still sits beside the
@@ -181,6 +188,37 @@ enum Arm: String, CaseIterable {
     var isTinted: Bool { self == .shippedTinted }
 
     var usesGlass: Bool { self != .visualEffectControl }
+
+    /// True for the one arm that must be built as `PaneStatusBarView` is built
+    /// rather than as the report says a bar should be built: drawn `fillChrome`
+    /// base, glass above it, content a sibling above the glass. See
+    /// ``ProbeWindow/makeBar(arm:frame:)`` for why the other arms differ.
+    var reproducesShippedHierarchy: Bool { self == .shippedTinted }
+}
+
+/// Arm 1's base layer: the fill `PaneStatusBarView.draw(_:)` paints across the
+/// whole bar before any subview renders.
+///
+/// `effectiveFillMaterial` at the unfocused value, `MaterialSet.dark.fillChrome`
+/// — read off `PaneChrome` rather than transcribed, same as the tint. The focused
+/// value is `fillThick` (α 0.52 over `rgb(22,24,28)`); this probe captures the
+/// unfocused bar only, which the README's arm table states rather than leaving to
+/// be assumed.
+final class ShippedBarView: NSView {
+    override var isFlipped: Bool { true }
+
+    override func hitTest(_: NSPoint) -> NSView? { nil }
+
+    override func draw(_: NSRect) {
+        let fill = MaterialSet.dark.fillChrome
+        NSColor(
+            srgbRed: CGFloat(fill.rgb.red),
+            green: CGFloat(fill.rgb.green),
+            blue: CGFloat(fill.rgb.blue),
+            alpha: CGFloat(fill.alpha)
+        ).setFill()
+        bounds.fill()
+    }
 }
 
 /// One pane-shaped window: a translucent surface stand-in over a non-opaque
@@ -258,6 +296,26 @@ final class ProbeWindow: NSWindow {
     /// `cornerRadius = 0`, `tintColor` from `MaterialSet.fillChrome` when tinted.
     /// The values are read off `PaneChrome` at run time, not transcribed, so an
     /// arm cannot grade the shipped state against numbers that have moved.
+    ///
+    /// **Arm 1 and arms 2-4 are deliberately built differently, and the difference
+    /// is the point.** Arm 1 has to be the *shipped* view hierarchy, warts
+    /// included, or it is not a control. Arms 2-4 are the *future* arrangement the
+    /// research report asks for. Reproducing the shipped one costs two things the
+    /// first version of this probe got wrong:
+    ///
+    /// 1. **The drawn fill.** `PaneStatusBarView.draw(_:)` fills the entire bar
+    ///    with `effectiveFillMaterial` — `fillChrome`, `rgb(18,20,24)` at α 0.44 —
+    ///    as the view's own base layer, and `glassBacking` is a *subview* that
+    ///    renders above it. The shipped bar therefore carries the tint **and** a
+    ///    44%-alpha fill under the glass. Modelling only the tint made arm 1 a
+    ///    lighter bar than the one that ships.
+    /// 2. **Content above, not inside.** Shipped adds the glass
+    ///    `positioned: .below, relativeTo: attentionWash`, so every drawn segment
+    ///    is a *sibling above* the glass rather than its `contentView`. Assigning
+    ///    `contentView` is what invites AppKit's legibility treatments, and the
+    ///    shipped path never gets them. Arms 2-3 keep `contentView` because that
+    ///    is what the report says the future arrangement should use; arm 1 must
+    ///    not, or it grades the shipped bar against a treatment it does not have.
     static func makeBar(arm: Arm, frame: NSRect) -> NSView {
         let label = BarContentView(frame: NSRect(origin: .zero, size: frame.size))
         label.autoresizingMask = [.width, .height]
@@ -272,7 +330,7 @@ final class ProbeWindow: NSWindow {
             return effect
         }
 
-        let glass = NSGlassEffectView(frame: frame)
+        let glass = NSGlassEffectView(frame: NSRect(origin: .zero, size: frame.size))
         glass.style = .regular
         glass.cornerRadius = 0
         if arm.isTinted {
@@ -292,12 +350,24 @@ final class ProbeWindow: NSWindow {
                 alpha: CGFloat(fill.alpha)
             )
         }
-        // `contentView`, never `addSubview`: assigning it is what lets AppKit
-        // apply the legibility treatments as the glass adapts, and the shipped
-        // code's own doc comment says so.
-        glass.contentView = label
         glass.autoresizingMask = [.width]
-        return glass
+
+        guard arm.reproducesShippedHierarchy else {
+            // The future arrangement (arms 2 and 3): the label *is* the glass's
+            // content, no fill underneath. Per the research report, this is what
+            // Plan 4 should adopt.
+            glass.contentView = label
+            return glass
+        }
+
+        // The shipped arrangement (arm 1), rebuilt as three layers in the order
+        // `PaneStatusBarView` renders them: the drawn `fillChrome` base, the glass
+        // above it, the content above the glass.
+        let shipped = ShippedBarView(frame: frame)
+        shipped.autoresizingMask = [.width]
+        shipped.addSubview(glass)
+        shipped.addSubview(label, positioned: .above, relativeTo: glass)
+        return shipped
     }
 }
 
@@ -466,7 +536,21 @@ final class CapsuleGlyphView: NSView {
 /// is only worth its blast radius if a sidebar with its own untinted glass over
 /// the transparent region fails to read. This window is that arrangement, so the
 /// verdict can name a capture rather than an intuition.
+///
+/// **The column straddles the seam, and the first version did not.** The window
+/// was centred on the backdrop's white/black boundary, but the *column* is only
+/// its leftmost 220 pt, so the glass being graded sat entirely over one half and
+/// the capture measured a uniform `#141414`. Finding 3 says glass over the
+/// desktop is exactly the arrangement that fails over a bright backdrop, and a
+/// 220 pt column has far more area to go white than a 22 pt strip: a sidebar
+/// verdict read off the dark half alone is the one number the question could not
+/// use. The caller therefore positions the window so the *column's* midpoint
+/// lands on the seam.
 final class SidebarWindow: NSWindow {
+    /// The column's width, exposed so the caller can place the window such that
+    /// the column, not the window, straddles the backdrop seam.
+    static let columnWidth: CGFloat = 220
+
     static func make(contentRect: NSRect) -> SidebarWindow {
         let window = SidebarWindow(
             contentRect: contentRect,
@@ -484,7 +568,7 @@ final class SidebarWindow: NSWindow {
         content.wantsLayer = true
         window.contentView = content
 
-        let sidebarWidth: CGFloat = 220
+        let sidebarWidth = Self.columnWidth
 
         // The pane beside it, at the shipped well opacity, so the capture shows
         // the sidebar's glass against both the desktop (its own backdrop) and the
@@ -544,22 +628,11 @@ final class SidebarContentView: NSView {
 
 // MARK: - capture
 
-/// Captures a window by id through `screencapture -l`, which is what
-/// `Diagnostics/lib/drive.sh:shot` does for the real app.
-///
-/// `-l <windowid>` rather than a screen rectangle, and that choice is the whole
-/// reason this probe can measure anything. A screen grab of the region would be
-/// composited by the window server the same way, but it would also capture
-/// whatever else the owner has on screen at that rectangle, and a probe whose
-/// output depends on the owner's open windows is not reproducible.
-///
-/// `-o` is deliberately absent: it excludes window shadow *and* the windows
-/// behind, and the backdrop behind is the thing being sampled. Without the
-/// backdrop in the frame every arm captures as a bar over nothing.
-func capture(windowNumber: Int, to path: String) -> Bool {
+/// Runs `screencapture` and reports whether it wrote the file.
+func runScreencapture(_ arguments: [String], to path: String) -> Bool {
     let task = Process()
     task.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-    task.arguments = ["-x", "-l", String(windowNumber), path]
+    task.arguments = ["-x"] + arguments + [path]
     do {
         try task.run()
         task.waitUntilExit()
@@ -567,10 +640,135 @@ func capture(windowNumber: Int, to path: String) -> Bool {
         FileHandle.standardError.write("capture failed to launch: \(error)\n".data(using: .utf8)!)
         return false
     }
-    guard task.terminationStatus == 0, FileManager.default.fileExists(atPath: path) else {
+    return task.terminationStatus == 0 && FileManager.default.fileExists(atPath: path)
+}
+
+/// Captures one window twice: `-l` as the measured file, `-R` beside it as the
+/// composite cross-check.
+///
+/// **Both, because neither alone is trustworthy, and finding that out cost this
+/// probe its arm-3 number.**
+///
+/// `-l <windowid>` returns the window's *own backing store*: the pixels that
+/// window drew, alpha intact, before the window server composited anything under
+/// it. For an opaque window that is the same picture as the screen and the
+/// distinction never surfaces. These windows are `isOpaque = false` over a 0.42
+/// well, so the surface band came back `(19, 19, 24, α=107)` on *both* halves of a
+/// white-against-black backdrop: the unpremultiplied theme colour at the well's
+/// own alpha, carrying no trace of what it sits over. Anything read through the
+/// well was the stand-in's paint rather than the composite an owner sees. The
+/// glass views were unaffected — their bands are α=255 and do carry the split,
+/// which is why the adaptation findings survived — but arm 3's whole claim is
+/// about what sits *under* glass, so arm 3 was the casualty.
+///
+/// `-R <rect>` grabs the screen and does composite correctly. It also applies the
+/// **display's current brightness and EDR tone response**, which `-l` does not.
+/// Measured on this machine at the same instant, over the same borderless
+/// full-screen window painted pure `NSColor.white` beside pure `NSColor.black`:
+///
+/// ```
+/// -l   white half #ffffff   black half #000000
+/// -R   white half #373737   black half #111111
+/// ```
+///
+/// `-R` crushes a pure-white backdrop to 21% luminance. Every absolute number
+/// read off an `-R` file is therefore a function of the panel's brightness slider
+/// and the ambient-light sensor at capture time, and is neither reproducible
+/// tomorrow nor comparable across machines. A probe whose verdict moves with the
+/// brightness key is not a measurement.
+///
+/// So: `-l` is the file the README's numbers come from, and the well is flattened
+/// in *analysis* (`flatten(rgba:over:)`) against the backdrop this probe controls
+/// and therefore knows exactly. `-R` is written to `<name>-screen.png` as the
+/// cross-check that the two methods agree on hue and ordering, never as a source
+/// of absolute values.
+///
+/// `-o` stays absent from the `-R` arm: it suppresses the windows behind, and the
+/// backdrop behind is the thing being sampled.
+func capture(window: NSWindow, to path: String) -> Bool {
+    guard runScreencapture(["-l", String(window.windowNumber)], to: path) else {
         return false
     }
+
+    // `screencapture -R` takes *global display* coordinates: origin at the
+    // top-left of the main display, y growing downward. AppKit hands out
+    // bottom-left origins. Flipping against the main screen's frame (not the
+    // visible frame, which excludes the menu bar and would shift every capture
+    // down by its height) is the conversion. The rect is the window's exact
+    // frame, so no shadow margin enters the crop.
+    if let main = NSScreen.screens.first {
+        let frame = window.frame
+        let flippedY = main.frame.maxY - frame.maxY
+        let rect = "\(Int(frame.origin.x.rounded())),\(Int(flippedY.rounded()))," +
+            "\(Int(frame.width.rounded())),\(Int(frame.height.rounded()))"
+        let screenPath = path.replacingOccurrences(of: ".png", with: "-screen.png")
+        // Best-effort: the cross-check is diagnostic, and losing it must not fail
+        // a run whose measured `-l` file was written.
+        _ = runScreencapture(["-R", rect], to: screenPath)
+    }
     return true
+}
+
+/// Reads one pixel out of a capture, as premultiplied-free sRGB bytes.
+///
+/// `NSImage`/`CGImage` rather than a hand-rolled PNG decoder: this is only ever
+/// asked whether two regions of a *freshly written* capture differ, so decoding
+/// through the system is both correct and shorter. `Diagnostics/lib/pixel.py`
+/// stays the tool the README's numbers come from — it has no dependency on this
+/// process being alive, and it is what a reader can re-run against the files.
+func samplePixel(_ path: String, fx: Double, fy: Double) -> (Int, Int, Int)? {
+    guard let image = NSImage(contentsOfFile: path),
+          let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+    else { return nil }
+    let x = min(max(Int(Double(cg.width) * fx), 0), cg.width - 1)
+    let y = min(max(Int(Double(cg.height) * fy), 0), cg.height - 1)
+
+    var pixel = [UInt8](repeating: 0, count: 4)
+    guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+          let context = CGContext(
+              data: &pixel,
+              width: 1,
+              height: 1,
+              bitsPerComponent: 8,
+              bytesPerRow: 4,
+              space: space,
+              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+          )
+    else { return nil }
+    context.draw(cg, in: CGRect(x: -x, y: -(cg.height - 1 - y), width: cg.width, height: cg.height))
+    return (Int(pixel[0]), Int(pixel[1]), Int(pixel[2]))
+}
+
+/// True when two horizontal samples differ enough that the material between them
+/// must have sampled a backdrop that differs there.
+///
+/// The threshold is deliberately loose. It is not measuring anything — the README
+/// numbers come from `pixel.py` — it only has to separate "the material rendered a
+/// gradient across the seam" from "the material is a flat slab", and those two are
+/// tens of units apart, not units apart.
+///
+/// **Checks the `-R` companion when there is one, and that is not a detail.** The
+/// two capture routes see different materials:
+///
+/// - `NSGlassEffectView` composites its sampled backdrop into *its own window's*
+///   backing store, so `-l` sees it. Arms 1-3 and both capsule windows are read
+///   correctly from the `-l` file.
+/// - `NSVisualEffectView` at `.behindWindow` (arm 4) and the sidebar's glass
+///   composite at the *window-server* level. Their `-l` files are flat slabs no
+///   matter how long the probe waits — arm 4 and the sidebar both sat out six
+///   escalating settles unchanged — and only the screen grab carries their
+///   adaptation.
+///
+/// So a settle check against `-l` alone would loop forever on exactly the two arms
+/// that need the screen grab. Preferring the `-R` file where it exists asks each
+/// material through the route that can actually see it.
+func sampledAcross(_ path: String, left: Double, right: Double, y: Double) -> Bool {
+    let screenPath = path.replacingOccurrences(of: ".png", with: "-screen.png")
+    let readable = FileManager.default.fileExists(atPath: screenPath) ? screenPath : path
+    guard let l = samplePixel(readable, fx: left, fy: y),
+          let r = samplePixel(readable, fx: right, fy: y) else { return false }
+    let delta = abs(l.0 - r.0) + abs(l.1 - r.1) + abs(l.2 - r.2)
+    return delta > 12
 }
 
 /// Runs the run loop for a fixed interval without blocking the window server.
@@ -631,11 +829,26 @@ settle(0.6)
 
 var failures = 0
 
+/// How long a window is given to compose before it is photographed.
+///
+/// **A fixed budget is not enough and the sidebar arm proved it.** `settle(0.8)`
+/// was sufficient for the four 720x320 pane arms — their glass sampled the
+/// backdrop and the captures carry the white/black split — but the 920x440
+/// sidebar window captured as a flat `#141414` slab across the entire column: the
+/// glass had rendered its content (the CHANGED header and file rows are in the
+/// file) without having sampled anything behind it yet. A larger glass view needs
+/// more time, and a probe that hardcodes one budget reports "the sidebar reads
+/// dark" when what it measured was an unfinished frame.
+///
+/// The settle is therefore retried against a *check on the pixels* rather than a
+/// clock. See ``recordSampled(_:_:check:)``.
+let baseSettle: TimeInterval = 0.8
+
 func record(_ window: NSWindow, _ name: String) {
     window.orderFrontRegardless()
-    settle(0.8)
+    settle(baseSettle)
     let path = outputDirectory + "/" + name + ".png"
-    if capture(windowNumber: window.windowNumber, to: path) {
+    if capture(window: window, to: path) {
         print("captured \(name).png")
     } else {
         print("CAPTURE FAILED \(name)")
@@ -643,9 +856,52 @@ func record(_ window: NSWindow, _ name: String) {
     }
 }
 
+/// Captures a window, re-settling and re-capturing until the written file shows
+/// the glass has actually sampled its backdrop.
+///
+/// `check` reads the capture and answers "did this glass sample?". The two halves
+/// of the controlled backdrop are what make that answerable without a tolerance
+/// argument: glass that sampled carries a *difference* between its bright-half
+/// and dark-half pixels, and glass that did not is flat to within a rounding
+/// error. A flat slab is the exact failure mode the run-loop comment at
+/// ``settle(_:)`` already documents; this is that check applied to the file
+/// rather than to the wall clock.
+func recordSampled(
+    _ window: NSWindow,
+    _ name: String,
+    attempts: Int = 6,
+    check: (String) -> Bool
+) {
+    window.orderFrontRegardless()
+    let path = outputDirectory + "/" + name + ".png"
+    for attempt in 1 ... attempts {
+        // Each retry waits longer than the last: the first failure is usually a
+        // frame away, and a run that needs the sixth is telling us something a
+        // constant would have hidden.
+        settle(baseSettle * Double(attempt))
+        guard capture(window: window, to: path) else {
+            print("CAPTURE FAILED \(name)")
+            failures += 1
+            return
+        }
+        if check(path) {
+            print("captured \(name).png\(attempt > 1 ? " (settled on attempt \(attempt))" : "")")
+            return
+        }
+    }
+    print("CAPTURE UNSAMPLED \(name) — glass did not sample its backdrop in \(attempts) attempts")
+    failures += 1
+}
+
+// The bar band, as a fraction of the pane window's height: the bottom 22 pt of
+// 320. Sampled either side of the seam, which is the window's midline.
+let barBandY = 1.0 - Double(PaneStatusBarMetrics.height) / Double(paneHeight) / 2
+
 for arm in Arm.allCases {
     let window = ProbeWindow(arm: arm, contentRect: paneFrame)
-    record(window, "arm-" + arm.rawValue)
+    recordSampled(window, "arm-" + arm.rawValue) {
+        sampledAcross($0, left: 0.2, right: 0.8, y: barBandY)
+    }
     window.orderOut(nil)
 }
 
@@ -653,22 +909,42 @@ for arm in Arm.allCases {
 // answer may depend on which one wins: a container merge over the desktop and a
 // container merge over well pixels are not the same sampling problem.
 let capsuleBeside = CapsuleWindow.make(contentRect: paneFrame, extendsUnderBar: false)
-record(capsuleBeside, "capsule-container-beside")
+recordSampled(capsuleBeside, "capsule-container-beside") {
+    sampledAcross($0, left: 0.2, right: 0.8, y: barBandY)
+}
 capsuleBeside.orderOut(nil)
 
 let capsuleOver = CapsuleWindow.make(contentRect: paneFrame, extendsUnderBar: true)
-record(capsuleOver, "capsule-container-over-surface")
+recordSampled(capsuleOver, "capsule-container-over-surface") {
+    sampledAcross($0, left: 0.2, right: 0.8, y: barBandY)
+}
 capsuleOver.orderOut(nil)
 
 // The sidebar question.
+//
+// Positioned so the *column* straddles the seam rather than the window. The
+// column is the window's leftmost `SidebarWindow.columnWidth`, so putting the
+// window's left edge half a column-width left of the seam puts the column's
+// midpoint on it, and the capture carries the sidebar's glass over the bright
+// half and the dark half in one frame. Centring the window instead (the first
+// version) left the entire column on one half.
+let sidebarWidth: CGFloat = 920
+let sidebarHeight: CGFloat = 440
 let sidebarFrame = NSRect(
-    x: screenFrame.midX - 460,
-    y: screenFrame.midY - 220,
-    width: 920,
-    height: 440
+    x: screenFrame.midX - SidebarWindow.columnWidth / 2,
+    y: screenFrame.midY - sidebarHeight / 2,
+    width: sidebarWidth,
+    height: sidebarHeight
 )
 let sidebar = SidebarWindow.make(contentRect: sidebarFrame)
-record(sidebar, "sidebar-untinted-glass")
+// The seam sits at `columnWidth / 2` into a `sidebarWidth`-wide window, so these
+// two fractions land inside the column on either side of it. This is the arm the
+// sampled check was written for: at a flat `settle(0.8)` it captured as an
+// unsampled `#141414` slab across the whole column.
+let sidebarSeam = Double(SidebarWindow.columnWidth / 2 / sidebarWidth)
+recordSampled(sidebar, "sidebar-untinted-glass") {
+    sampledAcross($0, left: sidebarSeam * 0.35, right: sidebarSeam * 1.65, y: 0.5)
+}
 sidebar.orderOut(nil)
 
 // The inactive-state pair for arms 2 and 3.
@@ -690,7 +966,7 @@ for arm in [Arm.untintedBesideSurface, Arm.untintedOverSurface] {
     // deactivation the window server applies to a non-key window settle.
     settle(1.0)
     let path = outputDirectory + "/inactive-" + arm.rawValue + ".png"
-    if capture(windowNumber: window.windowNumber, to: path) {
+    if capture(window: window, to: path) {
         print("captured inactive-\(arm.rawValue).png")
     } else {
         print("CAPTURE FAILED inactive-\(arm.rawValue)")
