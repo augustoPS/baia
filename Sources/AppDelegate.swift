@@ -433,7 +433,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Stored now, applied by `show(joining:)` a few lines below, because
             // the SPI behind it needs a `windowNumber` the window server has not
             // issued yet. See ``WorkspaceWindowController/blurRadius``.
-            blurRadius: configuration.windowBlurRadius
+            blurRadius: configuration.windowBlurRadius,
+            // Titlebar should follow the pane's appearance (owner request,
+            // 2026-08-07): the theme's own background decides light/dark for
+            // this window's chrome, never the system appearance. See
+            // ``WorkspaceWindowController/isDark`` and
+            // ``PaneChrome/windowIsDark(paneTheme:)``.
+            isDark: configuration.windowIsDark
         )
         controller.window.tabbingMode = tabbing
         // Coalesced by the same timer every other session change goes through, so a
@@ -1043,6 +1049,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // ever reaches windows that have been shown, so the `windowNumber`
             // the SPI needs already exists.
             controller.blurRadius = configuration.windowBlurRadius
+            // Titlebar follows the pane's appearance live, the same way the
+            // sidebar's `resolvedChrome` line above does: a theme edit reaches
+            // this loop through the same `onSettingsChange` callback, so the
+            // titlebar moves with the theme rather than waiting for the window
+            // to be closed and reopened. See
+            // ``WorkspaceWindowController/isDark``.
+            controller.isDark = configuration.windowIsDark
         }
         palette.theme = configuration.paneTheme
         // Same live-follow as the sidebar's own line above; the find panel is

@@ -112,6 +112,23 @@ final class ConfigurationCenter {
         )
     }
 
+    /// Whether the workspace window's own chrome — titlebar material, tab bar —
+    /// should render dark right now.
+    ///
+    /// Reads ``paneTheme`` rather than ``resolvedChrome``'s
+    /// `appearanceObserver.appearance`, and that is the one thing to notice
+    /// about this derivation next to ``resolvedChrome`` and
+    /// ``windowIsTransparent`` immediately above it: those two are legitimately
+    /// keyed off the *system* appearance and Reduce Transparency, but the
+    /// titlebar is chrome, and the standing rule (`PaneTheme`'s own header) is
+    /// that chrome matches the theme and never the system. So this is the one
+    /// window-level derivation in this trio that must not take
+    /// `appearanceObserver.appearance` as an input, and `PaneChrome.windowIsDark(paneTheme:)`
+    /// carries the rest of that reasoning and the tests.
+    var windowIsDark: Bool {
+        PaneChrome.windowIsDark(paneTheme: paneTheme)
+    }
+
     /// How far the compositor should blur what shows through the workspace
     /// window right now, or `0` for no blur.
     ///

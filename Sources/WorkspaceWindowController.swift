@@ -198,16 +198,56 @@ final class WorkspaceWindowController: NSObject {
         }
     }
 
-    /// `isTransparent` and `blurRadius` are parameters rather than later
-    /// assignments for the reason ``ConfigurationCenter`` states about its own
-    /// appearance observer: a caller cannot forget what it must name. It is also
-    /// the reason ``SidebarHost`` takes its chrome. A window built opaque and
-    /// made transparent a moment later would show one solid frame first.
-    init(tree: PaneTreeController, sidebar: SidebarHost, isTransparent: Bool, blurRadius: Int) {
+    /// Whether this window's own chrome — the titlebar material the toolbar
+    /// asks AppKit for, the tab bar, and anything else `NSWindow.appearance`
+    /// governs — should render dark.
+    ///
+    /// **Window-level, deliberately not `NSApp.appearance`.** Setting the app
+    /// appearance would force every window in the process, including the
+    /// settings window and the palette/find panels, onto this workspace
+    /// window's theme, and those follow their own rules — the settings window
+    /// previews a *draft* theme that need not be the live one, and the
+    /// floating panels are content this type does not own. `NSWindow.appearance`
+    /// on this one window is the platform's own mechanism for scoping the
+    /// override to a single window; nothing wider is touched.
+    ///
+    /// **Owner's ruling: "titlebar should follow the pane's appearance," which
+    /// is the standing chrome-matches-the-theme rule (see ``PaneTheme``'s own
+    /// header) reaching this window's system-drawn chrome.** Before this, the
+    /// titlebar the toolbar asks for (`5f3b88c`, `ea7a223`) rendered in
+    /// whatever `NSApp.effectiveAppearance` was — the system's light/dark, not
+    /// the terminal theme's — so a dark pane theme under a light system
+    /// appearance produced a light titlebar band over dark panes.
+    /// ``PaneChrome/windowIsDark(paneTheme:)`` is where that derivation lives
+    /// and carries the reasoning for reading the theme rather than
+    /// `ChromeAppearance.isDark`; this is the one line that writes its answer
+    /// onto the window.
+    ///
+    /// **Feeds no layout and no ghostty config key**, for the same reason
+    /// ``isTransparent`` does not: `NSWindow.appearance` is a rendering
+    /// property AppKit reads when it draws the window's chrome, not a value
+    /// any pane, grid, or `TerminalConfiguration` ever sees. No surface
+    /// resizes and nothing running in a pane is signalled.
+    var isDark: Bool = false {
+        didSet {
+            guard isDark != oldValue else { return }
+            applyAppearance()
+        }
+    }
+
+    /// `isTransparent`, `blurRadius`, and `isDark` are parameters rather than
+    /// later assignments for the reason ``ConfigurationCenter`` states about
+    /// its own appearance observer: a caller cannot forget what it must name.
+    /// It is also the reason ``SidebarHost`` takes its chrome. A window built
+    /// opaque and made transparent a moment later would show one solid frame
+    /// first, and the same is true of one built in the wrong titlebar
+    /// appearance and corrected only on the next settings change.
+    init(tree: PaneTreeController, sidebar: SidebarHost, isTransparent: Bool, blurRadius: Int, isDark: Bool) {
         self.tree = tree
         self.sidebar = sidebar
         self.isTransparent = isTransparent
         self.blurRadius = blurRadius
+        self.isDark = isDark
         toolbar = NSToolbar(identifier: "baia.workspace.toolbar")
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1024, height: 680),
@@ -304,6 +344,11 @@ final class WorkspaceWindowController: NSObject {
         // under Reduce Transparency) this writes the values the window was born
         // with, so that case stays exactly what it has always been.
         applyTransparency()
+        // Same reason, one property over: `isDark`'s `didSet` does not fire for
+        // the assignment three lines up, so the window would otherwise open in
+        // AppKit's own default appearance until the first settings change wrote
+        // one.
+        applyAppearance()
 
         tree.onFocusedPaneChange = { [weak self] in self?.onFocusedPaneChange?() }
         tree.onSessionChange = { [weak self] in self?.onSessionChange?() }
@@ -402,6 +447,29 @@ final class WorkspaceWindowController: NSObject {
     /// alpha" rather than as an arbitrary colour. At this alpha the hue is
     /// unobservable; only the non-zero-ness is doing work.
     private static let nonClearTransparentBackground = NSColor(calibratedWhite: 0.09, alpha: 0.005)
+
+    /// Writes ``isDark`` onto the window as `NSWindow.appearance`.
+    ///
+    /// This is the platform's own mechanism for a window that disagrees with
+    /// the rest of the app about light and dark: `NSWindow.appearance` is
+    /// documented to override `NSApp.appearance` for one window's view
+    /// hierarchy and its system-drawn chrome — the titlebar material the
+    /// empty toolbar asks for and the tab bar — while every other window
+    /// (settings, the command palette, the find panel) keeps resolving
+    /// `nil` back to the app's own appearance and is untouched by this call.
+    /// `NSApp.appearance` was not an option for the same reason: it has no
+    /// per-window scope, so setting it here would also repaint the settings
+    /// window's live preview and the floating panels' glass, which are
+    /// explicitly out of scope for this request.
+    ///
+    /// `.darkAqua` / `.aqua` rather than any of the vibrant or high-contrast
+    /// variants: those are user accessibility choices this window has no
+    /// opinion on and no way to read safely, and the two base appearances are
+    /// what `AppearanceObserver.readCurrentAppearance()` already resolves the
+    /// system read down to with the identical `bestMatch(from:)` call.
+    private func applyAppearance() {
+        window.appearance = NSAppearance(named: isDark ? .darkAqua : .aqua)
+    }
 
     /// Writes ``blurRadius`` onto the window through the private CGS backdrop
     /// SPI.

@@ -167,6 +167,43 @@ public func windowIsTransparent(backgroundOpacity: Double, appearance: ChromeApp
     return backgroundOpacity < 1
 }
 
+/// Whether the workspace window's own chrome — the titlebar material, the tab
+/// bar, and anything else AppKit draws from `NSWindow.appearance` rather than
+/// from a view this app owns — should render dark.
+///
+/// **Reads the pane theme's background, not ``ChromeAppearance/isDark``, and
+/// that is the whole point of this function existing separately from
+/// ``resolvedStyle(setting:appearance:)``.** `ChromeAppearance.isDark` is
+/// `AppearanceObserver`'s read of `NSApp.effectiveAppearance` — the *system*
+/// appearance — which is exactly the signal the standing rule (`Settings.swift`'s
+/// own doc, and every derivation in ``PaneTheme``) says chrome must never
+/// follow. `PaneTheme`'s own header states the rule for ink: "the standing rule
+/// in this workspace is to match chrome to the theme and never the reverse."
+/// The titlebar is chrome, so the owner's request is that same rule reaching
+/// one more surface, and reading `ChromeAppearance.isDark` here would be
+/// wiring it to the one signal the rule forbids.
+///
+/// ``RGB/isDark`` rather than a second luminance formula: that property's own
+/// doc comment is the reason — it "mirrors libghostty's own dark test... so
+/// baia agrees with the terminal about which theme it is in," which is
+/// precisely what deciding the titlebar's own light/dark needs, and
+/// `PaneTheme.readable(_:on:minimumRatio:)` warns in its own comment about a
+/// second luminance measure disagreeing with this one across a band of mid
+/// greys. Not ``RGB/relativeLuminance`` (the WCAG measure `readable` uses to
+/// grade contrast): that is answering a different question, whether an ink
+/// clears a contrast floor against a specific fill, and grading the *window's*
+/// appearance against a fill it is not drawn on would be the second mapping
+/// this function exists to avoid needing.
+///
+/// Takes the resolved ``BaiaSettings/PaneTheme`` (via
+/// `SettingsDerivations.paneTheme`) rather than a raw `RGB`, so the call site
+/// reads the same theme value every other chrome derivation reads and this
+/// cannot silently drift onto a different background than what the panes
+/// actually render.
+public func windowIsDark(paneTheme: PaneTheme) -> Bool {
+    paneTheme.background.isDark
+}
+
 /// The radius the compositor should blur what shows *through* a transparent
 /// workspace window, or `0` for no blur at all.
 ///

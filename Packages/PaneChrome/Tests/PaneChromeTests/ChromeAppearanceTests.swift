@@ -102,6 +102,68 @@ import Testing
         #expect(!windowIsTransparent(backgroundOpacity: 0.42, appearance: appearance))
     }
 
+    // MARK: - The window's own chrome follows the pane theme, never the system appearance
+
+    @Test func aDarkThemeBackgroundMakesTheWindowDark() {
+        #expect(windowIsDark(paneTheme: .darkPastel))
+    }
+
+    @Test func aLightThemeBackgroundMakesTheWindowLight() {
+        let paper = PaneTheme(
+            background: .eightBit(0xFA, 0xFA, 0xFA),
+            foreground: .eightBit(0x20, 0x20, 0x20),
+            focusedAccent: .eightBit(0x00, 0x5F, 0xD5),
+            ansi: PaneTheme.darkPastel.ansi
+        )
+        #expect(!windowIsDark(paneTheme: paper))
+    }
+
+    @Test func windowIsDarkReusesRGBsOwnDarkTestRatherThanASecondFormula() {
+        // Pinned as a direct comparison against `RGB.isDark` rather than as two
+        // independent expectations, so a second luminance mapping introduced
+        // here — the exact drift `PaneTheme.readable`'s own doc comment warns
+        // about — fails this test even if it happened to agree with the two
+        // cases above by coincidence.
+        let theme = PaneTheme(
+            background: .eightBit(0x40, 0x60, 0x80),
+            foreground: PaneTheme.darkPastel.foreground,
+            focusedAccent: PaneTheme.darkPastel.focusedAccent,
+            ansi: PaneTheme.darkPastel.ansi
+        )
+        #expect(windowIsDark(paneTheme: theme) == theme.background.isDark)
+    }
+
+    @Test func windowIsDarkBoundaryMatchesRGBsOwnDarkTestThreshold() {
+        // `RGB.isDark` is libghostty's own test, `0.299r + 0.587g + 0.114b <
+        // 128` on 0...255 — not WCAG relative luminance, which is what
+        // `readable(_:on:minimumRatio:)` grades contrast with instead. Pinned
+        // here at the neutral grey where that formula flips. `RGB.eightBit`
+        // divides by 255 into a `Double` and `isDark` multiplies back by 255,
+        // and that round trip does not land on the same integer boundary
+        // 0...255 arithmetic would suggest: measured directly, 127 is the
+        // last grey the test calls dark and 128 the first it calls light, not
+        // 128/129 as `128 * 0.299 + 128 * 0.587 + 128 * 0.114 < 128` alone
+        // would imply. Pinning the measured value rather than the naive one
+        // is the point — a threshold "derived" by eye here would be exactly
+        // the second, silently-drifting mapping this whole function exists to
+        // avoid. The choice of formula, not just its outcome, is what this
+        // test and `windowIsDarkReusesRGBsOwnDarkTestRatherThan…` together pin.
+        let lastDark = PaneTheme(
+            background: .eightBit(0x7F, 0x7F, 0x7F),
+            foreground: PaneTheme.darkPastel.foreground,
+            focusedAccent: PaneTheme.darkPastel.focusedAccent,
+            ansi: PaneTheme.darkPastel.ansi
+        )
+        let firstLight = PaneTheme(
+            background: .eightBit(0x80, 0x80, 0x80),
+            foreground: PaneTheme.darkPastel.foreground,
+            focusedAccent: PaneTheme.darkPastel.focusedAccent,
+            ansi: PaneTheme.darkPastel.ansi
+        )
+        #expect(windowIsDark(paneTheme: lastDark))
+        #expect(!windowIsDark(paneTheme: firstLight))
+    }
+
     // MARK: - Backdrop blur needs the setting *and* a window to see through
 
     @Test func blurAppliesTheParityRadiusWhenTheSettingAndTheWindowBothAllowIt() {
