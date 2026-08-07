@@ -40,6 +40,7 @@ final class SettingsWindowController: NSWindowController {
 
         let form = NSHostingView(rootView: SettingsView(
             model: model,
+            onApply: { [weak self] in self?.apply() },
             onAccept: { [weak self] in self?.accept() },
             onCancel: { [weak self] in self?.close() },
             chrome: { center.chrome(for: $0) }
@@ -139,16 +140,41 @@ final class SettingsWindowController: NSWindowController {
         }
     }
 
-    /// Writes the draft. The watcher applies it.
-    private func accept() {
+    /// Writes the draft through `center.commit`, answering whether it landed.
+    ///
+    /// The one write path: both Apply and Accept call this and neither
+    /// serializes the draft any other way. `center.commit` applies nothing
+    /// itself; the rename fires the `ConfigurationCenter` watcher, which reloads
+    /// and re-themes the running panes exactly as it would a hand-edit to the
+    /// file.
+    private func write() -> Bool {
         guard center.commit(model.draft) else {
             // The write failed, which means the config directory is unwritable or
-            // the disk is full. Closing would look like success and lose the
-            // edit, so the window stays open with the draft intact.
+            // the disk is full. Closing (or, for Apply, treating the draft as
+            // clean) would look like success and lose the edit, so the caller
+            // leaves the draft exactly as it was.
             NSSound.beep()
-            return
+            return false
         }
+        return true
+    }
+
+    /// Writes the draft and closes the window.
+    private func accept() {
+        guard write() else { return }
         close()
+    }
+
+    /// Writes the draft and keeps the window open.
+    ///
+    /// Rebases `model`'s dirty comparison onto the just-written values, so the
+    /// button goes idle again until the next edit rather than staying armed on a
+    /// draft that is now what is on disk. The left-hand sample is left alone: it
+    /// already renders from `center`, which the watcher will re-derive from the
+    /// same file this just wrote.
+    private func apply() {
+        guard write() else { return }
+        model.markApplied()
     }
 
     override func close() {

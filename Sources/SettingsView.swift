@@ -9,10 +9,16 @@ import SwiftUI
 /// The real panes stay on the committed values until accept, so this is the only
 /// thing an edit moves. `committed` is kept beside `draft` because the left-hand
 /// sample renders from it: the comparison is the point of the window.
+///
+/// `committed` is mutable rather than `let` for Apply: Apply writes the draft
+/// exactly like Accept but leaves the window open, and the dirty comparison has
+/// to move its baseline to the values just written or every subsequent edit would
+/// still compare against the settings in effect when the window opened. Accept
+/// never needed this because it closes the window instead.
 @MainActor
 @Observable
 final class SettingsDraft {
-    let committed: BaiaSettings.Settings
+    private(set) var committed: BaiaSettings.Settings
     var draft: BaiaSettings.Settings
 
     /// True when there is something to accept.
@@ -21,6 +27,15 @@ final class SettingsDraft {
     init(committed: BaiaSettings.Settings) {
         self.committed = committed
         draft = committed
+    }
+
+    /// Rebase the dirty comparison onto the just-written draft.
+    ///
+    /// Called after a successful Apply. The left-hand sample keeps rendering from
+    /// `committed`, so this is also what lets it catch up to what is now actually
+    /// on disk and in effect.
+    func markApplied() {
+        committed = draft
     }
 
     /// Every theme name the catalog can resolve, for the theme picker.
@@ -51,6 +66,7 @@ final class SettingsDraft {
 /// choice made before the comparison it is supposed to come from.
 struct SettingsView: View {
     @Bindable var model: SettingsDraft
+    let onApply: () -> Void
     let onAccept: () -> Void
     let onCancel: () -> Void
 
@@ -213,6 +229,16 @@ struct SettingsView: View {
 
             HStack {
                 Spacer()
+                // Apply writes the same draft Accept would, through the same
+                // path, but leaves the window open: the owner is dialling
+                // `backgroundOpacity`/`backgroundBlur` against the live app and
+                // wants tweak-look-tweak without reopening the window each time.
+                // Placed left of Cancel/Accept, the standard order for a
+                // non-dismissing action beside the two that do, and it does not
+                // carry `.keyboardShortcut(.defaultAction)` so Return still goes
+                // to Accept.
+                Button("Apply", action: onApply)
+                    .disabled(!model.isDirty)
                 Button("Cancel", action: onCancel)
                     .keyboardShortcut(.cancelAction)
                 Button("Accept", action: onAccept)

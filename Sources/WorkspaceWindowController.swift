@@ -41,10 +41,13 @@ private func CGSDefaultConnectionForThread() -> CGSConnectionID
 /// above for what that means here, who else relies on it, and why it is safe to
 /// ignore what it returns.
 ///
-/// The signature matches ghostty's own `extern "c" fn
-/// CGSSetWindowBackgroundBlurRadius(*anyopaque, usize, c_int) i32`, with the
-/// window identified by `NSWindow.windowNumber` and a radius in points. Radius
-/// `0` removes the blur, which is what makes this reversible on a live window.
+/// The signature mirrors ghostty's own `extern "c" fn
+/// CGSSetWindowBackgroundBlurRadius(*anyopaque, usize, c_int) i32`, not matches
+/// it literally: the connection is narrowed to the `UInt32` CGS actually uses in
+/// place of Zig's generic `*anyopaque`, and the radius is widened to `Int` in
+/// place of `c_int`. The window is identified by `NSWindow.windowNumber` and the
+/// radius is in points. Radius `0` removes the blur, which is what makes this
+/// reversible on a live window.
 @_silgen_name("CGSSetWindowBackgroundBlurRadius")
 @discardableResult
 private func CGSSetWindowBackgroundBlurRadius(
