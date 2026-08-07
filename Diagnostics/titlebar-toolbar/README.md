@@ -38,6 +38,12 @@ that the app never had.
 Ten, in two generations. The first four are the original question; the rest
 reproduce the shipped window and test candidate fixes against it.
 
+Re-run the probe before quoting an absolute from this table. A show-through
+arm's spread is a function of whatever wallpaper sits behind the window at
+capture time, so the absolutes move between runs; what transfers is the
+ordering and the two-orders-of-magnitude gap between show-through (tens) and
+material (~0.0), which is what `spread.py` grades on.
+
 | arm | band spread | verdict |
 |---|---|---|
 | bare desktop (no window) | 36.7 | — |

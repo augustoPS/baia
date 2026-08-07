@@ -385,7 +385,7 @@ final class WorkspaceWindowController: NSObject {
     /// worked there.
     private func applyTransparency() {
         window.isOpaque = !isTransparent
-        window.backgroundColor = isTransparent ? Self.transparentBackground : .windowBackgroundColor
+        window.backgroundColor = isTransparent ? Self.nonClearTransparentBackground : .windowBackgroundColor
     }
 
     /// The window background that is transparent to the eye and non-clear to
@@ -401,7 +401,7 @@ final class WorkspaceWindowController: NSObject {
     /// design line use, so the constant reads as "the app's dark, at a hair of
     /// alpha" rather than as an arbitrary colour. At this alpha the hue is
     /// unobservable; only the non-zero-ness is doing work.
-    private static let transparentBackground = NSColor(calibratedWhite: 0.09, alpha: 0.005)
+    private static let nonClearTransparentBackground = NSColor(calibratedWhite: 0.09, alpha: 0.005)
 
     /// Writes ``blurRadius`` onto the window through the private CGS backdrop
     /// SPI.
