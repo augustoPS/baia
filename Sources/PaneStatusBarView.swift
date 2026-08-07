@@ -551,6 +551,22 @@ final class PaneStatusBarView: NSView {
     /// `PaneTheme.alert` is deliberately still reached directly by the git
     /// segments, through `PaneStatusSegments` and the `.alert` emphasis. Red means
     /// conflict whatever this resolves to.
+    ///
+    /// **What this is judged against on glass (Plan 4 Task 4).** A pure theme
+    /// derivation, identical on flat and glass: no well/fill-composited grading
+    /// reaches it, matching the owner's no-repair-on-glass decision for this
+    /// bar's ink (Task 2's superseded clause). That decision was made for chrome
+    /// ink read straight off the bar's own surface; the capsule is different
+    /// paint, an opaque fill drawn as this view's own content, one glass layer
+    /// *above* the backing's blur/vibrancy rather than a colour graded against
+    /// what the well shows through it, so there was never a well-colour
+    /// approximation here to retract. The spike's caveat (`Diagnostics/glass-backdrop`)
+    /// is about the glass *backing*'s own vertical gradient, brighter at the
+    /// bar's top (well bleed) than lower in the strip: 9.49:1 measured below the
+    /// glyph rows, ~7.27:1 at glyph height. The capsule sits vertically centred
+    /// (`PaneStatusBarMetrics.attentionCapsuleFrame`), not moved toward that
+    /// brighter top, so it is judged at the same height the spike's own
+    /// measurement band covers, not assumed against the headline number.
     private var attentionColour: RGB {
         theme.attentionColour(attentionAccent, behavior: alertBehavior)
     }
