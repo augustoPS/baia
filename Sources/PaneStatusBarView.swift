@@ -495,6 +495,36 @@ final class PaneStatusBarView: NSView {
         layer.add(fade, forKey: "baia.barFrame")
     }
 
+    /// What the focus frame's ink is drawn at on the glass path.
+    ///
+    /// **The defect.** Every other element on this bar had already been taught
+    /// that glass carries itself: `draw(_:)` paints no fill, `updateGlassTint()`
+    /// keeps the backing untinted, and the sidebar's headings drop their band
+    /// fills. The focus frame was the one thing still laying fully opaque colour
+    /// straight onto the glass — a hard 2 pt band of `theme.inkFocus` around a
+    /// surface whose whole point is that it is see-through. Beside an untinted
+    /// glass bar it reads as a sticker on the window rather than as the window's
+    /// own chrome, which is what the owner is seeing.
+    ///
+    /// **Why an alpha rather than a new colour.** The bar's law is one tint per
+    /// bar, and that tint belongs to the attention capsule. A frame given some
+    /// second hue would be a second tint competing with it; the same ink at a
+    /// lower alpha is the *same* mark, letting the material it sits on show
+    /// through, which is what "part of the glass" means here. It also keeps the
+    /// frame agreeing with `TerminalPaneController`'s pane frame, which is
+    /// derived from the same `inkFocus` call.
+    ///
+    /// 0.55 rather than a lighter value: this mark's whole job is answering
+    /// "which pane am I typing in", so it has to stay the most legible thing on
+    /// the bar. At 0.55 the ink still lands well clear of the bar's own content
+    /// while the glass reads continuously through it; much below that and focus
+    /// stops being findable at a glance, which is the failure the frame exists
+    /// to prevent.
+    ///
+    /// Flat is untouched and stays at 1: it has no material to show through, so
+    /// a translucent frame there would just be a dimmer frame.
+    private static let glassFrameAlpha: Double = 0.55
+
     /// The 2 pt inset stroke, in the same ink as the anchor name.
     ///
     /// Inset by half the width so the stroke lands inside the bar rather than
@@ -517,8 +547,13 @@ final class PaneStatusBarView: NSView {
     private func drawBarFrame(in rect: NSRect) {
         let width = PaneStatusBarMetrics.focusFrameWidth
         let ink = theme.inkFocus
-        nsColor(ink).setStroke()
-        nsColor(ink).setFill()
+        // Flat keeps the fully opaque stroke Plan 1 shipped. Glass draws the
+        // same ink at ``Self.glassFrameAlpha`` — see that constant for why the
+        // opaque version is the one thing on this bar that still read as paint
+        // laid on the glass rather than as part of it.
+        let alpha = materialSet == nil ? 1 : Self.glassFrameAlpha
+        nsColor(ink, alpha: alpha).setStroke()
+        nsColor(ink, alpha: alpha).setFill()
 
         // The view is flipped, so `y: 0` is the edge against the terminal and
         // `rect.height - width` is the edge against the window.
