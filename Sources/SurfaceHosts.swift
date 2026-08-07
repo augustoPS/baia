@@ -2,6 +2,23 @@ import AppKit
 import PaneChrome
 import WorkspaceLayout
 
+/// `NSGlassEffectView`, with the same three refusals `PaneStatusBarView`'s own
+/// glass backing makes.
+///
+/// A plain `NSGlassEffectView` hit-tests itself by AppKit's own default, and
+/// every section's rows, headings and the two draggable strips already handle
+/// their own `mouseDown`. Sitting this glass behind them (see
+/// `SidebarHost.applyResolvedChrome()`) is only safe if it never intercepts a
+/// click meant for one of them, the same reasoning
+/// `PaneStatusGlassBacking`'s own doc comment gives for the footer.
+private final class SidebarGlassBacking: NSGlassEffectView {
+    override var acceptsFirstResponder: Bool { false }
+
+    override var canBecomeKeyView: Bool { false }
+
+    override func hitTest(_: NSPoint) -> NSView? { nil }
+}
+
 /// One or more surfaces in the window, beside the panes.
 ///
 /// Becomes the window's `contentViewController`, with the pane tree as a child, so
@@ -177,20 +194,67 @@ final class SidebarHost: NSViewController {
         }
     }
 
-    /// What each section is told to resolve its own chrome against. See
-    /// ``WorkspaceSurface/resolvedChrome`` for what the surfaces actually draw
-    /// from it (both cases fill identically as of Task 2).
+    /// What each section is told to resolve its own chrome against, and what
+    /// ``glassBacking`` is built or torn down to match.
     ///
-    /// Pushed straight through to every ``Section/surface``, the same shape as
-    /// ``theme`` and ``backgroundOpacity`` immediately above: this host holds
-    /// nothing about what glass looks like, it only carries the resolution down
-    /// to the two surfaces that draw it.
+    /// **This host now has real glass of its own (this task).** Task 2 found
+    /// the sidebar had never had one — its "glass" was ``ChangesSurface`` and
+    /// ``FilesSurface`` swapping their scroll view's flat background colour for
+    /// ``MaterialSet/fillSidebar``, an `rgba` fill with no `NSGlassEffectView`
+    /// underneath it to reveal, and Task 2 dropped that fill along with the
+    /// footer's tint. The glass-backdrop spike's sidebar arm (its README's
+    /// finding 6) measured that an untinted `regular` glass column, positioned
+    /// where the sidebar actually sits over the transparent window region,
+    /// carries the file rows and (once repaired — see
+    /// ``SurfaceTitleView/labelInk``) the CHANGED header both, and its
+    /// verdict rejects the `NSSplitViewController` restructure this could have
+    /// reached for instead.
+    ///
+    /// Pushed straight through to every ``Section/surface`` exactly as before,
+    /// the same shape as ``theme`` and ``backgroundOpacity`` immediately above:
+    /// the surfaces still decide their own fill (now: none at all under glass,
+    /// so nothing opaque sits between this glass and what it samples — see
+    /// ``ChangesSurface/fill()`` and ``FilesSurface/fill()``), this host only
+    /// carries the resolution down and now also owns the glass itself.
     var resolvedChrome: ResolvedChrome = .flat {
         didSet {
             guard resolvedChrome != oldValue else { return }
             for section in sections { section.surface.resolvedChrome = resolvedChrome }
+            for section in sections { section.heading.resolvedChrome = resolvedChrome }
+            applyResolvedChrome()
         }
     }
+
+    /// The glass material behind the sidebar's own column, or nil under flat.
+    ///
+    /// Created and torn down by ``applyResolvedChrome()``, not merely hidden —
+    /// the same "absence is part of byte-identical" rule
+    /// `PaneStatusBarView.glassBacking`'s doc comment states for the footer,
+    /// and for the same reason: a hidden `NSGlassEffectView` still costs a
+    /// compositing pass macOS runs whether or not it draws anything, and flat
+    /// must not pay it.
+    ///
+    /// Added first, before `tree.view` and every section, so it sits behind
+    /// the whole hierarchy in z-order — `NSGlassEffectView.style = .regular`
+    /// samples what the window server has already composited beneath it, which
+    /// for a borderless transparent window is the desktop, not this app's own
+    /// views, so being behind them in z-order is what "sampling the desktop"
+    /// actually requires; a glass view stacked *above* the sections would
+    /// sample the sections instead and read as an opaque tint over them.
+    private var glassBacking: SidebarGlassBacking?
+
+    /// `NSGlassEffectView.tintColor` untinted, unconditionally.
+    ///
+    /// Written once at creation and never revisited by a later call the way
+    /// the footer's `updateGlassTint()` is, because nothing on this host's own
+    /// path ever has a reason to set one: unlike the bar's capsule, no element
+    /// behind this glass is ever accented. Spelled out explicitly rather than
+    /// left at the type's own default regardless — the same "never set a tint"
+    /// rule the footer's untinting (Task 2) established, so a tint set here by
+    /// a later, unrelated change is at least a diff against a line that says
+    /// why it must stay nil rather than a silent default nobody has to
+    /// contradict.
+    private static let sidebarGlassTint: NSColor? = nil
 
     private let divider = NSView()
 
@@ -282,6 +346,12 @@ final class SidebarHost: NSViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
+        // Built before anything else touches `view`, so a sidebar constructed
+        // already configured for glass (the common case: `resolvedChrome` was
+        // set in `init` and this is the first time anything asked for `view`)
+        // never has a frame where the backing is momentarily missing.
+        applyResolvedChrome()
+
         addChild(tree)
         view.addSubview(tree.view)
 
@@ -344,10 +414,53 @@ final class SidebarHost: NSViewController {
             section.heading.title = section.surface.title
             section.heading.theme = theme
             section.heading.isWindowActive = isWindowActive
+            section.heading.resolvedChrome = resolvedChrome
             view.addSubview(section.surface.view)
             view.addSubview(section.heading)
         }
         raiseGrabStrips()
+        // `show(_:)` calls `install()` after `viewDidLoad` has already built
+        // `glassBacking`, and every newly installed section view is added above
+        // it in z-order by the two `addSubview` calls just above — no restack
+        // needed here for the glass to keep reading as what is behind the
+        // column rather than as a layer painted over it.
+    }
+
+    /// Creates or tears down ``glassBacking`` to match ``resolvedChrome``.
+    ///
+    /// The same shape `PaneStatusBarView.applyResolvedChrome()` takes for the
+    /// footer: flat removes the view entirely rather than hiding it, and glass
+    /// creates one only if none exists yet, so a chrome change that toggles
+    /// glass-flat-glass does not tear down and rebuild a view that did not
+    /// need to move.
+    ///
+    /// Safe to call before `view` has ever been laid out — `viewDidLoad` calls
+    /// it first, before `tree.view` or any section exists — because it only
+    /// inserts or removes a subview and sets its style; the frame that makes it
+    /// cover the right column is `viewDidLayout`'s job, which runs afterwards
+    /// regardless of whether this created a view this pass or found one
+    /// already there.
+    private func applyResolvedChrome() {
+        switch resolvedChrome {
+        case .flat:
+            glassBacking?.removeFromSuperview()
+            glassBacking = nil
+        case .glass:
+            guard glassBacking == nil else { break }
+            let backing = SidebarGlassBacking(frame: .zero)
+            backing.style = .regular
+            backing.cornerRadius = 0
+            backing.tintColor = Self.sidebarGlassTint
+            backing.wantsLayer = true
+            // First subview added to `view`, ahead of `tree.view` and every
+            // section: see `glassBacking`'s own doc comment for why sitting
+            // behind the whole hierarchy in z-order is what lets it sample the
+            // window's own transparent region (the desktop) rather than this
+            // app's other views.
+            view.addSubview(backing, positioned: .below, relativeTo: nil)
+            glassBacking = backing
+        }
+        view.needsLayout = true
     }
 
     /// **Both strips go back on top every time a section is installed.**
@@ -387,6 +500,26 @@ final class SidebarHost: NSViewController {
         // leftmost footers square against a corner the window really does have.
         tree.edgesCoveredByHost = sidebarWidth > 0 ? [.left] : []
         divider.isHidden = sidebarWidth == 0
+
+        // The glass column, sized to exactly the sidebar's own width and
+        // nothing else. `bounds` spans the whole host — sidebar column plus the
+        // pane tree beside it — and a glass view sized to all of it would
+        // sample and composite pixels behind the panes too, which have their
+        // own material (each pane's `backgroundOpacity` well) and need no
+        // second glass layer over them. `isHidden` rather than a zero frame at
+        // width 0: a `CGRect` of zero size is still a valid frame to hand
+        // `NSGlassEffectView`, and hiding is the explicit statement that there
+        // is no sidebar to back right now, matching `divider.isHidden` and
+        // `widthDivider.isHidden` immediately around it.
+        if let glassBacking {
+            glassBacking.isHidden = sidebarWidth == 0
+            glassBacking.frame = NSRect(
+                x: bounds.minX,
+                y: bounds.minY,
+                width: sidebarWidth,
+                height: bounds.height
+            )
+        }
 
         // The session header and the bottom action row are chrome around the
         // sections rather than sections themselves: fixed height, drawn even

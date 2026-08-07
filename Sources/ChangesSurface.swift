@@ -44,22 +44,28 @@ final class ChangesSurface: NSObject, WorkspaceSurface {
     /// over the first now that it is not: two composites of the same colour land
     /// at 0.9775 and the column would sit a shade above every pane beside it.
     ///
-    /// Fills at `theme.background` and ``backgroundOpacity`` on both flat and
-    /// glass, byte-identical to what Plan 1 shipped.
+    /// Fills at `theme.background` and ``backgroundOpacity`` under flat,
+    /// byte-identical to what Plan 1 shipped.
     ///
-    /// **No glass branch (Task 2, untint the chrome), superseding this
-    /// property's original Task 5 clause.** This surface has no
-    /// `NSGlassEffectView` of its own — unlike the footer, palette and popover,
-    /// the sidebar's "glass" was only ever this scroll view's flat
-    /// `backgroundColor` swapped to ``MaterialSet/fillSidebar``, an `rgba` fill
-    /// exactly like the ones those three drop. There is no glass compositing
-    /// underneath it to reveal once the swap is gone, so the honest fix is the
-    /// same fill flat always used, with ``resolvedChrome`` still threaded
-    /// through and still triggering ``fill()`` on change (a theme or opacity
-    /// edit while glass is configured must still repaint), just no longer
-    /// branching on it.
+    /// **This task (real sidebar glass) gives the branch back, in the other
+    /// direction from Task 2's own clause here.** Task 2 found this surface had
+    /// no `NSGlassEffectView` of its own — the sidebar's "glass" was only ever
+    /// this scroll view's flat `backgroundColor` swapped to
+    /// `MaterialSet/fillSidebar`, an `rgba` fill with nothing underneath it to
+    /// reveal — and dropped the swap because there was no glass to sit on. Now
+    /// `SidebarHost` owns a real `NSGlassEffectView` behind this surface's view,
+    /// and an opaque scroll view background between that glass and the window
+    /// it samples would defeat it the same way an opaque bar fill defeated the
+    /// footer's (README finding 1). Glass draws no fill at all, matching
+    /// `PaneStatusBarView.draw(_:)`'s own gate for the same reason.
     private func fill() {
-        scrollView.backgroundColor = Self.nsColor(theme.background, alpha: backgroundOpacity)
+        switch resolvedChrome {
+        case .flat:
+            scrollView.drawsBackground = true
+            scrollView.backgroundColor = Self.nsColor(theme.background, alpha: backgroundOpacity)
+        case .glass:
+            scrollView.drawsBackground = false
+        }
     }
 
     /// What to draw. Assigning re-sorts, so the caller hands over git's order and

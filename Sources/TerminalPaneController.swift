@@ -460,6 +460,39 @@ final class TerminalPaneController: NSViewController {
     private var terminalConfiguration: TerminalConfiguration?
     private var terminalTheme: TerminalTheme?
 
+    /// Whether this pane was configured for arrangement (B) — the surface
+    /// extending under the bar, with the grid's inset coming from padding — at
+    /// the moment its chrome was first resolved.
+    ///
+    /// `lazy`, so the first read freezes this pane's answer for its whole
+    /// lifetime rather than re-deriving it from whatever ``resolvedChrome``
+    /// becomes later. `ConfigurationCenter.apply(to:)` sets `resolvedChrome`
+    /// and reads this property (through ``isSpawnedUnderGlass``, to decide
+    /// which `TerminalConfiguration` to hand `applyTerminalConfiguration`)
+    /// before this controller's view is ever touched, so in practice this
+    /// freezes at spawn; `viewDidLoad`'s `terminalBottom` anchor reads the same
+    /// frozen value later, which is what keeps the frame arrangement and the
+    /// padding bump agreeing with each other.
+    ///
+    /// This is the property that stops a live chrome toggle — Reduce
+    /// Transparency, a dark/light switch, an edited `chromeStyle` — from
+    /// reaching either one: both a frame resize and a `window-padding-y`
+    /// change on an already-spawned surface are a live grid resize, the same
+    /// `SIGWINCH` hazard `PaneStatusBarMetrics.height` staying
+    /// focus-independent exists to close. The arrangement a pane was spawned
+    /// with is the arrangement it keeps; a toggle takes effect for the next
+    /// pane opened.
+    private lazy var spawnedUnderGlass: Bool = {
+        if case .glass = resolvedChrome { true } else { false }
+    }()
+
+    /// Read-only outward face of ``spawnedUnderGlass``, for
+    /// `ConfigurationCenter.apply(to:)` to decide whether this pane's
+    /// `TerminalConfiguration` needs the glass `window-padding-y` bump. See
+    /// ``spawnedUnderGlass``'s own doc comment for why the answer is frozen
+    /// rather than read fresh from ``resolvedChrome`` on every call.
+    var isSpawnedUnderGlass: Bool { spawnedUnderGlass }
+
     /// Re-resolves this pane's surface config, cursor accent included.
     ///
     /// **The accent finally reaches the terminal.** `focusAccent` resolved a
@@ -756,11 +789,46 @@ final class TerminalPaneController: NSViewController {
         )
         barHeight.priority = .init(999)
 
+        // Arrangement (B) from the glass-backdrop spike's verdict, read from
+        // ``spawnedUnderGlass`` — frozen at this pane's first chrome
+        // resolution — rather than live from ``resolvedChrome``.
+        //
+        // `resolvedChrome`'s own `didSet` deliberately does not touch this
+        // constraint, and this is the only place the constraint is built at
+        // all: `viewDidLoad` runs once. A live toggle afterwards — Reduce
+        // Transparency, a dark/light switch, an edited `chromeStyle` — must not
+        // reach it. Changing which anchor `terminalView.bottomAnchor` is pinned
+        // to resizes the view, and an `AppTerminalView` resize is exactly the
+        // live grid resize (`layout()` in `AppTerminalView+Lifecycle.swift`)
+        // that sends `SIGWINCH` to whatever the pane is running — the same
+        // hazard `PaneStatusBarMetrics.height` staying focus-independent
+        // exists to close. The arrangement therefore applies to a pane as
+        // configured at spawn; flipping chrome at runtime takes effect for the
+        // next pane opened, not the ones already running.
+        //
+        // Under flat: unchanged from Plan 1. The surface stops above the bar
+        // (the "inset" arrangement `gridtest.swift` calls A) and the grid's
+        // padding is whatever the settings-derived `TerminalConfiguration`
+        // already says.
+        //
+        // Under glass: the surface runs to the view's own bottom edge, 22 pt
+        // taller, with the bar floating over its last 22 pt (statusBar is added
+        // to `view` after `terminalView` above, so it already sits on top in
+        // z-order — no restacking needed for the overlap to render). The grid
+        // keeps its inset through `window-padding-y` instead of through frame
+        // geometry: see `applyTerminalConfiguration()`, which raises it by
+        // `PaneStatusBarMetrics.glassWindowPaddingBump` whenever
+        // ``spawnedUnderGlass`` is true, so the two never disagree about which
+        // arrangement is in effect.
+        let terminalBottom = spawnedUnderGlass
+            ? terminalView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            : terminalView.bottomAnchor.constraint(equalTo: statusBar.topAnchor)
+
         NSLayoutConstraint.activate([
             terminalView.topAnchor.constraint(equalTo: view.topAnchor),
             terminalView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             terminalView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            terminalView.bottomAnchor.constraint(equalTo: statusBar.topAnchor),
+            terminalBottom,
             terminalView.heightAnchor.constraint(greaterThanOrEqualToConstant: 1),
 
             statusBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),

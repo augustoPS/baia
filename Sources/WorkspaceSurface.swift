@@ -182,6 +182,44 @@ final class SurfaceTitleView: NSView {
     var title: String = "" { didSet { needsDisplay = true } }
     var theme: PaneTheme = .darkPastel { didSet { needsDisplay = true } }
 
+    /// Gates ``glassLabelInk``. Pushed by `SidebarHost` the same way
+    /// ``isWindowActive`` is: this view has no other way to hear that its
+    /// column is now sitting over real glass.
+    var resolvedChrome: ResolvedChrome = .flat { didSet { needsDisplay = true } }
+
+    /// The caps label's ink under glass, spike-measured
+    /// (`Diagnostics/glass-backdrop/README.md` finding 6): the header drew
+    /// `theme.inkFaint` (`≈#9e9e9e` on `.darkPastel`) and measured 3.26:1 over
+    /// a bright-desktop glass sample, under the 4.5:1 floor for 10 pt bold
+    /// text. `#bbbbbb` clears it against the same measured glass.
+    ///
+    /// A fixed override rather than a repair run through
+    /// `theme.color(for:focused:on:)`: the owner's decision recorded in the
+    /// v5-4 plan's amendment is "no [contrast-repair] pairing on glass paths"
+    /// for this pass — the platform material carries legibility, per finding
+    /// 3b — and this is the one named exception the spike's own measurement
+    /// asked for, spelled as the one constant the finding names rather than as
+    /// a second repair chain. Flat is untouched: ``theme.inkFaint`` keeps
+    /// deriving from the theme exactly as before, and every other `inkFaint`
+    /// reader in the sidebar (the session header, the action row's keycap, the
+    /// file tree's disclosure chevron, both empty-state messages) is
+    /// unaffected — this override reaches only the two caps-row draws below,
+    /// which is what the spike actually measured.
+    ///
+    /// `.eightBit`, not `.init(hex:)`: the latter is failable, and a force
+    /// unwrap inside a `static let` turns a one-character typo into a crash on
+    /// the first paint rather than a compile error, the same reasoning
+    /// ``PaneTheme/darkPastel``'s own construction gives for using it.
+    private static let glassLabelInk = RGB.eightBit(0xBB, 0xBB, 0xBB)
+
+    /// ``theme.inkFaint`` under flat, ``glassLabelInk`` under glass.
+    private var labelInk: RGB {
+        switch resolvedChrome {
+        case .flat: theme.inkFaint
+        case .glass: Self.glassLabelInk
+        }
+    }
+
     /// How many rows the surface below is showing, drawn after the label. Nil on a
     /// surface whose size is not worth stating. See ``WorkspaceSurface/headingCount``.
     var count: Int? { didSet { needsDisplay = true } }
@@ -256,7 +294,7 @@ final class SurfaceTitleView: NSView {
             string: title.uppercased(),
             attributes: [
                 .font: Self.labelFont,
-                .foregroundColor: nsColor(theme.inkFaint),
+                .foregroundColor: nsColor(labelInk),
                 .kern: Self.tracking,
             ]
         )
@@ -269,7 +307,7 @@ final class SurfaceTitleView: NSView {
                 string: String(count),
                 attributes: [
                     .font: Self.labelFont,
-                    .foregroundColor: nsColor(theme.inkFaint),
+                    .foregroundColor: nsColor(labelInk),
                 ]
             ).draw(at: NSPoint(x: x, y: baseline(for: Self.labelFont)))
             x += Double(String(count).count) * Self.labelFont.maximumAdvancement.width

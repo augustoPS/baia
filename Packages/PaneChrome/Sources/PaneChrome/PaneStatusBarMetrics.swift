@@ -164,6 +164,24 @@ public struct PaneStatusBarMetrics: Sendable, Equatable {
         height
     }
 
+    /// The `window-padding-y` compensation arrangement (B) spends when the
+    /// terminal surface extends under the bar instead of stopping above it
+    /// (design v5, the glass-backdrop spike's verdict).
+    ///
+    /// Half of ``height``, not all of it. `window-padding-y` is symmetric —
+    /// ghostty applies it to the top edge and the bottom edge both, so raising
+    /// it by `n` removes `2n` points of drawable height. A ``height``-tall bar
+    /// at the *bottom* edge is bought back with half of that, `+11`, not `+22`:
+    /// the full value overshoots and silently costs the grid a row. Measured
+    /// against a real PTY at `Diagnostics/glass-backdrop/gridtest.swift` —
+    /// `window-padding-y` raised by exactly this amount is what leaves the row
+    /// count at 82x23 unchanged; the naive `+height` compensation (arm D there)
+    /// measures 82x22, one row short.
+    ///
+    /// A derived quantity rather than a second literal, so a future change to
+    /// ``height`` cannot leave this compensation silently wrong relative to it.
+    public static let glassWindowPaddingBump: Double = height / 2
+
     /// Whether a bar this wide keeps the left and right edges of its focus frame.
     ///
     /// A function rather than a comparison written at the draw site, so the

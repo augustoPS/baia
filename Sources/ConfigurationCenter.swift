@@ -106,6 +106,36 @@ final class ConfigurationCenter {
         SettingsDerivations.terminalConfiguration(from: settings)
     }
 
+    /// ``terminalConfiguration``, with `window-padding-y` raised by
+    /// ``PaneChrome/PaneStatusBarMetrics/glassWindowPaddingBump`` — arrangement
+    /// (B) from the glass-backdrop spike's verdict, for a pane whose surface
+    /// was built to extend under the footer bar.
+    ///
+    /// Built from ``settings/windowPadding`` directly rather than by reading
+    /// the padding back out of `terminalConfiguration`: `TerminalConfiguration`
+    /// carries its accumulated commands as `internal` state (`GhosttyTerminal`
+    /// keeps `commands` unexported), so there is nothing here to reach in and
+    /// inspect even if that were the right way to do it, and it would not be —
+    /// this reads the one input that actually decided the base value.
+    ///
+    /// Appended after everything `terminalOverrides` already renders, which is
+    /// what makes this safe to compose rather than something that has to
+    /// duplicate `TerminalOverride.windowPadding`'s own rounding rule twice:
+    /// ghostty's config parser takes the *last* value it reads for a scalar
+    /// key, the same rule `SettingsDerivations.terminalTheme` leans on to fold
+    /// a background override on top of a theme, so one more `window-padding-y`
+    /// line after the settings-derived one simply wins.
+    ///
+    /// `TerminalPaneController.isSpawnedUnderGlass` decides which of this or
+    /// ``terminalConfiguration`` a given pane is handed, frozen at that pane's
+    /// spawn; see that property's own doc comment for why a pane already
+    /// running must never be moved from one to the other.
+    var glassCompensatedTerminalConfiguration: TerminalConfiguration {
+        terminalConfiguration.windowPaddingY(
+            Int((settings.windowPadding + PaneStatusBarMetrics.glassWindowPaddingBump).rounded())
+        )
+    }
+
     /// The configuration and theme `settings` would produce, without applying them.
     ///
     /// Exposed for the settings window's right-hand sample, so a draft renders
@@ -180,7 +210,23 @@ final class ConfigurationCenter {
         // Assigning `view.configuration` or `view.controller` has a `didSet`
         // that tears the surface down and respawns the shell, losing the
         // scrollback and whatever was running in the pane.
-        pane.applyTerminalConfiguration(terminalConfiguration, theme: terminalTheme)
+        //
+        // **Which configuration, not just whether one applies.** Reading
+        // `pane.isSpawnedUnderGlass` here rather than branching on the live
+        // `resolvedChrome` just assigned above is deliberate: that property is
+        // frozen at this pane's first configuration (see its own doc comment),
+        // so a pane spawned under flat keeps taking `terminalConfiguration`
+        // even after a live toggle moves `resolvedChrome` to glass, and a pane
+        // spawned under glass keeps its `+glassWindowPaddingBump` even after a
+        // toggle moves back to flat. Either direction, changing which
+        // configuration an already-running pane receives would move its
+        // `window-padding-y` on a live surface, which is a live grid resize —
+        // the SIGWINCH hazard arrangement (B) was built to avoid, not to
+        // relocate to a settings reload.
+        pane.applyTerminalConfiguration(
+            pane.isSpawnedUnderGlass ? glassCompensatedTerminalConfiguration : terminalConfiguration,
+            theme: terminalTheme
+        )
     }
 
     // MARK: - Watching
