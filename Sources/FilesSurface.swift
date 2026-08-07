@@ -45,19 +45,15 @@ final class FilesSurface: NSObject, WorkspaceSurface {
 
     /// The column's body, drawn once by the scroll view and never by the rows on
     /// top of it. See ``ChangesSurface/fill()``, which says what filling twice
-    /// costs now that the fill has an alpha, what flat versus glass draws, and
-    /// why glass scales `fillSidebar`'s alpha by ``backgroundOpacity`` rather
-    /// than discarding it the way the footer's opaque-under-flat case can.
+    /// costs now that the fill has an alpha, and Task 2's own note on why glass
+    /// draws the same fill flat does rather than ``MaterialSet/fillSidebar``.
     private func fill() {
-        switch resolvedChrome {
-        case .flat:
-            scrollView.backgroundColor = ChangesSurface.nsColor(theme.background, alpha: backgroundOpacity)
-        case let .glass(set):
-            scrollView.backgroundColor = ChangesSurface.nsColor(
-                set.fillSidebar.rgb,
-                alpha: set.fillSidebar.alpha * backgroundOpacity
-            )
-        }
+        // No glass branch (Task 2, untint the chrome): this surface has no
+        // `NSGlassEffectView` backing it at all, so `fillSidebar` was the only
+        // thing distinguishing "glass" from "flat" here, and it was an `rgba`
+        // fill drawn on what the task calls a glass path. Both cases now paint
+        // the same theme background at `backgroundOpacity`.
+        scrollView.backgroundColor = ChangesSurface.nsColor(theme.background, alpha: backgroundOpacity)
     }
 
     /// The tree to draw.

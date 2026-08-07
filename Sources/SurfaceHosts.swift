@@ -177,8 +177,9 @@ final class SidebarHost: NSViewController {
         }
     }
 
-    /// What each section's own scroll background draws, per Task 5: flat,
-    /// unchanged, or glass with the material set the live appearance picks.
+    /// What each section is told to resolve its own chrome against. See
+    /// ``WorkspaceSurface/resolvedChrome`` for what the surfaces actually draw
+    /// from it (both cases fill identically as of Task 2).
     ///
     /// Pushed straight through to every ``Section/surface``, the same shape as
     /// ``theme`` and ``backgroundOpacity`` immediately above: this host holds

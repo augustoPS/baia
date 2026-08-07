@@ -335,10 +335,10 @@ final class PaneStatusBarView: NSView {
         contentView.needsDisplay = true
         barFrame.needsDisplay = true
         applyBarFrameOpacity()
-        // The glass backing has no `draw(_:)` of its own: its tint is the only
-        // place its fill lives, so a focus change (which steps the fill
-        // between `fillChrome` and `fillThick`, Task 6) has to reach it here
-        // as well as through the drawn fill `draw(_:)` reads directly.
+        // The glass backing has no `draw(_:)` of its own, so a theme or focus
+        // change still has to reach its tint here even though the tint is
+        // now always nil (Task 2): a stale non-nil tint left by some future
+        // caller must not survive a change that runs through `invalidate()`.
         updateGlassTint()
     }
 
@@ -347,6 +347,14 @@ final class PaneStatusBarView: NSView {
     /// The material set glass resolves to, or nil under flat. One place to
     /// unwrap ``resolvedChrome`` for every reader below rather than a `switch`
     /// repeated at each of them.
+    ///
+    /// **Untinted glass (Task 2).** Nothing below reads ``MaterialSet/fillChrome``
+    /// or ``MaterialSet/fillThick`` any more: the footer's glass backing draws
+    /// no fill of its own and carries no tint (see ``updateGlassTint()``), and
+    /// `draw(_:)` no longer paints a material fill under glass either. This
+    /// property is kept because a later task's rim/lift work still needs the
+    /// resolved set; it is no longer a source of anything this file fills or
+    /// tints with.
     private var materialSet: MaterialSet? {
         switch resolvedChrome {
         case .flat: nil
@@ -354,22 +362,9 @@ final class PaneStatusBarView: NSView {
         }
     }
 
-    /// The fill glass draws, or nil under flat: ``MaterialSet/fillThick`` on
-    /// the focused pane's bar (Task 6, "the footer fill steps to the thick
-    /// material"), ``MaterialSet/fillChrome`` everywhere else.
-    ///
-    /// Gated on ``framesForFocus`` rather than ``isFocused`` alone, for the
-    /// same reason the drawn focus frame is: a background window recedes as
-    /// one object, and a thick fill left on one pane's footer in an inactive
-    /// window would be exactly the un-recessed pane the scrim exists to
-    /// avoid.
-    private var effectiveFillMaterial: RGBA? {
-        guard let materialSet else { return nil }
-        return framesForFocus ? materialSet.fillThick : materialSet.fillChrome
-    }
-
     /// Creates or tears down ``glassBacking`` to match ``resolvedChrome``, and
-    /// repaints: the drawn fill and the text both read ``materialSet`` too.
+    /// repaints: `draw(_:)` reads ``materialSet`` too, to know whether to skip
+    /// its own fill (Task 2 — glass draws none).
     ///
     /// Verified against the installed SDK before this package's Task 4 built on
     /// it (see the plan's Task 4 gate): `NSGlassEffectView.cornerRadius`,
@@ -401,19 +396,26 @@ final class PaneStatusBarView: NSView {
         invalidate()
     }
 
-    /// Writes ``effectiveFillMaterial`` onto ``glassBacking``'s tint, or does
-    /// nothing under flat where there is no backing to write to.
+    /// Keeps ``glassBacking``'s tint nil, or does nothing under flat where
+    /// there is no backing to write to.
     ///
-    /// The one place ``glassBacking/tintColor`` is set. ``applyResolvedChrome()``
-    /// used to set it directly at creation time; that missed every later focus
-    /// change, since focus does not go through ``applyResolvedChrome()`` at
-    /// all. Routing every write through ``invalidate()`` instead means a
-    /// focus change, a theme change and the initial creation all reach the
-    /// tint the same way, and cannot drift into a backing that still shows
-    /// the fill from before the pane was focused.
+    /// **Untinted glass (Task 2).** `NSGlassEffectView.tintColor` used to carry
+    /// ``MaterialSet/fillChrome`` or ``MaterialSet/fillThick``, stepped by
+    /// focus; the spike at `Diagnostics/glass-backdrop/` measured the tint+fill
+    /// layers as the largest single term in the bar's appearance and found they
+    /// pin it near mid-grey, defeating the material's own adaptation.
+    /// Untinted `regular` glass is the platform-correct default (HIG: glass is
+    /// colorless unless one element is deliberately accented), so this writes
+    /// `nil` explicitly rather than leaving the property untouched.
+    ///
+    /// Still routed through ``invalidate()`` rather than set once at creation:
+    /// a stale non-nil tint left over from a future accented element (the
+    /// capsule, a later task) must not survive a focus change or a theme
+    /// change reaching this bar, the same Ghostty #9973 lesson the constraint
+    /// names.
     private func updateGlassTint() {
-        guard let glassBacking, let fill = effectiveFillMaterial else { return }
-        glassBacking.tintColor = nsColor(fill.rgb, alpha: fill.alpha)
+        guard let glassBacking else { return }
+        glassBacking.tintColor = nil
     }
 
     /// Clips ``glassBacking`` to the same outline the drawn fill clips to in
@@ -561,18 +563,17 @@ final class PaneStatusBarView: NSView {
         NSGraphicsContext.saveGraphicsState()
         cornerPath(in: bounds).addClip()
         // Flat draws its own opaque fill, unchanged from what Plan 1 shipped.
-        // Glass drops to the material's own translucent fill instead: `draw(_:)`
-        // is this view's base layer, which every subview (including
-        // `glassBacking`) renders above, so an opaque fill here would sit under
-        // the glass and hide it completely. The material fill is what lets the
-        // glass view's own blur and vibrancy show through this layer rather than
-        // being painted over by it.
-        if let fill = effectiveFillMaterial {
-            nsColor(fill.rgb, alpha: fill.alpha).setFill()
-        } else {
+        // Glass draws no fill at all (Task 2): `draw(_:)` is this view's base
+        // layer, which every subview (including `glassBacking`) renders above,
+        // so any fill here — opaque or translucent — would sit under the glass
+        // and either hide it or repeat the tint `updateGlassTint()` just
+        // dropped. Leaving this layer transparent under glass is what lets the
+        // glass view's own blur and vibrancy read with nothing painted between
+        // it and the terminal beneath.
+        if materialSet == nil {
             nsColor(theme.barBackground).setFill()
+            bounds.fill()
         }
-        bounds.fill()
         drawHairline()
         NSGraphicsContext.restoreGraphicsState()
     }
@@ -683,10 +684,9 @@ final class PaneStatusBarView: NSView {
         case .done:
             // The done glyph is drawn straight on the bar's own surface, same as
             // every ordinary run, so it is judged against the same
-            // ``effectiveBarFill`` those go through rather than against
-            // `theme.barBackground` unconditionally, which would leave a
-            // glass footer's checkmark repaired for a fill it is not actually
-            // sitting on.
+            // ``effectiveBarFill`` those go through: ``theme.barBackground``
+            // on both flat and glass now (Task 2 — the repair chain no longer
+            // grades glass ink against the material fill at all).
             let ink = theme.ink(on: effectiveBarFill)
             if let glyph = capsuleGlyph(ink: ink) {
                 glyph.draw(at: NSPoint(
@@ -780,21 +780,24 @@ final class PaneStatusBarView: NSView {
 
     /// The surface this bar's text is judged readable against.
     ///
-    /// `theme.barBackground` under flat, unchanged. Under glass, the fill this
-    /// bar is actually drawing (``effectiveFillMaterial``, `fillChrome` or the
-    /// focused pane's `fillThick`) flattened onto `theme.background`
-    /// (``PaneChrome/RGBA/composited(over:)``): this package cannot see what
-    /// the compositor actually draws under a translucent bar, so the theme's
-    /// own background is the honest approximation the plan calls for, the
-    /// nearest real surface this type has any way to compute. Reading
-    /// ``effectiveFillMaterial`` rather than ``MaterialSet/fillChrome``
-    /// directly is what keeps this in step with Task 6's thick-fill focus
-    /// step: a bar that stepped its fill without stepping the surface its own
-    /// repair chain judges text against would let the checkmark or the anchor
-    /// name go unrepaired against a fill it is no longer sitting on.
+    /// `theme.barBackground`, unconditionally, on both flat and glass.
+    ///
+    /// **Task 2 (untint the chrome), superseding Task 4's original clause:**
+    /// this used to flatten the glass material's own fill onto `theme.background`
+    /// as an "honest approximation" for the repair chain to grade glass text
+    /// against, on the reasoning that this package cannot see what the
+    /// compositor actually draws under a translucent bar. The three-round
+    /// spike at `Diagnostics/glass-backdrop/` (its README is the measured
+    /// record) found that approximation predicts roughly 2.09:1 contrast for
+    /// ink graded against the well colour, while the glass measured 9.49:1 in
+    /// practice: real vitreous glass supplies its own legibility (the system
+    /// compositor's own vibrancy/adaptation), which grading against a flattened
+    /// swatch cannot see and actively fights. So the repair chain now applies
+    /// to the flat/Reduce-Transparency rendering only; glass paths take the
+    /// same ungraded ``theme.barBackground``-judged ink flat always used,
+    /// carrying no glass-specific grading at all.
     private var effectiveBarFill: RGB {
-        guard let fill = effectiveFillMaterial else { return theme.barBackground }
-        return fill.composited(over: theme.background)
+        theme.barBackground
     }
 
     /// The colour a run is drawn in. Tested against `focused` alone in
@@ -929,10 +932,11 @@ final class PaneStatusBarView: NSView {
     /// value rendered by ghostty, so the footer and the grid would disagree about
     /// what `#141414` looks like.
     ///
-    /// `alpha` defaults to opaque, which is every call site on this bar except
-    /// the glass backing's own tint (Task 4): everything this bar draws itself
-    /// is opaque over the terminal, per ``PaneChrome/RGB``'s own doc comment, and
-    /// the material fills are the one exception, carried as ``PaneChrome/RGBA``.
+    /// `alpha` defaults to opaque, which is every call site on this bar: this
+    /// view draws nothing translucent of its own (Task 2 dropped the glass
+    /// backing's tinted fill, its one remaining exception), so every colour
+    /// it hands to `setFill()`/`setStroke()` is opaque over the terminal, per
+    /// ``PaneChrome/RGB``'s own doc comment.
     private func nsColor(_ rgb: PaneChrome.RGB, alpha: Double = 1) -> NSColor {
         NSColor(
             srgbRed: CGFloat(rgb.red),

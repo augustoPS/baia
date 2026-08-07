@@ -47,19 +47,21 @@ protocol WorkspaceSurface: AnyObject {
     /// and reaches ghostty as a config override.
     var backgroundOpacity: Double { get set }
 
-    /// What the surface's own scroll background draws, per Task 5.
+    /// What the surface's own scroll background draws.
     ///
-    /// Flat: unchanged, `theme.background` at ``backgroundOpacity``, exactly what
-    /// Plan 1 shipped. Glass: the material set's own `fillSidebar`, scaled by
-    /// ``backgroundOpacity`` rather than drawn at the token's own fixed alpha.
-    /// Unlike the footer (Task 4), which was opaque under flat and so has no
-    /// owner-set alpha to carry forward, this surface was already translucent at
-    /// `backgroundOpacity` before glass existed — the owner runs wells at 0.85 —
-    /// so glass here has to stay additive over that setting rather than replace
-    /// it outright. No accent or theme tint rides along with it: the v5 rule
-    /// against a tinted sidebar element is about not letting anything but this one
-    /// fill answer the question, which is why the type is ``PaneChrome/ResolvedChrome``
-    /// and not a colour the caller would have to derive twice.
+    /// `theme.background` at ``backgroundOpacity`` on both flat and glass now,
+    /// exactly what Plan 1 shipped either way.
+    ///
+    /// **Task 2 (untint the chrome) superseded Task 5's original clause here.**
+    /// Glass used to swap in the material set's own `fillSidebar`, scaled by
+    /// ``backgroundOpacity`` — an `rgba` fill on what the task calls the
+    /// sidebar's glass path, even though this surface has no
+    /// `NSGlassEffectView` of its own the way the footer, palette and popover
+    /// do. Task 2 drops that fill along with theirs. ``resolvedChrome`` stays
+    /// on the protocol and still triggers a repaint on change, because a
+    /// caller assigning it while the app is configured for glass is real
+    /// (a theme or opacity edit has to reach the screen), even though flat
+    /// and glass now paint identically.
     var resolvedChrome: ResolvedChrome { get set }
 }
 

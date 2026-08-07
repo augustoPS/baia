@@ -44,26 +44,22 @@ final class ChangesSurface: NSObject, WorkspaceSurface {
     /// over the first now that it is not: two composites of the same colour land
     /// at 0.9775 and the column would sit a shade above every pane beside it.
     ///
-    /// Flat fills at `theme.background` and ``backgroundOpacity``, byte-identical
-    /// to what Plan 1 shipped. Glass swaps in the resolved material set's own
-    /// `fillSidebar`, scaled by ``backgroundOpacity``: unlike the footer (Task 4,
-    /// which was opaque under flat and so has no owner-set alpha to preserve),
-    /// this surface was already translucent at `backgroundOpacity` before glass
-    /// existed, and the owner runs wells at 0.85 today. Dropping that factor on
-    /// the glass path would mean the setter still fires (the `didSet` above still
-    /// calls `fill()`) while the value it is supposed to control stopped
-    /// reaching the screen — live in name, inert in effect. Multiplying keeps
-    /// glass additive over the shipped translucency instead of replacing it.
+    /// Fills at `theme.background` and ``backgroundOpacity`` on both flat and
+    /// glass, byte-identical to what Plan 1 shipped.
+    ///
+    /// **No glass branch (Task 2, untint the chrome), superseding this
+    /// property's original Task 5 clause.** This surface has no
+    /// `NSGlassEffectView` of its own — unlike the footer, palette and popover,
+    /// the sidebar's "glass" was only ever this scroll view's flat
+    /// `backgroundColor` swapped to ``MaterialSet/fillSidebar``, an `rgba` fill
+    /// exactly like the ones those three drop. There is no glass compositing
+    /// underneath it to reveal once the swap is gone, so the honest fix is the
+    /// same fill flat always used, with ``resolvedChrome`` still threaded
+    /// through and still triggering ``fill()`` on change (a theme or opacity
+    /// edit while glass is configured must still repaint), just no longer
+    /// branching on it.
     private func fill() {
-        switch resolvedChrome {
-        case .flat:
-            scrollView.backgroundColor = Self.nsColor(theme.background, alpha: backgroundOpacity)
-        case let .glass(set):
-            scrollView.backgroundColor = Self.nsColor(
-                set.fillSidebar.rgb,
-                alpha: set.fillSidebar.alpha * backgroundOpacity
-            )
-        }
+        scrollView.backgroundColor = Self.nsColor(theme.background, alpha: backgroundOpacity)
     }
 
     /// What to draw. Assigning re-sorts, so the caller hands over git's order and

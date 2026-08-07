@@ -90,18 +90,17 @@ final class PaletteQueryView: NSView {
     }
 
     override func draw(_: NSRect) {
-        // Flat draws the opaque panel background unchanged. Glass draws the
-        // menu material's own translucent fill instead, so the panel's own
+        // Flat draws the opaque panel background unchanged. Glass draws no
+        // fill at all (Task 2 — untint the chrome): the panel's own
         // `NSGlassEffectView` backing (below every band, added by the
-        // controller) shows its blur and vibrancy through this layer rather
-        // than being painted over by it — the same trade `PaneStatusBarView`
-        // makes for the footer.
-        if let set = materialSet {
-            nsColor(set.fillMenu.rgb, alpha: set.fillMenu.alpha).setFill()
-        } else {
+        // controller) is itself untinted now, and painting `fillMenu` here
+        // would put back exactly the tinted layer that view no longer draws,
+        // one level higher. See ``PaneStatusBarView/draw(_:)`` for the same
+        // trade made on the footer.
+        if materialSet == nil {
             nsColor(theme.panelBackground).setFill()
+            bounds.fill()
         }
-        bounds.fill()
 
         drawLoupe(at: NSPoint(x: Self.loupeInset, y: bounds.height / 2))
 
@@ -317,14 +316,12 @@ final class PaletteListView: NSView {
     override var canBecomeKeyView: Bool { false }
 
     override func draw(_: NSRect) {
-        // See ``PaletteQueryView/draw(_:)`` for why glass draws the
-        // translucent menu fill here rather than skipping the paint.
-        if let set = materialSet {
-            nsColor(set.fillMenu.rgb, alpha: set.fillMenu.alpha).setFill()
-        } else {
+        // See ``PaletteQueryView/draw(_:)`` for why glass skips this fill
+        // rather than painting the translucent menu material.
+        if materialSet == nil {
             nsColor(theme.panelBackground).setFill()
+            bounds.fill()
         }
-        bounds.fill()
 
         guard !rows.isEmpty else {
             drawEmptyState()
@@ -459,15 +456,18 @@ final class PaletteListView: NSView {
         theme.color(for: emphasis, focused: true, on: selected ? theme.selectedRowBackground : effectiveBackground)
     }
 
-    /// The surface unselected text is judged readable against: `panelBackground`
-    /// under flat, unchanged; under glass, the menu fill flattened onto
-    /// `theme.background`, the same honest approximation
-    /// `PaneStatusBarView.effectiveBarFill` uses for the footer, since this
-    /// package cannot see what the compositor actually draws under a
-    /// translucent list.
+    /// The surface unselected text is judged readable against:
+    /// `theme.panelBackground`, unconditionally, on both flat and glass now.
+    ///
+    /// **Task 2, superseding Task 4's original clause**: this used to flatten
+    /// the menu fill onto `theme.background` as an approximation for the
+    /// repair chain to grade glass text against. See
+    /// `PaneStatusBarView.effectiveBarFill` for the measured reason that
+    /// approximation was dropped (2.09:1 predicted versus 9.49:1 measured):
+    /// the repair chain now applies to the flat/Reduce-Transparency rendering
+    /// only, and glass takes the same ungraded ink flat always used.
     private var effectiveBackground: RGB {
-        guard let set = materialSet else { return theme.panelBackground }
-        return set.fillMenu.composited(over: theme.background)
+        theme.panelBackground
     }
 
     // MARK: - Mouse
@@ -607,14 +607,12 @@ final class PaletteHintsView: NSView {
     override var acceptsFirstResponder: Bool { false }
 
     override func draw(_: NSRect) {
-        // See ``PaletteQueryView/draw(_:)`` for why glass draws the
-        // translucent menu fill here rather than skipping the paint.
-        if let set = materialSet {
-            nsColor(set.fillMenu.rgb, alpha: set.fillMenu.alpha).setFill()
-        } else {
+        // See ``PaletteQueryView/draw(_:)`` for why glass skips this fill
+        // rather than painting the translucent menu material.
+        if materialSet == nil {
             nsColor(theme.panelBackground).setFill()
+            bounds.fill()
         }
-        bounds.fill()
         nsColor(theme.divider).setFill()
         NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
 

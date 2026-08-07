@@ -326,13 +326,20 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
     /// own copy was (Plan 2's Task 4 gate): `NSGlassEffectView.tintColor` and
     /// `.style` compile against macOS 26, unguarded, matching `project.yml`'s
     /// deployment target.
+    ///
+    /// **Untinted glass (Task 2).** `backing.tintColor` used to carry
+    /// `set.fillMenu`; it is left at its default nil now, the same untinted
+    /// `regular` glass ``PaneStatusBarView``'s own copy resolves to, and the
+    /// `set` this switch's `.glass` case carries is otherwise unused here —
+    /// the three bands above still draw their own fill (Task 6's follow-on
+    /// work; unaffected by this task) rather than reading it from this method.
     private func applyResolvedChrome() {
         switch resolvedChrome {
         case .flat:
             glassBacking?.removeFromSuperview()
             glassBacking = nil
             content.layer?.backgroundColor = nsColor(theme.panelBackground).cgColor
-        case let .glass(set):
+        case .glass:
             // Cleared rather than left at `panelBackground`: `content`'s own
             // layer sits behind `glassBacking` in the same window, and an
             // opaque colour there is exactly what the glass view would sample
@@ -348,13 +355,14 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
                 backing = PaletteGlassBacking(frame: content.bounds)
                 backing.style = .regular
                 backing.wantsLayer = true
-                // Below the three bands, which each draw the same translucent
-                // `fillMenu` fill on top of it (mirroring how the footer's
-                // glass backing sits under its own drawn fill).
+                // Below the three bands. Untinted, unlike the fill those bands
+                // still draw on top of it — see ``PaletteQueryView/draw(_:)``
+                // and its siblings, which are the ones Task 2 leaves alone
+                // (they are the bands' own drawn content, not this glass
+                // backing's tint).
                 content.addSubview(backing, positioned: .below, relativeTo: queryView)
                 glassBacking = backing
             }
-            backing.tintColor = nsColor(set.fillMenu.rgb, alpha: set.fillMenu.alpha)
         }
     }
 

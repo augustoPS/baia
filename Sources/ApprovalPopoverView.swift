@@ -154,12 +154,17 @@ final class ApprovalPopoverView: NSView {
         }
     }
 
+    /// **Untinted glass (Task 2).** `backing.tintColor` used to carry
+    /// `set.fillMenu`; the case below no longer binds `set` at all, since
+    /// nothing here reads it any more — the tint stays at its default nil,
+    /// the same untinted `regular` glass ``PaneStatusBarView``'s own copy
+    /// resolves to.
     private func applyResolvedChrome() {
         switch resolvedChrome {
         case .flat:
             glassBacking?.removeFromSuperview()
             glassBacking = nil
-        case let .glass(set):
+        case .glass:
             let backing: ApprovalPopoverGlassBacking
             if let existing = glassBacking {
                 backing = existing
@@ -177,7 +182,6 @@ final class ApprovalPopoverView: NSView {
                 glassBacking = backing
             }
             backing.frame = bounds
-            backing.tintColor = nsColor(set.fillMenu.rgb, alpha: set.fillMenu.alpha)
         }
         needsDisplay = true
         // `effectiveBackground` (and so the body's ink) depends on
@@ -193,17 +197,15 @@ final class ApprovalPopoverView: NSView {
 
     // MARK: - Drawing
 
-    /// This view's own base layer: the material (or flat) fill and the
-    /// hairline stroke only. Everything else lives in ``contentView``, a
+    /// This view's own base layer: the flat fill (glass draws none, Task 2)
+    /// and the hairline stroke. Everything else lives in ``contentView``, a
     /// sibling stacked above ``glassBacking`` — see
     /// ``ApprovalPopoverContentView``'s doc comment for why the split exists.
     override func draw(_: NSRect) {
-        if let set = materialSet {
-            nsColor(set.fillMenu.rgb, alpha: set.fillMenu.alpha).setFill()
-        } else {
+        if materialSet == nil {
             nsColor(theme.panelBackground).setFill()
+            bounds.fill()
         }
-        bounds.fill()
 
         let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: Self.cornerRadius, yRadius: Self.cornerRadius)
         path.lineWidth = 1
@@ -284,9 +286,16 @@ final class ApprovalPopoverView: NSView {
         ))
     }
 
+    /// The surface the body text is judged readable against:
+    /// `theme.panelBackground`, unconditionally, on both flat and glass now.
+    ///
+    /// **Task 2, superseding Task 4's original clause.** See
+    /// `PaneStatusBarView.effectiveBarFill` for the measured reason grading
+    /// against a flattened menu-fill swatch was dropped in favour of the same
+    /// ungraded ink flat always used: the repair chain now applies to the
+    /// flat/Reduce-Transparency rendering only.
     private var effectiveBackground: RGB {
-        guard let set = materialSet else { return theme.panelBackground }
-        return set.fillMenu.composited(over: theme.background)
+        theme.panelBackground
     }
 
     // MARK: - Mouse
