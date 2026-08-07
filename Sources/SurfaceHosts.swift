@@ -221,6 +221,8 @@ final class SidebarHost: NSViewController {
             guard resolvedChrome != oldValue else { return }
             for section in sections { section.surface.resolvedChrome = resolvedChrome }
             for section in sections { section.heading.resolvedChrome = resolvedChrome }
+            sessionHeader.resolvedChrome = resolvedChrome
+            actionRow.resolvedChrome = resolvedChrome
             applyResolvedChrome()
         }
     }
@@ -366,7 +368,9 @@ final class SidebarHost: NSViewController {
         view.addSubview(widthDivider)
 
         sessionHeader.theme = theme
+        sessionHeader.resolvedChrome = resolvedChrome
         actionRow.theme = theme
+        actionRow.resolvedChrome = resolvedChrome
         view.addSubview(sessionHeader)
         view.addSubview(actionRow)
 

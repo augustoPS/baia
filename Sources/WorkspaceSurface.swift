@@ -258,8 +258,20 @@ final class SurfaceTitleView: NSView {
     var split: DividerGrabView.Touch = .rest { didSet { needsDisplay = true } }
 
     override func draw(_: NSRect) {
-        nsColor(theme.barBackground).setFill()
-        bounds.fill()
+        // Flat draws its own opaque fill, unchanged from what Plan 1 shipped.
+        // Glass draws no fill at all (Task 3, following Task 2's own pattern —
+        // see `PaneStatusBarView.draw(_:)`): this heading sits directly over
+        // `SidebarHost.glassBacking`, and a fill here would paint an opaque
+        // band across it, the HIG violation this task exists to close. The
+        // label's own ink already branches on ``resolvedChrome`` below
+        // (``labelInk``); only the fill was still unconditional.
+        switch resolvedChrome {
+        case .flat:
+            nsColor(theme.barBackground).setFill()
+            bounds.fill()
+        case .glass:
+            break
+        }
 
         // A hairline along the bottom, the same one the tree draws between panes,
         // so the heading is separated by the divider vocabulary already in use

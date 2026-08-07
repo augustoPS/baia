@@ -15,6 +15,17 @@ import PaneChrome
 final class SidebarActionRowView: NSView {
     var theme: PaneTheme = .darkPastel { didSet { needsDisplay = true } }
 
+    /// Gates the opaque fill in ``draw(_:)``. Pushed by `SidebarHost` the same
+    /// way it pushes ``SurfaceTitleView/resolvedChrome`` (Task 3, following
+    /// Task 2's pattern): this row sits directly over `SidebarHost`'s own
+    /// glass backing, and its `barBackground` fill was still unconditional,
+    /// which painted an opaque strip across that glass. The label, keycap
+    /// outline and hover/press washes are unaffected — none of them was part
+    /// of the spike's contrast measurement (finding 6 covered only
+    /// ``SurfaceTitleView``'s caps label), so their inks are left unchanged
+    /// for Task 6's live pass rather than guessed at here.
+    var resolvedChrome: ResolvedChrome = .flat { didSet { needsDisplay = true } }
+
     /// The keycap glyph drawn trailing, e.g. `⌘T`. Set by the caller from
     /// `WorkspaceMenu.MenuBarLayout.shortcutText(of: .newTab)` rather than
     /// hardcoded here: the row's click opens a tab
@@ -40,8 +51,18 @@ final class SidebarActionRowView: NSView {
     override var acceptsFirstResponder: Bool { false }
 
     override func draw(_: NSRect) {
-        nsColor(theme.barBackground).setFill()
-        bounds.fill()
+        // Flat draws its own opaque fill, unchanged from what Plan 1/Plan 3
+        // shipped. Glass draws no fill at all (Task 3, same pattern as
+        // ``SurfaceTitleView`` and `PaneStatusBarView.draw(_:)`): the label,
+        // keycap and hover/press washes below render directly over
+        // `SidebarHost.glassBacking`.
+        switch resolvedChrome {
+        case .flat:
+            nsColor(theme.barBackground).setFill()
+            bounds.fill()
+        case .glass:
+            break
+        }
 
         nsColor(theme.hairline).setFill()
         NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()

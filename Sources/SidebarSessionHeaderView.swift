@@ -34,13 +34,33 @@ final class SidebarSessionHeaderView: NSView {
     /// rather than a session with blank fields.
     var status: PaneStatus? { didSet { needsDisplay = true } }
 
+    /// Gates the opaque fill in ``draw(_:)``. Pushed by `SidebarHost` the same
+    /// way it pushes ``SurfaceTitleView/resolvedChrome`` (Task 3, following
+    /// Task 2's pattern): this row sits directly over `SidebarHost`'s own
+    /// glass backing, and its `barBackground` fill was still unconditional,
+    /// which painted an opaque strip across that glass. Every ink below is
+    /// unaffected — the spike's contrast measurement (finding 6) covered only
+    /// ``SurfaceTitleView``'s caps label, not this row's repo/branch/status
+    /// inks, so they are left as `theme`-derived colours for Task 6's live
+    /// pass rather than guessed at here.
+    var resolvedChrome: ResolvedChrome = .flat { didSet { needsDisplay = true } }
+
     override var isFlipped: Bool { true }
 
     override var acceptsFirstResponder: Bool { false }
 
     override func draw(_: NSRect) {
-        nsColor(theme.barBackground).setFill()
-        bounds.fill()
+        // Flat draws its own opaque fill, unchanged from what Plan 1/Plan 3
+        // shipped. Glass draws no fill at all (Task 3, same pattern as
+        // ``SurfaceTitleView`` and `PaneStatusBarView.draw(_:)`): the ink
+        // below renders directly over `SidebarHost.glassBacking`.
+        switch resolvedChrome {
+        case .flat:
+            nsColor(theme.barBackground).setFill()
+            bounds.fill()
+        case .glass:
+            break
+        }
 
         nsColor(theme.hairline).setFill()
         NSRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1).fill()
