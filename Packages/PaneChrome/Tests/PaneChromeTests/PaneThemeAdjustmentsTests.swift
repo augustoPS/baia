@@ -125,6 +125,147 @@ import Testing
         }
     }
 
+    // MARK: - The shapes bareGlass composes
+
+    /// **`bareGlass` is not a field on this type, and this arm is what says so
+    /// deliberately rather than by omission.**
+    ///
+    /// The app's `chrome.bareGlass` suppresses the hand-drawn glass-era layer,
+    /// and none of it lands here. Every suppression is at a drawing site that
+    /// knows its own `resolvedChrome`, because the two channels this type
+    /// offers — a `barLift` fraction and an ink ratio — are both **path-blind**:
+    /// one adjustments value feeds the flat branch and the glass branch of the
+    /// same derivation, so anything composed into it reaches flat as well.
+    ///
+    /// That is not a style preference, it is what the two arms below measured.
+    /// A `bareGlass: Bool?` field here would be worse still: it would add one
+    /// more thing that has to be nil for ``PaneThemeAdjustments/none`` to stay
+    /// the identity, and it would put "which chrome is live" inside a package
+    /// that deliberately does not know — this type shadows *numbers*, and
+    /// glass-versus-flat is the app's question.
+    ///
+    /// So `.none` is untouched by the knob, and stays exactly the identity it
+    /// was.
+    @Test func aBarLiftOfZeroWouldMoveTheFlatBarWhichIsWhyTheKnobDoesNotComposeOne() {
+        // Site 2's tempting spelling: lift the bar by nothing, so it sits on the
+        // terminal background instead of being lifted off it.
+        for base in [theme, paper] {
+            var bare = base
+            bare.adjustments.barLift = 0
+
+            #expect(bare.barBackground == base.background)
+            #expect(bare.barBackground != base.barBackground)
+        }
+
+        // And the reason it is not composed: `barBackground` is the fill the
+        // **flat** bar paints (`PaneStatusBarView.draw(_:)` fills it only when
+        // `materialSet == nil`; under glass the bar draws no fill at all). So
+        // this value moves a flat pixel and no glass one, which is the exact
+        // inverse of what the knob is for.
+    }
+
+    /// A floor of 1.0 is the floor every colour clears, since a contrast ratio
+    /// cannot fall below 1:1 — so the repair chain returns its first link
+    /// untouched and the ink renders its raw derivation.
+    ///
+    /// This is site 3's suppression, and it is deliberate un-repair: on the
+    /// bright-glass stand-in the faint tier is *measurably* illegible
+    /// (``theRepairIsNotANoOpOnTheBrightGlassStandIn`` pins that), and under
+    /// `bareGlass` the owner is meant to see exactly that, because what the glass
+    /// alone does to legibility is the thing being judged.
+    @Test func aRatioOfOneReturnsTheSectionHeaderInkAsItsRawDerivation() {
+        let brightGlass = RGB.eightBit(0x4B, 0x4B, 0x4B)
+        var bare = theme
+        bare.adjustments.sectionHeaderMinimumRatio = Self.bareGlassRatio
+
+        // Raw `inkFaint`, on the backdrop where the unsuppressed chain repairs.
+        #expect(bare.sectionHeaderInk(on: brightGlass) == theme.inkFaint)
+
+        // And the un-repair is real: what it returns is the colour the shipped
+        // chain refused, below the floor 10 pt bold text is owed.
+        #expect(bare.sectionHeaderInk(on: brightGlass)
+            != theme.sectionHeaderInk(on: brightGlass))
+        #expect(bare.sectionHeaderInk(on: brightGlass)
+            .contrastRatio(against: brightGlass) < PaneTheme.minimumTextContrast)
+    }
+
+    /// **The arm that narrowed `bareGlass`'s ink suppression to one site, and it
+    /// failed first as a three-ink version of itself.**
+    ///
+    /// The knob's first spelling pinned all three ink ratios to
+    /// ``bareGlassRatio``, on the reading that the repair chain is a glass-era
+    /// addition and a no-op under flat. That reading is true on
+    /// ``PaneTheme/darkPastel`` and **false on a light theme**: here `inkFaint`
+    /// scores under the 4.5 floor against ``PaneTheme/barBackground`` itself, so
+    /// the shipped chain repairs the two sidebar rows *on the flat path*.
+    ///
+    /// The two sidebar rows pass `barBackground` on both paths (see
+    /// `SidebarSessionHeaderView.labelInk`, which records that its glass branch
+    /// was tried and reverted), so a ratio pinned for them is a pin that reaches
+    /// flat — a rendering change on every light theme, under a knob whose whole
+    /// contract is that it touches glass only. Only `SurfaceTitleView`'s caps
+    /// label is graded against the glass stand-in, so it is the only ink
+    /// `bareGlass` suppresses.
+    ///
+    /// Kept as an arm rather than a note, because "flat is unaffected" is the
+    /// claim the whole knob rests on and this is the theme that disproved the
+    /// easy version of it.
+    @Test func theSidebarRowsRepairFiresOnTheBarItselfOnALightTheme() {
+        #expect(paper.inkFaint.contrastRatio(against: paper.barBackground)
+            < PaneTheme.minimumTextContrast)
+        #expect(paper.sessionHeaderInk(on: paper.barBackground) != paper.inkFaint)
+        #expect(paper.actionRowInk(on: paper.barBackground) != paper.inkFaint)
+
+        // Which is why pinning their ratios would move a flat-path pixel.
+        var pinned = paper
+        pinned.adjustments.sessionHeaderMinimumRatio = Self.bareGlassRatio
+        pinned.adjustments.actionRowMinimumRatio = Self.bareGlassRatio
+        #expect(pinned.sessionHeaderInk(on: paper.barBackground)
+            != paper.sessionHeaderInk(on: paper.barBackground))
+    }
+
+    /// **Why the ink suppression is not spelled as a pinned ratio at all, and
+    /// this arm is the second failure that said so.**
+    ///
+    /// After ``theSidebarRowsRepairFiresOnTheBarItselfOnALightTheme`` narrowed
+    /// the suppression to the caps label alone, the remaining spelling was to pin
+    /// ``PaneThemeAdjustments/sectionHeaderMinimumRatio`` to ``bareGlassRatio``.
+    /// That fails here for the same reason one layer down: on the light theme the
+    /// caps label's repair fires against ``PaneTheme/barBackground`` too, so a
+    /// pinned ratio moves the **flat** caps label.
+    ///
+    /// A ratio cannot express "glass only". It is handed to
+    /// ``PaneTheme/readable(_:on:minimumRatio:)`` with no idea which backdrop it
+    /// is about to grade, and the flat path and the glass path go through the
+    /// same derivation with the same adjustments value. So the knob cannot ride
+    /// this channel: `SurfaceTitleView.labelInk` suppresses at its own site, on
+    /// the `.glass` branch it already has, where `resolvedChrome` is known.
+    ///
+    /// Kept because it is the arm that would fail again if someone moved the
+    /// suppression back into the ratio to "simplify" it.
+    @Test func aPinnedRatioCannotExpressGlassOnlyBecauseFlatSharesTheDerivation() {
+        // Dark: the pin is invisible on the bar, which is what made the ratio
+        // spelling look correct.
+        var bareDark = theme
+        bareDark.adjustments.sectionHeaderMinimumRatio = Self.bareGlassRatio
+        #expect(bareDark.sectionHeaderInk(on: theme.barBackground)
+            == theme.sectionHeaderInk(on: theme.barBackground))
+
+        // Light: it is not, so the same pin is a flat-path rendering change.
+        var barePaper = paper
+        barePaper.adjustments.sectionHeaderMinimumRatio = Self.bareGlassRatio
+        #expect(barePaper.sectionHeaderInk(on: paper.barBackground)
+            != paper.sectionHeaderInk(on: paper.barBackground))
+    }
+
+    /// 1:1, the floor no pair of colours can fail, which is how the repair chain
+    /// is switched off through the channel that was built to raise it.
+    ///
+    /// Named here beside the arms that prove what it does rather than left as a
+    /// literal at the app's composition site, so a reader who finds the `1.0`
+    /// there has somewhere to go.
+    static let bareGlassRatio: Double = 1
+
     // MARK: - Set moves the value
 
     /// `barLift` moves the bar off the terminal background, and moves it in the

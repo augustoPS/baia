@@ -7,7 +7,7 @@
 
     /// What `DesignOverridesText` emits, pinned from the side that can drift.
     ///
-    /// The emitter carries thirty-one field paths and thirty-one hand-written
+    /// The emitter carries thirty-two field paths and thirty-two hand-written
     /// notes naming the constants they stand in for. A renamed field breaks the
     /// compile and needs no test; the two failures that compile cleanly are what
     /// these hold:
@@ -81,7 +81,7 @@
             // offers no reflection over a struct's stored properties that would
             // survive `-O`. So this list is itself a thing that can go stale, and
             // the guard against that is `expectedKeyCount`: the count is asserted
-            // against `DesignOverrides.swift`'s own inventory of thirty-one leaf
+            // against `DesignOverrides.swift`'s own inventory of thirty-two leaf
             // knobs, so a field added there without a line here fails on the count
             // even if nobody thought to add it to this list.
             let text = DesignOverridesText.commentedJSON(everythingDialled())
@@ -114,13 +114,13 @@
             "chrome.surfaces.footer", "chrome.surfaces.sidebar", "chrome.surfaces.palette",
             "chrome.surfaces.popover", "chrome.surfaces.titlebar",
 
-            "chrome.barLift", "chrome.sidebarWashFloor",
+            "chrome.barLift", "chrome.sidebarWashFloor", "chrome.bareGlass",
         ]
 
-        /// Thirty-one, which is the count `DesignOverrides` carries: seven
-        /// settings shadows, nine lift, two rim, six inks, five surfaces, two
+        /// Thirty-two, which is the count `DesignOverrides` carries: seven
+        /// settings shadows, nine lift, two rim, six inks, five surfaces, three
         /// window.
-        static let expectedKeyCount = 31
+        static let expectedKeyCount = 32
 
         // MARK: - JSON shapes
 
@@ -426,11 +426,12 @@
 
             "chrome.barLift": "0.08",
             "chrome.sidebarWashFloor": "0.2",
+            "chrome.bareGlass": "true",
         ]
 
         // MARK: - Fixture
 
-        /// Every one of the thirty-one knobs dialled to something, so a test can
+        /// Every one of the thirty-two knobs dialled to something, so a test can
         /// assert over the complete output.
         private func everythingDialled() -> DesignOverrides {
             var overrides = DesignOverrides()
@@ -470,6 +471,7 @@
 
             overrides.chrome.barLift = 0.08
             overrides.chrome.sidebarWashFloor = 0.2
+            overrides.chrome.bareGlass = true
             return overrides
         }
     }

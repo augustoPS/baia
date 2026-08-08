@@ -16,7 +16,7 @@
     ///
     /// This file is exactly that shape. It needs no `NSWindow` and no AppKit — it
     /// is a pure value-to-string map over ``DesignOverrides`` — while carrying
-    /// thirty-one field paths and thirty-one hand-written notes naming the
+    /// thirty-two field paths and thirty-two hand-written notes naming the
     /// constants they stand in for. Both halves drift silently: a renamed field
     /// would fail to compile, but a note that still says "today 0.22" after the
     /// constant moved would not, and neither would a field added to
@@ -75,7 +75,7 @@
     /// ## Only what is set
     ///
     /// A nil field is absent from the output rather than emitted as `null`,
-    /// because nil means "the committed value" and printing all thirty-one would
+    /// because nil means "the committed value" and printing all thirty-two would
     /// list the knobs the owner never touched beside the two he did.
     public enum DesignOverridesText {
         /// `overrides` as commented JSON, or a single comment when nothing is
@@ -182,6 +182,9 @@
                    note: "PaneTheme.barLift, today 0.08; moves the backdrop AND the ink graded on it")
             append(&group, "chrome.sidebarWashFloor", chrome.sidebarWashFloor,
                    note: "a floor applied as max(opacity, floor); raises the wash, never thins it")
+            append(&group, "chrome.bareGlass", chrome.bareGlass,
+                   note: "suppress the hand-drawn glass layer (sidebar + titlebar washes, caps-label repair); "
+                       + "glass only, and the caps label may go illegible on purpose")
             add(group, titled: "window", into: &lines)
         }
 
@@ -351,6 +354,7 @@
 
             case "chrome.barLift": return double(value, key, &overrides.chrome.barLift)
             case "chrome.sidebarWashFloor": return double(value, key, &overrides.chrome.sidebarWashFloor)
+            case "chrome.bareGlass": return bool(value, key, &overrides.chrome.bareGlass)
 
             default:
                 return ParseError(message: "`\(key)` is not a knob baia dials")

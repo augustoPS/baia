@@ -154,6 +154,90 @@ public extension DesignOverrides {
         /// the wash following the opacity all the way down, which is what ships.
         public var sidebarWashFloor: Double?
 
+        /// Suppress every hand-drawn glass-era addition, so the native glass
+        /// material can be judged naked.
+        ///
+        /// **Why it exists.** The dialling pass that produced most of the knobs
+        /// above found the hand-drawn layer swamping the material dials: a wash,
+        /// a lift and a legibility repair all sit between the eye and the glass,
+        /// so a question about the *material* was being answered by a stack of
+        /// this app's own paint. This is the one flip that takes that stack away
+        /// for as long as the owner is looking, and it is the reversible
+        /// alternative to deleting the layer. The retirement decision then gets
+        /// made on the naked look, with a recorded reason, rather than by
+        /// deletion on a hunch.
+        ///
+        /// **What it suppresses, each at its own site.** Nothing is centralised:
+        /// a site reads this and does its own smallest honest thing, so the knob
+        /// cannot grow into a second rendering path that has to be kept in step
+        /// with the first.
+        ///
+        /// 1. **The sidebar's glass wash** (`SidebarHost.updateGlassWash()`).
+        ///    Its colour goes clear. The wash view itself stays where it is.
+        /// 2. **The titlebar's glass wash**
+        ///    (`WorkspaceWindowController.updateTitlebarWash()`), the sidebar
+        ///    wash's twin one surface over, suppressed the same way and for the
+        ///    same reason.
+        /// 3. **The caps label's legibility repair**
+        ///    (`SurfaceTitleView.labelInk`'s glass branch). The ink renders its
+        ///    raw `inkFaint` derivation.
+        ///
+        /// **Item 3 is deliberate un-repair, and that is the point rather than a
+        /// side effect.** The glass-backdrop spike measured `inkFaint` failing
+        /// the 4.5:1 body-text floor over bright glass, and the repair chain was
+        /// built to fix exactly that. Under this knob it is switched off, so what
+        /// the owner sees is what the glass alone does to legibility — which is
+        /// the thing being judged. The text can be genuinely hard to read while
+        /// this is set. That is the measurement, not a defect.
+        ///
+        /// **Each suppression sits at a site that knows its own
+        /// `resolvedChrome`, and that is load-bearing rather than tidy.** The
+        /// obvious alternative was to compose values through
+        /// ``PaneChrome/PaneThemeAdjustments`` — a `barLift` of 0, the ink ratio
+        /// pinned to a floor every colour clears. Both were tried and both are
+        /// wrong for one reason: that value is **path-blind**. One adjustments
+        /// object feeds the flat branch and the glass branch of the same
+        /// derivation, so anything composed into it reaches flat too, and on a
+        /// light theme the ink repair fires under flat as well.
+        /// `PaneThemeAdjustmentsTests` keeps both as standing arms.
+        ///
+        /// ## What it deliberately does not touch
+        ///
+        /// - **The attention capsule.** The one tint per bar, a standing owner
+        ///   ruling, and not part of the glass-era layer this retires.
+        /// - **Flat rendering, at all.** This is a glass-path knob and flat is
+        ///   not glass. Every suppression above sits on a branch flat never
+        ///   takes, by construction rather than by an argument about which
+        ///   backdrops happen to clear.
+        /// - **The bar lift** (`PaneTheme.barBackground`), which the first
+        ///   spelling of this knob did suppress and which was removed on
+        ///   measurement. Under glass the footer bar draws **no fill at all**
+        ///   (`PaneStatusBarView.draw(_:)` fills only when `materialSet == nil`),
+        ///   so the lift paints nothing on the glass path; its only reach there
+        ///   is as the backdrop ink is graded on, and that grading is
+        ///   deliberately the same ungraded value flat uses. Suppressing it would
+        ///   therefore move a *flat* pixel and no glass one — the exact inverse
+        ///   of what this knob is for.
+        /// - **The two sidebar rows' ink repairs**
+        ///   (`SidebarSessionHeaderView`, `SidebarActionRowView`), for the
+        ///   neighbouring reason: both grade against `barBackground` on **both**
+        ///   paths, by a decision their own doc comments record, so their repair
+        ///   is not a glass-era addition and on a light theme it fires under
+        ///   flat.
+        /// - **The three window gates.**
+        /// - **The glass-spawn padding compensation**
+        ///   (`ConfigurationCenter.glassCompensatedTerminalConfiguration`), and
+        ///   this is the exclusion worth naming. That compensation is
+        ///   `window-padding-y` and nothing else: it is **content geometry**, not
+        ///   appearance. Flipping it on a live pane would move the cell grid,
+        ///   resize the PTY and SIGWINCH whatever is running in it — the wall
+        ///   ``DesignOverrides``' own doc comment says this whole type structurally
+        ///   honours by having no geometry field. A knob dialled continuously,
+        ///   over real work, must not reach it. There is no appearance-pure part
+        ///   of that compensation to flip separately; the whole of it is the
+        ///   padding number.
+        public var bareGlass: Bool?
+
         public init() {}
     }
 }

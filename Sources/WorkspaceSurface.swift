@@ -281,10 +281,42 @@ final class SurfaceTitleView: NSView {
     /// and the file rows beside this header measured 6.99:1 and never needed
     /// repairing — which is why the fix is one header's ink rather than the
     /// column's.
+    /// Suppress the glass branch's legibility repair, so the caps label renders
+    /// its raw derivation. See ``BaiaSettings/DesignOverrides/Chrome/bareGlass``.
+    ///
+    /// **Deliberate un-repair.** The repair this switches off is the one the
+    /// glass-backdrop spike's finding 6 exists to justify: `inkFaint` scores
+    /// 2.49:1 against the measured bright glass, under the 4.5:1 floor 10 pt bold
+    /// text is owed, and the chain walks it to near-white. With this set the
+    /// owner sees the failing colour, because *what the glass alone does to
+    /// legibility* is the question the naked look is being flipped on. The label
+    /// can be genuinely hard to read here; that is the measurement.
+    ///
+    /// Nil and false are both the shipped repair.
+    var bareGlass: Bool? { didSet { needsDisplay = true } }
+
+    /// **The suppression is at this site and not in the ratio, and the reason is
+    /// that a ratio cannot say "glass only".**
+    ///
+    /// ``PaneChrome/PaneThemeAdjustments/sectionHeaderMinimumRatio`` was the
+    /// obvious channel — pin it to 1:1, which every colour clears, and the chain
+    /// returns its first link untouched. It was tried and it is wrong: the
+    /// adjustments value is one object both branches below read, and on a light
+    /// theme the repair fires against ``PaneChrome/PaneTheme/barBackground`` too,
+    /// so a pinned ratio moves the **flat** label. `PaneThemeAdjustmentsTests`
+    /// keeps that as a standing arm
+    /// (`aPinnedRatioCannotExpressGlassOnlyBecauseFlatSharesTheDerivation`).
+    ///
+    /// Here the branch already exists and `resolvedChrome` is known, so the flat
+    /// case is untouched by construction rather than by an argument about which
+    /// backdrops happen to clear.
     private var labelInk: RGB {
         switch resolvedChrome {
         case .flat: theme.sectionHeaderInk(on: theme.barBackground)
-        case .glass: theme.sectionHeaderInk(on: Self.measuredBrightGlass)
+        case .glass:
+            bareGlass == true
+                ? theme.inkFaint
+                : theme.sectionHeaderInk(on: Self.measuredBrightGlass)
         }
     }
 

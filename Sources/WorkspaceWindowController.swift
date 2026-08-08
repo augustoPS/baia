@@ -360,6 +360,19 @@ final class WorkspaceWindowController: NSObject {
         }
     }
 
+    /// Suppress the band's wash, so the titlebar's glass is what the owner sees.
+    /// The sidebar's ``SidebarHost/bareGlass`` one surface over, in every
+    /// respect. See ``BaiaSettings/DesignOverrides/Chrome/bareGlass``.
+    ///
+    /// Nil and false are both the shipped wash, and under flat there is no wash
+    /// view for this to reach.
+    var bareGlass: Bool? {
+        didSet {
+            guard bareGlass != oldValue else { return }
+            updateTitlebarWash()
+        }
+    }
+
     /// The glass under the titlebar band, and the wash over it. Built and torn
     /// down together by ``applyTitlebarGlass()``, both `nil` under flat.
     private var titlebarGlass: TitlebarGlassBacking?
@@ -741,6 +754,14 @@ final class WorkspaceWindowController: NSObject {
     /// `ChangesSurface.nsColor` rather than a second helper, so the sidebar's
     /// wash and this one cannot resolve one colour two ways.
     private func updateTitlebarWash() {
+        // `bareGlass` takes the band's wash away, the same way and for the same
+        // reason `SidebarHost.updateGlassWash()` takes the column's away: the
+        // two washes are one treatment on two surfaces, so suppressing one and
+        // leaving the other would show the owner a half-naked window.
+        guard bareGlass != true else {
+            titlebarWash?.colour = .clear
+            return
+        }
         titlebarWash?.colour = ChangesSurface.nsColor(theme.background, alpha: backgroundOpacity)
     }
 

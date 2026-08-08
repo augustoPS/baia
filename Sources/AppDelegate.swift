@@ -426,6 +426,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // does today; in Release it can hold nothing else. See
         // ``SidebarHost/washFloor``.
         host.washFloor = configuration.chromeOverrides.sidebarWashFloor
+        // The naked-glass flip, which takes this column's wash away entirely and
+        // un-repairs its caps label. Nil with nothing dialled; in Release it can
+        // hold nothing else. See
+        // ``BaiaSettings/DesignOverrides/Chrome/bareGlass``.
+        host.bareGlass = configuration.chromeOverrides.bareGlass
         // And which fill this column's glass is tinted with, nil with nothing
         // dialled. See ``SurfaceFill``.
         host.fillMaterial = configuration.chromeOverrides.surfaces.sidebar
@@ -525,6 +530,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Which fill the titlebar band's glass is tinted with, nil with nothing
         // dialled and live-followed by `settingsDidChange()`. See ``SurfaceFill``.
         controller.fillMaterial = configuration.chromeOverrides.surfaces.titlebar
+        // And the naked-glass flip, which takes the band's wash away the same
+        // way it takes the sidebar's. See
+        // ``BaiaSettings/DesignOverrides/Chrome/bareGlass``.
+        controller.bareGlass = configuration.chromeOverrides.bareGlass
         controller.window.tabbingMode = tabbing
         // Coalesced by the same timer every other session change goes through, so a
         // drag writes the file once when it settles rather than on every frame.
@@ -1116,6 +1125,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // left on the floor its window opened with would need closing and
             // reopening to follow.
             controller.sidebar.washFloor = configuration.chromeOverrides.sidebarWashFloor
+            // The naked-glass flip on the same live path, for the same reason:
+            // it is dialled under a running app and a column left on the value
+            // its window opened with would need reopening to follow.
+            controller.sidebar.bareGlass = configuration.chromeOverrides.bareGlass
             controller.sidebar.fillMaterial = configuration.chromeOverrides.surfaces.sidebar
             // `resolvedChrome` is read fresh from `configuration` the same way
             // `apply(to:)` reads it for a pane (Task 4): a dark/light or Reduce
@@ -1162,6 +1175,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             controller.backgroundOpacity = configuration.effectiveSettings.backgroundOpacity
             // And the titlebar band's own glass tint, on the same live path.
             controller.fillMaterial = configuration.chromeOverrides.surfaces.titlebar
+            // The naked-glass flip, likewise: it is dialled with windows open.
+            controller.bareGlass = configuration.chromeOverrides.bareGlass
         }
         palette.theme = configuration.paneTheme
         // Same live-follow as the sidebar's own line above; the find panel is

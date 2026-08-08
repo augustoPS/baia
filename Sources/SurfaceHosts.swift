@@ -344,6 +344,28 @@ final class SidebarHost: NSViewController {
         }
     }
 
+    /// Suppress this column's wash entirely, so the glass under it is what the
+    /// owner sees. See ``BaiaSettings/DesignOverrides/Chrome/bareGlass``.
+    ///
+    /// **The wash view stays and its colour goes clear**, which is the smallest
+    /// honest change: tearing the view down would put a second teardown path
+    /// beside ``applyResolvedChrome()``'s, and the two would have to be kept in
+    /// step for a knob that exists to be flipped back.
+    ///
+    /// Nil and false are both the shipped wash. This reaches nothing under flat,
+    /// where ``glassWash`` does not exist at all.
+    ///
+    /// Fanned out to the headings the way ``resolvedChrome`` is, because the
+    /// caps label's own suppression lives on `SurfaceTitleView` and this host is
+    /// the only thing that hears the knob move.
+    var bareGlass: Bool? {
+        didSet {
+            guard bareGlass != oldValue else { return }
+            updateGlassWash()
+            for section in sections { section.heading.bareGlass = bareGlass }
+        }
+    }
+
     /// What ``glassWash`` paints: the terminal's own background at the
     /// terminal's own opacity, the same pair each pane's well composites, never
     /// thinner than ``washFloor``.
@@ -352,6 +374,15 @@ final class SidebarHost: NSViewController {
     /// them repaints through the same call rather than through a second path
     /// that could disagree with this one.
     private func updateGlassWash() {
+        // `bareGlass` takes the wash away rather than thinning it: alpha 0, so
+        // the colour is clear and the glass below is unwashed. Checked before
+        // the floor deliberately — a floor is a *minimum* and would otherwise
+        // put the wash straight back, which is the one interaction between these
+        // two knobs and the order that resolves it.
+        guard bareGlass != true else {
+            glassWash?.colour = .clear
+            return
+        }
         // `max`, so a floor can only raise the wash. With `washFloor` nil the
         // whole expression is `backgroundOpacity` and this line resolves exactly
         // what it resolved before the floor existed.
@@ -557,6 +588,10 @@ final class SidebarHost: NSViewController {
             section.heading.theme = theme
             section.heading.isWindowActive = isWindowActive
             section.heading.resolvedChrome = resolvedChrome
+            // Seeded here as well as fanned out from the `didSet`, so a section
+            // installed by `show(_:)` while the knob is already set does not
+            // draw one repaired frame before the next dial move reaches it.
+            section.heading.bareGlass = bareGlass
             view.addSubview(section.surface.view)
             view.addSubview(section.heading)
         }

@@ -234,6 +234,7 @@ import Testing
         #expect(extras.inks.busyDotHex == nil)
         #expect(extras.barLift == nil)
         #expect(extras.sidebarWashFloor == nil)
+        #expect(extras.bareGlass == nil)
         #expect(extras.surfaces.footer == nil)
         #expect(extras.surfaces.sidebar == nil)
         #expect(extras.surfaces.palette == nil)
@@ -243,6 +244,42 @@ import Testing
 
     @Test func anEmptyOverridesCarriesAnEmptyChromeExtras() {
         #expect(DesignOverrides().chrome == DesignOverrides.Chrome())
+    }
+
+    // MARK: - bareGlass
+
+    @Test func bareGlassIsAnExtraAndReachesNoSettingsField() {
+        // It is a suppression applied at five drawing sites, not a shadow of
+        // anything on `Settings`. A composition that let it through to a
+        // settings field would put a debug-only knob into the value the config
+        // file's own writer round-trips.
+        var overrides = DesignOverrides()
+        overrides.chrome.bareGlass = true
+        #expect(Settings.defaultSettings.applying(overrides) == Settings.defaultSettings)
+    }
+
+    @Test func bareGlassSetsOnlyItselfAmongTheExtras() {
+        // The knob is one flip that five sites read. It must not be spelled as
+        // "and also zero the other extras": nil there still means today's
+        // constant, and each site does its own suppression.
+        var overrides = DesignOverrides()
+        overrides.chrome.bareGlass = true
+        #expect(overrides.chrome.bareGlass == true)
+        #expect(overrides.chrome.barLift == nil)
+        #expect(overrides.chrome.sidebarWashFloor == nil)
+        #expect(overrides.chrome.inks.sectionHeaderMinimumRatio == nil)
+        #expect(overrides.chrome.lift.enabled == nil)
+        #expect(overrides.chrome.rim.enabled == nil)
+    }
+
+    @Test func bareGlassFalseIsNotTheSameValueAsUnset() {
+        // Both render the shipped look, but they are distinguishable so a
+        // written `false` round-trips as a written `false` rather than
+        // disappearing from the owner's document on the next Copy Values.
+        var off = DesignOverrides()
+        off.chrome.bareGlass = false
+        #expect(off.chrome != DesignOverrides.Chrome())
+        #expect(off.chrome.bareGlass == false)
     }
 
     // MARK: - Per-surface material choice
