@@ -152,6 +152,14 @@ final class SidebarHost: NSViewController {
 
     var theme: PaneTheme {
         didSet {
+            // The same guard ``resolvedChrome`` below carries. Written
+            // unconditionally by `AppDelegate.settingsDidChange()` on every
+            // announcement, and this didSet fans out to every section, both
+            // headings, the header, the action row, the divider layer and a
+            // glass-wash rebuild, so an unmoved theme was doing all of that for
+            // nothing once per settings-file save — and would do it once per
+            // control event under the design panel.
+            guard theme != oldValue else { return }
             for section in sections {
                 section.surface.theme = theme
                 section.heading.theme = theme
@@ -238,6 +246,10 @@ final class SidebarHost: NSViewController {
     /// to explain.
     var backgroundOpacity: Double = 1 {
         didSet {
+            // Guarded like its two neighbours, and like
+            // `WorkspaceWindowController.backgroundOpacity`, which is the same
+            // key one surface over and has always had it.
+            guard backgroundOpacity != oldValue else { return }
             for section in sections { section.surface.backgroundOpacity = backgroundOpacity }
             // The defect this key had in the column: under glass the surfaces
             // above draw no fill at all, so without this the slider moved every

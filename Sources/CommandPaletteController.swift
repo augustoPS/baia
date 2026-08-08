@@ -58,6 +58,16 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
 
     var theme: PaneTheme = .darkPastel {
         didSet {
+            // The same guard ``resolvedChrome`` directly below carries, and the
+            // only one of this class's pushed properties that was missing it.
+            // `AppDelegate.settingsDidChange()` writes this unconditionally on
+            // every announcement, so without the guard an unmoved theme still
+            // ran three `needsDisplay` assignments and an `applyResolvedChrome()`
+            // that rewrites the backing layer's colour under glass. That was one
+            // wasted repaint per settings-file save; under the design panel it
+            // becomes one per control event, since a dial that moves only
+            // `backgroundOpacity` still fires the same announcement.
+            guard theme != oldValue else { return }
             queryView.theme = theme
             listView.theme = theme
             hintsView.theme = theme

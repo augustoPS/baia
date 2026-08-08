@@ -142,6 +142,18 @@ final class SettingsWindowController: NSWindowController {
     /// Reads the four values fresh off `center` on every call, the same four the
     /// init passed, so a change to any one of them lands.
     ///
+    /// **All four are derived from `center.settings` explicitly, through the
+    /// parameterised `derivations(for:)` and `chrome(for:)` rather than off the
+    /// center's own properties.** Those properties read
+    /// `ConfigurationCenter.effectiveSettings`, which composes the debug design
+    /// panel's overrides, and this column's whole job is to say what the *file*
+    /// holds. Taking them off the center would render a column that is half
+    /// dialled and half committed the moment anything is dialled — the
+    /// terminal and chrome halves following the panel while the `settings`
+    /// argument beside them still described the file. Passing one source to all
+    /// four is what keeps them agreeing, and it is the same argument
+    /// ``applyDraftToSample()`` below makes for the draft.
+    ///
     /// **Safe after the window closes, and it takes both halves to be so.** The
     /// registration captures `self` weakly, which covers the controller having
     /// been released; but `AppDelegate` holds the last settings window in a
@@ -152,11 +164,13 @@ final class SettingsWindowController: NSWindowController {
     /// re-arm; ``windowWillClose(_:)`` clears it on every close path there is.
     private func applyCommittedToSample() {
         guard isObserving else { return }
+        let committed = center.settings
+        let (configuration, theme) = center.derivations(for: committed)
         before.apply(
-            center.terminalConfiguration,
-            theme: center.terminalTheme,
-            chrome: center.paneTheme,
-            settings: center.settings
+            configuration,
+            theme: theme,
+            chrome: center.chrome(for: committed),
+            settings: committed
         )
     }
 

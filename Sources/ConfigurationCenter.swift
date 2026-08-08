@@ -14,7 +14,94 @@ import PaneChrome
 final class ConfigurationCenter {
     private let store: SettingsStore
 
+    /// What the config file says, exactly.
+    ///
+    /// **Committed, never composed.** ``effectiveSettings`` below is what every
+    /// derivation reads; this is what the file holds, and the two differ only
+    /// while the debug design panel has something dialled. The distinction has
+    /// one consumer that depends on it: `SettingsWindowController` builds its
+    /// draft and its "Current" sample column from this, and a sample built from
+    /// the composed value would tell the owner his file contains a number that
+    /// was never written to it.
     private(set) var settings: Settings
+
+    #if DEBUG
+        /// The debug design panel's ephemeral shadow over ``settings``, or nil
+        /// when nothing is dialled.
+        ///
+        /// Debug-only in the strongest sense the language offers: the storage,
+        /// the setter and the composition are all inside this fence, so a
+        /// Release build has no property to hold, no branch to take, and
+        /// ``effectiveSettings`` collapses to `settings` with nothing left to
+        /// compile away. Grep `designOverrides` and every hit is fenced.
+        ///
+        /// Never persisted. See ``BaiaSettings/DesignOverrides`` for why a dial
+        /// is a question rather than an answer, and why every field is optional.
+        private var storedDesignOverrides: DesignOverrides?
+
+        /// The dialled overrides, and the one write path into them.
+        ///
+        /// Setting this fires the same two calls a settings-file reload fires,
+        /// in the same order, so a dialled value rides exactly the plumbing a
+        /// committed one does and nothing downstream can tell them apart. It
+        /// fires unconditionally rather than guarding on a change: the panel
+        /// writes a whole value per control event, and every consumer's `didSet`
+        /// drops an unmoved value at its own end.
+        ///
+        /// **That last clause was false when this was written and three
+        /// properties had to be fixed to make it true**: the palette's `theme`
+        /// and the sidebar's `theme` and `backgroundOpacity` had no equality
+        /// guard while every sibling around them did, so each unmoved write
+        /// repainted a surface. It cost one wasted repaint per settings-file
+        /// save before this, which is why nobody had noticed; a panel dialling
+        /// at control-event rate is what turns that into a visible cost. A
+        /// consumer added later without a guard puts the cost back, and this
+        /// paragraph is the record of where to look.
+        ///
+        /// The panel is the only writer outside tests. It is created once and
+        /// owned by `AppDelegate` (`onSettingsChange` has no unregister), so
+        /// nothing here needs to defend against a second one.
+        var designOverrides: DesignOverrides? {
+            get { storedDesignOverrides }
+            set {
+                storedDesignOverrides = newValue
+                applyToEveryPane()
+                notifySettingsChanged()
+            }
+        }
+    #endif
+
+    /// The settings every derivation on this object reads: ``settings`` with
+    /// the debug panel's overrides composed over it, or ``settings`` itself
+    /// when nothing is dialled and always in Release.
+    ///
+    /// **One property rather than a composition at each call site.** The
+    /// derivations, ``resolvedChrome`` and the three window gates all read this,
+    /// so there is no site that could be missed and left rendering the committed
+    /// value beside neighbours rendering the dialled one. That failure has a
+    /// name in this codebase: `focusAccent` was decoded, stored, and never read
+    /// by the one line that mattered (`PaneTheme+Palette.swift`), and the fix
+    /// was moving resolution to where a caller cannot skip it.
+    ///
+    /// **Composes nothing that Reduce Transparency then cannot overrule.**
+    /// `Settings.applying(_:)` is a pure value-to-value map with no appearance
+    /// in it; the accessibility guard lives one layer down in
+    /// `PaneChrome.resolvedStyle(setting:materialIsDark:appearance:)`, above
+    /// its material branch, and reads the live observer *after* this composition
+    /// has happened. So `chromeStyle: .glass` dialled on a machine with Reduce
+    /// Transparency on changes the setting and correctly changes nothing on
+    /// screen. `PaneChromeTests` pins that ordering from the package side.
+    ///
+    /// In Release this is `settings` with no storage, no branch and no call
+    /// behind it.
+    var effectiveSettings: Settings {
+        #if DEBUG
+            guard let storedDesignOverrides else { return settings }
+            return settings.applying(storedDesignOverrides)
+        #else
+            settings
+        #endif
+    }
 
     /// The live system state the window gates need: dark/light, Reduce
     /// Transparency, Reduce Motion. Held rather than read fresh on every
@@ -149,9 +236,20 @@ final class ConfigurationCenter {
     /// `PaneTheme.swift`, and `PaneTheme+Palette.swift` for `ChromeAppearance`
     /// or `resolvedChrome` and find nothing, the same acceptance
     /// `SettingsDerivations.paneTheme` holds for `focusAccent`.
+    ///
+    /// **The setting comes from ``effectiveSettings``, so the debug design
+    /// panel's dialled `chromeStyle` reaches here exactly as a committed one
+    /// does, and Reduce Transparency keeps its authority over both.** The
+    /// composition is a pure value map that happens before this call; the
+    /// force-flat guard is inside `resolvedStyle` and reads
+    /// `appearanceObserver.appearance` live, below the composition rather than
+    /// beside it. Dialling glass with the accessibility flag set therefore
+    /// moves the setting and leaves the screen flat, which is the ordering
+    /// working. In Release `effectiveSettings` *is* `settings` and this line
+    /// reads exactly what it read before the panel existed.
     var resolvedChrome: ResolvedChrome {
         resolvedStyle(
-            setting: settings.chromeStyle,
+            setting: effectiveSettings.chromeStyle,
             materialIsDark: windowIsDark,
             appearance: appearanceObserver.appearance
         )
@@ -163,12 +261,14 @@ final class ConfigurationCenter {
     /// shape: `PaneChrome.windowIsTransparent(backgroundOpacity:appearance:)`
     /// makes the decision and carries the tests, this is the one line that
     /// calls it with the two live inputs. Deliberately reads
-    /// `settings.backgroundOpacity` rather than `chromeStyle` — window
-    /// transparency follows the opacity setting, not the chrome style (owner
-    /// decision, 2026-08-07); see that function's own doc comment.
+    /// `backgroundOpacity` rather than `chromeStyle` — window transparency
+    /// follows the opacity setting, not the chrome style (owner decision,
+    /// 2026-08-07); see that function's own doc comment. Through
+    /// ``effectiveSettings``, so a dialled opacity moves the window the same
+    /// way a committed one does.
     var windowIsTransparent: Bool {
         PaneChrome.windowIsTransparent(
-            backgroundOpacity: settings.backgroundOpacity,
+            backgroundOpacity: effectiveSettings.backgroundOpacity,
             appearance: appearanceObserver.appearance
         )
     }
@@ -200,14 +300,15 @@ final class ConfigurationCenter {
     /// The third of these one-line derivations and the same shape as the two
     /// above: `PaneChrome.windowBlurRadius(backgroundBlur:backgroundOpacity:appearance:)`
     /// holds the rule and the tests, and this passes it the three live inputs.
-    /// It reads `settings.backgroundBlur` *and* `settings.backgroundOpacity`
-    /// because blur is gated on the window being transparent at all — see that
-    /// function's own doc comment — which is also how Reduce Transparency
-    /// reaches it without this line mentioning the flag.
+    /// It reads `backgroundBlur` *and* `backgroundOpacity` (both off
+    /// ``effectiveSettings``, like its two neighbours) because blur is gated on
+    /// the window being transparent at all — see that function's own doc
+    /// comment — which is also how Reduce Transparency reaches it without this
+    /// line mentioning the flag.
     var windowBlurRadius: Int {
         PaneChrome.windowBlurRadius(
-            backgroundBlur: settings.backgroundBlur,
-            backgroundOpacity: settings.backgroundOpacity,
+            backgroundBlur: effectiveSettings.backgroundBlur,
+            backgroundOpacity: effectiveSettings.backgroundOpacity,
             appearance: appearanceObserver.appearance
         )
     }
@@ -215,11 +316,11 @@ final class ConfigurationCenter {
     // MARK: - Derivations
 
     /// The theme currently in effect.
-    var terminalTheme: TerminalTheme { SettingsDerivations.terminalTheme(from: settings) }
+    var terminalTheme: TerminalTheme { SettingsDerivations.terminalTheme(from: effectiveSettings) }
 
     /// The session configuration currently in effect.
     var terminalConfiguration: TerminalConfiguration {
-        SettingsDerivations.terminalConfiguration(from: settings)
+        SettingsDerivations.terminalConfiguration(from: effectiveSettings)
     }
 
     /// ``terminalConfiguration``, with `window-padding-y` raised by
@@ -248,7 +349,7 @@ final class ConfigurationCenter {
     /// running must never be moved from one to the other.
     var glassCompensatedTerminalConfiguration: TerminalConfiguration {
         terminalConfiguration.windowPaddingY(
-            Int((settings.windowPadding + PaneStatusBarMetrics.glassWindowPaddingBump).rounded())
+            Int((effectiveSettings.windowPadding + PaneStatusBarMetrics.glassWindowPaddingBump).rounded())
         )
     }
 
@@ -266,7 +367,7 @@ final class ConfigurationCenter {
     }
 
     /// The chrome palette currently in effect.
-    var paneTheme: PaneTheme { SettingsDerivations.paneTheme(from: settings) }
+    var paneTheme: PaneTheme { SettingsDerivations.paneTheme(from: effectiveSettings) }
 
     /// The chrome palette `settings` would produce.
     ///
@@ -308,15 +409,15 @@ final class ConfigurationCenter {
 
     private func apply(to pane: TerminalPaneController) {
         pane.theme = paneTheme
-        pane.attentionStyle = settings.attentionStyle
+        pane.attentionStyle = effectiveSettings.attentionStyle
         // Straight through, the way `attentionStyle` and `focusAccent` are. The
         // resolution is `PaneTheme.attentionColour(_:behavior:)`, which has tests;
         // a line here that decided anything about these two would not, and that is
         // exactly how `focusAccent` came to be decoded, stored, and never read.
-        pane.attentionAccent = settings.attentionAccent
-        pane.alertBehavior = settings.alertBehavior
-        pane.gitPollInterval = settings.gitPollSeconds
-        pane.activityPollInterval = settings.activityPollSeconds
+        pane.attentionAccent = effectiveSettings.attentionAccent
+        pane.alertBehavior = effectiveSettings.alertBehavior
+        pane.gitPollInterval = effectiveSettings.gitPollSeconds
+        pane.activityPollInterval = effectiveSettings.activityPollSeconds
         // `resolvedChrome` is computed fresh from the same two live inputs this
         // method already closes over (`settings` and the appearance observer's
         // last value), so it stays correct whether `apply` runs from `register`,

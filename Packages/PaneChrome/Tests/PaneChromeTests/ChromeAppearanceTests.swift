@@ -129,6 +129,90 @@ import Testing
         }
     }
 
+    // MARK: - Composition happens above this function, and cannot reach past it
+
+    /// The ordering `ConfigurationCenter.effectiveSettings` relies on, pinned
+    /// from the pure side: `Settings.applying(_:)` runs first and decides only
+    /// what `setting:` is, then this function reads the live appearance.
+    ///
+    /// The design panel dials `chromeStyle` through that composition, so an
+    /// owner with Reduce Transparency on can set `.glass` and must still get
+    /// `.flat`. Spelled as compose-then-resolve rather than as a bare `.glass`
+    /// case, because what is under test is that no override path exists that
+    /// skips the guard — a composition that reached inside `resolvedStyle`, or
+    /// a guard moved below the material branch, both fail here and neither
+    /// fails the four-way test above.
+    @Test func anOverriddenGlassStyleStillResolvesFlatUnderReduceTransparency() {
+        var flatCommitted = Settings.defaultSettings
+        flatCommitted.chromeStyle = .flat
+        var overrides = DesignOverrides()
+        overrides.chromeStyle = .glass
+
+        let composed = flatCommitted.applying(overrides)
+        #expect(composed.chromeStyle == .glass)
+
+        for materialIsDark in [true, false] {
+            let appearance = ChromeAppearance(
+                isDark: materialIsDark,
+                reduceTransparency: true,
+                reduceMotion: false
+            )
+            #expect(
+                resolvedStyle(
+                    setting: composed.chromeStyle,
+                    materialIsDark: materialIsDark,
+                    appearance: appearance
+                ) == .flat
+            )
+        }
+    }
+
+    /// The same composition with the accessibility flag off, so the test above
+    /// is known to be pinning Reduce Transparency rather than a composition that
+    /// quietly failed to apply.
+    @Test func anOverriddenGlassStyleResolvesGlassWhenTransparencyIsNotReduced() {
+        var flatCommitted = Settings.defaultSettings
+        flatCommitted.chromeStyle = .flat
+        var overrides = DesignOverrides()
+        overrides.chromeStyle = .glass
+
+        let composed = flatCommitted.applying(overrides)
+        let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
+        #expect(
+            resolvedStyle(
+                setting: composed.chromeStyle,
+                materialIsDark: true,
+                appearance: appearance
+            ) == .glass(.dark)
+        )
+    }
+
+    /// The opposite direction, and the one an owner hits by dialling opacity:
+    /// `windowIsTransparent` is fed off the same composed value and its own
+    /// Reduce Transparency guard is equally unreachable from an override.
+    @Test func anOverriddenBackgroundOpacityStillResolvesOpaqueUnderReduceTransparency() {
+        var opaqueCommitted = Settings.defaultSettings
+        opaqueCommitted.backgroundOpacity = 1
+        var overrides = DesignOverrides()
+        overrides.backgroundOpacity = 0.42
+
+        let composed = opaqueCommitted.applying(overrides)
+        #expect(composed.backgroundOpacity == 0.42)
+
+        let reduced = ChromeAppearance(isDark: true, reduceTransparency: true, reduceMotion: false)
+        #expect(!windowIsTransparent(backgroundOpacity: composed.backgroundOpacity, appearance: reduced))
+        #expect(
+            windowBlurRadius(
+                backgroundBlur: composed.backgroundBlur,
+                backgroundOpacity: composed.backgroundOpacity,
+                appearance: reduced
+            ) == 0
+        )
+
+        let normal = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
+        #expect(windowIsTransparent(backgroundOpacity: composed.backgroundOpacity, appearance: normal))
+    }
+
     @Test func reduceTransparencyIsInertUnderFlat() {
         // Flat plus Reduce Transparency is still flat: the flag has nothing to
         // override when the setting already draws nothing translucent.
