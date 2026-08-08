@@ -57,11 +57,16 @@ enum MainMenu {
         ///   surface config, in Release too. A Debug-only key must not reach a
         ///   shipped surface config.
         ///
-        /// ⌥⌘D is safe without an unbind: ghostty's default binds include
-        /// `super+alt+i`, `super+alt+w` and the `super+alt` arrows, but no
-        /// `super+alt+d` (`GhosttyDefaultKeybinds.defaultTriggers`), so nothing
-        /// swallows the key on its way to this item. No item in `MenuBarLayout`
-        /// claims it either — ⌘D and ⇧⌘D are the splits, and this is a third mask.
+        /// ⌃⌘D, and it was ⌥⌘D for one day: macOS claims ⌥⌘D system-wide as
+        /// the Dock hide toggle, so the key never reached the menu item (owner,
+        /// 2026-08-07, watching the Dock blink instead of the panel). ⌃⌘D is
+        /// safe on all three registers checked: ghostty's default binds carry
+        /// `super+ctrl+f`, `super+ctrl+=` and the `super+ctrl` arrows but no
+        /// `super+ctrl+d` (`GhosttyDefaultKeybinds.defaultTriggers`); no item
+        /// in `MenuBarLayout` claims it (⌘D and ⇧⌘D are the splits, ⌃⌘F and
+        /// the ⌃⌘arrows the other ctrl-command holders); and the system's own
+        /// ⌃⌘D is the text-view word-lookup, which fires only with an
+        /// insertion point in a text view, a place this shortcut is not.
         private static func debugMenuItem() -> NSMenuItem {
             let item = NSMenuItem()
             item.title = "Debug"
@@ -71,7 +76,7 @@ enum MainMenu {
                 action: #selector(AppDelegate.toggleDesignPanel(_:)),
                 keyEquivalent: "d"
             )
-            panel.keyEquivalentModifierMask = [.command, .option]
+            panel.keyEquivalentModifierMask = [.command, .control]
             // Nil target, the same as every item above: the action goes down the
             // responder chain to the app delegate that implements it.
             panel.target = nil
