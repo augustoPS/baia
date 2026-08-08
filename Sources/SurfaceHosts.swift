@@ -1,4 +1,5 @@
 import AppKit
+import BaiaSettings
 import PaneChrome
 import WorkspaceLayout
 
@@ -314,32 +315,86 @@ final class SidebarHost: NSViewController {
     /// See ``SidebarGlassWash`` for why the column needs one at all.
     private var glassWash: SidebarGlassWash?
 
-    /// What ``glassWash`` paints: the terminal's own background at the
-    /// terminal's own opacity, the same pair each pane's well composites.
+    /// A minimum the wash may not thin below, or nil to leave it following
+    /// ``backgroundOpacity`` all the way down, which is what ships.
     ///
-    /// Reads the two properties the host already holds, so a live edit to
-    /// either repaints through the same call rather than through a second path
+    /// **The open design question this knob exists to answer.** The wash follows
+    /// the opacity setting so the band dims with the wells instead of staying
+    /// put while the slider moves them, and at the low end of that range it
+    /// approaches nothing and the sidebar stops reading as a surface at all.
+    /// Whether it should, and where the floor belongs if not, is a question about
+    /// a live desktop that the package cannot settle:
+    /// ``SurfaceTitleView/measuredBrightGlass`` is graded off a spike's samples
+    /// and its own doc records that a wallpaper brighter than anything that
+    /// spike saw is outside what the constant can track. A dial is how the owner
+    /// answers it with the real desktop in front of him.
+    ///
+    /// **A floor, never a ceiling.** ``updateGlassWash()`` takes the *larger* of
+    /// this and the opacity, so setting it can only ever thicken the wash. That
+    /// direction is the contract rather than a detail: the wash at
+    /// `backgroundOpacity` is what ships, and a knob able to thin it below that
+    /// would be one that changes today's rendering rather than raising a floor
+    /// under it.
+    ///
+    /// Guarded and repainting like its neighbours above.
+    var washFloor: Double? {
+        didSet {
+            guard washFloor != oldValue else { return }
+            updateGlassWash()
+        }
+    }
+
+    /// What ``glassWash`` paints: the terminal's own background at the
+    /// terminal's own opacity, the same pair each pane's well composites, never
+    /// thinner than ``washFloor``.
+    ///
+    /// Reads the properties the host already holds, so a live edit to any of
+    /// them repaints through the same call rather than through a second path
     /// that could disagree with this one.
     private func updateGlassWash() {
+        // `max`, so a floor can only raise the wash. With `washFloor` nil the
+        // whole expression is `backgroundOpacity` and this line resolves exactly
+        // what it resolved before the floor existed.
+        let opacity = max(backgroundOpacity, washFloor ?? 0)
         // `ChangesSurface.nsColor` rather than this file's own helper, which
         // takes no alpha: it is the same call both sidebar surfaces already
         // make for the flat fill, so the glass wash and the flat fill cannot
         // resolve one colour two ways.
-        glassWash?.colour = ChangesSurface.nsColor(theme.background, alpha: backgroundOpacity)
+        glassWash?.colour = ChangesSurface.nsColor(theme.background, alpha: opacity)
     }
 
-    /// `NSGlassEffectView.tintColor` untinted, unconditionally.
+    /// Which of the four fill roles this column's glass is tinted with, or nil
+    /// for the untinted glass that ships.
     ///
-    /// Written once at creation and never revisited by a later call the way
-    /// the footer's `updateGlassTint()` is, because nothing on this host's own
-    /// path ever has a reason to set one: unlike the bar's capsule, no element
-    /// behind this glass is ever accented. Spelled out explicitly rather than
-    /// left at the type's own default regardless — the same "never set a tint"
-    /// rule the footer's untinting (Task 2) established, so a tint set here by
-    /// a later, unrelated change is at least a diff against a line that says
-    /// why it must stay nil rather than a silent default nobody has to
-    /// contradict.
-    private static let sidebarGlassTint: NSColor? = nil
+    /// Nil unless the debug design panel has pointed this surface somewhere, and
+    /// in Release it can hold nothing else. See ``SurfaceFill`` for the dormancy
+    /// this re-activates — the sidebar's is the oldest of the five, since its
+    /// `fillSidebar` was an `rgba` swap standing in for glass that did not exist
+    /// yet, and the column has had real glass under it since.
+    var fillMaterial: DesignOverrides.Chrome.Material? {
+        didSet {
+            guard fillMaterial != oldValue else { return }
+            updateGlassTint()
+        }
+    }
+
+    /// Writes ``fillMaterial``'s colour onto ``glassBacking``, or nil.
+    ///
+    /// **This host's tint was a write-once static until the design panel needed
+    /// one.** The old spelling said, correctly, that nothing on this path ever
+    /// has a reason to set a tint — unlike the bar's capsule, no element behind
+    /// this glass is ever accented — and left `nil` explicit so a later change
+    /// setting one would at least be a diff against a line saying why it must
+    /// not. The panel is that change, made deliberately and reversibly: with it
+    /// silent this resolves nil and the backing is exactly as untinted as it was.
+    ///
+    /// A method rather than the creation-time assignment it replaces, because
+    /// ``applyResolvedChrome()`` returns early when the backing already exists,
+    /// so a tint dialled while the column is open would otherwise never land.
+    private func updateGlassTint() {
+        guard let glassBacking, case let .glass(set) = resolvedChrome else { return }
+        glassBacking.tintColor = SurfaceFill.colour(fillMaterial, in: set)
+    }
 
     private let divider = NSView()
 
@@ -543,7 +598,6 @@ final class SidebarHost: NSViewController {
             let backing = SidebarGlassBacking(frame: .zero)
             backing.style = .regular
             backing.cornerRadius = 0
-            backing.tintColor = Self.sidebarGlassTint
             backing.wantsLayer = true
             // First subview added to `view`, ahead of `tree.view` and every
             // section: see `glassBacking`'s own doc comment for why sitting
@@ -560,6 +614,7 @@ final class SidebarHost: NSViewController {
             view.addSubview(wash, positioned: .above, relativeTo: backing)
             glassWash = wash
             updateGlassWash()
+            updateGlassTint()
         }
         view.needsLayout = true
     }

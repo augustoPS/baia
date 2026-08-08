@@ -1,4 +1,5 @@
 import AppKit
+import BaiaSettings
 import PaneChrome
 import WorkspaceLayout
 
@@ -200,6 +201,125 @@ final class PaneEdgeFrameView: PaneOverlayView {
     }
 }
 
+/// Everything ``PaneLiftView`` draws with, resolved: the constants in
+/// `ChromeMaterials.Lift`/`Motion`, or whatever the debug design panel has
+/// dialled in front of them.
+///
+/// **``shipped`` is exactly the constants, and it is the default.** A lift view
+/// that is never handed one of these renders precisely what it rendered before
+/// this type existed, which is what makes the whole wire a no-op with the
+/// overrides nil. ``from(_:)`` builds a dialled one; nil per field there falls
+/// back to the constant, never to zero and never to off.
+///
+/// **Resolved once, into non-optionals, rather than eight `??` at the draw
+/// sites.** `draw(_:)` and `updateShadowPath()` both need the ring and the
+/// shadow reach, and a fallback spelled twice is a fallback that can be spelled
+/// two ways. It is also what keeps ``PaneLiftView`` free of any import beyond
+/// what it already has — `Diagnostics/footer-corners` compiles this file
+/// verbatim against `PaneChrome`, `BaiaSettings` and `WorkspaceLayout` alone,
+/// and a `DesignOverrides` read inside the view would be a fourth edge that
+/// probe cannot link.
+///
+/// Colours are deliberately absent. The ring and the highlight are white at an
+/// alpha, per the plan's Task 6 text, and the panel dials the alphas rather than
+/// the hue: a coloured lift is a different effect, not this one turned up.
+struct PaneLiftParameters: Equatable {
+    var enabled: Bool
+    var ringSpread: Double
+    var ringAlpha: Double
+    var innerHighlightOffsetY: Double
+    var innerHighlightAlpha: Double
+    var shadowDropOffsetY: Double
+    var shadowDropBlur: Double
+    var shadowDropAlpha: Double
+    var duration: Double
+
+    /// The constants, unmoved: what every pane draws until something is dialled.
+    ///
+    /// `duration` takes the long end of the 140-220 ms band, which is the value
+    /// ``PaneLiftView/apply(animated:)`` picked before this type existed and for
+    /// the reason recorded there: the lift crosses two panes on a click, and the
+    /// short end was tuned for a single-layer fade.
+    static let shipped = PaneLiftParameters(
+        enabled: true,
+        ringSpread: ChromeMaterials.Lift.ringSpread,
+        ringAlpha: ChromeMaterials.Lift.ringAlpha,
+        innerHighlightOffsetY: ChromeMaterials.Lift.innerHighlightOffsetY,
+        innerHighlightAlpha: ChromeMaterials.Lift.innerHighlightAlpha,
+        shadowDropOffsetY: ChromeMaterials.Lift.shadow.dropOffsetY,
+        shadowDropBlur: ChromeMaterials.Lift.shadow.dropBlur,
+        shadowDropAlpha: ChromeMaterials.Lift.shadow.dropAlpha,
+        duration: ChromeMaterials.Motion.liftDurationLong
+    )
+
+    /// ``shipped``, with each dialled field standing in front of its constant.
+    ///
+    /// Field by field rather than "rebuild from the overrides", the same shape
+    /// `Settings.applying(_:)` takes and for the same reason: a field this
+    /// function has never heard of keeps its constant instead of arriving as a
+    /// zero.
+    static func from(_ lift: DesignOverrides.Chrome.Lift) -> PaneLiftParameters {
+        var resolved = shipped
+        if let value = lift.enabled { resolved.enabled = value }
+        if let value = lift.ringSpread { resolved.ringSpread = value }
+        if let value = lift.ringAlpha { resolved.ringAlpha = value }
+        if let value = lift.innerHighlightOffsetY { resolved.innerHighlightOffsetY = value }
+        if let value = lift.innerHighlightAlpha { resolved.innerHighlightAlpha = value }
+        if let value = lift.shadowDropOffsetY { resolved.shadowDropOffsetY = value }
+        if let value = lift.shadowDropBlur { resolved.shadowDropBlur = value }
+        if let value = lift.shadowDropAlpha { resolved.shadowDropAlpha = value }
+        if let value = lift.duration { resolved.duration = value }
+        return resolved
+    }
+}
+
+/// The lens rim: the bright top edge `--rim-top` names, drawn inside a pane's
+/// own outline.
+///
+/// **Off by default, and off is exactly today's rendering.** The rim constants
+/// have been transcribed and tested in ``ChromeMaterials`` since v5 and no
+/// drawing site has ever read them; this is their first consumer, and it draws
+/// nothing at all unless ``enabled`` is set. So the wire adds a knob without
+/// adding a pixel, which is the acceptance the whole override layer is held to.
+///
+/// Top edge only, per the constants' own doc (`inset 0 0.5px 0`, a bright top
+/// rim). `--rim-bottom` is transcribed beside it in ``ChromeMaterials`` and is
+/// deliberately not drawn here: `DesignOverrides.Chrome.Rim` offers one alpha,
+/// and a bottom edge nothing can dial would be an effect the owner cannot
+/// switch off independently of the one he asked for.
+struct PaneRimParameters: Equatable {
+    var enabled: Bool
+
+    /// The bright edge's alpha. Defaults to the *dark* appearance's constant,
+    /// which is the one the app draws under today (`ChromeAppearance`'s material
+    /// set follows the theme, and the shipped theme is dark).
+    ///
+    /// One value rather than one per appearance, matching
+    /// `DesignOverrides.Chrome.Rim`'s own reasoning: the panel is dialled on the
+    /// machine in front of the owner and that machine is in one appearance at a
+    /// time.
+    var topAlpha: Double
+
+    /// The edge's thickness, in points: `inset 0 0.5px 0`. Not dialable, and
+    /// deliberately so — it is a hairline the token names, and the override
+    /// offers an alpha alone.
+    static let thickness: Double = 0.5
+
+    /// Absent: what every pane draws today and what a nil override leaves it
+    /// drawing.
+    static let off = PaneRimParameters(
+        enabled: false,
+        topAlpha: ChromeMaterials.Dark.rimTopAlpha
+    )
+
+    static func from(_ rim: DesignOverrides.Chrome.Rim) -> PaneRimParameters {
+        var resolved = off
+        if let value = rim.enabled { resolved.enabled = value }
+        if let value = rim.topAlpha { resolved.topAlpha = value }
+        return resolved
+    }
+}
+
 /// The focused pane's lift, under glass: the hairline ring, inner highlight
 /// and drop shadow design v5's Task 6 adds around the whole pane, replacing
 /// the footer-only stroke for exactly the states glass is on.
@@ -245,6 +365,48 @@ final class PaneLiftView: PaneOverlayView {
         }
     }
 
+    /// The eight numbers and the duration this lift is drawn with.
+    /// ``PaneLiftParameters/shipped`` — the default, and everything a Release
+    /// build can ever hold — is the constants unmoved.
+    ///
+    /// Reapplied rather than merely repainted, and both halves are needed: the
+    /// ring and the highlight are strokes `draw(_:)` lays down, while the shadow
+    /// offset, radius and its mask's reach live on ``shadowLayer`` and are
+    /// written outside any draw pass. A `needsDisplay` alone would move the ring
+    /// and leave the shadow on the numbers it was built with.
+    ///
+    /// Guarded on a change like every other property here, for the reason
+    /// `ConfigurationCenter.designOverrides`' own doc comment records: a panel
+    /// writes a whole value per control event, and an unguarded setter turns
+    /// every unmoved write into a repaint of every pane.
+    var parameters: PaneLiftParameters = .shipped {
+        didSet {
+            guard parameters != oldValue else { return }
+            shadowLayer.shadowOffset = CGSize(width: 0, height: parameters.shadowDropOffsetY)
+            shadowLayer.shadowRadius = parameters.shadowDropBlur / 2
+            apply(animated: false)
+        }
+    }
+
+    /// The lens rim drawn inside this pane's outline, or
+    /// ``PaneRimParameters/off`` — the default — which draws nothing.
+    ///
+    /// Repaint only: unlike ``parameters`` the rim is entirely a `draw(_:)`
+    /// stroke and touches no layer property.
+    ///
+    /// **Its visibility is the lift's, not its own.** The rim rides this view's
+    /// layer opacity, so it appears and fades exactly where the focused pane's
+    /// lift does. That is the honest arrangement for a first consumer: the rim
+    /// is a lensing cue for the surface that is raised, and a rim standing on
+    /// every pane would be a second, unrequested effect reached by the same
+    /// switch.
+    var rim: PaneRimParameters = .off {
+        didSet {
+            guard rim != oldValue else { return }
+            needsDisplay = true
+        }
+    }
+
     /// The drop shadow, on a sublayer of its own, masked to the pane's
     /// *exterior*. A `CALayer` shadow given an explicit `shadowPath` renders
     /// the path's whole blurred silhouette, and on a transparent overlay
@@ -259,8 +421,11 @@ final class PaneLiftView: PaneOverlayView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         shadowLayer.shadowColor = NSColor.black.cgColor
-        shadowLayer.shadowOffset = CGSize(width: 0, height: ChromeMaterials.Lift.shadow.dropOffsetY)
-        shadowLayer.shadowRadius = ChromeMaterials.Lift.shadow.dropBlur / 2
+        // From ``parameters``, whose default is the constants this line named
+        // directly before the design panel existed. ``parameters``' own `didSet`
+        // rewrites both of these when a dial moves them.
+        shadowLayer.shadowOffset = CGSize(width: 0, height: parameters.shadowDropOffsetY)
+        shadowLayer.shadowRadius = parameters.shadowDropBlur / 2
         shadowLayer.shadowOpacity = 0
         shadowMask.fillRule = .evenOdd
         shadowLayer.mask = shadowMask
@@ -294,8 +459,8 @@ final class PaneLiftView: PaneOverlayView {
         // cutout. Both paths are in this layer's coordinate space; a shape
         // layer fills its path regardless of its frame, so the outer rect
         // extending beyond the bounds costs nothing.
-        let reach = ChromeMaterials.Lift.shadow.dropBlur
-            + abs(ChromeMaterials.Lift.shadow.dropOffsetY)
+        let reach = parameters.shadowDropBlur
+            + abs(parameters.shadowDropOffsetY)
         let mask = CGMutablePath()
         mask.addRect(bounds.insetBy(dx: -reach, dy: -reach))
         mask.addPath(pane)
@@ -314,10 +479,17 @@ final class PaneLiftView: PaneOverlayView {
     /// two running at once.
     private func apply(animated: Bool) {
         guard let layer else { return }
-        let targetOpacity: Float = isVisible ? 1 : 0
+        // ``PaneLiftParameters/enabled`` reads as "not visible", which puts it
+        // through the one path that already knows how to take the lift away:
+        // the layer fades to nothing, ring, highlight, rim and shadow together,
+        // and switching it back on fades them back. Skipping the strokes in
+        // `draw(_:)` instead would leave the shadow standing, since the shadow
+        // is a layer property no draw pass touches.
+        let shows = isVisible && parameters.enabled
+        let targetOpacity: Float = shows ? 1 : 0
         // The spec's 0.6, not 1: the token's alpha is the shadow's whole
         // strength, and the layer fade on top of it is only the transition.
-        let targetShadow: Float = isVisible ? Float(ChromeMaterials.Lift.shadow.dropAlpha) : 0
+        let targetShadow: Float = shows ? Float(parameters.shadowDropAlpha) : 0
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
 
         updateShadowPath()
@@ -337,7 +509,12 @@ final class PaneLiftView: PaneOverlayView {
             Float(ChromeMaterials.Motion.standardEase.1),
             Float(ChromeMaterials.Motion.standardEase.2),
             Float(ChromeMaterials.Motion.standardEase.3))
-        let duration = ChromeMaterials.Motion.liftDurationLong
+        // The curve stays a constant: `--ease-standard` is the motion system's
+        // one curve and `DesignOverrides.Chrome.Lift` offers no field for it,
+        // deliberately — a dialable bezier is four numbers nobody can read off a
+        // panel. The duration is the one thing dialled, and Reduce Motion above
+        // still wins over whatever it says.
+        let duration = parameters.duration
 
         let fade = CABasicAnimation(keyPath: "opacity")
         fade.fromValue = layer.presentation()?.opacity ?? layer.opacity
@@ -366,14 +543,14 @@ final class PaneLiftView: PaneOverlayView {
         // `barFrame` sibling make): a `draw(_:)` that skipped painting while
         // invisible would leave the fade animating an empty layer on the way
         // in, one frame of nothing before the strokes exist to fade.
-        let ringWidth = ChromeMaterials.Lift.ringSpread
+        let ringWidth = parameters.ringSpread
         let ringPath = WindowCorner.path(
             in: bounds,
             corners: bottomCorners,
             inset: ringWidth / 2
         )
         ringPath.lineWidth = ringWidth
-        nsColor(RGB.eightBit(255, 255, 255), alpha: ChromeMaterials.Lift.ringAlpha).setStroke()
+        nsColor(RGB.eightBit(255, 255, 255), alpha: parameters.ringAlpha).setStroke()
         ringPath.stroke()
 
         // `inset 0 1px 0`: a highlight along the top edge only, not the full
@@ -389,10 +566,30 @@ final class PaneLiftView: PaneOverlayView {
             x: bounds.minX,
             y: 0,
             width: bounds.width,
-            height: ChromeMaterials.Lift.innerHighlightOffsetY
+            height: parameters.innerHighlightOffsetY
         )
-        nsColor(RGB.eightBit(255, 255, 255), alpha: ChromeMaterials.Lift.innerHighlightAlpha).setFill()
+        nsColor(RGB.eightBit(255, 255, 255), alpha: parameters.innerHighlightAlpha).setFill()
         highlight.fill()
+
+        // The lens rim, and the rim constants' first consumer ever. Nothing is
+        // painted unless the panel has switched it on, so the whole block is
+        // absent from every rendering that ships — `rim` defaults to
+        // ``PaneRimParameters/off``, and in Release it can hold nothing else.
+        //
+        // Inside the same clip the highlight uses, and above it: the two are
+        // stacked bright edges on the same 0.5-1 pt of the pane's top, and
+        // drawing the rim second is what lets the owner see what it adds over
+        // the highlight already there rather than under it.
+        if rim.enabled {
+            let edge = NSRect(
+                x: bounds.minX,
+                y: 0,
+                width: bounds.width,
+                height: PaneRimParameters.thickness
+            )
+            nsColor(RGB.eightBit(255, 255, 255), alpha: rim.topAlpha).setFill()
+            edge.fill()
+        }
         NSGraphicsContext.restoreGraphicsState()
     }
 }

@@ -170,6 +170,35 @@ final class TerminalPaneController: NSViewController {
         }
     }
 
+    /// The lift's own numbers and the rim's, pushed straight to ``liftView``.
+    ///
+    /// A passthrough rather than stored state, unlike ``resolvedChrome`` above:
+    /// nothing on this controller reads them back, so storing them here would be
+    /// one value kept in two places. The view holds its own equality guard, so
+    /// an unmoved write from a panel dialling at control-event rate costs
+    /// nothing here either.
+    ///
+    /// Both default to the shipped rendering (``PaneLiftParameters/shipped``,
+    /// ``PaneRimParameters/off``), so a pane whose configuration never sets
+    /// these draws exactly what it always drew.
+    var liftParameters: PaneLiftParameters {
+        get { liftView.parameters }
+        set { liftView.parameters = newValue }
+    }
+
+    var rimParameters: PaneRimParameters {
+        get { liftView.rim }
+        set { liftView.rim = newValue }
+    }
+
+    /// Which fill the footer's glass is tinted with, a passthrough to the bar
+    /// for the same reason the two above are passthroughs to the lift: nothing
+    /// on this controller reads it back. Nil is the untinted glass that ships.
+    var footerFillMaterial: DesignOverrides.Chrome.Material? {
+        get { statusBar.fillMaterial }
+        set { statusBar.fillMaterial = newValue }
+    }
+
     /// Which derivation the attention signal is drawn from, and what to do when it
     /// lands on the focus colour.
     ///

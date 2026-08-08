@@ -58,6 +58,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Read once at construction, the same as `theme` above; `settingsDidChange()`
         // keeps it current afterwards the way it already does for the sidebar.
         palette.resolvedChrome = configuration.resolvedChrome
+        // Which fill that glass is tinted with, nil with nothing dialled and
+        // kept current by `settingsDidChange()` the same way. See ``SurfaceFill``.
+        palette.fillMaterial = configuration.chromeOverrides.surfaces.palette
         // The panel's own window appearance, from the same derivation the
         // workspace window's titlebar takes and the same one that now picks the
         // glass material set inside this panel. See
@@ -144,6 +147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let popover = ApprovalPopoverController()
         popover.theme = configuration.paneTheme
         popover.resolvedChrome = configuration.resolvedChrome
+        popover.fillMaterial = configuration.chromeOverrides.surfaces.popover
         // Same as the palette's own line above. See
         // ``ApprovalPopoverController/isDark``.
         popover.isDark = configuration.windowIsDark
@@ -367,9 +371,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             tree: tree,
             surfaces: surfaces(for: content, tree: tree),
             theme: configuration.paneTheme,
-            backgroundOpacity: configuration.settings.backgroundOpacity,
+            // The composed value, not the committed one. This is what the
+            // sidebar's own glass wash is painted at, so a dialled opacity has
+            // to reach it or the column stays put while the wells beside it
+            // move — the same defect `51c4434` fixed one layer down, put back
+            // by reading `settings` where every neighbour reads the derivation.
+            // In Release `effectiveSettings` *is* `settings`.
+            backgroundOpacity: configuration.effectiveSettings.backgroundOpacity,
             resolvedChrome: configuration.resolvedChrome
         )
+        // The floor under that wash, from the chrome extras. Nil with nothing
+        // dialled, which leaves the wash following the opacity exactly as it
+        // does today; in Release it can hold nothing else. See
+        // ``SidebarHost/washFloor``.
+        host.washFloor = configuration.chromeOverrides.sidebarWashFloor
+        // And which fill this column's glass is tinted with, nil with nothing
+        // dialled. See ``SurfaceFill``.
+        host.fillMaterial = configuration.chromeOverrides.surfaces.sidebar
         // The action row's click is wired below to the same shape as
         // `newTab(_:)` (`joining: controller.window`), so its keycap has to
         // read the menu's own binding for `.newTab` rather than assume one:
@@ -456,10 +474,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             resolvedChrome: configuration.resolvedChrome,
             // What that glass is washed with, so the band dims with the wells
             // instead of staying put while the opacity knob moves them — the
-            // defect `51c4434` fixed one surface over, in the sidebar.
+            // defect `51c4434` fixed one surface over, in the sidebar. Off the
+            // composed value, like its live-following twin below and like every
+            // other derivation on this object, so a dialled opacity moves the
+            // titlebar's wash with the wells rather than leaving it behind.
             theme: configuration.paneTheme,
-            backgroundOpacity: configuration.settings.backgroundOpacity
+            backgroundOpacity: configuration.effectiveSettings.backgroundOpacity
         )
+        // Which fill the titlebar band's glass is tinted with, nil with nothing
+        // dialled and live-followed by `settingsDidChange()`. See ``SurfaceFill``.
+        controller.fillMaterial = configuration.chromeOverrides.surfaces.titlebar
         controller.window.tabbingMode = tabbing
         // Coalesced by the same timer every other session change goes through, so a
         // drag writes the file once when it settles rather than on every frame.
@@ -1041,7 +1065,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // beside them wearing the values the window was built with, until it
             // was closed and opened again.
             controller.sidebar.theme = configuration.paneTheme
-            controller.sidebar.backgroundOpacity = configuration.settings.backgroundOpacity
+            // Composed, not committed: the design panel writes through
+            // `designOverrides`, which fires exactly this handler, so a read of
+            // `settings` here would take the dial's redraw and paint the value
+            // the dial was moved *off*.
+            controller.sidebar.backgroundOpacity = configuration.effectiveSettings.backgroundOpacity
+            // And the floor under the wash that opacity paints, on the same
+            // live path: the panel dials it under a running app, and a sidebar
+            // left on the floor its window opened with would need closing and
+            // reopening to follow.
+            controller.sidebar.washFloor = configuration.chromeOverrides.sidebarWashFloor
+            controller.sidebar.fillMaterial = configuration.chromeOverrides.surfaces.sidebar
             // `resolvedChrome` is read fresh from `configuration` the same way
             // `apply(to:)` reads it for a pane (Task 4): a dark/light or Reduce
             // Transparency change reaches `onSettingsChange` through the same
@@ -1083,13 +1117,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // the value has not moved.
             controller.resolvedChrome = configuration.resolvedChrome
             controller.theme = configuration.paneTheme
-            controller.backgroundOpacity = configuration.settings.backgroundOpacity
+            // Composed, for the same reason its sidebar twin above is.
+            controller.backgroundOpacity = configuration.effectiveSettings.backgroundOpacity
+            // And the titlebar band's own glass tint, on the same live path.
+            controller.fillMaterial = configuration.chromeOverrides.surfaces.titlebar
         }
         palette.theme = configuration.paneTheme
         // Same live-follow as the sidebar's own line above; the find panel is
         // deliberately not given `resolvedChrome` here; it shares the palette's
         // view types but was never asked for the glass restyle and stays flat.
         palette.resolvedChrome = configuration.resolvedChrome
+        palette.fillMaterial = configuration.chromeOverrides.surfaces.palette
         // The two floating panels' own window appearance, live-followed on this
         // same loop rather than through a separate `onSettingsChange`
         // registration. This method *is* the registered handler for everything
@@ -1109,6 +1147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         find.theme = configuration.paneTheme
         approvalPopover.theme = configuration.paneTheme
         approvalPopover.resolvedChrome = configuration.resolvedChrome
+        approvalPopover.fillMaterial = configuration.chromeOverrides.surfaces.popover
         approvalPopover.isDark = configuration.windowIsDark
     }
 

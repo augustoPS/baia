@@ -1,4 +1,5 @@
 import AppKit
+import BaiaSettings
 import PaneChrome
 
 /// The approval popover that springs from a footer's attention capsule.
@@ -39,6 +40,13 @@ final class ApprovalPopoverController: NSObject {
 
     var resolvedChrome: ResolvedChrome = .flat {
         didSet { contentView.resolvedChrome = resolvedChrome }
+    }
+
+    /// Which fill this popover's glass is tinted with, straight through to the
+    /// view the same way ``resolvedChrome`` above is. Nil is the untinted glass
+    /// that ships; see ``SurfaceFill``.
+    var fillMaterial: DesignOverrides.Chrome.Material? {
+        didSet { contentView.fillMaterial = fillMaterial }
     }
 
     /// Whether this popover's window-level appearance is dark — what AppKit

@@ -1,4 +1,5 @@
 import AppKit
+import BaiaSettings
 import PaneChrome
 import WorkspaceLayout
 
@@ -321,6 +322,18 @@ final class WorkspaceWindowController: NSObject {
         didSet {
             guard resolvedChrome != oldValue else { return }
             applyTitlebarGlass()
+        }
+    }
+
+    /// Which of the four fill roles the titlebar's glass is tinted with, or nil
+    /// for the untinted band that ships.
+    ///
+    /// Nil unless the debug design panel has pointed this surface somewhere, and
+    /// in Release it can hold nothing else. See ``SurfaceFill``.
+    var fillMaterial: DesignOverrides.Chrome.Material? {
+        didSet {
+            guard fillMaterial != oldValue else { return }
+            updateTitlebarGlassTint()
         }
     }
 
@@ -679,7 +692,6 @@ final class WorkspaceWindowController: NSObject {
             let backing = TitlebarGlassBacking(frame: .zero)
             backing.style = .regular
             backing.cornerRadius = 0
-            backing.tintColor = Self.titlebarGlassTint
             backing.wantsLayer = true
             // Below every sibling, so the traffic lights, the title, the
             // toolbar and the tab bar all render over it rather than under it.
@@ -695,6 +707,7 @@ final class WorkspaceWindowController: NSObject {
             titlebarWash = wash
 
             updateTitlebarWash()
+            updateTitlebarGlassTint()
             layoutTitlebarGlass()
         }
     }
@@ -731,13 +744,22 @@ final class WorkspaceWindowController: NSObject {
         titlebarWash?.colour = ChangesSurface.nsColor(theme.background, alpha: backgroundOpacity)
     }
 
-    /// `NSGlassEffectView.tintColor` untinted, unconditionally.
+    /// Writes ``fillMaterial``'s colour onto ``titlebarGlass``, or nil — which
+    /// is what ships and what every Release build resolves.
     ///
-    /// Spelled out rather than left at the type's default for the reason
-    /// `SidebarHost.sidebarGlassTint` gives: the "never set a tint" rule this
-    /// design line established is better defended by a line that says why it
-    /// must stay nil than by a silent default nobody has to contradict.
-    private static let titlebarGlassTint: NSColor? = nil
+    /// **This was a write-once `titlebarGlassTint` static until the design panel
+    /// needed one**, spelled out rather than left at the type's default so the
+    /// "never set a tint" rule was defended by a line saying why it must stay nil
+    /// rather than by a silent default nobody has to contradict. The panel is the
+    /// deliberate, reversible contradiction; with it silent this resolves nil and
+    /// the band is exactly as untinted as it was. See ``SurfaceFill``.
+    ///
+    /// A method rather than the creation-time assignment it replaces, because
+    /// ``applyTitlebarGlass()`` returns early when the band already exists.
+    private func updateTitlebarGlassTint() {
+        guard let titlebarGlass, case let .glass(set) = resolvedChrome else { return }
+        titlebarGlass.tintColor = SurfaceFill.colour(fillMaterial, in: set)
+    }
 
     /// Writes ``blurRadius`` onto the window through the private CGS backdrop
     /// SPI.

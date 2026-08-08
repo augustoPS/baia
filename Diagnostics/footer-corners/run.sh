@@ -20,11 +20,19 @@ cd "$ROOT"
 . "$ROOT/Diagnostics/lib/build-packages.sh"
 build_packages "$LIB" BaiaSettings GitWorkspace PaneControl PaneChrome WorkspaceLayout
 
-# The three shipped files are compiled verbatim, not sliced and not retyped, so
+# The four shipped files are compiled verbatim, not sliced and not retyped, so
 # the corners this probe measures are the corners the app draws. `PaneStatusBarView`
-# and `PaneOverlayView` reach nothing outside these three packages and
-# `WindowCorner`, which is what makes that possible; if either ever grows a
+# and `PaneOverlayView` reach nothing outside these packages, `WindowCorner` and
+# `SurfaceFill`, which is what makes that possible; if either ever grows a
 # dependency on another file in `Sources/`, this line is where that shows up.
+#
+# `SurfaceFill.swift` joined the list when the design overrides were wired: it is
+# where a dialled `DesignOverrides.Chrome.Material` becomes a glass tint, and
+# `PaneStatusBarView.updateGlassTint()` calls it. It was added rather than worked
+# around, because the comment above is the point of the arrangement — a new edge
+# is supposed to show up here and be looked at, not to be routed around so the
+# probe keeps compiling. It brings no new package edge: it links `BaiaSettings`
+# and `PaneChrome`, both already here.
 #
 # -default-isolation MainActor matches the app target's
 # SWIFT_DEFAULT_ACTOR_ISOLATION, so they compile under the rules they ship under.
@@ -32,6 +40,7 @@ swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/cornertest" \
   -I "$LIB" -L "$LIB" -lBaiaSettings -lPaneChrome -lWorkspaceLayout \
   -Xlinker -rpath -Xlinker "$LIB" \
   "$HERE/cornertest.swift" "$ROOT/Sources/WindowCorner.swift" \
+  "$ROOT/Sources/SurfaceFill.swift" \
   "$ROOT/Sources/PaneStatusBarView.swift" "$ROOT/Sources/PaneOverlayView.swift"
 
 # One arm per process, each followed by its negative control. `set -e` makes the

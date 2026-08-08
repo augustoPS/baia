@@ -23,8 +23,36 @@ final class SidebarActionRowView: NSView {
     /// outline and hover/press washes are unaffected — none of them was part
     /// of the spike's contrast measurement (finding 6 covered only
     /// ``SurfaceTitleView``'s caps label), so their inks are left unchanged
-    /// for Task 6's live pass rather than guessed at here.
+    /// for the live pass rather than guessed at here.
+    ///
+    /// **Read a second time by ``labelInk`` since the design panel's wiring**,
+    /// so the backdrop this property picks and the keycap ink graded against it
+    /// come from one value rather than two that could disagree.
     var resolvedChrome: ResolvedChrome = .flat { didSet { needsDisplay = true } }
+
+    /// The keycap glyph's ink, from ``PaneChrome/PaneTheme/actionRowInk(on:)``
+    /// on the backdrop this row is actually drawn on.
+    ///
+    /// **Moves no pixel until something is dialled.** Unadjusted, the derivation
+    /// is ``PaneChrome/PaneTheme/inkFaint`` graded against its backdrop and the
+    /// repair is a no-op wherever the faint tier already clears, which under
+    /// flat is exactly the `theme.inkFaint` the glyph always drew. What routing
+    /// through it buys is `actionRowMinimumRatio` and `actionRowHex` reaching a
+    /// site that would otherwise be a constant no dial can touch.
+    ///
+    /// The backdrop is named the way ``SurfaceTitleView/labelInk`` and
+    /// ``SidebarSessionHeaderView/labelInk`` name theirs, off the same measured
+    /// stand-in and with the same wallpaper caveat.
+    ///
+    /// The row's own "New session" label and its hover/press washes are
+    /// deliberately not routed here: they are a different tier and a fill, and
+    /// the panel offers one dial for this row rather than one per element.
+    private var labelInk: RGB {
+        switch resolvedChrome {
+        case .flat: theme.actionRowInk(on: theme.barBackground)
+        case .glass: theme.actionRowInk(on: SurfaceTitleView.measuredBrightGlass)
+        }
+    }
 
     /// The keycap glyph drawn trailing, e.g. `⌘T`. Set by the caller from
     /// `WorkspaceMenu.MenuBarLayout.shortcutText(of: .newTab)` rather than
@@ -92,7 +120,7 @@ final class SidebarActionRowView: NSView {
     private func drawKeycap(_ text: String, trailingAt trailing: Double) {
         let glyph = NSAttributedString(
             string: text,
-            attributes: [.font: Self.keycapFont, .foregroundColor: nsColor(theme.inkFaint)]
+            attributes: [.font: Self.keycapFont, .foregroundColor: nsColor(labelInk)]
         )
         let glyphSize = glyph.size()
         let width = glyphSize.width + Self.keycapPadding * 2

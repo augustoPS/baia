@@ -121,6 +121,20 @@ final class PaneStatusBarView: NSView {
         }
     }
 
+    /// Which of the four fill roles this footer's glass is tinted with, or nil
+    /// for the untinted glass that ships.
+    ///
+    /// Nil unless the debug design panel has pointed this surface somewhere, and
+    /// in Release it can hold nothing else. See ``SurfaceFill`` for the
+    /// dormancy this re-activates and why the override is a probe rather than a
+    /// candidate default.
+    var fillMaterial: DesignOverrides.Chrome.Material? {
+        didSet {
+            guard fillMaterial != oldValue else { return }
+            updateGlassTint()
+        }
+    }
+
     var isFocused: Bool = false {
         didSet {
             guard isFocused != oldValue else { return }
@@ -348,16 +362,19 @@ final class PaneStatusBarView: NSView {
     /// unwrap ``resolvedChrome`` for every reader below rather than a `switch`
     /// repeated at each of them.
     ///
-    /// **Untinted glass (Task 2).** Nothing below reads ``MaterialSet/fillChrome``
-    /// or ``MaterialSet/fillThick`` any more: the footer's glass backing draws
-    /// no fill of its own and carries no tint (see ``updateGlassTint()``), and
-    /// `draw(_:)` no longer paints a material fill under glass either. Every
-    /// remaining read of this property (`draw(_:)`'s own) only asks whether it
-    /// is `nil`, i.e. whether chrome is flat or glass at all — none reads the
-    /// `MaterialSet`'s fields. It is kept as a resolved value, rather than
-    /// narrowed to a `Bool`, because a later task's rim/lift work needs the
-    /// resolved set itself; today it is not a source of anything this file
-    /// fills or tints with.
+    /// **Untinted glass (Task 2) is still what ships**: the footer's glass
+    /// backing draws no fill of its own and, with the design panel silent,
+    /// carries no tint either (see ``updateGlassTint()``), and `draw(_:)` paints
+    /// no material fill under glass.
+    ///
+    /// **The `MaterialSet`'s fields are read again, by exactly one line.**
+    /// ``updateGlassTint()`` resolves ``fillMaterial`` against this set — the
+    /// dormant path re-activated behind the debug override, see ``SurfaceFill``
+    /// — and that read answers nil unless the panel has pointed this surface
+    /// somewhere. Every other read here (`draw(_:)`'s own) still only asks
+    /// whether this is `nil`, i.e. whether chrome is flat or glass at all. So
+    /// keeping this a resolved value rather than a `Bool` has a consumer now
+    /// instead of a promised one.
     private var materialSet: MaterialSet? {
         switch resolvedChrome {
         case .flat: nil
@@ -415,14 +432,25 @@ final class PaneStatusBarView: NSView {
     /// Keeps ``glassBacking``'s tint nil, or does nothing under flat where
     /// there is no backing to write to.
     ///
-    /// **Untinted glass (Task 2).** `NSGlassEffectView.tintColor` used to carry
-    /// ``MaterialSet/fillChrome`` or ``MaterialSet/fillThick``, stepped by
-    /// focus; the spike at `Diagnostics/glass-backdrop/` measured the tint+fill
-    /// layers as the largest single term in the bar's appearance and found they
-    /// pin it near mid-grey, defeating the material's own adaptation.
-    /// Untinted `regular` glass is the platform-correct default (HIG: glass is
-    /// colorless unless one element is deliberately accented), so this writes
-    /// `nil` explicitly rather than leaving the property untouched.
+    /// **Untinted glass (Task 2), still the shipped answer.**
+    /// `NSGlassEffectView.tintColor` used to carry ``MaterialSet/fillChrome`` or
+    /// ``MaterialSet/fillThick``, stepped by focus; the spike at
+    /// `Diagnostics/glass-backdrop/` measured the tint+fill layers as the
+    /// largest single term in the bar's appearance and found they pin it near
+    /// mid-grey, defeating the material's own adaptation. Untinted `regular`
+    /// glass is the platform-correct default (HIG: glass is colorless unless one
+    /// element is deliberately accented), so this writes `nil` explicitly rather
+    /// than leaving the property untouched.
+    ///
+    /// **``fillMaterial`` can put one back, and only the debug design panel can
+    /// set it.** That is the dormant path re-activated behind an override, on
+    /// purpose and documented in ``SurfaceFill``: the measurement above says
+    /// untinted is right, and what it cannot say is how this particular surface
+    /// looks under each fill on a real desktop. With the panel silent this
+    /// resolves nil and the line below is the same unconditional `nil` it was.
+    /// The focus step is *not* restored — one fill, not two — since
+    /// `Surfaces.footer` offers one material and a step nobody can dial would be
+    /// half an effect.
     ///
     /// Still routed through ``invalidate()`` rather than set once at creation:
     /// a stale non-nil tint left over from a future accented element (the
@@ -430,8 +458,8 @@ final class PaneStatusBarView: NSView {
     /// change reaching this bar, the same Ghostty #9973 lesson the constraint
     /// names.
     private func updateGlassTint() {
-        guard let glassBacking else { return }
-        glassBacking.tintColor = nil
+        guard let glassBacking, let materialSet else { return }
+        glassBacking.tintColor = SurfaceFill.colour(fillMaterial, in: materialSet)
     }
 
     /// Clips ``glassBacking`` to the same outline the drawn fill clips to in
@@ -924,6 +952,16 @@ final class PaneStatusBarView: NSView {
     /// The working-agent dot. No motion: this is the state most panes are in most
     /// of the time, and a spinner in every footer would make a quiet workspace
     /// look like a busy one.
+    ///
+    /// **Colour through ``PaneChrome/PaneTheme/busyDot``, geometry from the
+    /// constants below and nowhere else.** That derivation is
+    /// ``PaneChrome/PaneTheme/ok`` unless the design panel has named a colour,
+    /// so this draws exactly what it drew; `busyDotHex` is the only knob that
+    /// reaches this method. ``dotDiameter`` and ``dotGap`` are deliberately not
+    /// dialable: they feed ``PaneChrome/PaneStatusBarMetrics/leading(for:busy:chipPadding:busyDotAdvance:)``
+    /// and therefore the bar's own layout, and the whole override layer
+    /// structurally lacks geometry — see ``BaiaSettings/DesignOverrides``' header
+    /// on the SIGWINCH wall.
     private func drawBusyDot(at x: Double, in rect: CGRect) {
         let box = NSRect(
             x: x,
@@ -931,7 +969,7 @@ final class PaneStatusBarView: NSView {
             width: Self.dotDiameter,
             height: Self.dotDiameter
         )
-        nsColor(theme.ok).setFill()
+        nsColor(theme.busyDot).setFill()
         NSBezierPath(ovalIn: box).fill()
     }
 

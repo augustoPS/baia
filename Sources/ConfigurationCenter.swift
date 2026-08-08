@@ -103,6 +103,35 @@ final class ConfigurationCenter {
         #endif
     }
 
+    /// The dialled chrome extras: the numbers that map to no ``Settings`` field
+    /// and reach drawing sites directly. Empty when nothing is dialled, and
+    /// always empty in Release.
+    ///
+    /// **The other half of ``effectiveSettings``, and the reason it is a
+    /// property here rather than a read of `designOverrides` at each site.**
+    /// `Settings.applying(_:)` deliberately carries ``DesignOverrides/chrome``
+    /// past untouched — those values have no settings field to compose into —
+    /// so the app has to read them off the overrides value directly. Doing that
+    /// once, here, is what stops a drawing site being missed and left on its
+    /// constant while its neighbours follow a dial: the same argument
+    /// ``effectiveSettings``' own doc comment makes, and the same defect
+    /// (`focusAccent`, decoded and stored and never read by the one line that
+    /// mattered) it names.
+    ///
+    /// Every field is still optional inside this value. Nil is the constant the
+    /// site already draws, never zero and never off; the drawing sites hold
+    /// their own defaults and this only ever stands in front of them.
+    ///
+    /// In Release this is a fresh empty value with no storage and no branch
+    /// behind it, and every `??` downstream of it collapses to its constant.
+    var chromeOverrides: DesignOverrides.Chrome {
+        #if DEBUG
+            storedDesignOverrides?.chrome ?? DesignOverrides.Chrome()
+        #else
+            DesignOverrides.Chrome()
+        #endif
+    }
+
     /// The live system state the window gates need: dark/light, Reduce
     /// Transparency, Reduce Motion. Held rather than read fresh on every
     /// `resolvedChrome` access, so a burst of reads inside one render pass sees
@@ -366,16 +395,61 @@ final class ConfigurationCenter {
         )
     }
 
-    /// The chrome palette currently in effect.
-    var paneTheme: PaneTheme { SettingsDerivations.paneTheme(from: effectiveSettings) }
+    /// The chrome palette currently in effect, with the dialled ink and bar-lift
+    /// adjustments standing in front of the theme's own constants.
+    ///
+    /// ``paneThemeAdjustments`` is nothing at all unless the panel has dialled
+    /// one of its five fields, and `PaneThemeAdjustments.none` is asserted to be
+    /// the exact identity of every derivation it reaches
+    /// (`PaneThemeAdjustmentsTests`), so this reads as it always did until
+    /// something is dialled.
+    var paneTheme: PaneTheme {
+        SettingsDerivations.paneTheme(from: effectiveSettings, adjustments: paneThemeAdjustments)
+    }
 
     /// The chrome palette `settings` would produce.
     ///
     /// Parameterised for the same reason the terminal derivations are: the
     /// settings window renders a draft through it, and a second mapping written
     /// inside the window is how a preview comes to show what the panes will not.
+    ///
+    /// **No adjustments, deliberately.** This builds the sample the settings
+    /// window shows for a *draft of the config file*, and the extras are never
+    /// written to that file — they are ephemeral by construction (see
+    /// ``BaiaSettings/DesignOverrides``). A sample carrying a dialled bar lift
+    /// would tell the owner his draft contains a number nothing will ever save,
+    /// which is the same objection that keeps ``settings`` committed rather than
+    /// composed.
     func chrome(for settings: Settings) -> PaneTheme {
         SettingsDerivations.paneTheme(from: settings)
+    }
+
+    /// The dialled ``PaneTheme`` constants, translated from the chrome extras
+    /// into the package's own vocabulary.
+    ///
+    /// **The one place the hexes are parsed**, and a hex the parser rejects is
+    /// dropped rather than substituted: `RGB(hex:)` answers nil, the field stays
+    /// nil, and the ink falls back to its repair chain. A half-typed `#ff` in a
+    /// live text field would otherwise flash black across the sidebar on the way
+    /// to being finished, and black is a legitimate colour, so a substitution
+    /// would look like a deliberate choice with nothing to notice.
+    ///
+    /// The ratios are passed through unclamped. They are a floor handed to
+    /// ``PaneChrome/PaneTheme/readable(_:on:minimumRatio:)``, whose fallback
+    /// chain terminates at white or black whatever the target, so an
+    /// unsatisfiable 30:1 walks the chain to its end and stops rather than
+    /// looping or trapping.
+    private var paneThemeAdjustments: PaneThemeAdjustments {
+        let inks = chromeOverrides.inks
+        var adjustments = PaneThemeAdjustments.none
+        adjustments.barLift = chromeOverrides.barLift
+        adjustments.sessionHeaderMinimumRatio = inks.sessionHeaderMinimumRatio
+        adjustments.sessionHeaderInk = inks.sessionHeaderHex.flatMap(RGB.init(hex:))
+        adjustments.actionRowMinimumRatio = inks.actionRowMinimumRatio
+        adjustments.actionRowInk = inks.actionRowHex.flatMap(RGB.init(hex:))
+        adjustments.sectionHeaderMinimumRatio = inks.sectionHeaderMinimumRatio
+        adjustments.busyDotInk = inks.busyDotHex.flatMap(RGB.init(hex:))
+        return adjustments
     }
 
     // MARK: - Applying
@@ -423,6 +497,18 @@ final class ConfigurationCenter {
         // last value), so it stays correct whether `apply` runs from `register`,
         // a settings reload, or an appearance change.
         pane.resolvedChrome = resolvedChrome
+        // The focused pane's lift and the lens rim, from the chrome extras.
+        // Both resolve to today's rendering with nothing dialled — the lift to
+        // its constants, the rim to absent — and in Release neither can be
+        // anything else. Assigned here rather than at pane construction so a
+        // dial reaches panes that are already open, which is every pane the
+        // owner is looking at while he dials.
+        pane.liftParameters = .from(chromeOverrides.lift)
+        pane.rimParameters = .from(chromeOverrides.rim)
+        // The footer's glass tint. Nil with nothing dialled, which is the
+        // untinted glass that ships; see ``SurfaceFill`` for what a set value
+        // re-activates.
+        pane.footerFillMaterial = chromeOverrides.surfaces.footer
         // Both go through the controller rather than through the view.
         // Assigning `view.configuration` or `view.controller` has a `didSet`
         // that tears the surface down and respawns the shell, losing the

@@ -1,4 +1,5 @@
 import AppKit
+import BaiaSettings
 import PaneChrome
 
 /// `NSGlassEffectView`, with the same refusals every other popover-owned glass
@@ -69,6 +70,18 @@ final class ApprovalPopoverView: NSView {
         didSet {
             guard resolvedChrome != oldValue else { return }
             applyResolvedChrome()
+        }
+    }
+
+    /// Which of the four fill roles this popover's glass is tinted with, or nil
+    /// for the untinted glass that ships.
+    ///
+    /// Nil unless the debug design panel has pointed this surface somewhere, and
+    /// in Release it can hold nothing else. See ``SurfaceFill``.
+    var fillMaterial: DesignOverrides.Chrome.Material? {
+        didSet {
+            guard fillMaterial != oldValue else { return }
+            updateGlassTint()
         }
     }
 
@@ -154,11 +167,15 @@ final class ApprovalPopoverView: NSView {
         }
     }
 
-    /// **Untinted glass (Task 2).** `backing.tintColor` used to carry
-    /// `set.fillMenu`; the case below no longer binds `set` at all, since
-    /// nothing here reads it any more — the tint stays at its default nil,
-    /// the same untinted `regular` glass ``PaneStatusBarView``'s own copy
-    /// resolves to.
+    /// **Untinted glass (Task 2) is still what ships.** `backing.tintColor` used
+    /// to carry `set.fillMenu`; the tint is nil now, the same untinted `regular`
+    /// glass ``PaneStatusBarView``'s own copy resolves to.
+    ///
+    /// ``fillMaterial`` can put it back and only the debug design panel can set
+    /// it, which is why the `.glass` case below still does not bind its `set`:
+    /// ``updateGlassTint()`` re-reads ``resolvedChrome`` for the material set at
+    /// the one line that needs one, so a tint written before the backing existed
+    /// still lands. See ``SurfaceFill``.
     private func applyResolvedChrome() {
         switch resolvedChrome {
         case .flat:
@@ -183,10 +200,18 @@ final class ApprovalPopoverView: NSView {
             }
             backing.frame = bounds
         }
+        updateGlassTint()
         needsDisplay = true
         // `effectiveBackground` (and so the body's ink) depends on
         // `materialSet`, which just changed.
         contentView.needsDisplay = true
+    }
+
+    /// Writes ``fillMaterial``'s colour onto the backing, or nil — which is what
+    /// ships and what every Release build resolves.
+    private func updateGlassTint() {
+        guard let glassBacking, let materialSet else { return }
+        glassBacking.tintColor = SurfaceFill.colour(fillMaterial, in: materialSet)
     }
 
     override func layout() {

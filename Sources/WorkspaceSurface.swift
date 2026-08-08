@@ -240,7 +240,14 @@ final class SurfaceTitleView: NSView {
     /// desktop brighter than anything that finding saw composites brighter than
     /// the top row. The probe's finding 6b measured exactly that and it is why
     /// this constant is recorded as owed rather than sufficient.
-    private static let measuredBrightGlass = RGB.eightBit(0x4B, 0x4B, 0x4B)
+    /// **Internal rather than private, and read by two files.** The sidebar's
+    /// session header and action row grade their own faint-tier inks against
+    /// this same stand-in (see ``SidebarSessionHeaderView/labelInk`` and
+    /// ``SidebarActionRowView/labelInk``): all three sit in the same column,
+    /// over the same glass, and a second copy of this number free to drift from
+    /// this one is exactly what one constant with three readers avoids. The
+    /// wallpaper caveat above applies to all three equally.
+    static let measuredBrightGlass = RGB.eightBit(0x4B, 0x4B, 0x4B)
 
     /// The caps label's ink: ``PaneChrome/PaneTheme/inkFaint`` graded against
     /// whatever it is actually drawn on.

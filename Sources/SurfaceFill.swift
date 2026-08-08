@@ -1,0 +1,68 @@
+import AppKit
+import BaiaSettings
+import PaneChrome
+
+/// The one place a ``BaiaSettings/DesignOverrides/Chrome/Material`` becomes a
+/// colour a glass surface can be tinted with.
+///
+/// ## What this re-activates, and what "today" means
+///
+/// **All four `MaterialSet` fill roles are dormant at HEAD.** Design v5's Task 2
+/// (untinted glass) retired every live consumer: the footer's backing carries no
+/// tint and paints no fill, the palette's and the popover's backings are left at
+/// `tintColor == nil`, the sidebar's old `fillSidebar` swap was dropped, and the
+/// titlebar's glass is untinted too. Each of those five sites still says so in
+/// its own doc comment, with the measurement behind it — the glass-backdrop
+/// spike found the tint and fill layers were the largest single term in the
+/// bar's appearance and pinned it near mid-grey, defeating the material's own
+/// adaptation, and untinted `regular` glass is the platform-correct default.
+///
+/// So pointing a surface at a fill through `DesignOverrides.Chrome.Surfaces` is
+/// not a re-selection among live values. It **re-activates a dormant path**, and
+/// the semantics are stated here rather than left to be inferred at five call
+/// sites:
+///
+/// - **nil is today's rendering**, exactly: no fill, nothing tinted, the glass
+///   left to adapt on its own. Every one of the five surfaces defaults to nil
+///   and in Release can hold nothing else, so the whole family is absent from
+///   what ships.
+/// - **A set material means that surface composites the chosen fill over its
+///   glass** — the pre-Task-2 arrangement, resurrected behind the override. The
+///   literal it resolves to still follows the live appearance, since
+///   `MaterialSet.dark` and `.light` carry different values under the same four
+///   names, so a surface dialled to `.thick` stays correct when the theme flips.
+///
+/// **It is a probe for the owner's eye, not a committed default.** The
+/// measurement above says untinted is right; what it cannot say is how each
+/// individual surface looks with each fill on a real desktop, which is the
+/// question the panel exists to let him answer by looking. Nothing here changes
+/// the dormancy verdict — it makes it re-checkable.
+enum SurfaceFill {
+    /// The colour `material` names in `set`, or nil for the surface's own
+    /// untinted glass.
+    ///
+    /// **The `switch` carries no `default`, deliberately.**
+    /// `DesignOverrides.Chrome.Material` names exactly the four roles
+    /// `ChromeMaterials` carries, and its own doc comment states the rule that
+    /// keeps it to four: a role is added when a task first needs it, never ahead
+    /// of one, because a role with no consumer is untested wiring. A `default`
+    /// here would let a fifth case be added to that enum and reach a panel with
+    /// no drawing-site mapping behind it, silently resolving to whatever the
+    /// fallback happened to be. Without one, the same addition fails to compile
+    /// at this line, and the four-case pin is enforced from both ends.
+    static func colour(_ material: DesignOverrides.Chrome.Material?, in set: MaterialSet) -> NSColor? {
+        guard let material else { return nil }
+        let fill: RGBA = switch material {
+        case .chrome: set.fillChrome
+        case .sidebar: set.fillSidebar
+        case .thick: set.fillThick
+        case .menu: set.fillMenu
+        }
+        return NSColor(
+            srgbRed: CGFloat(fill.rgb.red),
+            green: CGFloat(fill.rgb.green),
+            blue: CGFloat(fill.rgb.blue),
+            alpha: CGFloat(fill.alpha)
+        )
+    }
+}

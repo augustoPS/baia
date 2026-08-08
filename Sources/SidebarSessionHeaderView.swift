@@ -41,9 +41,45 @@ final class SidebarSessionHeaderView: NSView {
     /// which painted an opaque strip across that glass. Every ink below is
     /// unaffected — the spike's contrast measurement (finding 6) covered only
     /// ``SurfaceTitleView``'s caps label, not this row's repo/branch/status
-    /// inks, so they are left as `theme`-derived colours for Task 6's live
-    /// pass rather than guessed at here.
+    /// inks, so they are left as `theme`-derived colours for the live pass.
+    ///
+    /// **Read a second time by ``labelInk`` since the design panel's wiring.**
+    /// The two faint-tier strings below go through that derivation now, which
+    /// grades against the backdrop this row is actually drawn on, so the
+    /// backdrop this property picks and the ink graded against it come from one
+    /// value rather than two that could disagree.
     var resolvedChrome: ResolvedChrome = .flat { didSet { needsDisplay = true } }
+
+    /// The faint-tier strings on this row — the branch and the status word — in
+    /// the ink ``PaneChrome/PaneTheme/sessionHeaderInk(on:)`` resolves for the
+    /// backdrop they land on.
+    ///
+    /// **This moves no pixel until something is dialled**, which is the whole
+    /// point of routing through a derivation rather than leaving `theme.inkFaint`
+    /// at the two call sites. Unadjusted, the derivation is `inkFaint` graded
+    /// against its backdrop, the repair is a no-op wherever the faint tier
+    /// already clears, and under flat that is exactly the `theme.inkFaint` these
+    /// two strings always drew. What it buys is `sessionHeaderMinimumRatio` and
+    /// `sessionHeaderHex` reaching a site that would otherwise be a constant no
+    /// dial can touch.
+    ///
+    /// The backdrop is named the same way ``SurfaceTitleView/labelInk`` names
+    /// its own, and for the same reason: under flat this row fills
+    /// `theme.barBackground` and the ink sits on it, while under glass it fills
+    /// nothing at all and the ink sits on whatever the column's glass sampled.
+    /// ``WorkspaceSurface/measuredBrightGlass`` is the conservative stand-in for
+    /// that, measured by the glass-backdrop spike; it is the same constant, and
+    /// carries the same wallpaper caveat, that the caps label is graded against.
+    ///
+    /// The repo name is deliberately not routed here. It is `inkFocus`, a
+    /// different tier, and the panel offers one dial for this row rather than a
+    /// dial per string.
+    private var labelInk: RGB {
+        switch resolvedChrome {
+        case .flat: theme.sessionHeaderInk(on: theme.barBackground)
+        case .glass: theme.sessionHeaderInk(on: SurfaceTitleView.measuredBrightGlass)
+        }
+    }
 
     override var isFlipped: Bool { true }
 
@@ -106,7 +142,7 @@ final class SidebarSessionHeaderView: NSView {
             let prefix = git.isLinkedWorktree ? "wt:" : ""
             let branch = NSAttributedString(
                 string: " \(prefix)\(git.head)",
-                attributes: [.font: Self.monoFont, .foregroundColor: nsColor(theme.inkFaint)]
+                attributes: [.font: Self.monoFont, .foregroundColor: nsColor(labelInk)]
             )
             branch.draw(at: NSPoint(x: x, y: baseline(for: Self.monoFont)))
         }
@@ -118,7 +154,7 @@ final class SidebarSessionHeaderView: NSView {
         guard let word = status.agent?.label, !word.isEmpty else { return }
         let trailing = NSAttributedString(
             string: word,
-            attributes: [.font: Self.statusFont, .foregroundColor: nsColor(theme.inkFaint)]
+            attributes: [.font: Self.statusFont, .foregroundColor: nsColor(labelInk)]
         )
         let width = trailing.size().width
         let start = bounds.width - Self.inset - width

@@ -1,4 +1,5 @@
 import AppKit
+import BaiaSettings
 import GitWorkspace
 import PaneChrome
 
@@ -96,6 +97,19 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
             listView.resolvedChrome = resolvedChrome
             hintsView.resolvedChrome = resolvedChrome
             applyResolvedChrome()
+        }
+    }
+
+    /// Which of the four fill roles this palette's glass is tinted with, or nil
+    /// for the untinted glass that ships.
+    ///
+    /// Nil unless the debug design panel has pointed this surface somewhere, and
+    /// in Release it can hold nothing else. See ``SurfaceFill`` for the dormancy
+    /// this re-activates.
+    var fillMaterial: DesignOverrides.Chrome.Material? {
+        didSet {
+            guard fillMaterial != oldValue else { return }
+            updateGlassTint()
         }
     }
 
@@ -409,14 +423,18 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
     /// `.style` compile against macOS 26, unguarded, matching `project.yml`'s
     /// deployment target.
     ///
-    /// **Untinted glass (Task 2).** `backing.tintColor` used to carry
-    /// `set.fillMenu`; it is left at its default nil now, the same untinted
-    /// `regular` glass ``PaneStatusBarView``'s own copy resolves to, and the
-    /// `set` this switch's `.glass` case carries is otherwise unused here.
-    /// The three bands above (``PaletteQueryView``, ``PaletteListView``,
-    /// ``PaletteHintsView``) used to draw `fillMenu` a second time as their
-    /// own fill; Task 2 removed that too, so nothing downstream of this
-    /// method paints `fillMenu` any more — see each band's own `draw(_:)`.
+    /// **Untinted glass (Task 2) is still what ships.** `backing.tintColor` used
+    /// to carry `set.fillMenu`; it is left nil now, the same untinted `regular`
+    /// glass ``PaneStatusBarView``'s own copy resolves to. The three bands above
+    /// (``PaletteQueryView``, ``PaletteListView``, ``PaletteHintsView``) used to
+    /// draw `fillMenu` a second time as their own fill; Task 2 removed that too,
+    /// so nothing downstream of this method paints `fillMenu` any more — see
+    /// each band's own `draw(_:)`.
+    ///
+    /// ``fillMaterial`` can put the tint back, and only the debug design panel
+    /// can set it (see ``SurfaceFill``). One tint, on the backing alone: the
+    /// bands' own second fill is not restored, since it was the *stacked* copy
+    /// the spike objected to hardest.
     private func applyResolvedChrome() {
         switch resolvedChrome {
         case .flat:
@@ -448,6 +466,18 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
                 glassBacking = backing
             }
         }
+        updateGlassTint()
+    }
+
+    /// Writes ``fillMaterial``'s colour onto the backing, or nil — which is what
+    /// ships and what every Release build resolves.
+    ///
+    /// Called from ``applyResolvedChrome()`` as well as from ``fillMaterial``'s
+    /// own `didSet`, so a tint set before the backing existed still lands when
+    /// it is created, and a stale one cannot survive a flat/glass round trip.
+    private func updateGlassTint() {
+        guard let glassBacking, case let .glass(set) = resolvedChrome else { return }
+        glassBacking.tintColor = SurfaceFill.colour(fillMaterial, in: set)
     }
 
     // MARK: - Filtering
