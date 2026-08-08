@@ -34,8 +34,45 @@
     ///   deciding to type here, not a side effect of dialling. Taking key when
     ///   asked is what every window does; the failure being guarded is taking it
     ///   when *not* asked.
-    /// - **It is lowered again when editing ends**, so the panel is back to
-    ///   refusing before the next drag.
+    /// - **It is lowered on ``resignKey()`` and ``orderOut(_:)``**, which is a
+    ///   window-level fact rather than a control-level one, and that is the whole
+    ///   point. See below.
+    ///
+    /// ## Lowering has to be structural, and was not at first
+    ///
+    /// The first version lowered the flag only in the hex field's end-of-editing
+    /// action, and **that leaked on two ordinary paths**: pressing Escape aborts
+    /// the field editor without firing an action at all, and closing the panel
+    /// mid-edit (⌥⌘D, or the close button) orders it out with no action either.
+    /// After either, the panel answered `canBecomeKey = true` indefinitely, and
+    /// the *next* click — a slider drag included — would have taken key from the
+    /// pane. That is precisely the property this design exists to protect, undone
+    /// by the mechanism meant to protect it.
+    ///
+    /// So the lowering moved onto the window. ``resignKey()`` is the honest hook:
+    /// the panel is no longer key, therefore the editing session it took key for
+    /// is over, whatever ended it and whether or not any control noticed.
+    /// ``orderOut(_:)`` covers being ordered out. The hex field's own lowering
+    /// stays as a harmless fast path.
+    ///
+    /// **The close button is covered twice, and that was measured rather than
+    /// assumed.** ⌥⌘D reaches `orderOut` directly, but the titlebar button drives
+    /// `performClose(_:)` → `close()`, which is a different entry point and could
+    /// plausibly have bypassed both hooks. A probe on a `.titled`/`.closable`
+    /// nonactivating panel showed `close()` and `performClose(_:)` each calling
+    /// `orderOut(_:)` *and* firing `resignKey()`, in that order. So no close path
+    /// leaves the flag raised, and neither override is redundant: `resignKey`
+    /// alone would miss ordering out a panel that was never key, and `orderOut`
+    /// alone would miss Escape and click-away, which end editing without closing
+    /// anything.
+    ///
+    /// **Two hex fields in a row read as a bug and are not one.** Clicking field
+    /// B while A is editing runs B's `mouseDown` — and its `makeKey` — before A's
+    /// end-of-editing action lowers the flag, so the flag is briefly lowered by A
+    /// after B raised it. Harmless: the panel is *already key* at that moment, so
+    /// `canBecomeKey` is not consulted, and B's editing session proceeds. The
+    /// flag is re-consulted only on the next click that arrives while the panel
+    /// is not key, and by then `resignKey` has run.
     ///
     /// `canBecomeMain` stays false unconditionally: main is what the menu bar
     /// validates against, and handing it to this panel would grey out every
@@ -49,6 +86,22 @@
         override var canBecomeKey: Bool { wantsKey }
 
         override var canBecomeMain: Bool { false }
+
+        /// The panel is no longer key, so whatever editing session took key is
+        /// over. Covers Escape, clicking away, and ⌘Tab alike — none of which
+        /// fires a control action. See the class doc.
+        override func resignKey() {
+            super.resignKey()
+            wantsKey = false
+        }
+
+        /// Closed, possibly mid-edit and possibly while still key, where
+        /// ``resignKey()`` may not run. Lowered before `super` so the flag is
+        /// already down for anything the ordering-out triggers.
+        override func orderOut(_ sender: Any?) {
+            wantsKey = false
+            super.orderOut(sender)
+        }
     }
 
     /// The debug design panel: every ``BaiaSettings/DesignOverrides`` knob as a
@@ -79,13 +132,17 @@
     /// the writes this panel did not make: the settings file being edited under a
     /// running app, and the appearance flipping. It deliberately does **not** carry
     /// a value back into `designOverrides`, so there is no loop — the panel's own
-    /// write fires the handler, the handler re-reads what the panel just wrote, and
-    /// nothing further happens because refreshing a control is not a control event.
-    /// ``isRefreshing`` is what makes that last clause true rather than hopeful:
-    /// AppKit fires no action for a programmatic `doubleValue` assignment, but
-    /// `NSTextField` does emit `controlTextDidChange` in some paths, and a write
-    /// back into the center from inside its own notification would be a loop that
-    /// only shows up as a spinning app.
+    /// write fires the handler, and the handler re-reads what the panel just wrote.
+    ///
+    /// ``isRefreshing`` guards the return leg of exactly that path. ``refresh()``
+    /// writes into every control, and ``commit()`` refuses to write to the center
+    /// while it runs, so a control that reacts to being *set* cannot push its own
+    /// value back out. AppKit fires no action for a programmatic assignment today,
+    /// which makes the guard belt-and-braces rather than load-bearing — and it is
+    /// kept because the cost is one boolean and the failure it prevents is a write
+    /// loop between the panel and the center, which shows up as a spinning app
+    /// rather than as anything on screen. A later row builder wiring a control
+    /// that *does* emit on assignment is covered without having to notice this.
     ///
     /// ## Nothing here persists
     ///
@@ -95,29 +152,32 @@
     /// being a question rather than an answer. Copy Values is the only way a dialled
     /// value leaves the process, and it leaves as text for a human to read.
     @MainActor
-    final class DesignPanelController: NSObject, NSTextFieldDelegate {
+    final class DesignPanelController: NSObject {
         private let center: ConfigurationCenter
 
         private let panel: DesignPanel
 
         /// The value being edited. Written to the center on every control event,
         /// held here so a control can move one field without rebuilding the other
-        /// forty from the UI.
+        /// thirty from the UI.
         ///
         /// Starts empty rather than from `center.designOverrides`, which is nil at
         /// construction and can only have been made non-nil by this same object.
         private var overrides = DesignOverrides()
 
-        /// True while ``refresh()`` is writing values into controls, so a control
-        /// that emits a change notification for a programmatic write does not push
-        /// that write back into the center. See the class doc.
+        /// True while ``refresh()`` is writing values into controls, so that
+        /// ``commit()`` refuses to write to the center for the duration.
+        ///
+        /// No control wired here emits on a programmatic assignment today, so this
+        /// guards a loop that cannot currently form. See the class doc for why it
+        /// is kept anyway.
         private var isRefreshing = false
 
         /// Every control that has to be re-read from ``overrides`` on a refresh,
         /// keyed by nothing: each closure knows its own control and its own field.
         ///
         /// A list of closures rather than a stored reference per control, because
-        /// there are forty-odd controls and a property per control would be forty
+        /// there are thirty-one rows and a property per control would be thirty-one
         /// lines of boilerplate whose only reader is one loop.
         private var refreshers: [() -> Void] = []
 
@@ -533,7 +593,16 @@
         ///
         /// Unchecking writes nil back and the knob returns to the committed value
         /// immediately, so a single row can be undone without Reset clearing the
-        /// other forty.
+        /// other thirty.
+        ///
+        /// **The checkbox reports the override; it does not gate the slider.**
+        /// Dragging an unchecked row's slider writes the value *and* checks the
+        /// box, rather than being ignored until the box is ticked. A drag is an
+        /// unambiguous statement of intent, and a slider that moved under the
+        /// pointer while nothing happened on screen would read as a broken panel
+        /// long before anyone found the checkbox that explained it. So the box is
+        /// an indicator plus a one-click way back to nil, and the only path that
+        /// *sets* nil is unticking it or Reset.
         private func addSlider(
             to stack: NSStackView,
             label: String,
@@ -709,8 +778,10 @@
                 let text = field.stringValue.trimmingCharacters(in: .whitespaces)
                 set(&overrides, text.isEmpty ? nil : text)
                 commit()
-                // The editing session is over, so the panel goes back to refusing
-                // key before the next slider drag. See ``DesignPanel``.
+                // A fast path, not the guarantee. `DesignPanel.resignKey()` and
+                // `orderOut(_:)` are what actually hold the flag down, because
+                // Escape and closing the panel mid-edit both end the session
+                // without firing this action at all. See ``DesignPanel``.
                 self.panel.wantsKey = false
             }
             // `action` on an `NSTextField` fires on Return and on focus loss, which
@@ -835,9 +906,9 @@
     /// A target object for an `NSControl`, wrapping a closure.
     ///
     /// AppKit's target/action predates blocks and `NSControl.target` is weak, so a
-    /// panel with forty controls otherwise needs forty `@objc` methods or forty
-    /// stored properties. This is one class and one selector; ``keepAlive`` on the
-    /// controller is what stops the weak target from dropping.
+    /// panel with thirty-one rows otherwise needs an `@objc` method or a stored
+    /// property per control. This is one class and one selector; ``keepAlive`` on
+    /// the controller is what stops the weak target from dropping.
     @MainActor
     final class ActionTrampoline: NSObject {
         static let fire = #selector(ActionTrampoline.perform(_:))
