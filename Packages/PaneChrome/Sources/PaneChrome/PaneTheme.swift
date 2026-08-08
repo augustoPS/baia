@@ -22,6 +22,22 @@ public struct PaneTheme: Sendable, Equatable {
     /// index inside a draw call.
     public var ansi: [RGB]
 
+    /// The handful of constants below that the debug design panel can stand in
+    /// front of. See ``PaneThemeAdjustments``.
+    ///
+    /// **Empty by default, and empty is the identity.** Every derivation that
+    /// reads this falls back to the constant it always used, so a theme built by
+    /// a call site that has never heard of this property renders exactly what it
+    /// rendered before the property existed — including in Release, where the
+    /// app-side overrides are structurally always nil.
+    ///
+    /// Not an initializer parameter: the default keeps every existing call site
+    /// (`.darkPastel`, `PaneTheme(background:foreground:selectionBackground:…)`,
+    /// every test fixture) compiling and rendering unchanged, and the one caller
+    /// that dials it — ``SettingsDerivations/paneTheme(from:adjustments:)`` —
+    /// sets it in one place a caller cannot skip.
+    public var adjustments: PaneThemeAdjustments = .none
+
     public init(background: RGB, foreground: RGB, focusedAccent: RGB, ansi: [RGB]) {
         self.background = background
         self.foreground = foreground
@@ -68,8 +84,13 @@ public struct PaneTheme: Sendable, Equatable {
     /// Lifted off the terminal background so the bar reads as chrome rather than
     /// as the last line of output, which is what a pane running a build log looks
     /// like when the two match exactly.
+    ///
+    /// ``PaneThemeAdjustments/barLift`` stands in front of ``barLift`` here. It
+    /// is the one dial that moves a colour every ink is then measured against —
+    /// this is the backdrop ``color(for:focused:)`` grades footer text on — so a
+    /// single slider moves the bar and the text on it together.
     public var barBackground: RGB {
-        background.blended(with: foreground, fraction: Self.barLift)
+        background.blended(with: foreground, fraction: adjustments.barLift ?? Self.barLift)
     }
 
     /// The line between two panes.
@@ -471,6 +492,25 @@ public struct PaneTheme: Sendable, Equatable {
     /// A working agent's dot. Never used for text.
     public var ok: RGB { ansiColor(2) }
 
+    /// The colour the footer's working-agent dot is filled with: ``ok``, or the
+    /// explicit colour ``PaneThemeAdjustments/busyDotInk`` names.
+    ///
+    /// A derivation rather than the drawing site reading `ok` and applying its
+    /// own `??`, for the reason every other resolution in this type is one: the
+    /// site that draws it is in `Sources/`, where nothing can reach it with a
+    /// test. Here the fallback is asserted.
+    ///
+    /// **Colour only.** The dot's diameter, gap and advance stay constants at
+    /// the drawing site and are not offered here. They feed
+    /// ``PaneStatusBarMetrics``' bar layout, and the whole override layer
+    /// structurally lacks geometry — see ``BaiaSettings/DesignOverrides``' own
+    /// header on the SIGWINCH wall.
+    ///
+    /// No repair chain, unlike the three inks below: the dot is a filled shape
+    /// and not text, nothing is read off it, so there is no text-contrast floor
+    /// for a repair to target.
+    public var busyDot: RGB { adjustments.busyDotInk ?? ok }
+
     /// A staged change: in the index, and what a commit right now would contain.
     ///
     /// Built like ``warn``, from the adjacent ANSI slot at the same fraction, so
@@ -585,8 +625,55 @@ public struct PaneTheme: Sendable, Equatable {
     /// Returns ``inkFaint`` untouched wherever it already clears, so flat is
     /// byte-identical: `SurfaceTitleView` hands this its bar under `.flat`, and
     /// the repair chain is a no-op there.
+    /// ``PaneThemeAdjustments/sectionHeaderMinimumRatio`` stands in front of
+    /// ``minimumTextContrast`` here, and there is no hex beside it: this is the
+    /// one of the three whose repair actually fires today (it is graded against
+    /// sampled glass rather than against a bar the theme derives), so it is the
+    /// one where a ratio is the whole question.
     public func sectionHeaderInk(on backdrop: RGB) -> RGB {
-        readable(inkFaint, on: backdrop, minimumRatio: Self.minimumTextContrast)
+        readable(
+            inkFaint,
+            on: backdrop,
+            minimumRatio: adjustments.sectionHeaderMinimumRatio ?? Self.minimumTextContrast
+        )
+    }
+
+    /// The sidebar's session-header ink — the repo name's neighbours, the branch
+    /// and the status word — on the backdrop it is drawn on.
+    ///
+    /// Spelled the same way ``sectionHeaderInk(on:)`` is, and it answers the
+    /// same value today: ``inkFaint`` graded against the surface it lands on,
+    /// which under flat is ``barBackground`` and is a no-op there. It exists as
+    /// its own function rather than as a second caller of the section header's
+    /// so the panel can move one without moving the other — the sidebar's rows
+    /// and the CHANGED header sit on different backdrops and only the header's
+    /// contrast has been measured (the glass-backdrop spike's finding 6 covered
+    /// the caps label alone).
+    ///
+    /// ``PaneThemeAdjustments/sessionHeaderInk`` bypasses the repair outright
+    /// when set, and wins over the ratio beside it, since a named colour has no
+    /// ratio left to satisfy. That path can return something illegible. It is a
+    /// probe for the owner's eye, not a candidate setting; see
+    /// ``PaneThemeAdjustments`` for the longer form.
+    public func sessionHeaderInk(on backdrop: RGB) -> RGB {
+        if let named = adjustments.sessionHeaderInk { return named }
+        return readable(
+            inkFaint,
+            on: backdrop,
+            minimumRatio: adjustments.sessionHeaderMinimumRatio ?? Self.minimumTextContrast
+        )
+    }
+
+    /// The sidebar's action-row ink — the "New session" keycap glyph. Identical
+    /// in shape to ``sessionHeaderInk(on:)`` and separate for the same reason:
+    /// two rows the panel has to be able to tell apart.
+    public func actionRowInk(on backdrop: RGB) -> RGB {
+        if let named = adjustments.actionRowInk { return named }
+        return readable(
+            inkFaint,
+            on: backdrop,
+            minimumRatio: adjustments.actionRowMinimumRatio ?? Self.minimumTextContrast
+        )
     }
 
     /// The colour to draw a segment of this emphasis in, on a given bar.
@@ -757,6 +844,9 @@ public struct PaneTheme: Sendable, Equatable {
     /// How far ``barBackground`` moves off the terminal background. Small enough
     /// that the bar is not a bright band across a dark pane, large enough that
     /// the boundary is visible without the hairline.
+    ///
+    /// ``PaneThemeAdjustments/barLift`` can stand in front of this; nil there
+    /// leaves this number in force, which is what ships.
     private static let barLift: Double = 0.08
 
     /// How far *every* pane is covered when the window is not key.

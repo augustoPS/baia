@@ -103,14 +103,38 @@ public enum SettingsDerivations {
     /// catalog cannot produce even its own default theme, which is a broken
     /// build rather than a config the owner wrote, and there is no palette in
     /// hand at that point to resolve a choice against anyway.
-    public static func paneTheme(from settings: Settings) -> PaneTheme {
-        guard let definition = themeDefinition(from: settings) else { return .darkPastel }
-        return PaneTheme(
+    /// `adjustments` is the debug design panel's shadow over the handful of
+    /// ``PaneTheme`` constants it can dial, threaded as a parameter rather than
+    /// reached for as a global. ``PaneThemeAdjustments/none`` — the default, and
+    /// what every caller outside `ConfigurationCenter` passes — is exactly the
+    /// identity, asserted field by field in `PaneThemeAdjustmentsTests`, so a
+    /// Release build (where the app-side overrides are structurally absent)
+    /// derives precisely the theme it derived before this parameter existed.
+    ///
+    /// A parameter and not a `PaneTheme` field the app assigns afterwards, for
+    /// the same reason `focusAccent` immediately below is one: an assignment is
+    /// a line a caller can forget, and this codebase has the scar — that key was
+    /// decoded, stored and tested for a week while nothing read it. The
+    /// fallback path (`.darkPastel`, a broken build rather than a config the
+    /// owner wrote) carries the adjustments too, so no branch here is a branch
+    /// where a dialled value silently stops applying.
+    public static func paneTheme(
+        from settings: Settings,
+        adjustments: PaneThemeAdjustments = .none
+    ) -> PaneTheme {
+        guard let definition = themeDefinition(from: settings) else {
+            var fallback = PaneTheme.darkPastel
+            fallback.adjustments = adjustments
+            return fallback
+        }
+        var theme = PaneTheme(
             background: settings.backgroundHex,
             foreground: definition.foreground,
             selectionBackground: definition.selectionBackground,
             palette: definition.palette,
             focusAccent: settings.focusAccent
         )
+        theme.adjustments = adjustments
+        return theme
     }
 }
