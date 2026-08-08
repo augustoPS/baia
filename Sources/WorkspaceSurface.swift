@@ -182,68 +182,99 @@ final class SurfaceTitleView: NSView {
     var title: String = "" { didSet { needsDisplay = true } }
     var theme: PaneTheme = .darkPastel { didSet { needsDisplay = true } }
 
-    /// Gates ``glassLabelInk``. Pushed by `SidebarHost` the same way
-    /// ``isWindowActive`` is: this view has no other way to hear that its
+    /// Gates the glass branch of ``labelInk``. Pushed by `SidebarHost` the same
+    /// way ``isWindowActive`` is: this view has no other way to hear that its
     /// column is now sitting over real glass.
     var resolvedChrome: ResolvedChrome = .flat { didSet { needsDisplay = true } }
 
-    /// The caps label's ink under glass, spike-measured
-    /// (`Diagnostics/glass-backdrop/README.md` finding 6): the header drew
-    /// `theme.inkFaint` (`≈#9e9e9e` on `.darkPastel`) and measured 3.26:1 over
-    /// a bright-desktop glass sample, under the 4.5:1 floor for 10 pt bold
-    /// text. `#bbbbbb` clears it against the same measured glass.
+    /// The brightest glass the spike actually measured, and the backdrop the
+    /// caps label is graded against under glass.
+    ///
+    /// `Diagnostics/glass-backdrop/README.md` finding 6: a sidebar of untinted
+    /// `regular` glass straddling a split bright/dark wallpaper sampled
+    /// `#4b4b4b`, `#474747`, `#494949` and `#464646` over the bright half across
+    /// two runs. This is the worst (brightest) of the four, so an ink that
+    /// clears it clears every sample the finding took.
+    ///
+    /// **A constant because the view cannot ask.** What glass composites is the
+    /// desktop, sampled by the window server, and neither this view nor any
+    /// `NSGlassEffectView` API reports the result back — the spike needed a
+    /// screen grab to read it at all. So the grading backdrop is the measured
+    /// worst case rather than a live value, and it is spelled here, once, next
+    /// to the finding that produced it.
     ///
     /// **What the sidebar's opacity wash does to that number, stated rather
-    /// than silently re-graded.** `SidebarGlassWash` now lays
-    /// `theme.background` at `backgroundOpacity` over this glass, so the
-    /// backdrop this ink is judged against is no longer the bare glass finding
-    /// 6 measured. The wash only ever *darkens* it — `#141414` is darker than
-    /// every sample in that finding — so contrast for light ink moves
-    /// monotonically up and this override cannot become a legibility
-    /// regression at any opacity. Recomputed against finding 6's own measured
-    /// samples, worst (brightest) half, both runs:
+    /// than silently re-graded.** `SidebarGlassWash` lays `theme.background` at
+    /// `backgroundOpacity` over this glass, so the backdrop the label is judged
+    /// against is not the bare glass finding 6 measured. The wash only ever
+    /// *darkens* it — `#141414` is darker than every sample in that finding —
+    /// so contrast for light ink moves monotonically up. That is the claim; the
+    /// sweep below is the evidence for it, and it is kept rather than asserted
+    /// because four opacity levels are what show the monotonicity.
     ///
-    /// | opacity | bare glass | `#9e9e9e` | `#bbbbbb` |
-    /// |---|---|---|---|
-    /// | 0 (before) | `#4b4b4b`–`#464646` | 3.26–3.52 | 4.54–4.92 |
-    /// | 0.10 | `#46`–`#41` | 3.55–3.81 | 4.96–5.32 |
-    /// | 0.42 | `#34`–`#31` | 4.65–4.86 | 6.49–6.78 |
-    /// | 0.85 | `#1c` | 6.34–6.40 | 8.85–8.92 |
+    /// Computed against finding 6's own measured samples, worst (brightest)
+    /// half, both recorded runs, by the same `contrastRatio` arithmetic the
+    /// table's other cells use — not read off a capture. The `#9e9e9e` column
+    /// is **the probe's stand-in, not any ink this app draws** (see the README's
+    /// finding 6a): it is kept because the original table was built on it and
+    /// the correction is only legible beside it. `#898989` is the ink that
+    /// actually ships without this repair, and it is worse throughout.
     ///
-    /// **So at the shipped 0.42 this override is no longer load-bearing**:
-    /// `theme.inkFaint` itself clears 4.5:1 (4.65–4.86) on the half that
-    /// motivated the repair. It stays anyway, and the reason is the low end of
-    /// the range rather than the shipped value — at 0.10 the flat ink is back
-    /// to 3.55–3.81 and still fails, and `backgroundOpacity` is a live knob the
-    /// owner drags. An override that holds across the whole range is worth more
-    /// than one tuned to the default and wrong at a setting one drag away.
-    /// Removing it would be safe only if the wash were also floored, which
-    /// would be a second, worse coupling.
+    /// | opacity | bare glass | stand-in `#9e9e9e` | `inkFaint` `#898989` | old literal `#bbbbbb` | `sectionHeaderInk` `#dcdcdc` |
+    /// |---|---|---|---|---|---|
+    /// | 0 (bare) | `#4b4b4b`–`#464646` | 3.26–3.52 | 2.49–2.69 | 4.54–4.92 | 6.34–6.85 |
+    /// | 0.10 | `#464646`–`#414141` | 3.55–3.81 | 2.72–2.91 | 4.96–5.32 | 6.91–7.41 |
+    /// | 0.42 (shipped) | `#343434`–`#313131` | 4.65–4.86 | 3.56–3.71 | 6.49–6.78 | 9.05–9.45 |
+    /// | 0.85 | `#1c1c1c` | 6.34–6.40 | 4.85–4.89 | 8.85–8.92 | 12.34–12.44 |
     ///
-    /// A fixed override rather than a repair run through
-    /// `theme.color(for:focused:on:)`: the owner's decision recorded in the
-    /// v5-4 plan's amendment is "no [contrast-repair] pairing on glass paths"
-    /// for this pass — the platform material carries legibility, per finding
-    /// 3b — and this is the one named exception the spike's own measurement
-    /// asked for, spelled as the one constant the finding names rather than as
-    /// a second repair chain. Flat is untouched: ``theme.inkFaint`` keeps
-    /// deriving from the theme exactly as before, and every other `inkFaint`
-    /// reader in the sidebar (the session header, the action row's keycap, the
-    /// file tree's disclosure chevron, both empty-state messages) is
-    /// unaffected — this override reaches only the two caps-row draws below,
-    /// which is what the spike actually measured.
+    /// Two things the sweep says that the prose alone could not. **The repair is
+    /// load-bearing across the whole knob, not just at its default**: the ink
+    /// that ships without it (`#898989`) fails the 4.5:1 floor at every opacity
+    /// up to and including the shipped 0.42, and only clears at 0.85. The
+    /// earlier reading — that at 0.42 the flat ink already passes — was an
+    /// artifact of grading the stand-in rather than the real tier. And grading
+    /// against the **bare** glass, as ``labelInk`` does, is the conservative end
+    /// of a live knob the owner drags rather than a number tuned to its default.
     ///
-    /// `.eightBit`, not `.init(hex:)`: the latter is failable, and a force
-    /// unwrap inside a `static let` turns a one-character typo into a crash on
-    /// the first paint rather than a compile error, the same reasoning
-    /// ``PaneTheme/darkPastel``'s own construction gives for using it.
-    private static let glassLabelInk = RGB.eightBit(0xBB, 0xBB, 0xBB)
+    /// Wallpaper caveat, unchanged: these rest on finding 6's samples, and a
+    /// desktop brighter than anything that finding saw composites brighter than
+    /// the top row. The probe's finding 6b measured exactly that and it is why
+    /// this constant is recorded as owed rather than sufficient.
+    private static let measuredBrightGlass = RGB.eightBit(0x4B, 0x4B, 0x4B)
 
-    /// ``theme.inkFaint`` under flat, ``glassLabelInk`` under glass.
+    /// The caps label's ink: ``PaneChrome/PaneTheme/inkFaint`` graded against
+    /// whatever it is actually drawn on.
+    ///
+    /// Both branches call the same derivation and differ only in the backdrop
+    /// they name, which is the point. Under flat the header sits on
+    /// `theme.barBackground`, a colour the theme derives and already clears, so
+    /// the repair is a no-op and flat renders byte-identically to what Plan 1
+    /// shipped. Under glass it sits on sampled desktop, which the theme has
+    /// never seen, and finding 6 measured the faint tier failing the 4.5:1 floor
+    /// that 10 pt bold text is owed over the bright half.
+    ///
+    /// **Why a derivation and not the constant the finding names.** The spike's
+    /// remedy reads "`#bbbbbb` or lighter", and that value shipped here as a
+    /// literal. It passes on `.darkPastel` for a reason that does not generalise:
+    /// `#bbbbbb` *is* that theme's own `foreground`. Against the other 484 themes
+    /// in the catalog it is arbitrary, and on a light one it inverts — `#bbbbbb`
+    /// on a white-backed palette is the near-invisible ink rather than the
+    /// legible one, so the constant would have made the header *less* readable on
+    /// exactly the themes it was supposed to protect.
+    /// ``PaneChrome/PaneTheme/sectionHeaderInk(on:)`` asks the question the
+    /// constant answered by accident: brighten the theme's own faint tier until
+    /// it clears, on this backdrop, whatever the theme is.
+    ///
+    /// This reaches only the two caps-row draws below. Every other `inkFaint`
+    /// reader in the sidebar (the session header, the action row's keycap, the
+    /// file tree's disclosure chevron, both empty-state messages) is untouched,
+    /// and the file rows beside this header measured 6.99:1 and never needed
+    /// repairing — which is why the fix is one header's ink rather than the
+    /// column's.
     private var labelInk: RGB {
         switch resolvedChrome {
-        case .flat: theme.inkFaint
-        case .glass: Self.glassLabelInk
+        case .flat: theme.sectionHeaderInk(on: theme.barBackground)
+        case .glass: theme.sectionHeaderInk(on: Self.measuredBrightGlass)
         }
     }
 

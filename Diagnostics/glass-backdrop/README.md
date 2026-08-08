@@ -325,6 +325,65 @@ though above the 3:1 large-text floor, and at 10 pt bold it is not large text. T
 header needs roughly `#bbbbbb` or lighter to clear 4.5:1 against a bright-half glass
 in this range.
 
+#### 6a. Correction: the two runs above graded a stand-in, not the shipping ink.
+
+Found 2026-08-07 while landing the repair. The arm drew its header with a
+hard-coded `NSColor(white: 0.62)` (`#9e9e9e`) and the table above reports that as
+"CHANGED header `#9e9e9e`". **The shipping header never drew `#9e9e9e`.** It draws
+`theme.inkFaint`, which on `.darkPastel` derives to `#898989` — darker than the
+stand-in, so the real ink was *worse* than the published number, not better. The
+four render arms already read `PaneStatusBarMetrics.height` off the package at run
+time for exactly this reason; the sidebar arm was transcribing instead, and now
+reads `PaneChrome` too.
+
+The finding's **verdict survives and is strengthened**: the header failed the floor
+over the bright half, and by more than was reported. Only the absolute was wrong.
+
+#### 6b. Re-run with the repair in, and why it reports no absolute pass.
+
+The arm now draws two `CHANGED` strings side by side — the repaired
+`theme.sectionHeaderInk(on:)` and the unrepaired `theme.inkFaint` as its control —
+so one capture carries the bug and the fix and the comparison cannot drift between
+runs.
+
+Re-run 2026-08-07, `sidebar-untinted-glass-screen.png`, bright half:
+
+| Ink | Value | Contrast this run |
+|---|---|---|
+| glass backdrop, bright half | `#7c7c7c` | — |
+| `theme.inkFaint` (ships without the fix) | `#898989` | 1.19:1 |
+| the old literal `#bbbbbb` | `#bbbbbb` | 2.17:1 |
+| **`sectionHeaderInk`, repaired** | `#dcdcdc` | **3.04:1** |
+| `sectionHeaderInk`, dark half | `#dcdcdc` | 12.95:1 |
+
+**This run's display was far brighter than the two recorded above** — its bright
+half read `#7c7c7c` where they read `#4b4b4b` and `#474747`, and the bare white
+backdrop beside the column read `#7d7d7d`. That is the `-R` tone-curve caveat this
+README already states, doing exactly what it warns about, so **these absolutes are
+within-run only and are not comparable to the table above**.
+
+What the re-run does establish, because all four values come from one capture at
+one instant:
+
+- The repair moves the header **2.55x** over the ink that ships without it
+  (3.04:1 against 1.19:1) and beats the `#bbbbbb` literal it replaces (2.17:1).
+- On the dark half it is comfortable at 12.95:1.
+- **No fixed ink clears 4.5:1 on a bright half this bright** — `#ffffff` itself
+  would reach only about 3.9:1 against `#7c7c7c`. The floor is not reachable by
+  choosing an ink at this backdrop luminance.
+
+So the ≥4.5:1 acceptance is met **against the backdrop the code grades on**
+(`#4b4b4b`, finding 6's own worst measured sample: the repair returns `#dcdcdc` at
+6.34:1, and 6.85:1 on the brightest sample, with 9.72–10.57:1 on the dark half) but
+is **not** met against this brighter run's glass. Both facts are the record.
+
+**What that leaves owed.** The grading constant in
+`SurfaceTitleView.measuredBrightGlass` is finding 6's worst *measured* sample, and
+this run shows the desktop can composite brighter than anything finding 6 saw. A
+constant cannot track that. Closing it properly needs either a floor under the
+sidebar wash (so the backdrop stops depending on the wallpaper) or a real sampled
+backdrop, and neither is this task's to choose. Recorded here rather than resolved.
+
 Re-run the probe before quoting a sidebar absolute; the bright-versus-dark ordering
 and the ~2x ratio between the halves are what transfer.
 
@@ -507,6 +566,16 @@ What does fail is narrower than the restructure and is fixed far more cheaply.
 1. **Lighten the header ink.** It draws `#9e9e9e` (`NSColor(white: 0.62)`) today;
    `#bbbbbb` or lighter clears 4.5:1 against the measured `#4b4b4b`. This is a
    single constant and it is the whole fix for the only thing that failed.
+
+   **Landed 2026-08-07, and not as a constant.** See findings 6a and 6b. The
+   `#9e9e9e` in this line is the stand-in the arm drew, not the shipping ink
+   (`theme.inkFaint`, `#898989`). And `#bbbbbb` passes on `.darkPastel` for a
+   reason that does not generalise — it *is* that theme's own `foreground` — so as
+   a literal it says nothing about the other 484 themes in the catalog and
+   inverts on a light one, where `#bbbbbb` is the near-invisible ink. It shipped
+   as `PaneTheme.sectionHeaderInk(on:)` instead: the theme's own faint tier,
+   repaired against the backdrop it is actually drawn on, which is the same
+   `readable(_:on:minimumRatio:)` policy the rest of the chrome already uses.
 2. **Whatever legibility repair the bar takes.** If the bar's remedy ends up being
    a darker well or a scrim, the same treatment applies behind the sidebar and
    moves both halves at once.

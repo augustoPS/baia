@@ -555,6 +555,40 @@ public struct PaneTheme: Sendable, Equatable {
         foreground.blended(with: background, fraction: 0.30)
     }
 
+    /// A caps section header — the sidebar's `CHANGED` — on a backdrop that is
+    /// not this theme's own.
+    ///
+    /// ``inkFaint`` is the tier the header wants and the right answer wherever
+    /// the header sits on ``barBackground``, which is a colour this theme
+    /// derives and therefore already grades against. Under glass it does not:
+    /// the backdrop is the desktop, sampled, and the theme has never seen it.
+    ///
+    /// The glass-backdrop spike measured that gap (its README's finding 6). A
+    /// sidebar of untinted `regular` glass straddling a split bright/dark
+    /// wallpaper sampled `#4b4b4b`–`#464646` over the bright half, and the faint
+    /// tier drawn on it failed the 4.5:1 body-text floor 10 pt bold text is owed
+    /// — above the 3:1 large-text floor, but at 10 pt this is not large text.
+    /// The file rows beside it held at 6.99:1 and never needed repairing, which
+    /// is why this is one header's ink rather than the column's.
+    ///
+    /// **Spelled as a repair against a passed-in backdrop, not as a brighter
+    /// constant.** The fix the spike names is "roughly `#bbbbbb` or lighter",
+    /// and on ``darkPastel`` that is a coincidence worth not building on:
+    /// `#bbbbbb` *is* that theme's own ``foreground``, so a literal passes there
+    /// while saying nothing about the other 484 themes in the catalog. On a
+    /// light theme it inverts outright — `#bbbbbb` on a white-backed palette is
+    /// the near-invisible ink, not the legible one. Reusing
+    /// ``readable(_:on:minimumRatio:)`` keeps this in the one place that judges
+    /// a colour as composited over the surface it is actually drawn on, which is
+    /// the mistake that function exists to prevent.
+    ///
+    /// Returns ``inkFaint`` untouched wherever it already clears, so flat is
+    /// byte-identical: `SurfaceTitleView` hands this its bar under `.flat`, and
+    /// the repair chain is a no-op there.
+    public func sectionHeaderInk(on backdrop: RGB) -> RGB {
+        readable(inkFaint, on: backdrop, minimumRatio: Self.minimumTextContrast)
+    }
+
     /// The colour to draw a segment of this emphasis in, on a given bar.
     ///
     /// The bar is passed in rather than assumed, because it is not always

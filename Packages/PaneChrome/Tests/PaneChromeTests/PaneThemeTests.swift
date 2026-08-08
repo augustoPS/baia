@@ -350,6 +350,37 @@ import Testing
             >= PaneTheme.minimumTextContrast)
     }
 
+    @Test func theGlassSectionHeaderClearsTheFloorOnTheMeasuredBrightGlass() {
+        // The glass-backdrop spike's finding 6, made a derivation rather than a
+        // constant. Its bright-half samples are the backdrop this ink is judged
+        // against; `#4b4b4b` is the brightest (worst) of the four across both
+        // runs, so clearing it clears the finding.
+        //
+        // Absolutes off an `-R` grab carry the display's tone curve and are
+        // within-run only — see the probe's README. What transfers, and what
+        // this pins, is that the derivation repairs against whatever backdrop it
+        // is handed rather than trusting the theme's own background.
+        let brightGlass = RGB.eightBit(0x4B, 0x4B, 0x4B)
+
+        for theme in [PaneTheme.darkPastel, paper] {
+            // The unrepaired tier is what failed: this is the bug, pinned.
+            #expect(theme.inkFaint.contrastRatio(against: brightGlass)
+                < PaneTheme.minimumTextContrast)
+            // And the derivation is what fixes it, on a dark theme and a light
+            // one alike. A fixed `#bbbbbb` would pass the first and fail here.
+            #expect(theme.sectionHeaderInk(on: brightGlass)
+                .contrastRatio(against: brightGlass) >= PaneTheme.minimumTextContrast)
+        }
+    }
+
+    @Test func theSectionHeaderInkIsLeftAloneWhereItAlreadyClears() {
+        // Not "always brighten". On a backdrop the faint tier already clears,
+        // the derivation returns it untouched, so flat keeps the tier it had and
+        // the header does not silently become a second, brighter ink everywhere.
+        let theme = PaneTheme.darkPastel
+        #expect(theme.sectionHeaderInk(on: theme.barBackground) == theme.inkFaint)
+    }
+
     @Test func theDerivationsResolveToTheValuesTheDesignPassQuotes() {
         // The hexes the handoff prints for Dark Pastel on #141414. They are not
         // the spec, the formulas are, but they are what someone reads the design

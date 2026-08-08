@@ -615,16 +615,51 @@ final class SidebarWindow: NSWindow {
 final class SidebarContentView: NSView {
     override var isFlipped: Bool { true }
 
+    /// The theme the shipping sidebar draws with, read off the package rather
+    /// than transcribed.
+    ///
+    /// **Finding 6 originally graded a stand-in and this is the correction.**
+    /// The header was drawn `NSColor(white: 0.62)` — `#9e9e9e` — and the README
+    /// reported that as "the CHANGED header `#9e9e9e`". The shipping header
+    /// never drew that colour: it draws `theme.inkFaint`, which on
+    /// `.darkPastel` is `#898989`, darker than the stand-in and therefore
+    /// *worse* than the number the finding published. The verdict the finding
+    /// reached (the header fails over the bright half and needs lightening)
+    /// survives that correction and is strengthened by it; the absolute did
+    /// not. Reading the ink off `PaneChrome` is what stops the arm claiming to
+    /// reproduce a surface it was only approximating — the same rule the four
+    /// render arms already follow for `PaneStatusBarMetrics.height`.
+    private let theme = PaneTheme.darkPastel
+
+    /// The backdrop the shipping header grades itself against under glass,
+    /// spelled the same way `SurfaceTitleView` spells it: finding 6's brightest
+    /// measured bright-half sample.
+    private static let measuredBrightGlass = RGB.eightBit(0x4B, 0x4B, 0x4B)
+
+    private func nsColor(_ rgb: RGB) -> NSColor {
+        NSColor(srgbRed: CGFloat(rgb.red), green: CGFloat(rgb.green),
+                blue: CGFloat(rgb.blue), alpha: 1)
+    }
+
     override func draw(_: NSRect) {
+        // What the header draws today: `sectionHeaderInk` repaired against the
+        // glass above. The unrepaired tier is drawn beside it as the control,
+        // so one capture carries both the bug and the fix and the comparison
+        // cannot drift between runs.
         let header: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 10, weight: .bold),
-            .foregroundColor: NSColor(white: 0.62, alpha: 1),
+            .foregroundColor: nsColor(theme.sectionHeaderInk(on: Self.measuredBrightGlass)),
+        ]
+        let headerBefore: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 10, weight: .bold),
+            .foregroundColor: nsColor(theme.inkFaint),
         ]
         let row: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 11.5, weight: .regular),
             .foregroundColor: NSColor(white: 0.90, alpha: 1),
         ]
         "CHANGED".draw(at: NSPoint(x: 12, y: 16), withAttributes: header)
+        "CHANGED".draw(at: NSPoint(x: 96, y: 16), withAttributes: headerBefore)
         var y: CGFloat = 40
         for name in [
             "Sources/PaneStatusBarView.swift",

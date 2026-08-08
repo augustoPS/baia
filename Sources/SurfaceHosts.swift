@@ -257,7 +257,8 @@ final class SidebarHost: NSViewController {
     /// footer's tint. The glass-backdrop spike's sidebar arm (its README's
     /// finding 6) measured that an untinted `regular` glass column, positioned
     /// where the sidebar actually sits over the transparent window region,
-    /// carries the file rows and (once repaired — see
+    /// carries the file rows and (once repaired through
+    /// ``PaneChrome/PaneTheme/sectionHeaderInk(on:)`` — see
     /// ``SurfaceTitleView/labelInk``) the CHANGED header both, and its
     /// verdict rejects the `NSSplitViewController` restructure this could have
     /// reached for instead.
