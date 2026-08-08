@@ -154,6 +154,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return popover
     }()
 
+    #if DEBUG
+        /// The debug design panel.
+        ///
+        /// **`lazy var` is the enforcement, not a convenience.**
+        /// `ConfigurationCenter.onSettingsChange` has no unregister, and the panel
+        /// registers in its own `init`, so a second instance would be a second
+        /// permanent handler and a second window writing the same
+        /// `designOverrides`. A `lazy var` is created once and never rebuilt —
+        /// unlike `settingsWindow`, which is deliberately rebuilt per ⌘, and which
+        /// is the consumer whose dead handler entries that doc comment accounts
+        /// for. See ``DesignPanelController``.
+        private lazy var designPanel = DesignPanelController(center: configuration)
+
+        /// ⌥⌘D, from the `#if DEBUG` Debug menu `MainMenu` appends.
+        @objc func toggleDesignPanel(_: Any?) {
+            designPanel.toggle()
+        }
+    #endif
+
     /// Presents the popover over `id`'s own request, and wires Approve/Deny
     /// back to that exact pane.
     ///

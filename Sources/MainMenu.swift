@@ -35,8 +35,51 @@ enum MainMenu {
             case .app, .standard: break
             }
         }
+        #if DEBUG
+            bar.addItem(debugMenuItem())
+        #endif
         app.mainMenu = bar
     }
+
+    #if DEBUG
+        /// The Debug menu, appended here rather than declared in `MenuBarLayout`.
+        ///
+        /// **Not in the package, on purpose**, against this file's own rule that
+        /// every title and shortcut lives in `MenuBarLayout`. That rule exists
+        /// because the menu and ghostty's unbind list were two hand-maintained
+        /// lists once and could disagree. Neither hazard applies here:
+        ///
+        /// - `MenuBarLayoutTests` asserts every `MenuCommand` appears in the bar
+        ///   exactly once, so a Debug command added to that enum would have to be
+        ///   added to a menu the Release build also builds. The item would ship.
+        /// - The unbind list is derived from `MenuBarLayout.menus`, so a shortcut
+        ///   declared there emits a ghostty `keybind` line into every pane's
+        ///   surface config, in Release too. A Debug-only key must not reach a
+        ///   shipped surface config.
+        ///
+        /// ⌥⌘D is safe without an unbind: ghostty's default binds include
+        /// `super+alt+i`, `super+alt+w` and the `super+alt` arrows, but no
+        /// `super+alt+d` (`GhosttyDefaultKeybinds.defaultTriggers`), so nothing
+        /// swallows the key on its way to this item. No item in `MenuBarLayout`
+        /// claims it either — ⌘D and ⇧⌘D are the splits, and this is a third mask.
+        private static func debugMenuItem() -> NSMenuItem {
+            let item = NSMenuItem()
+            item.title = "Debug"
+            let menu = NSMenu(title: "Debug")
+            let panel = NSMenuItem(
+                title: "Design Panel",
+                action: #selector(AppDelegate.toggleDesignPanel(_:)),
+                keyEquivalent: "d"
+            )
+            panel.keyEquivalentModifierMask = [.command, .option]
+            // Nil target, the same as every item above: the action goes down the
+            // responder chain to the app delegate that implements it.
+            panel.target = nil
+            menu.addItem(panel)
+            item.submenu = menu
+            return item
+        }
+    #endif
 
     private static func makeItem(_ entry: MenuItemDescriptor) -> NSMenuItem {
         let item = NSMenuItem()
