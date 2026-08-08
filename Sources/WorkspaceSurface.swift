@@ -240,14 +240,17 @@ final class SurfaceTitleView: NSView {
     /// desktop brighter than anything that finding saw composites brighter than
     /// the top row. The probe's finding 6b measured exactly that and it is why
     /// this constant is recorded as owed rather than sufficient.
-    /// **Internal rather than private, and read by two files.** The sidebar's
-    /// session header and action row grade their own faint-tier inks against
-    /// this same stand-in (see ``SidebarSessionHeaderView/labelInk`` and
-    /// ``SidebarActionRowView/labelInk``): all three sit in the same column,
-    /// over the same glass, and a second copy of this number free to drift from
-    /// this one is exactly what one constant with three readers avoids. The
-    /// wallpaper caveat above applies to all three equally.
-    static let measuredBrightGlass = RGB.eightBit(0x4B, 0x4B, 0x4B)
+    /// **Still one reader, and the sidebar's other two inks deliberately do not
+    /// join it.** The session header's and the action row's faint-tier strings
+    /// sit in this same column over this same glass, so grading them here looks
+    /// obvious; it was tried and reverted. On `.darkPastel` the repair fires on
+    /// this backdrop — `inkFaint` scores 2.49:1 against `#4b4b4b` — and walks
+    /// those inks from `#898989` to `#dcdcdc`, which would have moved a pixel on
+    /// every glass launch with every design override nil. The caps label is
+    /// different because it was *always* graded here, so nothing about it moved.
+    /// See ``SidebarSessionHeaderView/labelInk`` for the open question that
+    /// leaves behind.
+    private static let measuredBrightGlass = RGB.eightBit(0x4B, 0x4B, 0x4B)
 
     /// The caps label's ink: ``PaneChrome/PaneTheme/inkFaint`` graded against
     /// whatever it is actually drawn on.

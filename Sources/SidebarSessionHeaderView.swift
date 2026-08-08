@@ -43,11 +43,11 @@ final class SidebarSessionHeaderView: NSView {
     /// ``SurfaceTitleView``'s caps label, not this row's repo/branch/status
     /// inks, so they are left as `theme`-derived colours for the live pass.
     ///
-    /// **Read a second time by ``labelInk`` since the design panel's wiring.**
-    /// The two faint-tier strings below go through that derivation now, which
-    /// grades against the backdrop this row is actually drawn on, so the
-    /// backdrop this property picks and the ink graded against it come from one
-    /// value rather than two that could disagree.
+    /// **Still gates only the fill, and ``labelInk`` deliberately does not read
+    /// it.** Grading this row's ink against sampled glass on the `.glass` branch
+    /// is the open question ``labelInk``'s own doc comment records; branching
+    /// here would answer it by accident, and it would move a pixel with every
+    /// override nil.
     var resolvedChrome: ResolvedChrome = .flat { didSet { needsDisplay = true } }
 
     /// The faint-tier strings on this row — the branch and the status word — in
@@ -63,22 +63,36 @@ final class SidebarSessionHeaderView: NSView {
     /// `sessionHeaderHex` reaching a site that would otherwise be a constant no
     /// dial can touch.
     ///
-    /// The backdrop is named the same way ``SurfaceTitleView/labelInk`` names
-    /// its own, and for the same reason: under flat this row fills
-    /// `theme.barBackground` and the ink sits on it, while under glass it fills
-    /// nothing at all and the ink sits on whatever the column's glass sampled.
-    /// ``WorkspaceSurface/measuredBrightGlass`` is the conservative stand-in for
-    /// that, measured by the glass-backdrop spike; it is the same constant, and
-    /// carries the same wallpaper caveat, that the caps label is graded against.
+    /// **`theme.barBackground` under glass as well as under flat, and that is
+    /// not an oversight.** ``SurfaceTitleView/labelInk`` one file over branches
+    /// on ``resolvedChrome`` and grades its caps label against
+    /// ``SurfaceTitleView/measuredBrightGlass`` on the glass side, and copying
+    /// that branch here was tried and reverted: measured on `.darkPastel`, the
+    /// repair fires on that backdrop (`inkFaint` scores 2.49:1 against `#4b4b4b`,
+    /// under the 4.5 floor) and walks the ink from `#898989` to `#dcdcdc`. Every
+    /// glass launch would have rendered this row's branch and status word
+    /// near-white, in Release, with every override nil — a rendering change
+    /// shipped under a wire whose whole contract is that nil moves nothing.
+    ///
+    /// The caps label is not the precedent it looks like. That site was *always*
+    /// graded against the bright-glass stand-in, so routing it through a
+    /// derivation was identity; this row was unconditionally `theme.inkFaint`,
+    /// so a glass branch here is the repair firing for the first time rather
+    /// than a fallback collapsing.
+    ///
+    /// **Whether these two strings should be graded against sampled glass is a
+    /// real and open question, and this is not the change that answers it.** The
+    /// spike's finding 6 measured the caps label alone, which is why both this
+    /// row's doc comment and the action row's have said since Task 3 that their
+    /// inks are left for a live pass rather than guessed at. Grading them here
+    /// would be the guess. The dials reach this site either way, so the panel is
+    /// how the owner answers it with the real column in front of him.
     ///
     /// The repo name is deliberately not routed here. It is `inkFocus`, a
     /// different tier, and the panel offers one dial for this row rather than a
     /// dial per string.
     private var labelInk: RGB {
-        switch resolvedChrome {
-        case .flat: theme.sessionHeaderInk(on: theme.barBackground)
-        case .glass: theme.sessionHeaderInk(on: SurfaceTitleView.measuredBrightGlass)
-        }
+        theme.sessionHeaderInk(on: theme.barBackground)
     }
 
     override var isFlipped: Bool { true }

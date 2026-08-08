@@ -25,33 +25,37 @@ final class SidebarActionRowView: NSView {
     /// ``SurfaceTitleView``'s caps label), so their inks are left unchanged
     /// for the live pass rather than guessed at here.
     ///
-    /// **Read a second time by ``labelInk`` since the design panel's wiring**,
-    /// so the backdrop this property picks and the keycap ink graded against it
-    /// come from one value rather than two that could disagree.
+    /// **Still gates only the fill, and ``labelInk`` deliberately does not read
+    /// it**, for the reason ``SidebarSessionHeaderView/labelInk`` states at
+    /// length: a `.glass` branch there fires the repair chain and moves the ink
+    /// with every override nil.
     var resolvedChrome: ResolvedChrome = .flat { didSet { needsDisplay = true } }
 
     /// The keycap glyph's ink, from ``PaneChrome/PaneTheme/actionRowInk(on:)``
     /// on the backdrop this row is actually drawn on.
     ///
     /// **Moves no pixel until something is dialled.** Unadjusted, the derivation
-    /// is ``PaneChrome/PaneTheme/inkFaint`` graded against its backdrop and the
-    /// repair is a no-op wherever the faint tier already clears, which under
-    /// flat is exactly the `theme.inkFaint` the glyph always drew. What routing
-    /// through it buys is `actionRowMinimumRatio` and `actionRowHex` reaching a
-    /// site that would otherwise be a constant no dial can touch.
+    /// is ``PaneChrome/PaneTheme/inkFaint`` graded against `barBackground`,
+    /// where the faint tier already clears the floor, so the repair is a no-op
+    /// and this is exactly the `theme.inkFaint` the glyph always drew. What
+    /// routing through it buys is `actionRowMinimumRatio` and `actionRowHex`
+    /// reaching a site that would otherwise be a constant no dial can touch.
     ///
-    /// The backdrop is named the way ``SurfaceTitleView/labelInk`` and
-    /// ``SidebarSessionHeaderView/labelInk`` name theirs, off the same measured
-    /// stand-in and with the same wallpaper caveat.
+    /// **`barBackground` under glass too**, unlike
+    /// ``SurfaceTitleView/labelInk``, and ``SidebarSessionHeaderView/labelInk``
+    /// carries the full argument: grading against the bright-glass stand-in
+    /// fires the repair and walks this glyph from `#898989` to `#dcdcdc` on
+    /// every glass launch with every override nil, which is a rendering change
+    /// under a wire whose contract is that nil moves nothing. Whether the keycap
+    /// *should* be graded against sampled glass is the open question this row's
+    /// `resolvedChrome` doc has recorded since Task 3, and the panel is how it
+    /// gets answered.
     ///
     /// The row's own "New session" label and its hover/press washes are
     /// deliberately not routed here: they are a different tier and a fill, and
     /// the panel offers one dial for this row rather than one per element.
     private var labelInk: RGB {
-        switch resolvedChrome {
-        case .flat: theme.actionRowInk(on: theme.barBackground)
-        case .glass: theme.actionRowInk(on: SurfaceTitleView.measuredBrightGlass)
-        }
+        theme.actionRowInk(on: theme.barBackground)
     }
 
     /// The keycap glyph drawn trailing, e.g. `⌘T`. Set by the caller from

@@ -95,9 +95,15 @@ fi
 # from the outside. Focus is the line. A run of this one will visibly cover
 # whatever is in front for a few seconds and then put it back.
 #
+# **`override-wires` is the strictest member.** It opens no window at all: every
+# arm renders a shipped view into an offscreen `NSBitmapImageRep` through
+# `cacheDisplay(in:to:)` and reads the bytes back, so there is nothing for the
+# window server to composite and nothing to take focus from. It qualifies on the
+# focus criterion by never reaching a compositor in the first place.
+#
 # Every probe named must be safe, so a command pairing a safe one with a real
 # driver is still denied.
-SAFE_PROBES='^(theme-catalog|app-icon|clip-layout|theme-refresh|pane-resize|glass-backdrop)$'
+SAFE_PROBES='^(theme-catalog|app-icon|clip-layout|theme-refresh|pane-resize|glass-backdrop|override-wires)$'
 probes=$(printf '%s' "$COMMAND" | grep -oE 'Diagnostics/[a-zA-Z0-9_-]+/run\.sh' | sed -E 's|Diagnostics/([^/]+)/run\.sh|\1|')
 if [ -n "$probes" ]; then
   unsafe=0
@@ -107,7 +113,7 @@ if [ -n "$probes" ]; then
 $probes
 EOF
   if [ "$unsafe" = "1" ]; then
-    emit_deny "Blocked: this Diagnostics probe takes over the screen. footer-corners and fullscreen-strip open a key window and activate, and fullscreen-strip runs an event loop driving it in and out of full screen, so either would pull focus off this pane mid-run. Others quit any running baia and launch their own. Use 'make test' for package work, or theme-catalog, app-icon, clip-layout, theme-refresh, pane-resize and glass-backdrop, which take no focus. (glass-backdrop does put windows on screen for about fifteen seconds; it never takes the keyboard.)"
+    emit_deny "Blocked: this Diagnostics probe takes over the screen. footer-corners and fullscreen-strip open a key window and activate, and fullscreen-strip runs an event loop driving it in and out of full screen, so either would pull focus off this pane mid-run. Others quit any running baia and launch their own. Use 'make test' for package work, or theme-catalog, app-icon, clip-layout, theme-refresh, pane-resize, glass-backdrop and override-wires, which take no focus. (glass-backdrop does put windows on screen for about fifteen seconds; it never takes the keyboard.)"
   fi
 fi
 

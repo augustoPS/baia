@@ -96,15 +96,22 @@ Package tests answer anything decidable without an `NSWindow` or a descriptor. A
 probe is for what needs a real window, surface, shell, socket, or human eye.
 
 **Never run a `Diagnostics/*/run.sh` or `make run-attached` from inside a baia
-pane, except the two that launch nothing.** Several probes quit or relaunch the
+pane, except the ones that take no focus.** Several probes quit or relaunch the
 app you are sitting in, and `run-attached` runs the build in the foreground of the
 calling pane, so the pane becomes its console and the agent in it loses its shell.
 
-`theme-catalog/` and `app-icon/` are the exceptions and are safe anywhere:
-the first builds a binary and sweeps the shipped themes, the second reads plists
-and compares files. Neither opens a window, launches an app or kills a process.
-`guard-baia-alive.sh` allows exactly these two and still denies a command that
-pairs one with a real driver.
+`guard-baia-alive.sh`'s `SAFE_PROBES` is the list of record and this paragraph is
+not it. **This file said "the two that launch nothing" and named only
+`theme-catalog` and `app-icon` while the guard had already allowed six**, which
+is a rule that stales in the direction that costs a session: an agent reading
+this refuses a probe the guard would have run. Read the guard, which carries the
+criterion (**focus**, not invisibility) and one paragraph per member explaining
+why it qualifies. `glass-backdrop` is the member worth knowing about, because it
+does put real windows on screen for about fifteen seconds and still never takes
+the keyboard; `override-wires` is the strictest, opening no window at all.
+
+Whatever the list holds, a command pairing a safe probe with a real driver is
+still denied.
 
 Naming them matters because the blanket version cost something. The wave-five
 reviewer needed the theme-catalog sweep, was refused by the guard, and

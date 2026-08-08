@@ -83,6 +83,40 @@ import Testing
         #expect(theme.sectionHeaderInk(on: theme.barBackground) == theme.inkFaint)
     }
 
+    /// **The backdrop these are handed is the whole question, and this arm is
+    /// the one that would have caught getting it wrong.**
+    ///
+    /// A repair is only a no-op where the candidate already clears. On the
+    /// bright-glass stand-in the sidebar's glass was measured against
+    /// (`#4b4b4b`, `WorkspaceSurface.measuredBrightGlass`) it does not: the
+    /// faint tier scores under the 4.5 floor there and the chain walks it two
+    /// steps to near-white. So "these derivations are the identity" is true of
+    /// the bar and false of that backdrop, and a drawing site that branched on
+    /// `resolvedChrome` to pass the glass stand-in would have moved a pixel with
+    /// every override nil.
+    ///
+    /// That branch was written, and this arm is why it was reverted: the two
+    /// sidebar rows pass `barBackground` on both paths (see
+    /// `SidebarSessionHeaderView.labelInk`), and only `SurfaceTitleView`'s caps
+    /// label — which was always graded there — keeps the glass branch.
+    ///
+    /// The numbers are asserted rather than described, so a change to `inkFaint`
+    /// or to the repair chain that made the two backdrops agree would fail here
+    /// instead of quietly making the prose above wrong.
+    @Test func theRepairIsNotANoOpOnTheBrightGlassStandIn() {
+        let brightGlass = RGB.eightBit(0x4B, 0x4B, 0x4B)
+        #expect(theme.inkFaint.contrastRatio(against: brightGlass) < PaneTheme.minimumTextContrast)
+
+        for repaired in [
+            theme.sessionHeaderInk(on: brightGlass),
+            theme.actionRowInk(on: brightGlass),
+            theme.sectionHeaderInk(on: brightGlass),
+        ] {
+            #expect(repaired != theme.inkFaint)
+            #expect(repaired.contrastRatio(against: brightGlass) >= PaneTheme.minimumTextContrast)
+        }
+    }
+
     /// The unadjusted busy dot is the constant the drawing site used to name
     /// directly, so re-pointing that site at this derivation moved no pixel.
     @Test func theUnadjustedBusyDotIsTheOkColour() {
@@ -266,4 +300,5 @@ import Testing
         #expect(theme.adjustments.barLift == 0.42)
         #expect(theme.barBackground != SettingsDerivations.paneTheme(from: settings).barBackground)
     }
+
 }
