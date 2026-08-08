@@ -1,5 +1,7 @@
 #if DEBUG
 
+    import Foundation
+
     /// The design panel's Copy Values text: the dialled overrides as JSON with a
     /// comment per field naming the constant it stands in for.
     ///
@@ -44,8 +46,31 @@
     ///    to be argued for.
     ///
     /// So the output is for a human to read and to paste into a commit message, a
-    /// vault note, or a constant. It is not a format anything reads back, and
-    /// nothing here should ever gain a parser.
+    /// vault note, or a constant.
+    ///
+    /// ## And then it gained a parser, which does not disturb either reason
+    ///
+    /// **The sentence above used to end "and nothing here should ever gain a
+    /// parser". ``parse(_:)`` below is that reversal, made deliberately and for a
+    /// reason neither of the two arguments touches.** On macOS 26A5388g the design
+    /// panel's own controls can crash the app inside the OS's new gesture bridge,
+    /// so the crash-safe way to dial is to edit a file the app watches
+    /// (`~/.config/baia/design-overrides.json`) and let a save re-theme the running
+    /// app. That file's format is this emitter's output, which is what makes a
+    /// paste of Copy Values into it work at all.
+    ///
+    /// Neither reason above is weakened by that:
+    ///
+    /// 1. **The format is still comments-beside-values**, because the parser was
+    ///    written to the emitter rather than the emitter to a serializer. The
+    ///    caveats travel into the file the owner edits, which is where he needs
+    ///    them most.
+    /// 2. **``DesignOverrides`` still conforms to nothing that serialises**, so
+    ///    "just save the panel state between launches" is no closer to being a
+    ///    one-liner than it was. This half is a *reader*: the app parses this text
+    ///    and never writes it. The file is the owner's document, and the only
+    ///    serialisation call site in the project is still Copy Values' clipboard
+    ///    write.
     ///
     /// ## Only what is set
     ///
@@ -197,6 +222,281 @@
             while trimmed.hasSuffix("0") { trimmed.removeLast() }
             if trimmed.hasSuffix(".") { trimmed.append("0") }
             return trimmed
+        }
+
+        // MARK: - Reading it back
+
+        /// Why a parse could not produce a ``DesignOverrides``, in a sentence the
+        /// owner can act on.
+        ///
+        /// A message rather than a case per failure, because there is exactly one
+        /// consumer — the watcher, which writes it to stderr the way
+        /// `ConfigurationCenter.report` writes the settings decoder's complaints —
+        /// and nothing branches on why. A case list would be a taxonomy with no
+        /// reader, and the string is what has to be right.
+        public struct ParseError: Error, Equatable, Sendable {
+            /// What went wrong, naming the offending key wherever there is one.
+            public let message: String
+        }
+
+        /// The overrides `text` describes, or why it could not be read.
+        ///
+        /// `text` is this file's own emitted format: commented JSON with flat
+        /// dotted keys. That is not an accident of convenience — it is what lets
+        /// the owner paste Copy Values' output straight into
+        /// `~/.config/baia/design-overrides.json` and have the running app pick it
+        /// up on save.
+        ///
+        /// ## One bad key fails the whole document, and this is the one place
+        /// `BaiaSettings` refuses per-field resilience
+        ///
+        /// ``SettingsDecoder`` is resilient by design: a typo there costs one
+        /// setting and sixteen good ones still apply, because `config.json` is
+        /// read at launch and its spellings are learned from the file baia writes
+        /// on first run. This file is the opposite situation. It is hand-edited
+        /// repeatedly inside a single dialling session, from memory, with the app
+        /// running and the owner watching a window for a change.
+        ///
+        /// In that loop a silently ignored `ringAlfa` does not cost one knob, it
+        /// costs the answer: the owner saves, nothing moves, and the honest
+        /// conclusion available to him is that *the knob does nothing* — which is
+        /// exactly the question the session was convened to ask. So an unknown key
+        /// and a mistyped value both refuse the document and name themselves, and
+        /// the watcher keeps whatever was already dialled rather than dropping to
+        /// a half-applied state nobody asked for.
+        ///
+        /// An empty object, and a file of nothing but comments, are not failures:
+        /// they are "nothing dialled", which is what the emitter writes after a
+        /// Reset and a legitimate thing to save.
+        public static func parse(_ text: String) -> Result<DesignOverrides, ParseError> {
+            let stripped = droppingTrailingComma(strippingComments(text))
+            guard case let .object(fields)? = JSONValue.parse(Data(stripped.utf8)) else {
+                return .failure(ParseError(
+                    message: "not a JSON object once its // comments are stripped"
+                ))
+            }
+
+            var overrides = DesignOverrides()
+            for key in fields.keys.sorted() {
+                // Sorted so a document with two bad keys always blames the same
+                // one. `fields` is a dictionary and its iteration order varies per
+                // run, which would otherwise make the reported key a coin flip and
+                // the failing test flaky.
+                guard let value = fields[key] else { continue }
+                if let error = assign(value, forKey: key, into: &overrides) {
+                    return .failure(error)
+                }
+            }
+            return .success(overrides)
+        }
+
+        /// Writes one flat dotted key into `overrides`, or says why it could not.
+        ///
+        /// The key strings are the emitter's, above, and nothing derives one from
+        /// the other: Swift offers no reflection over stored properties that
+        /// survives `-O`, so both lists are written out and
+        /// ``DesignOverridesTextTests`` holds them together — the emitter's
+        /// inventory test from one side, and a sweep asserting the parser accepts
+        /// every key the emitter writes from the other.
+        private static func assign(
+            _ value: JSONValue,
+            forKey key: String,
+            into overrides: inout DesignOverrides
+        ) -> ParseError? {
+            switch key {
+            case "backgroundOpacity": return double(value, key, &overrides.backgroundOpacity)
+            case "backgroundBlur": return bool(value, key, &overrides.backgroundBlur)
+            case "chromeStyle": return rawValue(value, key, &overrides.chromeStyle)
+            case "attentionStyle": return rawValue(value, key, &overrides.attentionStyle)
+            case "attentionAccent": return rawValue(value, key, &overrides.attentionAccent)
+            case "focusAccent": return rawValue(value, key, &overrides.focusAccent)
+            case "transparentTitlebar": return bool(value, key, &overrides.transparentTitlebar)
+
+            case "chrome.lift.enabled": return bool(value, key, &overrides.chrome.lift.enabled)
+            case "chrome.lift.ringSpread": return double(value, key, &overrides.chrome.lift.ringSpread)
+            case "chrome.lift.ringAlpha": return double(value, key, &overrides.chrome.lift.ringAlpha)
+            case "chrome.lift.innerHighlightOffsetY":
+                return double(value, key, &overrides.chrome.lift.innerHighlightOffsetY)
+            case "chrome.lift.innerHighlightAlpha":
+                return double(value, key, &overrides.chrome.lift.innerHighlightAlpha)
+            case "chrome.lift.shadowDropOffsetY":
+                return double(value, key, &overrides.chrome.lift.shadowDropOffsetY)
+            case "chrome.lift.shadowDropBlur":
+                return double(value, key, &overrides.chrome.lift.shadowDropBlur)
+            case "chrome.lift.shadowDropAlpha":
+                return double(value, key, &overrides.chrome.lift.shadowDropAlpha)
+            case "chrome.lift.duration": return double(value, key, &overrides.chrome.lift.duration)
+
+            case "chrome.rim.enabled": return bool(value, key, &overrides.chrome.rim.enabled)
+            case "chrome.rim.topAlpha": return double(value, key, &overrides.chrome.rim.topAlpha)
+
+            case "chrome.inks.sessionHeaderMinimumRatio":
+                return double(value, key, &overrides.chrome.inks.sessionHeaderMinimumRatio)
+            case "chrome.inks.sessionHeaderHex":
+                return string(value, key, &overrides.chrome.inks.sessionHeaderHex)
+            case "chrome.inks.actionRowMinimumRatio":
+                return double(value, key, &overrides.chrome.inks.actionRowMinimumRatio)
+            case "chrome.inks.actionRowHex":
+                return string(value, key, &overrides.chrome.inks.actionRowHex)
+            case "chrome.inks.sectionHeaderMinimumRatio":
+                return double(value, key, &overrides.chrome.inks.sectionHeaderMinimumRatio)
+            case "chrome.inks.busyDotHex":
+                return string(value, key, &overrides.chrome.inks.busyDotHex)
+
+            case "chrome.surfaces.footer": return rawValue(value, key, &overrides.chrome.surfaces.footer)
+            case "chrome.surfaces.sidebar": return rawValue(value, key, &overrides.chrome.surfaces.sidebar)
+            case "chrome.surfaces.palette": return rawValue(value, key, &overrides.chrome.surfaces.palette)
+            case "chrome.surfaces.popover": return rawValue(value, key, &overrides.chrome.surfaces.popover)
+            case "chrome.surfaces.titlebar": return rawValue(value, key, &overrides.chrome.surfaces.titlebar)
+
+            case "chrome.barLift": return double(value, key, &overrides.chrome.barLift)
+            case "chrome.sidebarWashFloor": return double(value, key, &overrides.chrome.sidebarWashFloor)
+
+            default:
+                return ParseError(message: "`\(key)` is not a knob baia dials")
+            }
+        }
+
+        // MARK: - Reading one field
+
+        private static func double(
+            _ value: JSONValue, _ key: String, _ field: inout Double?
+        ) -> ParseError? {
+            guard case let .number(number) = value, number.isFinite else {
+                return ParseError(message: "`\(key)` wants a number")
+            }
+            field = number
+            return nil
+        }
+
+        private static func bool(
+            _ value: JSONValue, _ key: String, _ field: inout Bool?
+        ) -> ParseError? {
+            guard case let .bool(flag) = value else {
+                return ParseError(message: "`\(key)` wants true or false")
+            }
+            field = flag
+            return nil
+        }
+
+        private static func string(
+            _ value: JSONValue, _ key: String, _ field: inout String?
+        ) -> ParseError? {
+            guard case let .string(text) = value else {
+                return ParseError(message: "`\(key)` wants a string")
+            }
+            field = text
+            return nil
+        }
+
+        /// The one that catches a spelling no compiler could.
+        ///
+        /// The case lists it checks against are what an owner types from memory
+        /// mid-session, so `"marble"` in a `Material` field is both easy to write
+        /// and invisible to every check above this one: it is a string in a field
+        /// that takes strings. The message names the spellings rather than only
+        /// the key, because "wrong" without "these are the words" leaves him
+        /// reading source to find them.
+        private static func rawValue<Value: RawRepresentable & CaseIterable>(
+            _ value: JSONValue, _ key: String, _ field: inout Value?
+        ) -> ParseError? where Value.RawValue == String {
+            guard case let .string(text) = value else {
+                return ParseError(message: "`\(key)` wants a string")
+            }
+            guard let parsed = Value(rawValue: text) else {
+                let spellings = Value.allCases.map(\.rawValue).joined(separator: ", ")
+                return ParseError(message: "`\(key)`: `\(text)` is not one of \(spellings)")
+            }
+            field = parsed
+            return nil
+        }
+
+        // MARK: - Comments
+
+        /// `text` with every `//` comment removed, leaving JSON.
+        ///
+        /// Walks strings rather than searching for the marker. `"#00//00"` is a
+        /// legal value for a hex field and truncating it there would turn a typo
+        /// into a half-parsed document; no knob holds a path today, but a stripper
+        /// that could not tell a marker inside a string from one outside it is a
+        /// trap laid for the first field that does.
+        ///
+        /// Comment bodies are replaced with nothing rather than with spaces. The
+        /// newline that ended the line is kept, so the remaining JSON keeps its
+        /// line structure and the parser's own whitespace skipping does the rest.
+        /// `/* */` is not understood: the emitter never writes one, so accepting
+        /// it would be a second syntax with nothing producing it.
+        private static func strippingComments(_ text: String) -> String {
+            var out = ""
+            out.reserveCapacity(text.count)
+            var insideString = false
+            var isEscaped = false
+            var insideComment = false
+            var previousWasSlash = false
+
+            for character in text {
+                if insideComment {
+                    guard character == "\n" else { continue }
+                    insideComment = false
+                    out.append(character)
+                    continue
+                }
+                if insideString {
+                    out.append(character)
+                    if isEscaped {
+                        isEscaped = false
+                    } else if character == "\\" {
+                        isEscaped = true
+                    } else if character == "\"" {
+                        insideString = false
+                    }
+                    continue
+                }
+                if character == "/" {
+                    if previousWasSlash {
+                        // The first slash was already appended; take it back.
+                        out.removeLast()
+                        previousWasSlash = false
+                        insideComment = true
+                        continue
+                    }
+                    previousWasSlash = true
+                    out.append(character)
+                    continue
+                }
+                previousWasSlash = false
+                if character == "\"" { insideString = true }
+                out.append(character)
+            }
+            return out
+        }
+
+        /// `text` with a comma that has nothing after it but the closing brace
+        /// removed.
+        ///
+        /// **Not leniency for its own sake: the emitter above writes one on every
+        /// line, including the last.** `append` ends each entry with `", // note"`
+        /// so the comma sits between the value and its comment, which is the only
+        /// arrangement that keeps the note beside the number it annotates. Strip
+        /// the comments and the last entry is left with a comma before `}`, which
+        /// ``JSONValue/parse(_:)`` refuses — correctly, since `config.json` is real
+        /// JSON and a trailing comma there is a typo worth reporting.
+        ///
+        /// So this is exactly wide enough for what the emitter produces and no
+        /// wider: one comma, at the end of the document, before the final brace.
+        /// A comma inside a string is untouched, since this runs after the
+        /// comment stripper has already told strings from structure and only the
+        /// document's tail is examined.
+        private static func droppingTrailingComma(_ text: String) -> String {
+            var characters = Array(text)
+            var index = characters.count - 1
+            while index >= 0, characters[index].isWhitespace { index -= 1 }
+            guard index >= 0, characters[index] == "}" else { return text }
+            index -= 1
+            while index >= 0, characters[index].isWhitespace { index -= 1 }
+            guard index >= 0, characters[index] == "," else { return text }
+            characters.remove(at: index)
+            return String(characters)
         }
     }
 

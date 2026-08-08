@@ -297,6 +297,13 @@
             refresh()
         }
 
+        /// Puts the dialled values on the clipboard as commented JSON.
+        ///
+        /// That text is also the format of `~/.config/baia/design-overrides.json`,
+        /// the file `ConfigurationCenter` watches, so a paste of this straight into
+        /// it is picked up on save and re-themes the running app. The app never
+        /// writes that file, and this pasteboard write is the only place a dialled
+        /// value is serialised at all.
         @objc private func copyValues() {
             let board = NSPasteboard.general
             board.clearContents()

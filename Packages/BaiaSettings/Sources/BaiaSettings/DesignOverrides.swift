@@ -3,13 +3,27 @@ import Foundation
 /// The ephemeral override layer behind the debug design panel.
 ///
 /// The owner dials appearance live, over real sessions, with agents running in
-/// the panes. So these values shadow the committed ``Settings`` in memory and are
-/// never written to `~/.config/baia/config.json`: a dial is a question about how
-/// something looks, and the answer is worth keeping only once the owner decides
-/// it is, which is what editing the config file already means. `ConfigurationCenter`
-/// composes this before every derivation, including every derivation taken while
-/// the panel has never been opened, which is why ``Settings/applying(_:)`` on an
-/// empty value has to be exactly the identity.
+/// the panes. So these values shadow the committed ``Settings`` in memory: a dial
+/// is a question about how something looks, and the answer is worth keeping only
+/// once the owner decides it is, which is what editing the config file already
+/// means. `ConfigurationCenter` composes this before every derivation, including
+/// every derivation taken while the panel has never been opened, which is why
+/// ``Settings/applying(_:)`` on an empty value has to be exactly the identity.
+///
+/// **baia never writes an override anywhere.** Not to
+/// `~/.config/baia/config.json`, not to `UserDefaults`, not to the file described
+/// below. That is the claim, and it is narrower than "never persisted", which is
+/// what this said until a watched file existed: `~/.config/baia/design-overrides.json`
+/// does carry dialled values across launches, and it is the *owner's* document.
+/// He writes it in an editor, baia reads it (``DesignOverridesText/parse(_:)``)
+/// and re-themes on save, and deleting it is Reset. Read-only in the direction
+/// that matters: nothing in the app can put a value on disk that the owner did
+/// not type there. The one place an override is serialised at all is the design
+/// panel's Copy Values, and it goes to the clipboard.
+///
+/// The file exists because on macOS 26A5388g the panel's own controls can crash
+/// the app inside the OS's new gesture bridge, so an editor and a save are the
+/// crash-safe way to dial.
 ///
 /// **Every field is optional and nil means "the committed value", never "the
 /// default value".** The distinction is the whole type. A non-optional field

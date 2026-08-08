@@ -42,8 +42,15 @@ final class ConfigurationCenter {
         /// were judged cheaper than losing the switch-without-default pin a
         /// Release-side stand-in type would cost (final review, 2026-08-07).
         ///
-        /// Never persisted. See ``BaiaSettings/DesignOverrides`` for why a dial
-        /// is a question rather than an answer, and why every field is optional.
+        /// **The app never writes overrides anywhere.** No `UserDefaults`, no
+        /// write to `config.json`, no write to the watched file. The one file
+        /// that can carry a dialled value between launches,
+        /// `~/.config/baia/design-overrides.json`, is the *owner's* document and
+        /// this object only ever reads it; see ``startWatchingDesignOverrides()``.
+        /// The one place a dialled value is serialised at all is the design
+        /// panel's Copy Values, and it goes to the clipboard. See
+        /// ``BaiaSettings/DesignOverrides`` for why a dial is a question rather
+        /// than an answer, and why every field is optional.
         private var storedDesignOverrides: DesignOverrides?
 
         /// The dialled overrides, and the one write path into them.
@@ -215,6 +222,12 @@ final class ConfigurationCenter {
     private var watcher: DispatchSourceFileSystemObject?
     private var reloadWorkItem: DispatchWorkItem?
 
+    #if DEBUG
+        private var designOverridesWatcher: DispatchSourceFileSystemObject?
+        private var designOverridesReloadWorkItem: DispatchWorkItem?
+        private var designOverridesDirectoryWatcher: DispatchSourceFileSystemObject?
+    #endif
+
     init(
         store: SettingsStore = SettingsStore(fileURL: SettingsStore.defaultFileURL()),
         appearanceObserver: AppearanceObserver = AppearanceObserver()
@@ -229,6 +242,13 @@ final class ConfigurationCenter {
         settings = result.settings
         Self.report(result)
         startWatching()
+        #if DEBUG
+            // Read once before the watcher is armed, so a file already on disk at
+            // launch is in effect from the first frame rather than from the first
+            // save after launch. Absent is the ordinary case and costs nothing.
+            reloadDesignOverrides()
+            startWatchingDesignOverrides()
+        #endif
         appearanceObserver.onAppearanceChange = { [weak self] _ in
             guard let self else { return }
             // `resolvedChrome` reads `appearanceObserver.appearance` fresh on
@@ -597,6 +617,185 @@ final class ConfigurationCenter {
         reloadWorkItem = item
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: item)
     }
+
+    #if DEBUG
+        // MARK: - Watching the design overrides
+
+        /// `~/.config/baia/design-overrides.json`: the file the owner dials in
+        /// while the panel's own controls are not to be trusted.
+        ///
+        /// Beside `config.json` deliberately, in the directory the owner already
+        /// opens to edit settings, so there is one place to look for everything
+        /// baia reads. The name says what it holds rather than that it is debug
+        /// state, because it is the only thing in that directory a Release build
+        /// will not read at all.
+        ///
+        /// **baia never writes this path.** There is no first-launch default and
+        /// no save-back, unlike ``BaiaSettings/SettingsStore/writeDefaultIfAbsent()``
+        /// beside it. The file is the owner's input, its absence is the ordinary
+        /// state, and deleting it is how a dialling session is reset.
+        static func designOverridesFileURL() -> URL {
+            SettingsStore.defaultFileURL()
+                .deletingLastPathComponent()
+                .appending(path: "design-overrides.json")
+        }
+
+        /// Watches the design-overrides file for edits.
+        ///
+        /// **A second source rather than a branch inside ``startWatching()``, and
+        /// the reason is not tidiness.** A `DispatchSourceFileSystemObject`
+        /// watches one descriptor, so a second path needs a second source
+        /// whichever way this is arranged; sharing the debounce work item would
+        /// then let a `config.json` save cancel a pending overrides reload and
+        /// drop it, since ``scheduleReload(rearm:)`` cancels whatever is
+        /// outstanding. And the settings watcher must stay unfenced — it is the
+        /// only path into `settings` in Release — so folding this in would put
+        /// `#if DEBUG` inside its event handler rather than around a method.
+        ///
+        /// The rest is ``startWatching()``'s shape for ``startWatching()``'s
+        /// reasons: `.rename` and `.delete` are watched alongside `.write`
+        /// because most editors do not save in place, and the re-arm against the
+        /// path is what keeps the second save working.
+        ///
+        /// One thing it needs that the settings watcher does not: **this file is
+        /// normally absent**, and `open` on a path that does not exist gives no
+        /// descriptor to watch. `config.json` is written on first launch so it
+        /// always exists; this one appears the moment the owner first saves it,
+        /// which would be after the app started. So an absent file falls back to
+        /// watching the *directory*, which does exist, and re-arms on the path
+        /// once something with that name lands in it.
+        private func startWatchingDesignOverrides() {
+            stopWatchingDesignOverrides()
+            let path = Self.designOverridesFileURL().path(percentEncoded: false)
+            let descriptor = open(path, O_EVTONLY)
+            guard descriptor >= 0 else {
+                watchDesignOverridesDirectory()
+                return
+            }
+
+            let source = DispatchSource.makeFileSystemObjectSource(
+                fileDescriptor: descriptor,
+                eventMask: [.write, .delete, .rename, .extend],
+                queue: .main
+            )
+            source.setEventHandler { [weak self] in
+                guard let self else { return }
+                let event = source.data
+                if event.contains(.delete) || event.contains(.rename) {
+                    scheduleDesignOverridesReload(rearm: true)
+                } else {
+                    scheduleDesignOverridesReload(rearm: false)
+                }
+            }
+            source.setCancelHandler { close(descriptor) }
+            source.resume()
+            designOverridesWatcher = source
+        }
+
+        /// Watches `~/.config/baia/` for the overrides file appearing.
+        ///
+        /// The file's absence is the ordinary state, so this is the arm that runs
+        /// on most launches. A directory source fires on any change inside it,
+        /// including every `config.json` save, which is why the handler goes
+        /// through the same debounce and the same reload as everything else: an
+        /// unrelated write finds the overrides file still absent, parses nothing,
+        /// and assigns nil over nil, which the equality guard in
+        /// ``reloadDesignOverrides()`` drops before it can re-theme anything.
+        private func watchDesignOverridesDirectory() {
+            let directory = Self.designOverridesFileURL().deletingLastPathComponent()
+            let descriptor = open(directory.path(percentEncoded: false), O_EVTONLY)
+            guard descriptor >= 0 else { return }
+
+            let source = DispatchSource.makeFileSystemObjectSource(
+                fileDescriptor: descriptor,
+                eventMask: [.write, .delete, .rename],
+                queue: .main
+            )
+            source.setEventHandler { [weak self] in
+                // Always re-arms: the point of this source is to notice the file
+                // arriving, and arming on the path is what has to happen once it
+                // has. `startWatchingDesignOverrides` falls back here again when
+                // the event was some other file in the directory.
+                self?.scheduleDesignOverridesReload(rearm: true)
+            }
+            source.setCancelHandler { close(descriptor) }
+            source.resume()
+            designOverridesDirectoryWatcher = source
+        }
+
+        private func stopWatchingDesignOverrides() {
+            designOverridesWatcher?.cancel()
+            designOverridesWatcher = nil
+            designOverridesDirectoryWatcher?.cancel()
+            designOverridesDirectoryWatcher = nil
+        }
+
+        /// Coalesces a burst of events into one reload, for
+        /// ``scheduleReload(rearm:)``'s reasons: one save is several events, and
+        /// reloading mid-write reads a half-written file and reports it as
+        /// broken. It matters more here than it does there, because this file is
+        /// saved repeatedly inside one session and every reload re-themes every
+        /// pane.
+        ///
+        /// Its own work item, so a `config.json` save cannot cancel a pending
+        /// overrides reload or the other way round.
+        private func scheduleDesignOverridesReload(rearm: Bool) {
+            designOverridesReloadWorkItem?.cancel()
+            let item = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                if rearm { startWatchingDesignOverrides() }
+                reloadDesignOverrides()
+            }
+            designOverridesReloadWorkItem = item
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: item)
+        }
+
+        /// Reads the file and dials what it says, or keeps what is dialled and
+        /// says why it could not.
+        ///
+        /// Three outcomes, and the middle one is the one worth naming:
+        ///
+        /// - **Absent, or parsing to nothing dialled.** `designOverrides` becomes
+        ///   nil, which is Reset: the center's `effectiveSettings` short-circuits
+        ///   and the app is back on exactly what the config file says. So
+        ///   deleting the file, or emptying it, is how a session ends.
+        /// - **Unparseable.** The current overrides are kept and the message goes
+        ///   to stderr the way ``report(_:)`` sends the settings decoder's
+        ///   complaints. Dropping to nil on a bad parse would make every
+        ///   half-typed save flash the whole window back to the committed look,
+        ///   which is unreadable to dial against; keeping the last good value
+        ///   means a typo costs a message and nothing on screen moves.
+        /// - **Parsed.** Assigned through `designOverrides`, which is the one
+        ///   write path and fires the same two calls a settings reload does.
+        ///
+        /// The equality guard is `reload()`'s, for `reload()`'s reason: editors
+        /// touch a file on save even when its bytes have not changed, and the
+        /// directory watcher above fires on writes to files that are not this one
+        /// at all.
+        private func reloadDesignOverrides() {
+            let path = Self.designOverridesFileURL().path(percentEncoded: false)
+            guard let data = FileManager.default.contents(atPath: path) else {
+                guard storedDesignOverrides != nil else { return }
+                designOverrides = nil
+                return
+            }
+
+            switch DesignOverridesText.parse(String(decoding: data, as: UTF8.self)) {
+            case let .success(parsed):
+                // An empty value is nil rather than an empty `DesignOverrides()`,
+                // the same distinction the panel's Reset makes: the two render
+                // identically, but nil is what takes the center off its composed
+                // path instead of leaving it composing nothing forever.
+                let next = parsed == DesignOverrides() ? nil : parsed
+                guard next != storedDesignOverrides else { return }
+                designOverrides = next
+            case let .failure(error):
+                FileHandle.standardError.write(Data(
+                    "baia: design-overrides.json: \(error.message); keeping what is dialled\n".utf8
+                ))
+            }
+        }
+    #endif
 
     private func reload() {
         let result = store.load()
