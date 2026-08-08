@@ -211,6 +211,17 @@ targets:
           PRODUCT_NAME: baia-dev
           PRODUCT_BUNDLE_IDENTIFIER: pasqualotto.baia.dev
           BAIA_SUPPORT_DIRECTORY: baia-dev
+          # The debug-dylib stub arrangement (a 16K launcher whose code lives
+          # in baia-dev.debug.dylib) makes menu-bar clicks segfault on macOS
+          # 26A5388g: the beta renders the menu bar in-process through SwiftUI,
+          # and its gesture activation dies checking a garbage executor
+          # identity (swift_task_isMainExecutorImpl) only under the stub, on a
+          # virgin process, on the first click. Measured 2026-08-08 with the
+          # click matrix in the vault's plan 2 crash amendment; Release never
+          # had the stub, which is why the daily driver's menus survive. Turn
+          # this back on only after a seed fixes the menu bar, and re-run that
+          # matrix first.
+          ENABLE_DEBUG_DYLIB: NO
         Release:
           PRODUCT_NAME: baia
           PRODUCT_BUNDLE_IDENTIFIER: pasqualotto.baia

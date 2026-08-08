@@ -167,9 +167,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         /// for. See ``DesignPanelController``.
         private lazy var designPanel = DesignPanelController(center: configuration)
 
-        /// ⌥⌘D, from the `#if DEBUG` Debug menu `MainMenu` appends.
+        /// ⌃⌘D, from the `#if DEBUG` Debug menu `MainMenu` appends.
         @objc func toggleDesignPanel(_: Any?) {
             designPanel.toggle()
+        }
+
+        /// Opens the panel at launch when `BAIA_DESIGN_PANEL=1` is in the
+        /// environment, so a dialing session never has to touch the menu bar.
+        ///
+        /// The route around, not the fix: on macOS 26A5388g the menu bar
+        /// renders in-process through SwiftUI, and its gesture-activation and
+        /// dismissal-cleanup renders crash in
+        /// `swift_task_isMainExecutorImpl` (a garbage executor identity;
+        /// every crashing stack is Apple frames). Dropping the debug dylib
+        /// (`ENABLE_DEBUG_DYLIB: NO`, project.yml) cured the click-to-open
+        /// path, but the deferred cleanup render after any menu engagement
+        /// still dies on the next event. Until a seed fixes it, the panel's
+        /// menu item stays for the day that happens; this env hook is how a
+        /// dialing session actually starts. `BAIA_DESIGN_PANEL=1 make run`.
+        func openDesignPanelIfRequested() {
+            if ProcessInfo.processInfo.environment["BAIA_DESIGN_PANEL"] == "1" {
+                designPanel.toggle()
+            }
         }
     #endif
 
@@ -255,6 +274,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         restoreSession()
         NSApp.activate(ignoringOtherApps: true)
+        #if DEBUG
+            openDesignPanelIfRequested()
+        #endif
         scheduleSave()
         installKeyMonitor()
         // Warmed here so the first ⌘K of a session opens on a full list rather
