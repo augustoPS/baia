@@ -33,7 +33,14 @@ final class ConfigurationCenter {
         /// the setter and the composition are all inside this fence, so a
         /// Release build has no property to hold, no branch to take, and
         /// ``effectiveSettings`` collapses to `settings` with nothing left to
-        /// compile away. Grep `designOverrides` and every hit is fenced.
+        /// compile away. Grep `designOverrides` in the app target and every
+        /// hit is fenced. The `DesignOverrides` *type* itself is unfenced in
+        /// `BaiaSettings` and does ship in Release, because the `fillMaterial`
+        /// properties on the eight drawing sites are typed on
+        /// `Chrome.Material`; in Release nothing can set them, so they resolve
+        /// nil and every site draws its shipped fill. Dead value-type symbols
+        /// were judged cheaper than losing the switch-without-default pin a
+        /// Release-side stand-in type would cost (final review, 2026-08-07).
         ///
         /// Never persisted. See ``BaiaSettings/DesignOverrides`` for why a dial
         /// is a question rather than an answer, and why every field is optional.
