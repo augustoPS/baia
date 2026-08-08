@@ -1,9 +1,25 @@
 #if DEBUG
 
-    import BaiaSettings
-
     /// The design panel's Copy Values text: the dialled overrides as JSON with a
     /// comment per field naming the constant it stands in for.
+    ///
+    /// ## Why this lives in the package rather than beside the panel
+    ///
+    /// It was written in `Sources/` next to `DesignPanelController`, which is
+    /// where it is used, and moved here because the app target has no test target
+    /// and nothing there could reach it. That is this repository's own recorded
+    /// lesson (`CLAUDE.md`, "Where logic belongs"): five rules were found living
+    /// in `Sources/` and three of the five were wrong or unenforced when they
+    /// moved to a package, because nothing could test them.
+    ///
+    /// This file is exactly that shape. It needs no `NSWindow` and no AppKit — it
+    /// is a pure value-to-string map over ``DesignOverrides`` — while carrying
+    /// thirty-one field paths and thirty-one hand-written notes naming the
+    /// constants they stand in for. Both halves drift silently: a renamed field
+    /// would fail to compile, but a note that still says "today 0.22" after the
+    /// constant moved would not, and neither would a field added to
+    /// ``DesignOverrides`` and never given a line here. ``DesignOverridesTextTests``
+    /// is what holds them.
     ///
     /// ## Why this is hand-rolled and `DesignOverrides` has no `Codable`
     ///
@@ -34,12 +50,12 @@
     /// ## Only what is set
     ///
     /// A nil field is absent from the output rather than emitted as `null`,
-    /// because nil means "the committed value" and printing it would list forty
-    /// knobs the owner never touched beside the two he did.
-    enum DesignOverridesText {
+    /// because nil means "the committed value" and printing all thirty-one would
+    /// list the knobs the owner never touched beside the two he did.
+    public enum DesignOverridesText {
         /// `overrides` as commented JSON, or a single comment when nothing is
         /// dialled.
-        static func commentedJSON(_ overrides: DesignOverrides) -> String {
+        public static func commentedJSON(_ overrides: DesignOverrides) -> String {
             var lines: [String] = []
 
             appendSettingsShadows(overrides, into: &lines)
