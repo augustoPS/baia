@@ -134,24 +134,40 @@ EOF
   fi
 fi
 
-if has "${START}"'make[[:space:]]+run([[:space:]]|$)' \
-   || has "${START}"'make[[:space:]]+run-attached([[:space:]]|$)'; then
-  emit_deny "Blocked: make run launches a second baia, and 'open' may resolve to the installed copy through LaunchServices. Verify with 'make test'."
+# `make run` was unblocked 2026-08-07 (owner's call). This line denied it from
+# before the 2026-08-02 product split, when a second launch really could
+# collide with the running app. Since the split, `make run` is a bare detached
+# `open` of `baia-dev.app` (Makefile:162-163) with its own bundle id, support
+# directory and socket; CLAUDE.md records the 2026-08-02 measurement of both
+# copies running side by side, each on its own socket, neither disturbed. The
+# stale form of this rule is the one CLAUDE.md warns stales in the direction
+# that costs a session: an agent reading it defers every footer question to
+# "needs a session outside a baia pane" while the fix is visible in the dev
+# build. `make run-attached` stays denied for a different reason the split
+# does not touch: it runs the build in the foreground of the calling pane, so
+# the pane becomes its console and the agent in it loses its shell.
+if has "${START}"'make[[:space:]]+run-attached([[:space:]]|$)'; then
+  emit_deny "Blocked: make run-attached runs the build in the foreground of this pane, so the pane becomes its console and the shell here is lost. Use 'make run', which builds and launches baia-dev detached."
 fi
 
 if has "${START}"'osascript.*quit[[:space:]]+app[[:space:]]*"?baia'; then
   emit_deny "Blocked: quitting baia would end this run."
 fi
 
-# `baia(-dev)?\.app` rather than `baia\.app`, because the Debug product was
-# renamed on 2026-08-02 so an installed copy and a build under test can run at
-# once. `baia-dev.app` does not contain the substring `baia.app`, so the narrower
-# pattern stopped matching the only bundle an executor is ever near: the one in
-# `.build/Build/Products/Debug`. The rename passed every existing check and
-# silently opened the hole, which is the second time a pattern in this file has
-# been outlived by the string it matches.
-if has "${START}"'open[[:space:]]+[^;&|]*baia(-dev)?\.app'; then
-  emit_deny "Blocked: opening a baia bundle launches a second instance. Verify with 'make test'."
+# `baia\.app` deliberately narrow again, reversed 2026-08-07 alongside the
+# `make run` unblock above. The 2026-08-02 widening to `baia(-dev)?\.app`
+# closed a real hole in its day: back then a dev-bundle launch was the hazard
+# this file existed to stop. Since the product split made `baia-dev.app` its
+# own app (bundle id, support dir, socket), opening it is exactly what
+# `make run` does and is allowed for the same reason. The installed
+# `/Applications/baia.app` stays denied: it is the owner's daily driver, and
+# `open` on a running app activates it, which pulls focus off every pane in
+# it. Note `baia-dev.app` does not contain the substring `baia.app` (after
+# `baia` comes `-`), so the narrow pattern cannot re-match the dev bundle;
+# that non-containment is the same string fact the 2026-08-02 note recorded,
+# now load-bearing in the opposite direction.
+if has "${START}"'open[[:space:]]+[^;&|]*baia\.app'; then
+  emit_deny "Blocked: opening the installed baia.app activates the daily driver and pulls focus off its panes. The dev build is fine: use 'make run' or open baia-dev.app."
 fi
 
 exit 0
