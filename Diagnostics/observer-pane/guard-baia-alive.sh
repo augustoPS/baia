@@ -79,6 +79,23 @@ fi
 # pane that launched them, which is disruption of a different kind than the one
 # named here rather than an absence of it.
 #
+# **`design-panel-key` is denied, and it is the member that could never
+# qualify.** It was written for the design panel's `wantsKey` leak and evaluated
+# against this list when it landed, so the answer is recorded here rather than
+# left for the next reader to work out. Its subject *is* the key transition: it
+# raises the flag, calls `makeKey()`, ends the editing session five different
+# ways and asserts the flag came back down. An arm that avoided taking key would
+# be measuring nothing at all, so there is no version of this probe that passes
+# the focus criterion.
+#
+# Measured rather than argued: `makeKey()` on an `.accessory` app's nonactivating
+# panel moves `NSApplication.isActive` from false to true and takes key, while
+# leaving the frontmost application unchanged at the Dock level. Focus returns
+# when the process exits, so the cost is bounded to the two seconds of a run and
+# is milder than `fullscreen-strip`'s — but keystrokes typed during it land
+# somewhere other than the pane, which is the thing this list exists to prevent.
+# Run it from a second terminal. Its README carries the same reasoning.
+#
 # **`glass-backdrop` is allowed, and it is the first member that is not
 # invisible.** Every other probe on this list opens no window at all or opens one
 # nothing composites; `glass-backdrop` puts real windows on screen for about
