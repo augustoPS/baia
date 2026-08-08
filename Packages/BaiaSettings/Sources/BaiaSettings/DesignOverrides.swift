@@ -132,7 +132,7 @@ public extension DesignOverrides {
         /// Which fill each glass surface draws with. See ``Surfaces``.
         public var surfaces = Surfaces()
 
-        /// Stands in for `PaneTheme.barLift`, today 0.10: how far the footer's
+        /// Stands in for `PaneTheme.barLift`, today 0.08: how far the footer's
         /// bar is blended off the terminal background so it reads as chrome
         /// rather than as the last line of output.
         ///

@@ -179,7 +179,7 @@
         private static func appendWindow(_ chrome: DesignOverrides.Chrome, into lines: inout [String]) {
             var group: [String] = []
             append(&group, "chrome.barLift", chrome.barLift,
-                   note: "PaneTheme.barLift, today 0.10; moves the backdrop AND the ink graded on it")
+                   note: "PaneTheme.barLift, today 0.08; moves the backdrop AND the ink graded on it")
             // `chrome.sidebarWashFloor` and `chrome.bareGlass` emitted here
             // until 2026-08-08. Both retired with the washes themselves; see
             // `DesignOverrides.Chrome`, where the reason is recorded. This group

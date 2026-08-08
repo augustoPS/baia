@@ -845,6 +845,41 @@ public struct PaneTheme: Sendable, Equatable {
     /// that the bar is not a bright band across a dark pane, large enough that
     /// the boundary is visible without the hairline.
     ///
+    /// **0.08 is a measured ceiling, not a taste.** It is the highest lift that
+    /// keeps the four footer tiers ordered on ``darkPastel``. This is the
+    /// backdrop ``color(for:focused:)`` grades footer text on, so raising it
+    /// darkens the bar *and* squeezes the ink measured against it — and once
+    /// ``inkFaint`` drops under ``minimumTextContrast``, ``readable(_:on:_:)``
+    /// repairs it back up, past ``inkContext``. The hierarchy then inverts:
+    /// "faint" renders brighter than the tier above it, which is the exact
+    /// collapse `inkFaint`'s own 0.30 floor exists to prevent, arrived at from
+    /// the other side.
+    ///
+    /// | lift | bar | `inkFaint` vs bar | |
+    /// |---|---|---|---|
+    /// | 0.07 | `#202020` | 4.658 | clears |
+    /// | 0.08 | `#212121` | 4.603 | clears — shipped, and the last that does |
+    /// | 0.09 | `#232323` | 4.493 | under the floor; repair fires |
+    /// | 0.10 | `#252525` | 4.382 | under the floor; repaired to `#b2b2b2`, brighter than `inkContext` |
+    ///
+    /// **The trap this paragraph exists to disarm: dialling `chrome.barLift`
+    /// cannot show you the collapse.** The override moves this number through
+    /// ``PaneThemeAdjustments/barLift``, at a running app, with none of the
+    /// package's tier arms in the loop — so the bar visibly darkens, the ink
+    /// quietly re-grades, and nothing says the hierarchy went. It is only
+    /// visible here: `PaneThemeTests` (`theFourTiersAreOrderedAndNoneIsRepaired`
+    /// `IntoAnother`, `aFainterTierWouldBeRepairedBackUpWhichIsWhyThirtyIsThe`
+    /// `Floor`, `theSectionHeaderInkIsLeftAloneWhereItAlreadyClears`) and
+    /// `Diagnostics/theme-catalog`, which passes at 0.08 and fails seven pinned
+    /// figures over the 485-theme catalog at 0.10.
+    ///
+    /// Measured 2026-08-08 during the owner's dial session and ruled the same
+    /// day: 0.08 stays. He had settled on 0.10 by eye, wanting the bar to read
+    /// as chrome "without bleaching the footer inks white" — and bleaching the
+    /// footer inks is precisely what 0.10 does, through the repair chain, which
+    /// is what the dial could not show him. A live 0.10 dial remains a
+    /// per-session override choice; what it must not become is this constant.
+    ///
     /// ``PaneThemeAdjustments/barLift`` can stand in front of this; nil there
     /// leaves this number in force, which is what ships.
     private static let barLift: Double = 0.08
