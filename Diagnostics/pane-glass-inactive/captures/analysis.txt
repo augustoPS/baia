@@ -1,0 +1,43 @@
+backdrop reference: mean #5f636a  lum 99.1  sat 0.402
+
+plane            band    state            mean          lum     sat
+regular          washed  key              #404851      71.4   0.213
+regular          washed  inactive         #3d454e      68.8   0.219
+regular          washed  inactive-before  #3d454e      68.8   0.219
+regular          washed  override         #3d454e      68.8   0.219
+regular          washed  DELTA key-inact               +2.6  -0.006
+regular          washed  DELTA key-override    +2.6  -0.006
+regular          bare    key              #31353c      53.3   0.169
+regular          bare    inactive         #24272e      39.3   0.183
+regular          bare    inactive-before  #24272e      39.3   0.183
+regular          bare    override         #24272e      39.3   0.183
+regular          bare    DELTA key-inact              +14.0  -0.013
+regular          bare    DELTA key-override   +14.0  -0.013
+
+clear            washed  key              #595e69      94.0   0.221
+clear            washed  inactive         #485059      79.9   0.222
+clear            washed  inactive-before  #485059      79.9   0.222
+clear            washed  override         #485059      79.9   0.222
+clear            washed  DELTA key-inact              +14.1  -0.000
+clear            washed  DELTA key-override   +14.1  -0.000
+clear            bare    key              #3c3e4a      63.0   0.228
+clear            bare    inactive         #2d303a      48.8   0.236
+clear            bare    inactive-before  #2d303a      48.8   0.236
+clear            bare    override         #2d303a      48.8   0.236
+clear            bare    DELTA key-inact              +14.2  -0.008
+clear            bare    DELTA key-override   +14.2  -0.008
+
+regular-tinted   washed  key              #323337      51.4   0.105
+regular-tinted   washed  inactive         #56575b      87.4   0.069
+regular-tinted   washed  inactive-before  #56575b      87.4   0.069
+regular-tinted   washed  override         #56575b      87.4   0.069
+regular-tinted   washed  DELTA key-inact              -36.0  +0.036
+regular-tinted   washed  DELTA key-override   -36.0  +0.036
+regular-tinted   bare    key              #312e32      47.2   0.183
+regular-tinted   bare    inactive         #534c51      78.3   0.193
+regular-tinted   bare    inactive-before  #534c51      78.3   0.193
+regular-tinted   bare    override         #534c51      78.3   0.193
+regular-tinted   bare    DELTA key-inact              -31.0  -0.010
+regular-tinted   bare    DELTA key-override   -31.0  -0.010
+
+per-plane crop pairs written

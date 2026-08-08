@@ -1,0 +1,35 @@
+previous frontmost: Ghostty (com.mitchellh.ghostty)
+wallpaper: /Users/pasqualotto/Wallpapers/wp1941634-toyota-ae86-wallpapers.jpg
+captured backdrop-reference.png (rect 380,374,1040,421, exit 0)
+state inactive-before regular: _subduedState=0 _variant=1 _scrimState=0 _interactionState=0 _contentLensing=0 _adaptiveAppearance=2 _tintOpacityReduced=0
+state inactive-before regular: adaptation: <NSGlassEffectView: 0x102bb3a60> frameInWindow=(20.0, 20.0, 320.0, 380.0) colorScheme=dark _effectiveMaterialBackdropContext=<nil> _enclosingGlassEffectContainerView=<nil> adaptiveAppearance=on contentColorScheme=dark
+state inactive-before clear: _subduedState=0 _variant=2 _scrimState=0 _interactionState=0 _contentLensing=0 _adaptiveAppearance=2 _tintOpacityReduced=0
+state inactive-before clear: adaptation: <NSGlassEffectView: 0x102bc04e0> frameInWindow=(360.0, 20.0, 320.0, 380.0) colorScheme=dark _effectiveMaterialBackdropContext=<nil> _enclosingGlassEffectContainerView=<nil> adaptiveAppearance=on contentColorScheme=dark
+state inactive-before regular-tinted: _subduedState=0 _variant=1 _scrimState=0 _interactionState=0 _contentLensing=0 _adaptiveAppearance=2 _tintOpacityReduced=0
+state inactive-before regular-tinted: adaptation: <NSGlassEffectView: 0x102bc59e0> frameInWindow=(700.0, 20.0, 320.0, 380.0) colorScheme=dark _effectiveMaterialBackdropContext=<nil> _enclosingGlassEffectContainerView=<nil> adaptiveAppearance=on contentColorScheme=dark
+captured pair-INACTIVE-before-key.png (rect 380,374,1040,421, exit 0)
+window is key; NSApp.isActive=true
+state key regular: _subduedState=0 _variant=1 _scrimState=0 _interactionState=0 _contentLensing=0 _adaptiveAppearance=2 _tintOpacityReduced=0
+state key regular: adaptation: <NSGlassEffectView: 0x102bb3a60> frameInWindow=(20.0, 20.0, 320.0, 380.0) colorScheme=dark _effectiveMaterialBackdropContext=<nil> _enclosingGlassEffectContainerView=<nil> adaptiveAppearance=on contentColorScheme=dark
+state key clear: _subduedState=0 _variant=2 _scrimState=0 _interactionState=0 _contentLensing=0 _adaptiveAppearance=2 _tintOpacityReduced=0
+state key clear: adaptation: <NSGlassEffectView: 0x102bc04e0> frameInWindow=(360.0, 20.0, 320.0, 380.0) colorScheme=dark _effectiveMaterialBackdropContext=<nil> _enclosingGlassEffectContainerView=<nil> adaptiveAppearance=on contentColorScheme=dark
+state key regular-tinted: _subduedState=0 _variant=1 _scrimState=0 _interactionState=0 _contentLensing=0 _adaptiveAppearance=2 _tintOpacityReduced=0
+state key regular-tinted: adaptation: <NSGlassEffectView: 0x102bc59e0> frameInWindow=(700.0, 20.0, 320.0, 380.0) colorScheme=dark _effectiveMaterialBackdropContext=<nil> _enclosingGlassEffectContainerView=<nil> adaptiveAppearance=on contentColorScheme=dark
+captured pair-KEY.png (rect 380,374,1040,421, exit 0)
+after yield: isKeyWindow=false NSApp.isActive=false frontmost=Ghostty
+state inactive-after regular: _subduedState=0 _variant=1 _scrimState=0 _interactionState=0 _contentLensing=0 _adaptiveAppearance=2 _tintOpacityReduced=0
+state inactive-after regular: adaptation: <NSGlassEffectView: 0x102bb3a60> frameInWindow=(20.0, 20.0, 320.0, 380.0) colorScheme=dark _effectiveMaterialBackdropContext=<nil> _enclosingGlassEffectContainerView=<nil> adaptiveAppearance=on contentColorScheme=dark
+state inactive-after clear: _subduedState=0 _variant=2 _scrimState=0 _interactionState=0 _contentLensing=0 _adaptiveAppearance=2 _tintOpacityReduced=0
+state inactive-after clear: adaptation: <NSGlassEffectView: 0x102bc04e0> frameInWindow=(360.0, 20.0, 320.0, 380.0) colorScheme=dark _effectiveMaterialBackdropContext=<nil> _enclosingGlassEffectContainerView=<nil> adaptiveAppearance=on contentColorScheme=dark
+state inactive-after regular-tinted: _subduedState=0 _variant=1 _scrimState=0 _interactionState=0 _contentLensing=0 _adaptiveAppearance=2 _tintOpacityReduced=0
+state inactive-after regular-tinted: adaptation: <NSGlassEffectView: 0x102bc59e0> frameInWindow=(700.0, 20.0, 320.0, 380.0) colorScheme=dark _effectiveMaterialBackdropContext=<nil> _enclosingGlassEffectContainerView=<nil> adaptiveAppearance=on contentColorScheme=dark
+captured pair-INACTIVE.png (rect 380,374,1040,421, exit 0)
+pretend-key raised; isKeyWindow now reads true while NSApp.isActive=false
+state pretend-key regular: _subduedState=0 _variant=1 _scrimState=0 _interactionState=0 _contentLensing=0 _adaptiveAppearance=2 _tintOpacityReduced=0
+state pretend-key regular: adaptation: <NSGlassEffectView: 0x102bb3a60> frameInWindow=(20.0, 20.0, 320.0, 380.0) colorScheme=dark _effectiveMaterialBackdropContext=<nil> _enclosingGlassEffectContainerView=<nil> adaptiveAppearance=on contentColorScheme=dark
+state pretend-key clear: _subduedState=0 _variant=2 _scrimState=0 _interactionState=0 _contentLensing=0 _adaptiveAppearance=2 _tintOpacityReduced=0
+state pretend-key clear: adaptation: <NSGlassEffectView: 0x102bc04e0> frameInWindow=(360.0, 20.0, 320.0, 380.0) colorScheme=dark _effectiveMaterialBackdropContext=<nil> _enclosingGlassEffectContainerView=<nil> adaptiveAppearance=on contentColorScheme=dark
+state pretend-key regular-tinted: _subduedState=0 _variant=1 _scrimState=0 _interactionState=0 _contentLensing=0 _adaptiveAppearance=2 _tintOpacityReduced=0
+state pretend-key regular-tinted: adaptation: <NSGlassEffectView: 0x102bc59e0> frameInWindow=(700.0, 20.0, 320.0, 380.0) colorScheme=dark _effectiveMaterialBackdropContext=<nil> _enclosingGlassEffectContainerView=<nil> adaptiveAppearance=on contentColorScheme=dark
+captured override-pretend-key.png (rect 380,374,1040,421, exit 0)
+override: _subduedState did not change across the key transition (key=0 inactive=0); no knob arm to run
