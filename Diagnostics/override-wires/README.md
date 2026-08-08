@@ -71,11 +71,14 @@ distinct per role and appearance-sensitive, and stops there. That the tinted
 glass then *looks* different is owed to the owner's eye through the panel, and it
 is recorded as owed rather than claimed.
 
-**The sidebar's wash floor has no arm here.** `SidebarHost` is an
-`NSViewController` whose glass and wash are built against a live window, so it
-does not render standalone the way `PaneLiftView` and `PaneStatusBarView` do. The
-floor's arithmetic is one `max` and its direction is asserted in prose at the
-site; the pixel is owed to the panel.
+**The sidebar's wash floor had no arm here, and now has no knob either.**
+`chrome.sidebarWashFloor` put a minimum under the sidebar's glass wash. It never
+got an arm because `SidebarHost` is an `NSViewController` whose glass is built
+against a live window, so it does not render standalone the way `PaneLiftView`
+and `PaneStatusBarView` do. Both the wash and the floor retired on 2026-08-08,
+when the owner A/B'd naked native glass against the hand-drawn layer through
+`chrome.bareGlass` and ruled that the naked material wins. `chrome.bareGlass`
+retired in the same stroke, having answered the one question it was built to ask.
 
 **The lift's duration has no arm here.** It reaches a `CABasicAnimation`, and a
 transition's length is not something a still rendering can hold. The wire is

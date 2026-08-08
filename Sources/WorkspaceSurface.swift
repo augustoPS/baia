@@ -203,14 +203,18 @@ final class SurfaceTitleView: NSView {
     /// worst case rather than a live value, and it is spelled here, once, next
     /// to the finding that produced it.
     ///
-    /// **What the sidebar's opacity wash does to that number, stated rather
-    /// than silently re-graded.** `SidebarGlassWash` lays `theme.background` at
-    /// `backgroundOpacity` over this glass, so the backdrop the label is judged
-    /// against is not the bare glass finding 6 measured. The wash only ever
-    /// *darkens* it — `#141414` is darker than every sample in that finding —
-    /// so contrast for light ink moves monotonically up. That is the claim; the
-    /// sweep below is the evidence for it, and it is kept rather than asserted
-    /// because four opacity levels are what show the monotonicity.
+    /// **The wash this paragraph used to qualify retired on 2026-08-08, and the
+    /// sweep below is kept anyway.** `SidebarGlassWash` laid `theme.background`
+    /// at `backgroundOpacity` over this glass, so the backdrop the label was
+    /// judged against was not the bare glass finding 6 measured; the wash only
+    /// ever *darkened* it, so contrast for light ink moved monotonically up.
+    /// The owner's A/B against naked native glass retired that wash, which
+    /// means **the top row of the table — `0 (bare)` — is now the shipped
+    /// backdrop** rather than the conservative end of a knob. Every row below it
+    /// is a measurement of a rendering this app no longer produces, and it stays
+    /// because it is the evidence for the monotonicity claim: it is what says
+    /// the retirement moved the label onto its *worst* backdrop and by how much.
+    /// Nothing here is re-graded, because nothing measured was re-measured.
     ///
     /// Computed against finding 6's own measured samples, worst (brightest)
     /// half, both recorded runs, by the same `contrastRatio` arithmetic the
@@ -222,19 +226,21 @@ final class SurfaceTitleView: NSView {
     ///
     /// | opacity | bare glass | stand-in `#9e9e9e` | `inkFaint` `#898989` | old literal `#bbbbbb` | `sectionHeaderInk` `#dcdcdc` |
     /// |---|---|---|---|---|---|
-    /// | 0 (bare) | `#4b4b4b`–`#464646` | 3.26–3.52 | 2.49–2.69 | 4.54–4.92 | 6.34–6.85 |
+    /// | 0 (bare, shipped since 2026-08-08) | `#4b4b4b`–`#464646` | 3.26–3.52 | 2.49–2.69 | 4.54–4.92 | 6.34–6.85 |
     /// | 0.10 | `#464646`–`#414141` | 3.55–3.81 | 2.72–2.91 | 4.96–5.32 | 6.91–7.41 |
-    /// | 0.42 (shipped) | `#343434`–`#313131` | 4.65–4.86 | 3.56–3.71 | 6.49–6.78 | 9.05–9.45 |
+    /// | 0.42 (shipped until 2026-08-08) | `#343434`–`#313131` | 4.65–4.86 | 3.56–3.71 | 6.49–6.78 | 9.05–9.45 |
     /// | 0.85 | `#1c1c1c` | 6.34–6.40 | 4.85–4.89 | 8.85–8.92 | 12.34–12.44 |
     ///
     /// Two things the sweep says that the prose alone could not. **The repair is
-    /// load-bearing across the whole knob, not just at its default**: the ink
-    /// that ships without it (`#898989`) fails the 4.5:1 floor at every opacity
-    /// up to and including the shipped 0.42, and only clears at 0.85. The
-    /// earlier reading — that at 0.42 the flat ink already passes — was an
-    /// artifact of grading the stand-in rather than the real tier. And grading
-    /// against the **bare** glass, as ``labelInk`` does, is the conservative end
-    /// of a live knob the owner drags rather than a number tuned to its default.
+    /// load-bearing at every row, and the retirement moved the shipped rendering
+    /// to the worst of them**: the ink that ships without it (`#898989`) fails
+    /// the 4.5:1 floor at every opacity up to and including the old 0.42, and
+    /// only clears at 0.85 — a row nothing ever shipped at. The earlier reading
+    /// — that at 0.42 the flat ink already passes — was an artifact of grading
+    /// the stand-in rather than the real tier. Grading against the **bare**
+    /// glass, as ``labelInk`` does, was the conservative end of a live knob when
+    /// this was written; it is now simply the backdrop, which is why the repair
+    /// survived the layer it was part of.
     ///
     /// Wallpaper caveat, unchanged: these rest on finding 6's samples, and a
     /// desktop brighter than anything that finding saw composites brighter than
@@ -281,21 +287,18 @@ final class SurfaceTitleView: NSView {
     /// and the file rows beside this header measured 6.99:1 and never needed
     /// repairing — which is why the fix is one header's ink rather than the
     /// column's.
-    /// Suppress the glass branch's legibility repair, so the caps label renders
-    /// its raw derivation. See ``BaiaSettings/DesignOverrides/Chrome/bareGlass``.
+    /// **The repair is unconditional on glass, and it outlived the knob that
+    /// could switch it off.** `chrome.bareGlass` suppressed it for the duration
+    /// of the owner's 2026-08-08 A/B, so the naked material could be judged with
+    /// none of this app's paint in front of it. That A/B retired the two washes
+    /// and the knob with them; this repair is the one part of the hand-drawn
+    /// layer it kept, and with the sidebar's wash gone it is *more* load-bearing
+    /// than before. The wash only ever darkened the backdrop, and darkening
+    /// moves contrast for light ink monotonically up — so the naked glass this
+    /// now grades against is the brightest backdrop the label ever sits on, and
+    /// the raw `inkFaint` measured 1.19:1 there.
     ///
-    /// **Deliberate un-repair.** The repair this switches off is the one the
-    /// glass-backdrop spike's finding 6 exists to justify: `inkFaint` scores
-    /// 2.49:1 against the measured bright glass, under the 4.5:1 floor 10 pt bold
-    /// text is owed, and the chain walks it to near-white. With this set the
-    /// owner sees the failing colour, because *what the glass alone does to
-    /// legibility* is the question the naked look is being flipped on. The label
-    /// can be genuinely hard to read here; that is the measurement.
-    ///
-    /// Nil and false are both the shipped repair.
-    var bareGlass: Bool? { didSet { needsDisplay = true } }
-
-    /// **The suppression is at this site and not in the ratio, and the reason is
+    /// **The site and not the ratio, and the reason is
     /// that a ratio cannot say "glass only".**
     ///
     /// ``PaneChrome/PaneThemeAdjustments/sectionHeaderMinimumRatio`` was the
@@ -313,10 +316,7 @@ final class SurfaceTitleView: NSView {
     private var labelInk: RGB {
         switch resolvedChrome {
         case .flat: theme.sectionHeaderInk(on: theme.barBackground)
-        case .glass:
-            bareGlass == true
-                ? theme.inkFaint
-                : theme.sectionHeaderInk(on: Self.measuredBrightGlass)
+        case .glass: theme.sectionHeaderInk(on: Self.measuredBrightGlass)
         }
     }
 

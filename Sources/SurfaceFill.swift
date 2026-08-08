@@ -37,6 +37,15 @@ import PaneChrome
 /// individual surface looks with each fill on a real desktop, which is the
 /// question the panel exists to let him answer by looking. Nothing here changes
 /// the dormancy verdict — it makes it re-checkable.
+///
+/// **And on 2026-08-08 the owner re-checked the neighbouring question and came
+/// down the same way.** The sidebar and titlebar carried hand-drawn washes over
+/// their glass — not `MaterialSet` tints, but this app's own paint above the
+/// material, the same category of layer Task 2 retired. He A/B'd the naked
+/// material against them on his own desktop and ruled that naked native glass
+/// wins, so both washes are gone from the code. Untinted, unwashed glass is now
+/// the shipped look on every one of these surfaces rather than only the default
+/// nobody had argued with.
 enum SurfaceFill {
     /// The colour `material` names in `set`, or nil for the surface's own
     /// untinted glass.

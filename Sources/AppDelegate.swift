@@ -412,26 +412,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             tree: tree,
             surfaces: surfaces(for: content, tree: tree),
             theme: configuration.paneTheme,
-            // The composed value, not the committed one. This is what the
-            // sidebar's own glass wash is painted at, so a dialled opacity has
-            // to reach it or the column stays put while the wells beside it
-            // move — the same defect `51c4434` fixed one layer down, put back
-            // by reading `settings` where every neighbour reads the derivation.
-            // In Release `effectiveSettings` *is* `settings`.
+            // The composed value, not the committed one, so a dialled opacity
+            // reaches the column rather than only the wells — the shape every
+            // neighbour here reads. In Release `effectiveSettings` *is*
+            // `settings`. It reaches the sections and, since the wash retired
+            // on 2026-08-08, nothing else under glass.
             backgroundOpacity: configuration.effectiveSettings.backgroundOpacity,
             resolvedChrome: configuration.resolvedChrome
         )
-        // The floor under that wash, from the chrome extras. Nil with nothing
-        // dialled, which leaves the wash following the opacity exactly as it
-        // does today; in Release it can hold nothing else. See
-        // ``SidebarHost/washFloor``.
-        host.washFloor = configuration.chromeOverrides.sidebarWashFloor
-        // The naked-glass flip, which takes this column's wash away entirely and
-        // un-repairs its caps label. Nil with nothing dialled; in Release it can
-        // hold nothing else. See
-        // ``BaiaSettings/DesignOverrides/Chrome/bareGlass``.
-        host.bareGlass = configuration.chromeOverrides.bareGlass
-        // And which fill this column's glass is tinted with, nil with nothing
+        // Which fill this column's glass is tinted with, nil with nothing
         // dialled. See ``SurfaceFill``.
         host.fillMaterial = configuration.chromeOverrides.surfaces.sidebar
         // The action row's click is wired below to the same shape as
@@ -517,23 +506,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // glass view is chrome. Under flat this window keeps the system
             // titlebar `78aadfe` shipped. See
             // ``WorkspaceWindowController/resolvedChrome``.
-            resolvedChrome: configuration.resolvedChrome,
-            // What that glass is washed with, so the band dims with the wells
-            // instead of staying put while the opacity knob moves them — the
-            // defect `51c4434` fixed one surface over, in the sidebar. Off the
-            // composed value, like its live-following twin below and like every
-            // other derivation on this object, so a dialled opacity moves the
-            // titlebar's wash with the wells rather than leaving it behind.
-            theme: configuration.paneTheme,
-            backgroundOpacity: configuration.effectiveSettings.backgroundOpacity
+            resolvedChrome: configuration.resolvedChrome
+            // `theme` and `backgroundOpacity` were passed here until 2026-08-08,
+            // for the titlebar wash and nothing else. The wash retired on the
+            // owner's naked-glass ruling and they went with it; the band is the
+            // untinted material now, which no palette feeds.
         )
         // Which fill the titlebar band's glass is tinted with, nil with nothing
         // dialled and live-followed by `settingsDidChange()`. See ``SurfaceFill``.
         controller.fillMaterial = configuration.chromeOverrides.surfaces.titlebar
-        // And the naked-glass flip, which takes the band's wash away the same
-        // way it takes the sidebar's. See
-        // ``BaiaSettings/DesignOverrides/Chrome/bareGlass``.
-        controller.bareGlass = configuration.chromeOverrides.bareGlass
         controller.window.tabbingMode = tabbing
         // Coalesced by the same timer every other session change goes through, so a
         // drag writes the file once when it settles rather than on every frame.
@@ -1120,15 +1101,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // `settings` here would take the dial's redraw and paint the value
             // the dial was moved *off*.
             controller.sidebar.backgroundOpacity = configuration.effectiveSettings.backgroundOpacity
-            // And the floor under the wash that opacity paints, on the same
-            // live path: the panel dials it under a running app, and a sidebar
-            // left on the floor its window opened with would need closing and
-            // reopening to follow.
-            controller.sidebar.washFloor = configuration.chromeOverrides.sidebarWashFloor
-            // The naked-glass flip on the same live path, for the same reason:
-            // it is dialled under a running app and a column left on the value
-            // its window opened with would need reopening to follow.
-            controller.sidebar.bareGlass = configuration.chromeOverrides.bareGlass
             controller.sidebar.fillMaterial = configuration.chromeOverrides.surfaces.sidebar
             // `resolvedChrome` is read fresh from `configuration` the same way
             // `apply(to:)` reads it for a pane (Task 4): a dark/light or Reduce
@@ -1163,20 +1135,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // to be closed and reopened. See
             // ``WorkspaceWindowController/isDark``.
             controller.isDark = configuration.windowIsDark
-            // The titlebar's glass and the wash over it, live-followed the same
-            // way. All three matter under a running app: `chromeStyle` decides
-            // whether the band is glass at all, and the theme and the opacity
-            // knob are both things the owner drags with windows open. The
-            // window controller's own `didSet`s make each of these a no-op when
-            // the value has not moved.
+            // The titlebar's glass, live-followed the same way: `chromeStyle`
+            // decides whether the band is glass at all and the owner changes it
+            // with windows open. The controller's own `didSet` makes this a
+            // no-op when the value has not moved. The theme and the opacity
+            // were written here too until 2026-08-08, for the wash that retired
+            // that day; the band is the bare material now and follows neither.
             controller.resolvedChrome = configuration.resolvedChrome
-            controller.theme = configuration.paneTheme
-            // Composed, for the same reason its sidebar twin above is.
-            controller.backgroundOpacity = configuration.effectiveSettings.backgroundOpacity
             // And the titlebar band's own glass tint, on the same live path.
             controller.fillMaterial = configuration.chromeOverrides.surfaces.titlebar
-            // The naked-glass flip, likewise: it is dialled with windows open.
-            controller.bareGlass = configuration.chromeOverrides.bareGlass
         }
         palette.theme = configuration.paneTheme
         // Same live-follow as the sidebar's own line above; the find panel is

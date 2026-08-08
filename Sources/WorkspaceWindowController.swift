@@ -80,33 +80,19 @@ private final class TitlebarGlassBacking: NSGlassEffectView {
     override func hitTest(_: NSPoint) -> NSView? { nil }
 }
 
-/// The `theme.background`-at-`backgroundOpacity` wash over
-/// ``TitlebarGlassBacking``, so the band tracks the same knob the wells do.
-///
-/// Identical in role to ``SidebarGlassWash`` (`Sources/SurfaceHosts.swift`),
-/// and identical in why it is a sibling above the glass rather than the glass
-/// view's `contentView`: a glass view composites its content *before* its own
-/// material, so a fill handed over that way is blurred and vibrancy-shifted
-/// rather than laid over the lensed result.
-private final class TitlebarGlassWash: NSView {
-    var colour: NSColor = .clear {
-        didSet {
-            guard colour != oldValue else { return }
-            needsDisplay = true
-        }
-    }
-
-    override var acceptsFirstResponder: Bool { false }
-
-    override var canBecomeKeyView: Bool { false }
-
-    override func hitTest(_: NSPoint) -> NSView? { nil }
-
-    override func draw(_: NSRect) {
-        colour.setFill()
-        bounds.fill()
-    }
-}
+// **The titlebar's glass wash was here, and it retired on 2026-08-08.**
+//
+// `TitlebarGlassWash` laid `theme.background` at `backgroundOpacity` over
+// ``TitlebarGlassBacking``, the sidebar wash's twin one surface over, so the
+// band dimmed with the wells. Both retired in the same stroke and for the same
+// reason: the owner A/B'd the naked material against the hand-drawn layer on
+// his own desktop through the `chrome.bareGlass` override built to ask that
+// question, and ruled that naked native glass wins. The band now shows
+// ``TitlebarGlassBacking`` with nothing painted over it.
+//
+// The two washes were one treatment on two surfaces, so they had to leave
+// together — retiring one and keeping the other is the half-naked window the
+// old suppression code went out of its way to avoid.
 
 /// One window, which is also one tab.
 ///
@@ -337,46 +323,16 @@ final class WorkspaceWindowController: NSObject {
         }
     }
 
-    /// The palette the titlebar's wash paints from, following the theme the
-    /// panes use for the reason ``isDark`` states: chrome matches the theme,
-    /// never the system.
-    var theme: PaneTheme {
-        didSet {
-            guard theme != oldValue else { return }
-            updateTitlebarWash()
-        }
-    }
-
-    /// How opaque the terminal's own background is, which the titlebar's wash
-    /// tracks so the band dims with the wells instead of staying put while
-    /// they move.
+    /// The glass under the titlebar band, `nil` under flat. Built and torn down
+    /// by ``applyTitlebarGlass()``.
     ///
-    /// The defect `51c4434` fixed in the sidebar, one surface over: dialling
-    /// the knob moved every pane and left the chrome behind.
-    var backgroundOpacity: Double {
-        didSet {
-            guard backgroundOpacity != oldValue else { return }
-            updateTitlebarWash()
-        }
-    }
-
-    /// Suppress the band's wash, so the titlebar's glass is what the owner sees.
-    /// The sidebar's ``SidebarHost/bareGlass`` one surface over, in every
-    /// respect. See ``BaiaSettings/DesignOverrides/Chrome/bareGlass``.
-    ///
-    /// Nil and false are both the shipped wash, and under flat there is no wash
-    /// view for this to reach.
-    var bareGlass: Bool? {
-        didSet {
-            guard bareGlass != oldValue else { return }
-            updateTitlebarWash()
-        }
-    }
-
-    /// The glass under the titlebar band, and the wash over it. Built and torn
-    /// down together by ``applyTitlebarGlass()``, both `nil` under flat.
+    /// **It had a wash above it until 2026-08-08**, and with that gone this
+    /// controller no longer holds `theme` or `backgroundOpacity` at all: the two
+    /// were carried here for the wash's colour and nothing else read them, so
+    /// they left with it rather than lingering as state nothing consults. The
+    /// theme still reaches the column through ``SidebarHost/theme``, which is
+    /// where it was always doing visible work.
     private var titlebarGlass: TitlebarGlassBacking?
-    private var titlebarWash: TitlebarGlassWash?
 
     /// `isTransparent`, `blurRadius`, and `isDark` are parameters rather than
     /// later assignments for the reason ``ConfigurationCenter`` states about
@@ -391,9 +347,7 @@ final class WorkspaceWindowController: NSObject {
         isTransparent: Bool,
         blurRadius: Int,
         isDark: Bool,
-        resolvedChrome: ResolvedChrome,
-        theme: PaneTheme,
-        backgroundOpacity: Double
+        resolvedChrome: ResolvedChrome
     ) {
         self.tree = tree
         self.sidebar = sidebar
@@ -401,8 +355,6 @@ final class WorkspaceWindowController: NSObject {
         self.blurRadius = blurRadius
         self.isDark = isDark
         self.resolvedChrome = resolvedChrome
-        self.theme = theme
-        self.backgroundOpacity = backgroundOpacity
         toolbar = NSToolbar(identifier: "baia.workspace.toolbar")
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1024, height: 680),
@@ -695,8 +647,6 @@ final class WorkspaceWindowController: NSObject {
             window.titlebarAppearsTransparent = false
             titlebarGlass?.removeFromSuperview()
             titlebarGlass = nil
-            titlebarWash?.removeFromSuperview()
-            titlebarWash = nil
 
         case .glass:
             window.titlebarAppearsTransparent = true
@@ -714,18 +664,12 @@ final class WorkspaceWindowController: NSObject {
             frameView.addSubview(backing, positioned: .below, relativeTo: nil)
             titlebarGlass = backing
 
-            let wash = TitlebarGlassWash(frame: .zero)
-            wash.wantsLayer = true
-            frameView.addSubview(wash, positioned: .above, relativeTo: backing)
-            titlebarWash = wash
-
-            updateTitlebarWash()
             updateTitlebarGlassTint()
             layoutTitlebarGlass()
         }
     }
 
-    /// Frames the glass and its wash to the titlebar band.
+    /// Frames the glass to the titlebar band.
     ///
     /// The band's height is derived rather than written as 40: it is whatever
     /// the window is currently spending on chrome, so a toolbar style change or
@@ -744,25 +688,6 @@ final class WorkspaceWindowController: NSObject {
             height: bandHeight
         )
         titlebarGlass.frame = band
-        titlebarWash?.frame = band
-    }
-
-    /// What ``titlebarWash`` paints: the terminal's own background at the
-    /// terminal's own opacity, the same pair each pane's well composites and
-    /// the same call `SidebarHost.updateGlassWash()` makes.
-    ///
-    /// `ChangesSurface.nsColor` rather than a second helper, so the sidebar's
-    /// wash and this one cannot resolve one colour two ways.
-    private func updateTitlebarWash() {
-        // `bareGlass` takes the band's wash away, the same way and for the same
-        // reason `SidebarHost.updateGlassWash()` takes the column's away: the
-        // two washes are one treatment on two surfaces, so suppressing one and
-        // leaving the other would show the owner a half-naked window.
-        guard bareGlass != true else {
-            titlebarWash?.colour = .clear
-            return
-        }
-        titlebarWash?.colour = ChangesSurface.nsColor(theme.background, alpha: backgroundOpacity)
     }
 
     /// Writes ``fillMaterial``'s colour onto ``titlebarGlass``, or nil — which

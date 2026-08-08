@@ -159,7 +159,7 @@
 
         /// The value being edited. Written to the center on every control event,
         /// held here so a control can move one field without rebuilding the other
-        /// thirty from the UI.
+        /// twenty-nine from the UI.
         ///
         /// Starts empty rather than from `center.designOverrides`, which is nil at
         /// construction and can only have been made non-nil by this same object.
@@ -177,7 +177,7 @@
         /// keyed by nothing: each closure knows its own control and its own field.
         ///
         /// A list of closures rather than a stored reference per control, because
-        /// there are thirty-one rows and a property per control would be thirty-one
+        /// there are thirty rows and a property per control would be thirty
         /// lines of boilerplate whose only reader is one loop.
         private var refreshers: [() -> Void] = []
 
@@ -570,20 +570,21 @@
             )
         }
 
-        /// The two chrome extras that belong to neither the lift, the rim, the inks
-        /// nor the materials: the footer bar's lift off the terminal background,
-        /// and the floor under the sidebar's wash.
+        /// The one chrome extra that belongs to neither the lift, the rim, the
+        /// inks nor the materials: the footer bar's lift off the terminal
+        /// background.
+        ///
+        /// It had a second row, "Sidebar wash floor", until 2026-08-08. That
+        /// floor sat under the sidebar's glass wash, and the wash retired on the
+        /// owner's naked-glass ruling, so the row went with the thing it dialled.
+        /// The group keeps its header for one row because "Window" is where the
+        /// bar lift belongs, not because two were expected.
         private func buildWindow(into stack: NSStackView) {
             stack.addArrangedSubview(makeHeader("Window"))
             addSlider(
                 to: stack, label: "Bar lift (moves backdrop AND its ink)", range: 0 ... 1, step: 0.01,
                 get: { $0.chrome.barLift }, set: { $0.chrome.barLift = $1 },
                 help: "One slider, two things: `barBackground` is the backdrop the repair chain grades footer text on, so lifting the bar moves the text with it. That is the effect working."
-            )
-            addSlider(
-                to: stack, label: "Sidebar wash floor (raises only)", range: 0 ... 1, step: 0.01,
-                get: { $0.chrome.sidebarWashFloor }, set: { $0.chrome.sidebarWashFloor = $1 },
-                help: "A floor, applied as max(opacity, floor). Setting it below the live background opacity does nothing; it cannot thin the wash."
             )
         }
 
@@ -600,7 +601,7 @@
         ///
         /// Unchecking writes nil back and the knob returns to the committed value
         /// immediately, so a single row can be undone without Reset clearing the
-        /// other thirty.
+        /// other twenty-nine.
         ///
         /// **The checkbox reports the override; it does not gate the slider.**
         /// Dragging an unchecked row's slider writes the value *and* checks the
@@ -830,8 +831,8 @@
         ///
         /// `help` becomes a tooltip on the caption and on every control in the row,
         /// so the caveats that could not fit in a label (what `barLift` moves, that
-        /// `sidebarWashFloor` only raises, that `innerHighlightOffsetY` is a shadow
-        /// inset) are reachable from whatever the pointer happens to be over.
+        /// `innerHighlightOffsetY` is a shadow inset) are reachable from whatever
+        /// the pointer happens to be over.
         private func makeRow(
             label: String,
             help: String?,
@@ -913,7 +914,7 @@
     /// A target object for an `NSControl`, wrapping a closure.
     ///
     /// AppKit's target/action predates blocks and `NSControl.target` is weak, so a
-    /// panel with thirty-one rows otherwise needs an `@objc` method or a stored
+    /// panel with thirty rows otherwise needs an `@objc` method or a stored
     /// property per control. This is one class and one selector; ``keepAlive`` on
     /// the controller is what stops the weak target from dropping.
     @MainActor

@@ -125,13 +125,21 @@ import Testing
         }
     }
 
-    // MARK: - The shapes bareGlass composes
+    // MARK: - The shapes bareGlass composed
 
-    /// **`bareGlass` is not a field on this type, and this arm is what says so
-    /// deliberately rather than by omission.**
+    /// **`bareGlass` was never a field on this type, and this arm is what says
+    /// so deliberately rather than by omission.**
     ///
-    /// The app's `chrome.bareGlass` suppresses the hand-drawn glass-era layer,
-    /// and none of it lands here. Every suppression is at a drawing site that
+    /// The knob itself retired on 2026-08-08, when the owner's A/B of naked
+    /// native glass against the hand-drawn layer settled the question it was
+    /// built to ask; these arms outlive it because what they measured is a
+    /// property of *this type*, not of that knob. The reasoning below is why the
+    /// suppression could not ride either channel offered here, and it is exactly
+    /// what would have to be rediscovered if anyone tried to route a future
+    /// glass-only behaviour through an adjustments value.
+    ///
+    /// The app's `chrome.bareGlass` suppressed the hand-drawn glass-era layer,
+    /// and none of it landed here. Every suppression is at a drawing site that
     /// knows its own `resolvedChrome`, because the two channels this type
     /// offers — a `barLift` fraction and an ink ratio — are both **path-blind**:
     /// one adjustments value feeds the flat branch and the glass branch of the
@@ -168,11 +176,13 @@ import Testing
     /// cannot fall below 1:1 — so the repair chain returns its first link
     /// untouched and the ink renders its raw derivation.
     ///
-    /// This is site 3's suppression, and it is deliberate un-repair: on the
+    /// This was site 3's suppression, and it is deliberate un-repair: on the
     /// bright-glass stand-in the faint tier is *measurably* illegible
     /// (``theRepairIsNotANoOpOnTheBrightGlassStandIn`` pins that), and under
-    /// `bareGlass` the owner is meant to see exactly that, because what the glass
-    /// alone does to legibility is the thing being judged.
+    /// `bareGlass` the owner was meant to see exactly that, because what the
+    /// glass alone does to legibility was the thing being judged. The repair is
+    /// unconditional on glass since the knob retired, which is what makes this
+    /// arm a record of the alternative rather than of live behaviour.
     @Test func aRatioOfOneReturnsTheSectionHeaderInkAsItsRawDerivation() {
         let brightGlass = RGB.eightBit(0x4B, 0x4B, 0x4B)
         var bare = theme
@@ -204,12 +214,14 @@ import Testing
     /// was tried and reverted), so a ratio pinned for them is a pin that reaches
     /// flat — a rendering change on every light theme, under a knob whose whole
     /// contract is that it touches glass only. Only `SurfaceTitleView`'s caps
-    /// label is graded against the glass stand-in, so it is the only ink
-    /// `bareGlass` suppresses.
+    /// label is graded against the glass stand-in, so it was the only ink
+    /// `bareGlass` suppressed.
     ///
-    /// Kept as an arm rather than a note, because "flat is unaffected" is the
-    /// claim the whole knob rests on and this is the theme that disproved the
-    /// easy version of it.
+    /// Kept as an arm rather than a note, and kept after the knob itself retired
+    /// on 2026-08-08: "a ratio pinned here reaches flat" is a standing property
+    /// of this type, and this is the theme that disproved the easy version of
+    /// it. The caps label's repair survived that retirement unconditional on
+    /// glass, so the narrowing this arm forced is still the shipped shape.
     @Test func theSidebarRowsRepairFiresOnTheBarItselfOnALightTheme() {
         #expect(paper.inkFaint.contrastRatio(against: paper.barBackground)
             < PaneTheme.minimumTextContrast)

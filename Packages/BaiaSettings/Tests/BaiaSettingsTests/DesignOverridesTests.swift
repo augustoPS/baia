@@ -233,8 +233,6 @@ import Testing
         #expect(extras.inks.sectionHeaderMinimumRatio == nil)
         #expect(extras.inks.busyDotHex == nil)
         #expect(extras.barLift == nil)
-        #expect(extras.sidebarWashFloor == nil)
-        #expect(extras.bareGlass == nil)
         #expect(extras.surfaces.footer == nil)
         #expect(extras.surfaces.sidebar == nil)
         #expect(extras.surfaces.palette == nil)
@@ -246,41 +244,32 @@ import Testing
         #expect(DesignOverrides().chrome == DesignOverrides.Chrome())
     }
 
-    // MARK: - bareGlass
+    // MARK: - bareGlass and sidebarWashFloor, retired 2026-08-08
 
-    @Test func bareGlassIsAnExtraAndReachesNoSettingsField() {
-        // It is a suppression applied at five drawing sites, not a shadow of
-        // anything on `Settings`. A composition that let it through to a
-        // settings field would put a debug-only knob into the value the config
-        // file's own writer round-trips.
-        var overrides = DesignOverrides()
-        overrides.chrome.bareGlass = true
-        #expect(Settings.defaultSettings.applying(overrides) == Settings.defaultSettings)
-    }
-
-    @Test func bareGlassSetsOnlyItselfAmongTheExtras() {
-        // The knob is one flip that five sites read. It must not be spelled as
-        // "and also zero the other extras": nil there still means today's
-        // constant, and each site does its own suppression.
-        var overrides = DesignOverrides()
-        overrides.chrome.bareGlass = true
-        #expect(overrides.chrome.bareGlass == true)
-        #expect(overrides.chrome.barLift == nil)
-        #expect(overrides.chrome.sidebarWashFloor == nil)
-        #expect(overrides.chrome.inks.sectionHeaderMinimumRatio == nil)
-        #expect(overrides.chrome.lift.enabled == nil)
-        #expect(overrides.chrome.rim.enabled == nil)
-    }
-
-    @Test func bareGlassFalseIsNotTheSameValueAsUnset() {
-        // Both render the shipped look, but they are distinguishable so a
-        // written `false` round-trips as a written `false` rather than
-        // disappearing from the owner's document on the next Copy Values.
-        var off = DesignOverrides()
-        off.chrome.bareGlass = false
-        #expect(off.chrome != DesignOverrides.Chrome())
-        #expect(off.chrome.bareGlass == false)
-    }
+    // **Three `bareGlass` arms stood here, and one `sidebarWashFloor` field
+    // assertion above, until the knob they guarded was retired.**
+    //
+    // They held that `bareGlass` was an extra reaching no `Settings` field,
+    // that it set only itself among the extras, and that a written `false` was
+    // distinguishable from unset. All three were about a knob that existed to
+    // ask one question: is the native glass better naked than under this app's
+    // hand-drawn wash? The owner answered it on 2026-08-08 by A/B-ing the two
+    // over his own desktop, and ruled that naked wins.
+    //
+    // So the washes are gone from the drawing sites and the knob is gone with
+    // them, which is why these arms are a tombstone rather than a rewrite:
+    // there is no field left to assert about, and re-pointing them at a
+    // surviving knob would keep the names while testing something else. What
+    // they were really defending — that a debug-only extra never leaks into the
+    // value the config file round-trips — is still held for every remaining
+    // extra by `chromeExtrasSurviveCompositionByNotEnteringSettings`,
+    // `chromeExtrasAreAllNilByDefault` and
+    // `anEmptyOverridesCarriesAnEmptyChromeExtras`.
+    //
+    // The one piece of the layer that survived the ruling is the caps label's
+    // legibility repair (`SurfaceTitleView.labelInk`), now unconditional on
+    // glass. `PaneThemeAdjustmentsTests` still keeps the standing arms
+    // explaining why that repair cannot be expressed as an adjustments value.
 
     // MARK: - Per-surface material choice
 

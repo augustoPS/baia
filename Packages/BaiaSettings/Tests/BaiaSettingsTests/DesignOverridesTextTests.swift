@@ -7,7 +7,7 @@
 
     /// What `DesignOverridesText` emits, pinned from the side that can drift.
     ///
-    /// The emitter carries thirty-two field paths and thirty-two hand-written
+    /// The emitter carries thirty field paths and thirty hand-written
     /// notes naming the constants they stand in for. A renamed field breaks the
     /// compile and needs no test; the two failures that compile cleanly are what
     /// these hold:
@@ -37,7 +37,7 @@
 
         @Test func anUnsetFieldIsAbsentRatherThanNull() {
             // nil means "the committed value", so emitting it as `null` would
-            // list thirty knobs the owner never touched beside the one he did.
+            // list twenty-nine knobs the owner never touched beside the one he did.
             var overrides = DesignOverrides()
             overrides.backgroundOpacity = 0.42
             let text = DesignOverridesText.commentedJSON(overrides)
@@ -81,9 +81,11 @@
             // offers no reflection over a struct's stored properties that would
             // survive `-O`. So this list is itself a thing that can go stale, and
             // the guard against that is `expectedKeyCount`: the count is asserted
-            // against `DesignOverrides.swift`'s own inventory of thirty-two leaf
+            // against `DesignOverrides.swift`'s own inventory of thirty leaf
             // knobs, so a field added there without a line here fails on the count
-            // even if nobody thought to add it to this list.
+            // even if nobody thought to add it to this list. It caught the
+            // retirement too, in the other direction: two knobs removed there
+            // fail here until both the list and the count follow.
             let text = DesignOverridesText.commentedJSON(everythingDialled())
 
             for key in Self.everyKeyPath {
@@ -114,13 +116,18 @@
             "chrome.surfaces.footer", "chrome.surfaces.sidebar", "chrome.surfaces.palette",
             "chrome.surfaces.popover", "chrome.surfaces.titlebar",
 
-            "chrome.barLift", "chrome.sidebarWashFloor", "chrome.bareGlass",
+            // `chrome.sidebarWashFloor` and `chrome.bareGlass` sat beside this
+            // until 2026-08-08. Both retired with the glass washes they dialled,
+            // on the owner's ruling that naked native glass beats the
+            // hand-drawn layer; see `DesignOverrides.Chrome`. The count below
+            // dropped 32 -> 30 in the same stroke, which is what makes this list
+            // and that number a matched pair rather than two places to edit.
+            "chrome.barLift",
         ]
 
-        /// Thirty-two, which is the count `DesignOverrides` carries: seven
-        /// settings shadows, nine lift, two rim, six inks, five surfaces, three
-        /// window.
-        static let expectedKeyCount = 32
+        /// Thirty, which is the count `DesignOverrides` carries: seven settings
+        /// shadows, nine lift, two rim, six inks, five surfaces, one window.
+        static let expectedKeyCount = 30
 
         // MARK: - JSON shapes
 
@@ -185,8 +192,10 @@
             #expect(text.contains("bypasses the repair chain; wins over the ratio above"))
             // One slider, two things moved.
             #expect(text.contains("moves the backdrop AND the ink graded on it"))
-            // A floor, not a thinner.
-            #expect(text.contains("raises the wash, never thins it"))
+            // "A floor, not a thinner" was asserted here for
+            // `chrome.sidebarWashFloor`, which retired with the sidebar wash on
+            // 2026-08-08. There is no note left to carry the caveat because
+            // there is no knob left to caveat.
             // A re-activation of a dormant path, not a re-selection among live ones.
             #expect(text.contains("dormant since Design v5 Task 2"))
             // Reduce Transparency still overrules a dialled glass.
@@ -424,14 +433,12 @@
             "chrome.surfaces.popover": "\"menu\"",
             "chrome.surfaces.titlebar": "\"chrome\"",
 
-            "chrome.barLift": "0.08",
-            "chrome.sidebarWashFloor": "0.2",
-            "chrome.bareGlass": "true",
+            "chrome.barLift": "0.10",
         ]
 
         // MARK: - Fixture
 
-        /// Every one of the thirty-two knobs dialled to something, so a test can
+        /// Every one of the thirty knobs dialled to something, so a test can
         /// assert over the complete output.
         private func everythingDialled() -> DesignOverrides {
             var overrides = DesignOverrides()
@@ -469,9 +476,7 @@
             overrides.chrome.surfaces.popover = .menu
             overrides.chrome.surfaces.titlebar = .chrome
 
-            overrides.chrome.barLift = 0.08
-            overrides.chrome.sidebarWashFloor = 0.2
-            overrides.chrome.bareGlass = true
+            overrides.chrome.barLift = 0.10
             return overrides
         }
     }

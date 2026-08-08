@@ -16,7 +16,7 @@
     ///
     /// This file is exactly that shape. It needs no `NSWindow` and no AppKit — it
     /// is a pure value-to-string map over ``DesignOverrides`` — while carrying
-    /// thirty-two field paths and thirty-two hand-written notes naming the
+    /// thirty field paths and thirty hand-written notes naming the
     /// constants they stand in for. Both halves drift silently: a renamed field
     /// would fail to compile, but a note that still says "today 0.22" after the
     /// constant moved would not, and neither would a field added to
@@ -75,7 +75,7 @@
     /// ## Only what is set
     ///
     /// A nil field is absent from the output rather than emitted as `null`,
-    /// because nil means "the committed value" and printing all thirty-two would
+    /// because nil means "the committed value" and printing all thirty would
     /// list the knobs the owner never touched beside the two he did.
     public enum DesignOverridesText {
         /// `overrides` as commented JSON, or a single comment when nothing is
@@ -179,12 +179,12 @@
         private static func appendWindow(_ chrome: DesignOverrides.Chrome, into lines: inout [String]) {
             var group: [String] = []
             append(&group, "chrome.barLift", chrome.barLift,
-                   note: "PaneTheme.barLift, today 0.08; moves the backdrop AND the ink graded on it")
-            append(&group, "chrome.sidebarWashFloor", chrome.sidebarWashFloor,
-                   note: "a floor applied as max(opacity, floor); raises the wash, never thins it")
-            append(&group, "chrome.bareGlass", chrome.bareGlass,
-                   note: "suppress the hand-drawn glass layer (sidebar + titlebar washes, caps-label repair); "
-                       + "glass only, and the caps label may go illegible on purpose")
+                   note: "PaneTheme.barLift, today 0.10; moves the backdrop AND the ink graded on it")
+            // `chrome.sidebarWashFloor` and `chrome.bareGlass` emitted here
+            // until 2026-08-08. Both retired with the washes themselves; see
+            // `DesignOverrides.Chrome`, where the reason is recorded. This group
+            // is one key wide now, which is why it still reads as a group at
+            // all: `add(_:titled:into:)` prints no header over nothing.
             add(group, titled: "window", into: &lines)
         }
 
@@ -353,9 +353,12 @@
             case "chrome.surfaces.titlebar": return rawValue(value, key, &overrides.chrome.surfaces.titlebar)
 
             case "chrome.barLift": return double(value, key, &overrides.chrome.barLift)
-            case "chrome.sidebarWashFloor": return double(value, key, &overrides.chrome.sidebarWashFloor)
-            case "chrome.bareGlass": return bool(value, key, &overrides.chrome.bareGlass)
 
+            // `chrome.sidebarWashFloor` and `chrome.bareGlass` parsed here until
+            // 2026-08-08 and now fall through to `default`, which is the right
+            // answer rather than a gap: an overrides file still carrying either
+            // key is naming a knob this build genuinely does not have, and the
+            // owner is told so by name instead of having it silently ignored.
             default:
                 return ParseError(message: "`\(key)` is not a knob baia dials")
             }

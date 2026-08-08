@@ -125,9 +125,15 @@ private func makeTitlebarGlass() -> NSGlassEffectView {
     return glass
 }
 
-/// The probe's stand-in for `SidebarGlassWash`, at the same default the owner
-/// runs: `theme.background` at `backgroundOpacity`. A plain layer-backed fill
-/// rather than a `draw(_:)` override, because the probe only needs the pixels.
+/// The probe's stand-in for the sidebar's glass wash, at the default the owner
+/// ran it at: `theme.background` at `backgroundOpacity`. A plain layer-backed
+/// fill rather than a `draw(_:)` override, because the probe only needs pixels.
+///
+/// **That wash retired from the app on 2026-08-08** (owner's naked-glass
+/// ruling; see `Sources/SurfaceHosts.swift`). This stand-in stays because the
+/// question this probe asks is whether a titlebar band carries material with an
+/// opaque-ish layer stacked over it, and a fill above the glass is the harshest
+/// version of that question rather than a claim about what the app now draws.
 private func makeWash() -> NSView {
     let wash = NSView(frame: .zero)
     wash.wantsLayer = true
