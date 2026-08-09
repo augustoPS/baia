@@ -132,6 +132,33 @@ final class TerminalPaneController: NSViewController {
     /// holding focus, not just its footer.
     private let liftView = PaneLiftView(frame: .zero)
 
+    /// The pane's glass plane and its wash, glass path only. Created and torn
+    /// down with ``resolvedChrome`` exactly as the footer's backing was:
+    /// absence is part of what flat's byte-identical claim means, and a hidden
+    /// NSGlassEffectView still costs a compositing pass.
+    private var glassPlane: PaneGlassPlaneView?
+    private var glassWash: PaneGlassWashView?
+
+    /// The owner's one opacity knob, pushed by `ConfigurationCenter.apply(to:)`.
+    /// Under glass it drives the wash (floored); the surface's own
+    /// `background-opacity` is zeroed for glass-spawned panes so the well is
+    /// not painted twice. Appearance only: no didSet here touches geometry.
+    var backgroundOpacity: Double = 1 {
+        didSet {
+            guard backgroundOpacity != oldValue else { return }
+            updateGlassWashColour()
+        }
+    }
+
+    /// `chrome.paneWashFloor`, nil for the `ChromeMaterials.PaneWash.floor`
+    /// constant. Pushed beside the other chrome extras.
+    var paneWashFloor: Double? {
+        didSet {
+            guard paneWashFloor != oldValue else { return }
+            updateGlassWashColour()
+        }
+    }
+
     /// The palette everything in this pane derives from. One property rather than
     /// one per view, so a theme change cannot land on the footer and miss the
     /// scrim.
@@ -166,6 +193,7 @@ final class TerminalPaneController: NSViewController {
         didSet {
             guard resolvedChrome != oldValue else { return }
             statusBar.resolvedChrome = resolvedChrome
+            applyResolvedGlassPlane()
             applyPresentation()
         }
     }
@@ -236,6 +264,7 @@ final class TerminalPaneController: NSViewController {
             statusBar.bottomCorners = newValue
             edgeFrame.bottomCorners = newValue
             liftView.bottomCorners = newValue
+            updateGlassPlaneMasks()
         }
     }
 
@@ -296,6 +325,92 @@ final class TerminalPaneController: NSViewController {
         // footer's own stroke is the whole expression of focus, unchanged.
         let isGlass = if case .glass = resolvedChrome { true } else { false }
         liftView.isVisible = isPaneFocused && isWindowActive && isGlass
+        updateGlassWashColour()
+    }
+
+    /// Creates or tears down the plane and wash to match ``resolvedChrome``.
+    ///
+    /// Appearance only: both views sit behind ``terminalView`` at the pane's
+    /// full bounds, so neither creation nor teardown moves the surface's frame
+    /// or any padding. The frozen arrangement (``spawnedUnderGlass``) is a
+    /// separate fact and stays untouched by a live flip here.
+    private func applyResolvedGlassPlane() {
+        switch resolvedChrome {
+        case .flat:
+            glassWash?.removeFromSuperview()
+            glassWash = nil
+            glassPlane?.removeFromSuperview()
+            glassPlane = nil
+        case .glass:
+            guard glassPlane == nil, isViewLoaded else { return }
+            installGlassPlane()
+        }
+    }
+
+    private func installGlassPlane() {
+        let plane = PaneGlassPlaneView(frame: view.bounds)
+        plane.style = .regular
+        plane.wantsLayer = true
+        // The mask carries the window's squircle; a uniform cornerRadius would
+        // round corners the window does not cut. Same reasoning as the
+        // footer's retired backing.
+        plane.cornerRadius = 0
+        plane.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(plane, positioned: .below, relativeTo: terminalView)
+
+        let wash = PaneGlassWashView(frame: view.bounds)
+        wash.wantsLayer = true
+        wash.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(wash, positioned: .above, relativeTo: plane)
+
+        for planeLayer in [plane, wash] as [NSView] {
+            NSLayoutConstraint.activate([
+                planeLayer.topAnchor.constraint(equalTo: view.topAnchor),
+                planeLayer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                planeLayer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                planeLayer.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            ])
+        }
+
+        glassPlane = plane
+        glassWash = wash
+        updateGlassPlaneMasks()
+        updateGlassWashColour()
+    }
+
+    /// Clips the plane and the wash to the pane's window corners, the
+    /// footer-backing mask relocated to the plane per ABSORB. Rebuilt from the
+    /// ``bottomCorners`` setter and from layout, because a mask frame does not
+    /// track bounds by itself.
+    ///
+    /// Verify orientation against a bottom-corner pane on first run:
+    /// `Diagnostics/pane-glass-stacking` measured probe-built glass masks
+    /// evaluating y-up under a flipped superview. This container is unflipped,
+    /// same as the footer whose mask this replaces, but the check costs one
+    /// look and the failure mode (a rounded TOP corner) is silent.
+    private func updateGlassPlaneMasks() {
+        for masked in [glassPlane, glassWash] as [NSView?] {
+            guard let masked, let layer = masked.layer else { continue }
+            guard masked.bounds.width > 0, masked.bounds.height > 0 else { continue }
+            let mask = (layer.mask as? CAShapeLayer) ?? CAShapeLayer()
+            mask.frame = masked.bounds
+            mask.path = WindowCorner.cgPath(in: masked.bounds, corners: bottomCorners)
+            layer.mask = mask
+        }
+    }
+
+    /// The wash's one derivation: `theme.background` at
+    /// `max(backgroundOpacity, floor)`. Through `ChangesSurface.nsColor`, the
+    /// helper the retired sidebar wash used, so one colour cannot resolve two
+    /// ways.
+    private func updateGlassWashColour() {
+        glassWash?.colour = ChangesSurface.nsColor(
+            theme.background,
+            alpha: ChromeMaterials.PaneWash.opacity(
+                backgroundOpacity: backgroundOpacity,
+                floorOverride: paneWashFloor
+            )
+        )
     }
 
     /// Whether this pane is asking loudly enough to wear a frame.
@@ -875,6 +990,12 @@ final class TerminalPaneController: NSViewController {
             ])
         }
 
+        // `resolvedChrome` is set by `ConfigurationCenter.apply(to:)` at
+        // registration, before the view loads, so its `didSet` bailed on the
+        // `isViewLoaded` guard and this is the creation site for a
+        // glass-spawned pane.
+        applyResolvedGlassPlane()
+
         applyPresentation()
 
         anchorTracker.onChange = { [weak self] in
@@ -1189,6 +1310,9 @@ final class TerminalPaneController: NSViewController {
     override func viewDidLayout() {
         super.viewDidLayout()
         terminalView.fitToSize()
+        // A mask layer's frame does not track its host's bounds, so a resize
+        // that does not rebuild it leaves the squircle at the old size.
+        updateGlassPlaneMasks()
     }
 
     /// Title carries the anchor, subtitle the working directory. The subtitle is

@@ -557,6 +557,13 @@ final class ConfigurationCenter {
         // owner is looking at while he dials.
         pane.liftParameters = .from(chromeOverrides.lift)
         pane.rimParameters = .from(chromeOverrides.rim)
+        // The pane wash's two inputs: the owner's one opacity knob and the
+        // floor override under it (`ChromeMaterials.PaneWash.opacity`). Both
+        // are appearance-only. They reach a view drawn behind the surface at
+        // the pane's full bounds and never the surface's frame or padding, so
+        // neither can move a live grid the way a padding change would.
+        pane.backgroundOpacity = effectiveSettings.backgroundOpacity
+        pane.paneWashFloor = chromeOverrides.paneWashFloor
         // The footer's glass tint was assigned here until 2026-08-09, from
         // `chromeOverrides.surfaces.footer`. Both went with the glass view they
         // wrote to; see `DesignOverrides.Chrome`.
