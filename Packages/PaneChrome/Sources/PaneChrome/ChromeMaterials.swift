@@ -132,6 +132,35 @@ public struct ChromeShadow: Sendable, Equatable {
 /// hazard `focusAccent` sat in for a week (see `ChromeStyle.swift`), so a role
 /// is added when a task first needs it, not ahead of one.
 public enum ChromeMaterials {
+    /// The pane wash: `theme.background` painted over the pane's glass plane,
+    /// under the terminal surface, so terminal ink keeps its contrast floor
+    /// whatever the wallpaper composites the glass to.
+    ///
+    /// The construction is the retired `SidebarGlassWash`'s (2b92ef4), revived
+    /// at pane level for a measured reason where the chrome washes' reason was
+    /// aesthetic: raw ink over bright glass measured 1.19:1
+    /// (glass-backdrop finding 6b) and the wash is what buys the floor back.
+    public enum PaneWash {
+        /// The legibility floor under the wash's opacity, today 0.5.
+        ///
+        /// From `Diagnostics/pane-glass-legibility`: the wash composites
+        /// linearly, so the AA bound is `alpha >= (B - 75) / (B - 20)` for a
+        /// glass backdrop reading `B`. 0.5 clears the brightest backdrop this
+        /// repo has measured (`#7c7c7c` needs 0.4712) with headroom, and stays
+        /// under the 0.8 the probe names as where the wash erases the glass.
+        /// `theFloorClearsTheMeasuredBound` pins the relationship.
+        public static let floor = 0.5
+
+        /// What the wash actually draws at: the owner's one opacity knob,
+        /// floored. A floor and never a ceiling, per the retired
+        /// `washFloor` contract: raising `backgroundOpacity` past the floor
+        /// thickens the wash with it; lowering it cannot thin the wash below
+        /// the legibility bound.
+        public static func opacity(backgroundOpacity: Double, floorOverride: Double?) -> Double {
+            max(backgroundOpacity, floorOverride ?? floor)
+        }
+    }
+
     /// `materials.css`'s `:root` scope, which is the dark appearance (base,
     /// undeclared `[data-appearance]` defaults to dark per `color.css`).
     public enum Dark {

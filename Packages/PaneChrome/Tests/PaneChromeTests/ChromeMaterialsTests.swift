@@ -232,3 +232,32 @@ import Testing
         #expect(abs(result.blue - expectedBlue) < 0.0001)
     }
 }
+
+@Suite("PaneWash")
+struct PaneWashTests {
+    @Test func theFloorHoldsWhenTheDialIsBelowIt() {
+        #expect(ChromeMaterials.PaneWash.opacity(backgroundOpacity: 0.30, floorOverride: nil) == 0.5)
+    }
+
+    @Test func theDialWinsAboveTheFloor() {
+        #expect(ChromeMaterials.PaneWash.opacity(backgroundOpacity: 0.90, floorOverride: nil) == 0.90)
+    }
+
+    @Test func anOverrideReplacesTheConstantInBothDirections() {
+        #expect(ChromeMaterials.PaneWash.opacity(backgroundOpacity: 0.30, floorOverride: 0.7) == 0.7)
+        #expect(ChromeMaterials.PaneWash.opacity(backgroundOpacity: 0.30, floorOverride: 0.1) == 0.30)
+    }
+
+    /// The shipped floor clears the AA bound against the brightest glass this
+    /// repo has measured. Diagnostics/pane-glass-legibility: the wash
+    /// composites linearly, so #bbbbbb ink holds 4.5:1 when
+    /// alpha >= (B - 75) / (B - 20) for a glass backdrop reading B. At
+    /// B = 0x7c (glass-backdrop finding 6b, the worst recorded sample,
+    /// wallpaper caveat on the sample itself) that is 49/104, about 0.4712.
+    /// A future dial of the constant below this line is a legibility
+    /// regression, not a taste change.
+    @Test func theFloorClearsTheMeasuredBound() {
+        let bound = (Double(0x7c) - 75) / (Double(0x7c) - 20)
+        #expect(ChromeMaterials.PaneWash.floor >= bound)
+    }
+}
