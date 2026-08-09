@@ -83,8 +83,9 @@ final class PaneStatusBarView: NSView {
     }
 
     /// What the bar draws, chosen by `PaneChrome.resolvedStyle(setting:materialIsDark:appearance:)`
-    /// upstream: flat, unchanged from what Plan 1 shipped, or glass with a
-    /// material set to draw a translucent backing under this bar's own content.
+    /// upstream: flat, unchanged from what Plan 1 shipped, or glass, whose
+    /// material set now only tells this bar to skip its own fill and let the
+    /// pane plane behind it show through.
     ///
     /// A stored property with a `didSet`, the same shape as ``theme``, rather
     /// than a value read fresh on every draw: what this bar paints changes with
