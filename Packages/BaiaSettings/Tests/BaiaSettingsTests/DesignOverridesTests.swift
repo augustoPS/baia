@@ -233,7 +233,6 @@ import Testing
         #expect(extras.inks.sectionHeaderMinimumRatio == nil)
         #expect(extras.inks.busyDotHex == nil)
         #expect(extras.barLift == nil)
-        #expect(extras.surfaces.footer == nil)
         #expect(extras.surfaces.sidebar == nil)
         #expect(extras.surfaces.palette == nil)
         #expect(extras.surfaces.popover == nil)
@@ -273,12 +272,20 @@ import Testing
 
     // MARK: - Per-surface material choice
 
+    // **These arms named `footer` as their subject until 2026-08-09** and now
+    // name `sidebar`. Unlike the `bareGlass` tombstone above, that is a move
+    // rather than a deletion: what they hold — that a surface starts nil, that
+    // it accepts every material that exists, that dialling one leaves the rest
+    // alone, that a choice reaches no `Settings` field — is a property of the
+    // ``Surfaces`` type and not of the footer, so it transfers whole to a
+    // surviving slot. The footer's own slot went because ABSORB deletes the
+    // glass view it wrote to; see `DesignOverrides.Chrome`.
+
     @Test func everySurfaceStartsOnItsOwnFill() {
         // nil means "the fill this surface draws today", and today is not the
-        // same fill for all five. A surface defaulting to a named material would
+        // same fill for all four. A surface defaulting to a named material would
         // repaint it the moment the panel existed.
         let surfaces = DesignOverrides().chrome.surfaces
-        #expect(surfaces.footer == nil)
         #expect(surfaces.sidebar == nil)
         #expect(surfaces.palette == nil)
         #expect(surfaces.popover == nil)
@@ -294,8 +301,8 @@ import Testing
         #expect(DesignOverrides.Chrome.Material.allCases.count == 4)
         for material in DesignOverrides.Chrome.Material.allCases {
             var overrides = DesignOverrides()
-            overrides.chrome.surfaces.footer = material
-            #expect(overrides.chrome.surfaces.footer == material)
+            overrides.chrome.surfaces.sidebar = material
+            #expect(overrides.chrome.surfaces.sidebar == material)
         }
     }
 
@@ -307,13 +314,12 @@ import Testing
             == ["chrome", "sidebar", "thick", "menu"])
     }
 
-    @Test func aDialledSurfaceLeavesTheOtherFourAlone() {
+    @Test func aDialledSurfaceLeavesTheOtherThreeAlone() {
         // The same independence the seven shadow fields get. A panel dials one
         // surface at a time and the others must not follow it.
         var overrides = DesignOverrides()
         overrides.chrome.surfaces.sidebar = .thick
         #expect(overrides.chrome.surfaces.sidebar == .thick)
-        #expect(overrides.chrome.surfaces.footer == nil)
         #expect(overrides.chrome.surfaces.palette == nil)
         #expect(overrides.chrome.surfaces.popover == nil)
         #expect(overrides.chrome.surfaces.titlebar == nil)
@@ -325,13 +331,13 @@ import Testing
         // rather than folded in. `chromeStyle` is the nearby field that *is*
         // shadowed, and it stays untouched by a surface dial.
         var overrides = DesignOverrides()
-        overrides.chrome.surfaces.footer = .menu
+        overrides.chrome.surfaces.sidebar = .menu
         overrides.chrome.surfaces.titlebar = .chrome
 
         let composed = Settings.defaultSettings.applying(overrides)
         #expect(composed == Settings.defaultSettings)
         #expect(composed.chromeStyle == Settings.defaultSettings.chromeStyle)
-        #expect(overrides.chrome.surfaces.footer == .menu)
+        #expect(overrides.chrome.surfaces.sidebar == .menu)
         #expect(overrides.chrome.surfaces.titlebar == .chrome)
     }
 

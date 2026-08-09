@@ -121,19 +121,11 @@ final class PaneStatusBarView: NSView {
         }
     }
 
-    /// Which of the four fill roles this footer's glass is tinted with, or nil
-    /// for the untinted glass that ships.
-    ///
-    /// Nil unless the debug design panel has pointed this surface somewhere, and
-    /// in Release it can hold nothing else. See ``SurfaceFill`` for the
-    /// dormancy this re-activates and why the override is a probe rather than a
-    /// candidate default.
-    var fillMaterial: DesignOverrides.Chrome.Material? {
-        didSet {
-            guard fillMaterial != oldValue else { return }
-            updateGlassTint()
-        }
-    }
+    // `fillMaterial` stood here until 2026-08-09, holding which of the four
+    // fill roles this footer's glass was tinted with. It went with
+    // `chrome.surfaces.footer`: ABSORB folds the footer into one pane-wide
+    // glass plane, so the backing this tint wrote to stops existing. The other
+    // four surfaces keep theirs, and `SurfaceFill` with them.
 
     var isFocused: Bool = false {
         didSet {
@@ -349,11 +341,11 @@ final class PaneStatusBarView: NSView {
         contentView.needsDisplay = true
         barFrame.needsDisplay = true
         applyBarFrameOpacity()
-        // The glass backing has no `draw(_:)` of its own, so a theme or focus
-        // change still has to reach its tint here even though the tint is
-        // now always nil (Task 2): a stale non-nil tint left by some future
-        // caller must not survive a change that runs through `invalidate()`.
-        updateGlassTint()
+        // `updateGlassTint()` was called here until 2026-08-09, to keep a stale
+        // tint from surviving a theme or focus change. Nothing can write one
+        // now: the only setter was `fillMaterial`, retired with
+        // `chrome.surfaces.footer`, and `glassBacking` is created with
+        // `tintColor` at its nil default and never assigned.
     }
 
     // MARK: - Chrome material
@@ -363,18 +355,17 @@ final class PaneStatusBarView: NSView {
     /// repeated at each of them.
     ///
     /// **Untinted glass (Task 2) is still what ships**: the footer's glass
-    /// backing draws no fill of its own and, with the design panel silent,
-    /// carries no tint either (see ``updateGlassTint()``), and `draw(_:)` paints
-    /// no material fill under glass.
+    /// backing draws no fill of its own and carries no tint, and `draw(_:)`
+    /// paints no material fill under glass.
     ///
-    /// **The `MaterialSet`'s fields are read again, by exactly one line.**
-    /// ``updateGlassTint()`` resolves ``fillMaterial`` against this set — the
-    /// dormant path re-activated behind the debug override, see ``SurfaceFill``
-    /// — and that read answers nil unless the panel has pointed this surface
-    /// somewhere. Every other read here (`draw(_:)`'s own) still only asks
-    /// whether this is `nil`, i.e. whether chrome is flat or glass at all. So
-    /// keeping this a resolved value rather than a `Bool` has a consumer now
-    /// instead of a promised one.
+    /// **Nothing reads the `MaterialSet`'s fields any more, only whether there
+    /// is one.** One line did: `updateGlassTint()` resolved the retired
+    /// `fillMaterial` against this set, and it went with the dial on
+    /// 2026-08-09. Every remaining read (`draw(_:)`'s) asks only whether this
+    /// is `nil`, i.e. whether chrome is flat or glass at all. That makes this a
+    /// `Bool` in all but type again, and it stays a resolved value because the
+    /// switch is what carries the association and re-deriving it at the next
+    /// site that needs a fill would be the duplication this property removed.
     private var materialSet: MaterialSet? {
         switch resolvedChrome {
         case .flat: nil
@@ -429,38 +420,20 @@ final class PaneStatusBarView: NSView {
         invalidate()
     }
 
-    /// Keeps ``glassBacking``'s tint nil, or does nothing under flat where
-    /// there is no backing to write to.
-    ///
-    /// **Untinted glass (Task 2), still the shipped answer.**
-    /// `NSGlassEffectView.tintColor` used to carry ``MaterialSet/fillChrome`` or
-    /// ``MaterialSet/fillThick``, stepped by focus; the spike at
-    /// `Diagnostics/glass-backdrop/` measured the tint+fill layers as the
-    /// largest single term in the bar's appearance and found they pin it near
-    /// mid-grey, defeating the material's own adaptation. Untinted `regular`
-    /// glass is the platform-correct default (HIG: glass is colorless unless one
-    /// element is deliberately accented), so this writes `nil` explicitly rather
-    /// than leaving the property untouched.
-    ///
-    /// **``fillMaterial`` can put one back, and only the debug design panel can
-    /// set it.** That is the dormant path re-activated behind an override, on
-    /// purpose and documented in ``SurfaceFill``: the measurement above says
-    /// untinted is right, and what it cannot say is how this particular surface
-    /// looks under each fill on a real desktop. With the panel silent this
-    /// resolves nil and the line below is the same unconditional `nil` it was.
-    /// The focus step is *not* restored — one fill, not two — since
-    /// `Surfaces.footer` offers one material and a step nobody can dial would be
-    /// half an effect.
-    ///
-    /// Still routed through ``invalidate()`` rather than set once at creation:
-    /// a stale non-nil tint left over from a future accented element (the
-    /// capsule, a later task) must not survive a focus change or a theme
-    /// change reaching this bar, the same Ghostty #9973 lesson the constraint
-    /// names.
-    private func updateGlassTint() {
-        guard let glassBacking, let materialSet else { return }
-        glassBacking.tintColor = SurfaceFill.colour(fillMaterial, in: materialSet)
-    }
+    // **`updateGlassTint()` stood here until 2026-08-09.** It resolved
+    // `fillMaterial` against the live `MaterialSet` and wrote the result
+    // onto `glassBacking`'s `tintColor`, which with the design panel silent
+    // was an unconditional `nil` — untinted glass, the answer Task 2 measured
+    // and shipped. It went with the dial that was its only non-nil source:
+    // ABSORB deletes the backing it wrote to, so the tint path dies ahead of
+    // the view rather than behind it.
+    //
+    // Untinted is unchanged and now unconditional by construction rather than
+    // by assignment: nothing in this file writes `tintColor`, so the backing
+    // carries the nil it is created with. The Ghostty #9973 lesson the old doc
+    // cited — that a stale tint must not survive a focus or theme change — is
+    // satisfied more strongly by there being no writer than it was by a
+    // rewrite on every ``invalidate()``.
 
     /// Clips ``glassBacking`` to the same outline the drawn fill clips to in
     /// `draw(_:)`, so the glass does not square off a corner the window itself
@@ -526,8 +499,8 @@ final class PaneStatusBarView: NSView {
     /// What the focus frame's ink is drawn at on the glass path.
     ///
     /// **The defect.** Every other element on this bar had already been taught
-    /// that glass carries itself: `draw(_:)` paints no fill, `updateGlassTint()`
-    /// keeps the backing untinted, and the sidebar's headings drop their band
+    /// that glass carries itself: `draw(_:)` paints no fill, the backing is
+    /// untinted, and the sidebar's headings drop their band
     /// fills. The focus frame was the one thing still laying fully opaque colour
     /// straight onto the glass — a hard 2 pt band of `theme.inkFocus` around a
     /// surface whose whole point is that it is see-through. Beside an untinted
@@ -663,8 +636,7 @@ final class PaneStatusBarView: NSView {
         // Glass draws no fill at all (Task 2): `draw(_:)` is this view's base
         // layer, which every subview (including `glassBacking`) renders above,
         // so any fill here — opaque or translucent — would sit under the glass
-        // and either hide it or repeat the tint `updateGlassTint()` just
-        // dropped. Leaving this layer transparent under glass is what lets the
+        // and hide it. Leaving this layer transparent under glass is what lets the
         // glass view's own blur and vibrancy read with nothing painted between
         // it and the terminal beneath.
         if materialSet == nil {

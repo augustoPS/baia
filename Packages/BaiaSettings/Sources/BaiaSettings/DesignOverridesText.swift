@@ -16,7 +16,7 @@
     ///
     /// This file is exactly that shape. It needs no `NSWindow` and no AppKit — it
     /// is a pure value-to-string map over ``DesignOverrides`` — while carrying
-    /// thirty field paths and thirty hand-written notes naming the
+    /// twenty-nine field paths and twenty-nine hand-written notes naming the
     /// constants they stand in for. Both halves drift silently: a renamed field
     /// would fail to compile, but a note that still says "today 0.22" after the
     /// constant moved would not, and neither would a field added to
@@ -75,7 +75,7 @@
     /// ## Only what is set
     ///
     /// A nil field is absent from the output rather than emitted as `null`,
-    /// because nil means "the committed value" and printing all thirty would
+    /// because nil means "the committed value" and printing all twenty-nine would
     /// list the knobs the owner never touched beside the two he did.
     public enum DesignOverridesText {
         /// `overrides` as commented JSON, or a single comment when nothing is
@@ -168,7 +168,9 @@
         private static func appendSurfaces(_ surfaces: DesignOverrides.Chrome.Surfaces, into lines: inout [String]) {
             var group: [String] = []
             let note = "re-activates a fill dormant since Design v5 Task 2; nil is today's untinted glass"
-            append(&group, "chrome.surfaces.footer", surfaces.footer?.rawValue, note: note)
+            // `chrome.surfaces.footer` was emitted here until 2026-08-09,
+            // retired ahead of the footer glass ABSORB deletes; see
+            // `DesignOverrides.Chrome`.
             append(&group, "chrome.surfaces.sidebar", surfaces.sidebar?.rawValue, note: note)
             append(&group, "chrome.surfaces.palette", surfaces.palette?.rawValue, note: note)
             append(&group, "chrome.surfaces.popover", surfaces.popover?.rawValue, note: note)
@@ -346,7 +348,6 @@
             case "chrome.inks.busyDotHex":
                 return string(value, key, &overrides.chrome.inks.busyDotHex)
 
-            case "chrome.surfaces.footer": return rawValue(value, key, &overrides.chrome.surfaces.footer)
             case "chrome.surfaces.sidebar": return rawValue(value, key, &overrides.chrome.surfaces.sidebar)
             case "chrome.surfaces.palette": return rawValue(value, key, &overrides.chrome.surfaces.palette)
             case "chrome.surfaces.popover": return rawValue(value, key, &overrides.chrome.surfaces.popover)
@@ -355,10 +356,11 @@
             case "chrome.barLift": return double(value, key, &overrides.chrome.barLift)
 
             // `chrome.sidebarWashFloor` and `chrome.bareGlass` parsed here until
-            // 2026-08-08 and now fall through to `default`, which is the right
-            // answer rather than a gap: an overrides file still carrying either
-            // key is naming a knob this build genuinely does not have, and the
-            // owner is told so by name instead of having it silently ignored.
+            // 2026-08-08, and `chrome.surfaces.footer` until 2026-08-09. All
+            // three now fall through to `default`, which is the right answer
+            // rather than a gap: an overrides file still carrying one is naming
+            // a knob this build genuinely does not have, and the owner is told
+            // so by name instead of having it silently ignored.
             default:
                 return ParseError(message: "`\(key)` is not a knob baia dials")
             }

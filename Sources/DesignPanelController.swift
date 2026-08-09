@@ -547,14 +547,15 @@
             stack.addArrangedSubview(makeNote(
                 "All four fills are dormant at HEAD. A set value re-activates a retired path; nil is today's untinted glass."
             ))
-            addChoice(
-                to: stack, label: "Footer", cases: DesignOverrides.Chrome.Material.allCases,
-                get: { $0.chrome.surfaces.footer }, set: { $0.chrome.surfaces.footer = $1 },
-                help: "Glass appearance of a set fill is judged by looking at the running app, not at a still."
-            )
+            // A "Footer" row led this list until 2026-08-09. It dialled
+            // `chrome.surfaces.footer`, which retired ahead of the footer glass
+            // ABSORB deletes; see `DesignOverrides.Chrome`. Four surfaces now,
+            // and the note above still reads true: it counts the *fills*, which
+            // are still four, not the surfaces they can be pointed at.
             addChoice(
                 to: stack, label: "Sidebar", cases: DesignOverrides.Chrome.Material.allCases,
-                get: { $0.chrome.surfaces.sidebar }, set: { $0.chrome.surfaces.sidebar = $1 }
+                get: { $0.chrome.surfaces.sidebar }, set: { $0.chrome.surfaces.sidebar = $1 },
+                help: "Glass appearance of a set fill is judged by looking at the running app, not at a still."
             )
             addChoice(
                 to: stack, label: "Palette", cases: DesignOverrides.Chrome.Material.allCases,

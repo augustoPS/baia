@@ -113,7 +113,9 @@
             "chrome.inks.actionRowMinimumRatio", "chrome.inks.actionRowHex",
             "chrome.inks.sectionHeaderMinimumRatio", "chrome.inks.busyDotHex",
 
-            "chrome.surfaces.footer", "chrome.surfaces.sidebar", "chrome.surfaces.palette",
+            // `chrome.surfaces.footer` led this line until 2026-08-09, retired
+            // ahead of the footer glass ABSORB deletes; 30 -> 29.
+            "chrome.surfaces.sidebar", "chrome.surfaces.palette",
             "chrome.surfaces.popover", "chrome.surfaces.titlebar",
 
             // `chrome.sidebarWashFloor` and `chrome.bareGlass` sat beside this
@@ -125,9 +127,10 @@
             "chrome.barLift",
         ]
 
-        /// Thirty, which is the count `DesignOverrides` carries: seven settings
-        /// shadows, nine lift, two rim, six inks, five surfaces, one window.
-        static let expectedKeyCount = 30
+        /// Twenty-nine, which is the count `DesignOverrides` carries: seven
+        /// settings shadows, nine lift, two rim, six inks, four surfaces, one
+        /// window.
+        static let expectedKeyCount = 29
 
         // MARK: - JSON shapes
 
@@ -137,7 +140,7 @@
             #expect(text.contains("\"backgroundBlur\": true,"))
             #expect(text.contains("\"chromeStyle\": \"glass\","))
             #expect(text.contains("\"chrome.inks.sessionHeaderHex\": \"#ff8800\","))
-            #expect(text.contains("\"chrome.surfaces.footer\": \"thick\","))
+            #expect(text.contains("\"chrome.surfaces.sidebar\": \"thick\","))
         }
 
         @Test func theOutputIsBracedAndEveryLineIsIndented() {
@@ -347,12 +350,33 @@
             // owner types from memory.
             let result = DesignOverridesText.parse("""
             {
-              "chrome.surfaces.footer": "marble"
+              "chrome.surfaces.sidebar": "marble"
             }
             """)
 
             guard case let .failure(error) = result else {
                 Issue.record("an unspellable material parsed")
+                return
+            }
+            #expect(error.message.contains("chrome.surfaces.sidebar"))
+        }
+
+        @Test func aRetiredKeyFailsTheWholeParseAndNamesIt() {
+            // `chrome.surfaces.footer` was a real knob until 2026-08-09 and is
+            // spelled correctly here — which is exactly why it needs its own arm.
+            // A retired key is the one an overrides file is *most* likely to
+            // still carry, since it was valid when the owner last saved, and
+            // falling through to `default` is what tells him so. Dropping the
+            // parser case without this test would leave the retirement resting
+            // on the absence of a case rather than on stated behaviour.
+            let result = DesignOverridesText.parse("""
+            {
+              "chrome.surfaces.footer": "thick"
+            }
+            """)
+
+            guard case let .failure(error) = result else {
+                Issue.record("a retired key parsed")
                 return
             }
             #expect(error.message.contains("chrome.surfaces.footer"))
@@ -427,8 +451,7 @@
             "chrome.inks.sectionHeaderMinimumRatio": "4.5",
             "chrome.inks.busyDotHex": "\"#00ff00\"",
 
-            "chrome.surfaces.footer": "\"thick\"",
-            "chrome.surfaces.sidebar": "\"sidebar\"",
+            "chrome.surfaces.sidebar": "\"thick\"",
             "chrome.surfaces.palette": "\"menu\"",
             "chrome.surfaces.popover": "\"menu\"",
             "chrome.surfaces.titlebar": "\"chrome\"",
@@ -438,7 +461,7 @@
 
         // MARK: - Fixture
 
-        /// Every one of the thirty knobs dialled to something, so a test can
+        /// Every one of the twenty-nine knobs dialled to something, so a test can
         /// assert over the complete output.
         private func everythingDialled() -> DesignOverrides {
             var overrides = DesignOverrides()
@@ -470,8 +493,7 @@
             overrides.chrome.inks.sectionHeaderMinimumRatio = 4.5
             overrides.chrome.inks.busyDotHex = "#00ff00"
 
-            overrides.chrome.surfaces.footer = .thick
-            overrides.chrome.surfaces.sidebar = .sidebar
+            overrides.chrome.surfaces.sidebar = .thick
             overrides.chrome.surfaces.palette = .menu
             overrides.chrome.surfaces.popover = .menu
             overrides.chrome.surfaces.titlebar = .chrome

@@ -167,6 +167,18 @@ public extension DesignOverrides {
         // A knob that existed to settle a question is not kept once the answer
         // is shipped code; keeping it would be keeping a second rendering path
         // for a look nobody chose.
+        //
+        // **`surfaces.footer` followed them on 2026-08-09, for a different
+        // reason: the view it wrote to is being deleted.** The pane-as-glass
+        // ABSORB decision (spec fork 5, `2026-08-08-pane-as-glass-spec.md` in
+        // the vault) folds the footer into one pane-wide glass plane, so the
+        // footer's own `NSGlassEffectView` — the only surface this slot could
+        // tint — stops existing. A dial whose write target has been deleted is
+        // not a dormant path waiting to be re-checked; it is a control wired to
+        // nothing, and it retires ahead of the deletion rather than behind it so
+        // no commit ever ships the wired-to-nothing state. The inventory is
+        // twenty-nine. The other four surfaces keep theirs, and `SurfaceFill`
+        // with them.
 
         public init() {}
     }
@@ -278,12 +290,16 @@ public extension DesignOverrides.Chrome {
 
     /// Which fill each glass surface draws with.
     ///
-    /// The five surfaces are the ones the drawing sites already tell apart, so
+    /// The four surfaces are the ones the drawing sites already tell apart, so
     /// pointing one at a different fill is a re-selection among values that
     /// exist rather than a new material. nil leaves a surface on the fill it
-    /// draws today, which is not the same fill for all five and is deliberately
+    /// draws today, which is not the same fill for all four and is deliberately
     /// not named here: the mapping lives at the drawing site, and duplicating it
     /// into this doc comment would be a second copy free to drift from the first.
+    ///
+    /// **There was a fifth, `footer`, until 2026-08-09.** It retired ahead of
+    /// the glass view it wrote to; the reason is recorded in the retired-keys
+    /// block on ``DesignOverrides/Chrome``.
     ///
     /// Worth dialling because all four fills are currently retired from the live
     /// draw paths. Task 2's untinted glass dropped every tint and fill that read
@@ -291,9 +307,6 @@ public extension DesignOverrides.Chrome {
     /// these tokens. Any answer about which fill suits which surface therefore
     /// has to be found by looking, which is what the panel is for.
     struct Surfaces: Sendable, Equatable {
-        /// The pane footer's backing.
-        public var footer: Material?
-
         /// The sidebar's backing.
         public var sidebar: Material?
 

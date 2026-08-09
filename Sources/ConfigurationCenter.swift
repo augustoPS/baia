@@ -36,7 +36,7 @@ final class ConfigurationCenter {
         /// compile away. Grep `designOverrides` in the app target and every
         /// hit is fenced. The `DesignOverrides` *type* itself is unfenced in
         /// `BaiaSettings` and does ship in Release, because the `fillMaterial`
-        /// properties on the eight drawing sites are typed on
+        /// properties on the surviving drawing sites are typed on
         /// `Chrome.Material`; in Release nothing can set them, so they resolve
         /// nil and every site draws its shipped fill. Dead value-type symbols
         /// were judged cheaper than losing the switch-without-default pin a
@@ -532,10 +532,10 @@ final class ConfigurationCenter {
         // owner is looking at while he dials.
         pane.liftParameters = .from(chromeOverrides.lift)
         pane.rimParameters = .from(chromeOverrides.rim)
-        // The footer's glass tint. Nil with nothing dialled, which is the
-        // untinted glass that ships; see ``SurfaceFill`` for what a set value
-        // re-activates.
-        pane.footerFillMaterial = chromeOverrides.surfaces.footer
+        // The footer's glass tint was assigned here until 2026-08-09, from
+        // `chromeOverrides.surfaces.footer`. Both went with the glass view they
+        // wrote to; see `DesignOverrides.Chrome`.
+        //
         // Both go through the controller rather than through the view.
         // Assigning `view.configuration` or `view.controller` has a `didSet`
         // that tears the surface down and respawns the shell, losing the

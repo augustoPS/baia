@@ -191,13 +191,10 @@ final class TerminalPaneController: NSViewController {
         set { liftView.rim = newValue }
     }
 
-    /// Which fill the footer's glass is tinted with, a passthrough to the bar
-    /// for the same reason the two above are passthroughs to the lift: nothing
-    /// on this controller reads it back. Nil is the untinted glass that ships.
-    var footerFillMaterial: DesignOverrides.Chrome.Material? {
-        get { statusBar.fillMaterial }
-        set { statusBar.fillMaterial = newValue }
-    }
+    // `footerFillMaterial` was a third passthrough here until 2026-08-09,
+    // carrying the footer's glass tint to the bar. It retired with the dial
+    // behind it, ahead of the glass view ABSORB deletes; see
+    // `DesignOverrides.Chrome`.
 
     /// Which derivation the attention signal is drawn from, and what to do when it
     /// lands on the focus colour.
