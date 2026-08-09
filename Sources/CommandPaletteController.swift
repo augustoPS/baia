@@ -16,11 +16,10 @@ final class PalettePanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-/// `NSGlassEffectView`, with the same refusals ``PaneStatusBarView``'s own
-/// backing makes.
+/// `NSGlassEffectView`, with the same refusals `PaneGlassPlaneView` makes.
 ///
 /// The palette is a separate panel rather than a view inside a pane, so
-/// nothing here guards a ghostty key binding the way the footer's backing
+/// nothing here guards a ghostty key binding the way the pane's plane
 /// does; the refusals still matter because the glass view hit-tests itself by
 /// AppKit's default and would otherwise intercept clicks meant for the query
 /// field or a row underneath it.
@@ -169,7 +168,14 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
     /// The glass material under the three bands, or nil under flat. Created and
     /// torn down by ``applyResolvedChrome()``, not merely hidden, for the same
     /// "absence of the view is part of what byte-identical means" reason
-    /// ``PaneStatusBarView/glassBacking`` documents on its own copy.
+    /// `TerminalPaneController.applyResolvedGlassPlane()` builds and removes
+    /// the pane's ``PaneGlassPlaneView`` outright rather than hiding it.
+    ///
+    /// The backing's refusals answer a separate question, and their source is
+    /// ``PaneGlassPlaneView``'s own `hitTest` returning nil: a glass view that
+    /// hit-tests swallows the click meant for what sits under it, which in a
+    /// pane is the click that focuses it and here is the click on the query
+    /// field or a row.
     private var glassBacking: PaletteGlassBacking?
 
     private var projects: [Project] = []

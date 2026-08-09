@@ -587,10 +587,10 @@ final class WorkspaceWindowController: NSObject {
     /// Builds or tears down the titlebar's glass to match ``resolvedChrome``.
     ///
     /// The same shape `SidebarHost.applyResolvedChrome()` and
-    /// `PaneStatusBarView.applyResolvedChrome()` take: flat *removes* the views
-    /// rather than hiding them, and glass creates them only if none exist, so a
-    /// chrome change that toggles glass-flat-glass does not rebuild views that
-    /// did not need to move. Removal rather than hiding is load-bearing here
+    /// `TerminalPaneController.applyResolvedGlassPlane()` take: flat *removes*
+    /// the views rather than hiding them, and glass creates them only if none
+    /// exist, so a chrome change that toggles glass-flat-glass does not rebuild
+    /// views that did not need to move. Removal rather than hiding is load-bearing here
     /// for the same reason it is in the sidebar — under flat the system slab
     /// paints the band again, and a hidden-but-present glass view would be a
     /// second treatment stacked under it the moment anything unhid it.

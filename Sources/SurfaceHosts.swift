@@ -3,15 +3,15 @@ import BaiaSettings
 import PaneChrome
 import WorkspaceLayout
 
-/// `NSGlassEffectView`, with the same three refusals `PaneStatusBarView`'s own
-/// glass backing makes.
+/// `NSGlassEffectView`, with the same three refusals ``PaneGlassPlaneView``
+/// makes.
 ///
 /// A plain `NSGlassEffectView` hit-tests itself by AppKit's own default, and
 /// every section's rows, headings and the two draggable strips already handle
 /// their own `mouseDown`. Sitting this glass behind them (see
 /// `SidebarHost.applyResolvedChrome()`) is only safe if it never intercepts a
-/// click meant for one of them, the same reasoning
-/// `PaneStatusGlassBacking`'s own doc comment gives for the footer.
+/// click meant for one of them, the same reasoning `PaneGlassPlane.swift`
+/// gives for the pane: glass that hit-tests swallows the click aimed past it.
 private final class SidebarGlassBacking: NSGlassEffectView {
     override var acceptsFirstResponder: Bool { false }
 
@@ -269,10 +269,10 @@ final class SidebarHost: NSViewController {
     ///
     /// Created and torn down by ``applyResolvedChrome()``, not merely hidden —
     /// the same "absence is part of byte-identical" rule
-    /// `PaneStatusBarView.glassBacking`'s doc comment states for the footer,
-    /// and for the same reason: a hidden `NSGlassEffectView` still costs a
-    /// compositing pass macOS runs whether or not it draws anything, and flat
-    /// must not pay it.
+    /// `TerminalPaneController.applyResolvedGlassPlane()` holds for the pane
+    /// plane, and for the same reason: a hidden `NSGlassEffectView` still
+    /// costs a compositing pass macOS runs whether or not it draws anything,
+    /// and flat must not pay it.
     ///
     /// Added first, before `tree.view` and every section, so it sits behind
     /// the whole hierarchy in z-order — `NSGlassEffectView.style = .regular`
@@ -490,11 +490,11 @@ final class SidebarHost: NSViewController {
 
     /// Creates or tears down ``glassBacking`` to match ``resolvedChrome``.
     ///
-    /// The same shape `PaneStatusBarView.applyResolvedChrome()` takes for the
-    /// footer: flat removes the view entirely rather than hiding it, and glass
-    /// creates one only if none exists yet, so a chrome change that toggles
-    /// glass-flat-glass does not tear down and rebuild a view that did not
-    /// need to move.
+    /// The same shape `TerminalPaneController.applyResolvedGlassPlane()` takes
+    /// for the pane: flat removes the view entirely rather than hiding it, and
+    /// glass creates one only if none exists yet, so a chrome change that
+    /// toggles glass-flat-glass does not tear down and rebuild a view that did
+    /// not need to move.
     ///
     /// Safe to call before `view` has ever been laid out — `viewDidLoad` calls
     /// it first, before `tree.view` or any section exists — because it only

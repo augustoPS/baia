@@ -330,9 +330,11 @@ struct PaneRimParameters: Equatable {
 /// remains the whole expression of focus, unchanged. `TerminalPaneController`
 /// never sets ``isVisible`` under those conditions, and this view's own
 /// nothing-drawn default (`isVisible = false`) is the same "no view drawn,
-/// not merely hidden" guarantee ``PaneStatusBarView/glassBacking`` makes: a
-/// lift that never shows keeps zero cost on a flat pane rather than an
-/// invisible layer macOS still composites.
+/// not merely hidden" guarantee ``PaneGlassPlaneView`` gets from
+/// `TerminalPaneController.installGlassPlane()`, which builds the plane only
+/// under glass and removes it outright under flat: a lift that never shows
+/// keeps zero cost on a flat pane rather than an invisible layer macOS still
+/// composites.
 ///
 /// The ring and the inner highlight are drawn as strokes, the same
 /// `draw(_:)` shape ``PaneEdgeFrameView`` uses; the drop shadow is a
@@ -447,8 +449,8 @@ final class PaneLiftView: PaneOverlayView {
 
     /// A `CGPath`, not a rectangle: an unclipped rectangular shadow would
     /// square off the two corners the window itself rounds, the same
-    /// mismatch ``PaneStatusBarView/updateGlassMask()`` exists to avoid on
-    /// the footer's own glass backing.
+    /// mismatch `TerminalPaneController.updateGlassPlaneMasks()` exists to
+    /// avoid on the pane's glass plane and wash.
     private func updateShadowPath() {
         guard bounds.width > 0, bounds.height > 0 else { return }
         let pane = WindowCorner.cgPath(in: bounds, corners: bottomCorners)
