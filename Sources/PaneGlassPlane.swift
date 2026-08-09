@@ -13,6 +13,14 @@ import AppKit
 /// in a pane that takes first responder kills every ghostty binding in it,
 /// and a hit-testable view here would swallow the click that focuses the pane.
 final class PaneGlassPlaneView: NSGlassEffectView {
+    /// `WindowCorner.cgPath` requires a flipped coordinate space or its shape
+    /// is upside down (its own doc says so), and the corner mask
+    /// `TerminalPaneController.updateGlassPlaneMasks` installs is built from
+    /// this view's bounds. The footer the mask migrated from is flipped;
+    /// `Diagnostics/pane-glass-stacking`'s README records that copying its
+    /// math into an unflipped view silently rounds the TOP corners.
+    override var isFlipped: Bool { true }
+
     override var acceptsFirstResponder: Bool { false }
 
     override var canBecomeKeyView: Bool { false }
@@ -32,6 +40,11 @@ final class PaneGlassPlaneView: NSGlassEffectView {
 /// the result. Colour and opacity are decided by the controller
 /// (`ChromeMaterials.PaneWash.opacity`); this view only paints.
 final class PaneGlassWashView: NSView {
+    /// Same reason as ``PaneGlassPlaneView/isFlipped``: the corner mask this
+    /// view wears is a `WindowCorner.cgPath`, which requires a flipped space.
+    /// The fill itself is orientation-blind.
+    override var isFlipped: Bool { true }
+
     var colour: NSColor = .clear {
         didSet {
             guard colour != oldValue else { return }

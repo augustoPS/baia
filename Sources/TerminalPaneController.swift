@@ -383,11 +383,15 @@ final class TerminalPaneController: NSViewController {
     /// ``bottomCorners`` setter and from layout, because a mask frame does not
     /// track bounds by itself.
     ///
-    /// Verify orientation against a bottom-corner pane on first run:
-    /// `Diagnostics/pane-glass-stacking` measured probe-built glass masks
-    /// evaluating y-up under a flipped superview. This container is unflipped,
-    /// same as the footer whose mask this replaces, but the check costs one
-    /// look and the failure mode (a rounded TOP corner) is silent.
+    /// Orientation is load-bearing and was got wrong once, in this method's
+    /// first commit. `WindowCorner.cgPath` documents its precondition: the
+    /// view it is drawn into must be flipped, or the shape is upside down.
+    /// The footer this mask migrated from is `isFlipped: true`; the first
+    /// version of this code copied its math into unflipped views, which is
+    /// exactly the "not copied from `PaneStatusBarView`" trap
+    /// `Diagnostics/pane-glass-stacking`'s README warns about, and the
+    /// failure mode (rounded TOP corners) is silent. Both glass views now
+    /// declare `isFlipped: true` for this reason; see their doc comments.
     private func updateGlassPlaneMasks() {
         for masked in [glassPlane, glassWash] as [NSView?] {
             guard let masked, let layer = masked.layer else { continue }
