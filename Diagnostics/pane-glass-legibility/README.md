@@ -1,14 +1,24 @@
 # Pane-wash legibility sweep
 
 `./run.sh [output-directory]` from anywhere. Writes a calibration strip, fourteen
-sweep captures (each with a `-screen.png` companion), two wallpaper shots, and
-`results.txt`; exits non-zero if a capture fails or the glass never samples its
-backdrop. Needs only `swiftc` and stdlib `python3`; no app build.
+sweep captures (each with a `-screen.png` companion), the shipped-default arm and
+its negative control, two wallpaper shots, and `results.txt`; exits non-zero if a
+capture fails, if the glass never samples its backdrop, if the shipped default
+misses 4.5:1, or if the negative control has no teeth. Needs only `swiftc` and
+stdlib `python3`; no app build.
+
+Two arms, two questions. The **sweep** asks where the 4.5:1 crossing sits across
+α and produces the curve; it is the arm that sized the wash. The
+**shipped-default arm** asks the narrower question the shipped feature has to
+keep answering — does the value baia ships today clear AA on this run's tone
+response — and asserts, with a negative control behind the assertion.
 
 Not yet on `guard-baia-alive.sh`'s `SAFE_PROBES` list. It meets the list's
 criterion — `.accessory` activation policy, every window `orderFrontRegardless()`
 and `canBecomeKey == false`, no `NSApp.activate`, nothing quit or launched — and
-puts windows on screen for roughly 35 seconds without ever taking the keyboard,
+puts windows on screen for roughly 25 to 40 seconds (measured 24 with no settle
+retries; retries and the two shipped-arm captures push it up) without ever taking
+the keyboard,
 the same shape as `glass-backdrop`. Adding it to the list is the guard owner's
 call, not this probe's.
 
@@ -187,6 +197,76 @@ finding 3 holds to ±1 across all fourteen captures, which is the evidence the
 tone response held still *during* the ~35-second sweep. One run, one capture
 session; never mix runs.
 
+### 6. The shipped default clears AA, and what the control could and could not prove
+
+**The question.** The sweep sized the wash; `ChromeMaterials.PaneWash.floor` is
+now `0.5` in `PaneChrome` and the pane wash draws `theme.background` at
+`max(backgroundOpacity, floor)`. This arm asks whether *that shipped value*
+clears 4.5:1 on the tone response of the run in front of you, and fails the probe
+if it does not.
+
+The α is **read off the package at run time**, never transcribed:
+`washsweep.swift` links `PaneChrome`, reads `ChromeMaterials.PaneWash.floor`, and
+writes it to `shipped-default.txt`, which `measure.py` reads back. Move the floor
+in the package and the arm moves with it on the next run, asserting against the
+new value. No number in this loop is typed twice.
+
+**Run of record: 2026-08-09**, same probe run as the table below. This run's
+calibration: bare white reads `#373737`, bare black `#111111` — again a dark
+tone-response day, marginally darker than the 2026-08-08 sweep's `#3a3a3a`.
+
+| half | washed band | ink | contrast | control band (wash removed) | ink | contrast |
+|---|---|---|---|---|---|---|
+| **WHITE (worst case)** | `#2c2c2c` | `#bbbbbb` | **7.27:1** | `#454545` | `#bbbbbb` | 4.99:1 |
+| BLACK | `#1c1c1c` | `#bbbbbb` | 8.88:1 | `#252525` | `#bbbbbb` | 7.98:1 |
+
+**Wallpaper caveat, as on every number in this file:** the underlay is a
+pure-white/pure-black seam, the worst case by construction, and the absolutes are
+within-run only — `calibration.png` is this run's tone-response fingerprint.
+`SHIPPED-ARM: PASS — 7.27:1 >= 4.5:1 at α 0.5000 on the bright half`, with 2.77
+of headroom over AA on the worst half.
+
+**The negative control, and why the relative form is the one that shipped.** Per
+the damage-the-feature rule the control renders the identical pane with the wash
+view *removed from the view tree* — removed, not thinned to α = 0, because a
+zero-alpha fill still tests "is this paint a no-op" rather than "is this layer
+what buys the floor". `measure.py` then reaches two verdicts, and `run.sh`
+enforces whichever one is honest on the run:
+
+- **Absolute** (the strong form): the control must fail 4.5:1. On this run it
+  did **not** fail — bare glass over the bright half read 4.99:1, clearing AA on
+  its own. That is not the control being violated, it is the control being
+  **vacuous**, and it is the case the plan anticipated: the sweep's own α = 0.00
+  row cleared 4.5:1 on the run of record for exactly the same reason. On a dark
+  tone-response day the compositor hands back a bright half at `#454545`, dark
+  enough for `#bbbbbb` to clear AA unaided. The absolute control has real teeth
+  on a bright day (against glass-backdrop 6b's `#7c7c7c`, ink reads 2.17:1 and
+  removing the wash is fatal), and none on a dark one. **It cannot be trusted
+  across tone responses, so it cannot be the assertion.**
+- **Relative** (what shipped as the enforced fallback): the washed band must be
+  darker than the unwashed band by at least finding 3's linear model,
+  `band(α) = α·wash + (1 − α)·band(0)`, within ±2 bytes (±1 for the model's own
+  fit tolerance, ±1 for capture noise). This transfers between tone responses
+  because both bands come from the same capture session and the model is a
+  statement about compositing, not about the display. This run: unwashed
+  `#454545`, wash constant `#141414` read off the α = 1.00 capture rather than
+  transcribed, prediction `#2c2c2c`, measured `#2c2c2c`, per-channel error −0.5.
+  **PASS.**
+
+`run.sh` fails loudly when the control has no teeth: absolute FAIL-AS-REQUIRED
+passes it; absolute VACUOUS passes it **only** if relative PASSes; absolute
+vacuous with relative failing is a run with no working control and exits 1.
+Verified by feeding the guard a results file with the relative verdict flipped to
+FAIL — it rejected.
+
+**What this arm cannot claim.** That 0.5 is enough on a bright day. No run has
+yet produced a bright tone response for this probe to measure the shipped default
+against, and the arm is honest about it: it asserts within-run and defers the
+cross-run bound to finding 3's arithmetic, which is what sized the floor in the
+first place (`#7c7c7c` needs 0.4712; 0.5 clears it). A run on a bright day would
+turn the absolute control from vacuous to load-bearing, and nothing needs to
+change for that to happen — the arm already prints which form held.
+
 ### Wallpaper, for the record
 
 Over the owner's real wallpaper (backdrop window removed; wallpaper-dependent,
@@ -208,6 +288,11 @@ must survive.
 - **The `-l` route is blind to this material** (see "How the captures are
   read"); anything that reads a pane-sized glass plane through the window's own
   buffer sees the placeholder slab, not the composite.
+- **The shipped arm's negative control changes form with the tone response.**
+  Removing the wash is only guaranteed to break the *absolute* 4.5:1 assertion
+  on a bright day; on a dark one bare glass clears AA unaided and the absolute
+  control goes vacuous (finding 6). The relative control is the form that holds
+  on every run, and `run.sh` demands one of the two.
 
 ## Files
 
@@ -215,12 +300,17 @@ Captures land in the output directory (default
 `$TMPDIR/baia-pane-glass-legibility`), outside the repo:
 
 ```
-calibration.png            bare backdrop through this run's tone response
-sweep-aNNN.png             -l window buffer at α = 0.NN (flat-slab negative result)
-sweep-aNNN-screen.png      -R screen composite, the measured file
-wallpaper-a000.png         α 0.00 over the real wallpaper (+ -screen companion)
-wallpaper-a065.png         α 0.65 over the real wallpaper (+ -screen companion)
-results.txt                measure.py's tables, the run of record
+calibration.png                     bare backdrop through this run's tone response
+sweep-aNNN.png                      -l window buffer at α = 0.NN (flat-slab negative result)
+sweep-aNNN-screen.png               -R screen composite, the measured file
+shipped-default.txt                 ChromeMaterials.PaneWash.floor, read off the
+                                    package at run time; measure.py's α
+shipped-default-screen.png          the shipped-default arm (+ -l companion)
+shipped-control-nowash-screen.png   the negative control, wash view removed
+wallpaper-a000.png                  α 0.00 over the real wallpaper (+ -screen companion)
+wallpaper-a065.png                  α 0.65 over the real wallpaper (+ -screen companion)
+results.txt                         measure.py's tables and verdict lines, the run
+                                    of record; run.sh reads its SHIPPED-* lines
 ```
 
 `washsweep.swift` renders and captures; `measure.py` reads the captures with

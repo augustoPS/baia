@@ -1,6 +1,8 @@
 import AppKit
+import BaiaSettings
 import PaneChrome
 import SwiftUI
+import WorkspaceLayout
 
 // The pane-glass-stacking spike: when a pane-wide `NSGlassEffectView` plane goes
 // in behind the whole pane, what happens to the footer's own glass backing that
@@ -20,6 +22,31 @@ import SwiftUI
 //              `NSGlassEffectContainerView` (spacing 0), the HIG-permitted shape.
 //   VIOLATION  plane + separate footer glass, hand-stacked, no container — the
 //              naive port of today's hierarchy, the thing the HIG bans.
+//
+// Two further arms were added on 2026-08-09, after ABSORB shipped (a15d28e,
+// cbf3f90). The four above are a *mock* — a transcribed squircle, a drawn
+// stand-in footer — so they measure the arrangement rather than the code. These
+// two measure the code:
+//
+//   SHIPPED-ABSORB     `Sources/PaneGlassPlane.swift` and
+//                      `Sources/PaneStatusBarView.swift` compiled VERBATIM into
+//                      this binary, with the real `WindowCorner` mask: a
+//                      `PaneGlassPlaneView` + `PaneGlassWashView` pair at pane
+//                      size, hosted the way `TerminalPaneController
+//                      .installGlassPlane()` hosts them, with a real
+//                      `PaneStatusBarView` (`resolvedChrome = .glass`, so it
+//                      draws no fill) over the bottom `PaneStatusBarMetrics
+//                      .height` points. Acceptance: NO luminance step at the
+//                      footer's top edge beyond the 1-2 unit noise floor the
+//                      spike measured between ABSORB and CONTAINER.
+//   SHIPPED-VIOLATION  the negative control, per the damage-the-feature rule:
+//                      the same shipped arrangement with the deleted
+//                      hand-stacked footer glass put back — one bare
+//                      `NSGlassEffectView` under the bar region. The seam must
+//                      RETURN (+19..21/255 over the dark half in the original
+//                      spike). `run.sh` inverts it: if the control stops
+//                      showing a seam, the shipped assertion proves nothing and
+//                      the run fails.
 //
 // This binary never becomes key and never activates. `NSApp.setActivationPolicy(
 // .accessory)` plus `orderFrontRegardless()` is the `SAFE_PROBES` standard
@@ -258,6 +285,26 @@ enum Arm: String, CaseIterable {
     /// This arm is that fallback, so the run answers whether it works rather
     /// than leaving it to the spec to guess.
     case containerOutermask = "container-outermask"
+
+    /// The shipped arrangement, built from the shipped types rather than from
+    /// a mock: `PaneGlassPlaneView` + `PaneGlassWashView` + a real
+    /// `PaneStatusBarView` under `resolvedChrome = .glass`. See
+    /// ``shippedPaneStack(root:paneBounds:footerFrame:handStackedFooterGlass:)``.
+    case shippedAbsorb = "shipped-absorb"
+
+    /// ``shippedAbsorb`` with the deleted footer glass put back, hand-stacked.
+    /// The negative control: it must show the seam the shipped arm must not.
+    case shippedViolation = "shipped-violation"
+
+    /// The four mock arms, which answered the spec's fork. Kept as a group
+    /// because the README's finding table and the corner-probe table are about
+    /// these four and their transcribed squircle.
+    static let mockArms: [Arm] = [.absorb, .container, .violation, .containerOutermask]
+
+    /// The two arms built from `Sources/`. Measured with the same bands as the
+    /// mock arms, but asserted rather than tabulated: the shipped one must show
+    /// no step, the control must show one.
+    static let shippedArms: [Arm] = [.shippedAbsorb, .shippedViolation]
 }
 
 /// One pane-shaped window: transparent, non-opaque, a pane-wide glass plane at
@@ -350,6 +397,17 @@ final class PaneWindow: NSWindow {
             let plane = makePlane()
             root.addSubview(plane)
             root.addSubview(makeFooterGlass(), positioned: .above, relativeTo: plane)
+        case .shippedAbsorb, .shippedViolation:
+            // The shipped arms build their own content too — a real
+            // `PaneStatusBarView` rather than `FooterTextView` — so they return
+            // before the shared drawn stand-ins below.
+            shippedPaneStack(
+                root: root,
+                paneBounds: paneBounds,
+                footerFrame: footerFrame,
+                handStackedFooterGlass: arm == .shippedViolation
+            )
+            return window
         }
 
         // Content siblings above the glass assembly, identical in every arm, so
@@ -360,6 +418,157 @@ final class PaneWindow: NSWindow {
         root.addSubview(footer)
 
         return window
+    }
+
+    /// The shipped pane-as-glass stack, from the shipped sources.
+    ///
+    /// Every glass and chrome view here is the app's own type, compiled
+    /// verbatim by `run.sh` (`PaneGlassPlane.swift`, `PaneStatusBarView.swift`,
+    /// `WindowCorner.swift`, and `PaneOverlayView.swift`, which
+    /// `PaneStatusBarView` needs only to link). Nothing about the arrangement is
+    /// transcribed: the plane's `style`/`cornerRadius`, the wash above it, and
+    /// the `WindowCorner.cgPath` mask on both are the four lines
+    /// `TerminalPaneController.installGlassPlane()` and
+    /// `updateGlassPlaneMasks()` write, in the same order.
+    ///
+    /// Two deliberate differences from a live pane, both harmless to what is
+    /// measured. There is no ghostty surface between the wash and the bar — the
+    /// terminal text is the same `TerminalTextView` stand-in the mock arms draw,
+    /// because a real surface needs Metal and a PTY and paints nothing into
+    /// either measurement band. And the bar is frame-set rather than
+    /// autolayout-pinned, since this window has no pane tree to constrain
+    /// against; the bar's own drawing reads `bounds`, so the route in does not
+    /// reach the pixels.
+    ///
+    /// - Parameter handStackedFooterGlass: the negative control. True puts one
+    ///   bare `NSGlassEffectView` back under the bar region — the backing
+    ///   `a15d28e` deleted — hand-stacked on the plane with no container, which
+    ///   is the arrangement the `violation` arm measured as a +19..21/255 seam
+    ///   over dark content. The seam must come back, or the shipped arm's
+    ///   no-step assertion is measuring nothing.
+    private static func shippedPaneStack(
+        root: NSView,
+        paneBounds: NSRect,
+        footerFrame: NSRect,
+        handStackedFooterGlass: Bool
+    ) {
+        // `TerminalPaneController.installGlassPlane()`, line for line.
+        let plane = PaneGlassPlaneView(frame: paneBounds)
+        plane.style = .regular
+        plane.wantsLayer = true
+        plane.cornerRadius = 0
+        root.addSubview(plane)
+
+        let wash = PaneGlassWashView(frame: paneBounds)
+        wash.wantsLayer = true
+        // `updateGlassWashColour()`'s derivation. Both inputs are read off the
+        // packages at run time — `PaneTheme.darkPastel.background` and
+        // `ChromeMaterials.PaneWash.opacity` — so a move of the wash floor
+        // reaches this probe without an edit, the same rule the footer metrics
+        // follow. Only the `RGB` -> `NSColor` step is spelled here rather than
+        // called: the shipped call goes through `ChangesSurface.nsColor`, which
+        // lives in a 583-line file that builds a whole scrolling changes view,
+        // and linking that to reach a six-line explicit-sRGB conversion would
+        // drag the probe into the app target for nothing. The conversion is
+        // identical (`srgbRed:green:blue:alpha:`, deliberately not the
+        // calibrated-space initializer, for the reason `PaneStatusBarView
+        // .nsColor` documents).
+        //
+        // `backgroundOpacity` comes off `Settings.default` rather than being
+        // named here, and that matters more than it looks: at 1 the wash is
+        // fully opaque (`max(1, floor)`) and there is no glass left to measure —
+        // the first run of these arms passed 1, and both captures came back with
+        // the white and the dark half of the backdrop reading the same 20.00,
+        // i.e. a pane sampling nothing. 1 is not even a state glass reaches;
+        // `windowIsTransparent(backgroundOpacity:appearance:)` gates the whole
+        // glass path on `< 1`.
+        let washBackground = PaneTheme.darkPastel.background
+        wash.colour = NSColor(
+            srgbRed: CGFloat(washBackground.red),
+            green: CGFloat(washBackground.green),
+            blue: CGFloat(washBackground.blue),
+            alpha: CGFloat(ChromeMaterials.PaneWash.opacity(
+                backgroundOpacity: Settings.defaultSettings.backgroundOpacity,
+                floorOverride: nil
+            ))
+        )
+        root.addSubview(wash, positioned: .above, relativeTo: plane)
+
+        // The control: the footer backing ABSORB deleted, put back by hand
+        // above the plane and the wash, in the bar's own bounds with the same
+        // corner mask the retired `updateGlassMask()` gave it.
+        if handStackedFooterGlass {
+            let footerGlass = NSGlassEffectView(frame: footerFrame)
+            footerGlass.style = .regular
+            footerGlass.cornerRadius = 0
+            footerGlass.wantsLayer = true
+            let mask = CAShapeLayer()
+            mask.frame = NSRect(origin: .zero, size: footerFrame.size)
+            mask.path = ProbeCorner.cgPath(in: mask.frame)
+            footerGlass.layer?.mask = mask
+            root.addSubview(footerGlass, positioned: .above, relativeTo: wash)
+        }
+
+        // Terminal ink above the glass, as in every other arm. The measurement
+        // bands are clear of it by construction (`TerminalTextView` stops 70 pt
+        // short of the bottom).
+        root.addSubview(TerminalTextView(frame: paneBounds))
+
+        // The shipped footer: glass chrome, window active, both bottom corners
+        // (this probe's pane is the whole window). Under `.glass` `draw(_:)`
+        // paints no fill, which is the property the no-step assertion is about:
+        // if that skip ever regressed, the footer band would step away from the
+        // surface band whatever the glass underneath it did.
+        //
+        // `isFocused` is false, and that is a measurement decision rather than
+        // a claim about the common state. The focus frame is a 2 pt stroke on
+        // the bar's own top edge (`drawBarFrame`, flipped, `y: 0`), which in
+        // pane coordinates is y 178-180 — the exact rows the seam band reads.
+        // The first run of these arms had it on and both arms measured a +27
+        // and +44 "step" that was the stroke, not the glass. It draws
+        // identically in the shipped arm and in its control, so it would not
+        // have made the control pass falsely; it would have hidden whatever the
+        // glass was doing underneath it in both. An unfocused pane is what the
+        // other three panes on a four-pane screen look like anyway.
+        let bar = PaneStatusBarView(frame: footerFrame)
+        bar.resolvedChrome = .glass(.dark)
+        bar.theme = .darkPastel
+        bar.isFocused = false
+        bar.isWindowActive = true
+        bar.bottomCorners = .both
+        bar.status = PaneStatus(
+            anchorName: "baia",
+            anchorIsRepository: true,
+            isPinned: false,
+            workingDirectory: nil,
+            git: PaneStatus.Git(
+                head: "main",
+                hasUpstream: true,
+                ahead: 1,
+                behind: 2,
+                dirty: true,
+                untracked: 3,
+                conflicted: 0,
+                operation: nil,
+                isLinkedWorktree: false
+            ),
+            agent: PaneStatus.Agent(label: "claude", wantsAttention: false)
+        )
+        root.addSubview(bar)
+
+        // `updateGlassPlaneMasks()`, after the views are in the hierarchy and
+        // sized, exactly as the controller calls it at the end of
+        // `installGlassPlane()`. Both views declare `isFlipped: true`, which is
+        // `WindowCorner.cgPath`'s stated precondition and the thing cbf3f90
+        // fixed; a regression there rounds the TOP corners and the corner probes
+        // in `run.sh` catch it.
+        for masked in [plane, wash] as [NSView] {
+            guard let layer = masked.layer else { continue }
+            let mask = (layer.mask as? CAShapeLayer) ?? CAShapeLayer()
+            mask.frame = masked.bounds
+            mask.path = WindowCorner.cgPath(in: masked.bounds, corners: .both)
+            layer.mask = mask
+        }
     }
 
     override var canBecomeKey: Bool { false }
@@ -503,7 +712,15 @@ let arms = Arm.allCases
 let paneWidth: CGFloat = 720
 let paneHeight: CGFloat = 200
 let paneGap: CGFloat = 16
-let stackHeight = paneHeight * CGFloat(arms.count) + paneGap * CGFloat(arms.count - 1)
+// The group portrait's stack is the four mock arms only, and the layout is
+// sized for them. Six 200 pt panes do not fit a 900 pt screen, and the two
+// shipped arms have no business in that frame anyway: it is a by-eye
+// side-by-side of the spec's fork, which they postdate. They are laid out
+// underneath it and only ever photographed solo, which is the measured route
+// for every arm.
+let portraitArms = Arm.mockArms
+let stackHeight = paneHeight * CGFloat(portraitArms.count)
+    + paneGap * CGFloat(portraitArms.count - 1)
 let stackBottom = screenFrame.midY - stackHeight / 2
 
 let backdrop = BackdropWindow.make(covering: screenFrame)
@@ -512,26 +729,53 @@ settle(0.6)
 
 var failures = 0
 var windows: [(Arm, PaneWindow)] = []
-for (index, arm) in arms.enumerated() {
-    let frame = NSRect(
-        x: screenFrame.midX - paneWidth / 2,
-        y: stackBottom + CGFloat(arms.count - 1 - index) * (paneHeight + paneGap),
-        width: paneWidth,
-        height: paneHeight
-    )
+var portraitWindows: [PaneWindow] = []
+for arm in arms {
+    let frame: NSRect
+    if let index = portraitArms.firstIndex(of: arm) {
+        frame = NSRect(
+            x: screenFrame.midX - paneWidth / 2,
+            y: stackBottom
+                + CGFloat(portraitArms.count - 1 - index) * (paneHeight + paneGap),
+            width: paneWidth,
+            height: paneHeight
+        )
+    } else {
+        // A shipped arm: the portrait stack's own top slot, reused. It is
+        // only ever captured solo, with every other pane ordered out, so it
+        // can share a frame with an arm it is never on screen beside — and it
+        // must be somewhere the controlled backdrop actually reaches.
+        //
+        // The first version of this parked the shipped arms below the stack
+        // and the captures came back with the Dock across the footer band and
+        // the desktop wallpaper behind the glass: the Dock outranks
+        // `.floating`, so a pane placed over it is neither backed by the
+        // controlled field nor unobstructed. Screen-centred, which the four
+        // mock arms already are, is the safe region — the backdrop covers the
+        // whole screen but only the middle of it is free of system chrome.
+        frame = NSRect(
+            x: screenFrame.midX - paneWidth / 2,
+            y: stackBottom + CGFloat(portraitArms.count - 1) * (paneHeight + paneGap),
+            width: paneWidth,
+            height: paneHeight
+        )
+    }
     let window = PaneWindow.make(arm: arm, contentRect: frame)
-    window.orderFrontRegardless()
     windows.append((arm, window))
+    if portraitArms.contains(arm) {
+        window.orderFrontRegardless()
+        portraitWindows.append(window)
+    }
 }
 
-// One `-R` over the whole stack first, while every arm is on screen: the one
-// file in which all arms share a single tone-curve instant, for by-eye
+// One `-R` over the whole stack first, while every mock arm is on screen: the
+// one file in which those four share a single tone-curve instant, for by-eye
 // comparison. Not the measured file: with the stack 16 pt apart, a plane
 // samples its glass neighbours above and below — the first all-on-screen run
 // measured the sandwiched arms' planes up to 26 units darker than the same
 // plane at the stack's edge, which is the neighbour bleeding in, not the arm.
 settle(2.0)
-let union = windows.map(\.1.frame).reduce(windows[0].1.frame) { $0.union($1) }
+let union = portraitWindows.map(\.frame).reduce(portraitWindows[0].frame) { $0.union($1) }
 if let rect = displayRect(for: union.insetBy(dx: -12, dy: -12)) {
     if runScreencapture(["-R", rect], to: outputDirectory + "/all-arms-screen.png") {
         print("captured all-arms-screen.png")

@@ -154,8 +154,14 @@ final class TerminalTextView: NSView {
 }
 
 /// One pane at one wash opacity: glass plane, wash, text.
+///
+/// `washAlpha == nil` is the **negative control**: the wash view is not added at
+/// all. Removing the layer is the damage the control has to inflict — thinning
+/// it to α = 0 leaves a zero-alpha fill in the view tree, which is a different
+/// claim (that the paint is a no-op) than the one the control tests (that the
+/// layer is what buys the floor).
 final class WashSweepWindow: NSWindow {
-    init(contentRect: NSRect, washAlpha: CGFloat, theme: PaneTheme) {
+    init(contentRect: NSRect, washAlpha: CGFloat?, theme: PaneTheme) {
         super.init(
             contentRect: contentRect,
             styleMask: [.borderless],
@@ -182,15 +188,19 @@ final class WashSweepWindow: NSWindow {
         glass.autoresizingMask = [.width, .height]
         content.addSubview(glass)
 
-        let wash = WashView(frame: bounds)
-        wash.color = NSColor(
-            srgbRed: CGFloat(theme.background.red),
-            green: CGFloat(theme.background.green),
-            blue: CGFloat(theme.background.blue),
-            alpha: washAlpha
-        )
-        wash.autoresizingMask = [.width, .height]
-        content.addSubview(wash, positioned: .above, relativeTo: glass)
+        var top: NSView = glass
+        if let washAlpha {
+            let wash = WashView(frame: bounds)
+            wash.color = NSColor(
+                srgbRed: CGFloat(theme.background.red),
+                green: CGFloat(theme.background.green),
+                blue: CGFloat(theme.background.blue),
+                alpha: washAlpha
+            )
+            wash.autoresizingMask = [.width, .height]
+            content.addSubview(wash, positioned: .above, relativeTo: glass)
+            top = wash
+        }
 
         let text = TerminalTextView(frame: bounds)
         text.ink = NSColor(
@@ -200,7 +210,7 @@ final class WashSweepWindow: NSWindow {
             alpha: 1
         )
         text.autoresizingMask = [.width, .height]
-        content.addSubview(text, positioned: .above, relativeTo: wash)
+        content.addSubview(text, positioned: .above, relativeTo: top)
     }
 
     override var canBecomeKey: Bool { false }
@@ -387,35 +397,68 @@ let baseSettle: TimeInterval = 0.8
 /// wash, today's near-solid well.
 let alphas: [CGFloat] = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.9, 1.0]
 
-for alpha in alphas {
-    let name = String(format: "sweep-a%03d", Int((alpha * 100).rounded()))
-    let window = WashSweepWindow(contentRect: paneFrame, washAlpha: alpha, theme: theme)
+/// Renders one pane over the controlled backdrop and captures it, retrying the
+/// settle until the glass has demonstrably sampled its backdrop. Returns false
+/// (and reports) if it never did.
+@discardableResult
+func captureArm(named name: String, washAlpha: CGFloat?, requireSplit: Bool) -> Bool {
+    let window = WashSweepWindow(contentRect: paneFrame, washAlpha: washAlpha, theme: theme)
     window.orderFrontRegardless()
+    defer { window.orderOut(nil) }
     let path = outputDirectory + "/" + name + ".png"
-    // No split required at α ≥ 0.9: a 0.9 wash leaves ~10% of a tone-curved
-    // backdrop difference, which measured under the 12-unit flatness threshold
-    // on the first run (the capture was fine; the check was too strict for it).
-    let requireSplit = alpha <= 0.8
-    var written = false
     for attempt in 1 ... 6 {
         settle(baseSettle * Double(attempt))
         guard capture(window: window, to: path) else {
             print("CAPTURE FAILED \(name)")
-            failures += 1
-            written = true
-            break
+            return false
         }
         if bandSampled(path, requireSplit: requireSplit) {
             print("captured \(name).png\(attempt > 1 ? " (settled on attempt \(attempt))" : "")")
-            written = true
-            break
+            return true
         }
     }
-    if !written {
-        print("CAPTURE UNSAMPLED \(name) — band not opaque or glass never sampled in 6 attempts")
+    print("CAPTURE UNSAMPLED \(name) — band not opaque or glass never sampled in 6 attempts")
+    return false
+}
+
+for alpha in alphas {
+    let name = String(format: "sweep-a%03d", Int((alpha * 100).rounded()))
+    // No split required at α ≥ 0.9: a 0.9 wash leaves ~10% of a tone-curved
+    // backdrop difference, which measured under the 12-unit flatness threshold
+    // on the first run (the capture was fine; the check was too strict for it).
+    if !captureArm(named: name, washAlpha: alpha, requireSplit: alpha <= 0.8) {
         failures += 1
     }
-    window.orderOut(nil)
+}
+
+// MARK: - the shipped-default arm
+//
+// The sweep answers "where does the crossing sit"; this arm answers a narrower
+// question the sweep cannot: **does the value baia actually ships clear AA on
+// this run's tone response?** The α is `ChromeMaterials.PaneWash.floor` read off
+// the linked package at run time, never transcribed — if the shipped default
+// moves, this arm moves with it and the assertion re-runs against the new value
+// on the next run. The floor is written to `shipped-default.txt` so `measure.py`
+// asserts against the same run-time value rather than its own copy.
+//
+// The **negative control** renders the identical window with the wash view
+// *removed from the view tree*, not thinned: the pane's own damage-the-feature
+// check. If deleting the layer the feature consists of does not break the
+// assertion, the assertion is not measuring the feature. The control's verdict
+// is `measure.py`'s to reach and `run.sh`'s to enforce; this file only produces
+// the two captures.
+let shippedFloor = CGFloat(ChromeMaterials.PaneWash.floor)
+print("")
+print(String(format: "shipped default read off PaneChrome at run time: "
+        + "ChromeMaterials.PaneWash.floor = %.4f", Double(shippedFloor)))
+try? String(format: "%.6f\n", Double(shippedFloor))
+    .write(toFile: outputDirectory + "/shipped-default.txt", atomically: true, encoding: .utf8)
+
+if !captureArm(named: "shipped-default", washAlpha: shippedFloor, requireSplit: true) {
+    failures += 1
+}
+if !captureArm(named: "shipped-control-nowash", washAlpha: nil, requireSplit: true) {
+    failures += 1
 }
 
 // For the record only: two opacities over the owner's real wallpaper, backdrop
