@@ -33,24 +33,6 @@ private final class PaneStatusContentView: NSView {
     override func hitTest(_: NSPoint) -> NSView? { nil }
 }
 
-/// `NSGlassEffectView`, with the same three refusals every other layer of this
-/// footer makes.
-///
-/// A plain `NSGlassEffectView` hit-tests itself by AppKit's own default, and
-/// this bar's container relies on every child returning nil from `hitTest` so
-/// the click bubbles up to its own `mouseDown(with:)` (see that method's own
-/// note). Without this override the glass backing would be the view a click
-/// inside the footer actually lands on, and the container's `mouseDown` would
-/// never fire, so the pane it sits over could no longer be focused by clicking
-/// its footer once glass was on.
-private final class PaneStatusGlassBacking: NSGlassEffectView {
-    override var acceptsFirstResponder: Bool { false }
-
-    override var canBecomeKeyView: Bool { false }
-
-    override func hitTest(_: NSPoint) -> NSView? { nil }
-}
-
 /// The thin footer under one terminal surface.
 ///
 /// Drawing only. Every decision about which segments exist, what they say, and
@@ -105,19 +87,24 @@ final class PaneStatusBarView: NSView {
     /// material set to draw a translucent backing under this bar's own content.
     ///
     /// A stored property with a `didSet`, the same shape as ``theme``, rather
-    /// than a value read fresh on every draw: the backing view's existence has to
-    /// change with it, and a view is created or torn down here, once, not on
+    /// than a value read fresh on every draw: what this bar paints changes with
+    /// it, and the repaint is ordered here, once, rather than decided again on
     /// every `draw(_:)` pass.
     ///
-    /// **Flat creates no backing view at all, not merely a hidden one.** A hidden
-    /// `NSGlassEffectView` still costs a compositing pass macOS runs whether or
-    /// not it draws anything, and flat is the byte-identical spec: the absence of
-    /// the view is part of what "byte-identical" means here, not just the
-    /// absence of its visible effect.
+    /// **This footer owns no glass view (pane-as-glass, 2026-08-09).** The
+    /// pane-wide `PaneGlassPlaneView` behind the terminal surface serves this
+    /// bar too: ABSORB, spec fork 1, chosen over an
+    /// `NSGlassEffectContainerView` after `Diagnostics/pane-glass-stacking`
+    /// measured the two indistinguishable (1-2 units in every band) and the
+    /// hand-stacked violation as a +19..21/255 seam over dark content. The
+    /// corner mask moved to the plane with the glass
+    /// (`TerminalPaneController.updateGlassPlaneMasks`). Under glass this view
+    /// draws content only; under flat it draws its own fill, byte-identical to
+    /// before the plane existed.
     var resolvedChrome: ResolvedChrome = .flat {
         didSet {
             guard resolvedChrome != oldValue else { return }
-            applyResolvedChrome()
+            invalidate()
         }
     }
 
@@ -191,10 +178,6 @@ final class PaneStatusBarView: NSView {
         didSet {
             guard bottomCorners != oldValue else { return }
             invalidate()
-            // The glass backing has no `draw(_:)` of its own for `cornerPath` to
-            // clip the way the drawn fill does, so its mask has to be rebuilt by
-            // hand whenever the corners it should match move.
-            updateGlassMask()
         }
     }
 
@@ -204,15 +187,6 @@ final class PaneStatusBarView: NSView {
     /// frame. Its own view because the fade is on `opacity`, and animating a
     /// value that `draw(_:)` paints would mean redrawing the text for 160 ms.
     private let barFrame = PaneStatusContentView(frame: .zero)
-
-    /// The glass material under everything else, or nil under flat.
-    ///
-    /// Created and torn down by ``applyResolvedChrome()``, not merely hidden:
-    /// see ``resolvedChrome``'s own doc comment for why flat has to mean no view
-    /// exists rather than an invisible one. Always the first subview when it
-    /// exists, below ``attentionWash``, so the glass reads as the surface the
-    /// bar's own drawing sits on rather than as a layer painted over the text.
-    private var glassBacking: PaneStatusGlassBacking?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -318,10 +292,6 @@ final class PaneStatusBarView: NSView {
             child.frame = bounds
             child.needsDisplay = true
         }
-        if let glassBacking {
-            glassBacking.frame = bounds
-            updateGlassMask()
-        }
     }
 
     override func viewDidChangeBackingProperties() {
@@ -344,8 +314,8 @@ final class PaneStatusBarView: NSView {
         // `updateGlassTint()` was called here until 2026-08-09, to keep a stale
         // tint from surviving a theme or focus change. Nothing can write one
         // now: the only setter was `fillMaterial`, retired with
-        // `chrome.surfaces.footer`, and `glassBacking` is created with
-        // `tintColor` at its nil default and never assigned.
+        // `chrome.surfaces.footer`, and the glass view it wrote to went with
+        // ABSORB the same day. This bar owns no glass to tint.
     }
 
     // MARK: - Chrome material
@@ -354,15 +324,16 @@ final class PaneStatusBarView: NSView {
     /// unwrap ``resolvedChrome`` for every reader below rather than a `switch`
     /// repeated at each of them.
     ///
-    /// **Untinted glass (Task 2) is still what ships**: the footer's glass
-    /// backing draws no fill of its own and carries no tint, and `draw(_:)`
-    /// paints no material fill under glass.
+    /// **Untinted glass (Task 2) is still what ships**: the pane plane behind
+    /// this bar carries no tint, and `draw(_:)` paints no material fill under
+    /// glass.
     ///
     /// **Nothing reads the `MaterialSet`'s fields any more, only whether there
     /// is one.** One line did: `updateGlassTint()` resolved the retired
     /// `fillMaterial` against this set, and it went with the dial on
-    /// 2026-08-09. Every remaining read (`draw(_:)`'s) asks only whether this
-    /// is `nil`, i.e. whether chrome is flat or glass at all. That makes this a
+    /// 2026-08-09. Both remaining reads (`draw(_:)`'s and `drawBarFrame(in:)`'s)
+    /// ask only whether this is `nil`, i.e. whether chrome is flat or glass at
+    /// all. That makes this a
     /// `Bool` in all but type again, and it stays a resolved value because the
     /// switch is what carries the association and re-deriving it at the next
     /// site that needs a fill would be the duplication this property removed.
@@ -371,88 +342,6 @@ final class PaneStatusBarView: NSView {
         case .flat: nil
         case let .glass(set): set
         }
-    }
-
-    /// Creates or tears down ``glassBacking`` to match ``resolvedChrome``, and
-    /// repaints: `draw(_:)` reads ``materialSet`` too, to know whether to skip
-    /// its own fill (Task 2 — glass draws none).
-    ///
-    /// Verified against the installed SDK before this package's Task 4 built on
-    /// it (see the plan's Task 4 gate): `NSGlassEffectView.cornerRadius`,
-    /// `.tintColor`, `.style` and `.contentView` all compile against macOS 26,
-    /// unguarded, matching `project.yml`'s deployment target, so this is the
-    /// real glass view rather than the `NSVisualEffectView` fallback the plan
-    /// named for the case a member was missing.
-    ///
-    /// **Sibling-glass audit (Task 5).** This footer draws exactly one glass
-    /// view today — ``glassBacking`` — so an `NSGlassEffectContainerView` here
-    /// buys nothing: the HIG's ban is on *stacked* glass (glass sampling
-    /// glass), and a container with one child cannot violate it. The app's
-    /// other glass-wearing surfaces do not change that: each pane's footer
-    /// backing is confined to that pane's own bounds (panes tile with no
-    /// overlap), `SidebarHost.glassBacking` is sized to the sidebar column
-    /// only and never reaches into the pane area, and the palette's and the
-    /// popover's own backings live in their own separate `NSPanel`s, not as
-    /// subviews of this window at all. None of the four ever overlaps another.
-    /// The moment a second glass element joins *this* footer, both belong
-    /// inside one `NSGlassEffectContainerView`, per the plan.
-    private func applyResolvedChrome() {
-        switch resolvedChrome {
-        case .flat:
-            glassBacking?.removeFromSuperview()
-            glassBacking = nil
-        case .glass:
-            let backing: PaneStatusGlassBacking
-            if let existing = glassBacking {
-                backing = existing
-            } else {
-                backing = PaneStatusGlassBacking(frame: bounds)
-                backing.style = .regular
-                backing.wantsLayer = true
-                // Below everything: added first, ahead of `attentionWash`, so the
-                // bar's own drawing still lands on top of it.
-                addSubview(backing, positioned: .below, relativeTo: attentionWash)
-                glassBacking = backing
-            }
-            backing.cornerRadius = 0 // The mask carries the window's own squircle instead; see `updateGlassMask()`.
-        }
-        updateGlassMask()
-        invalidate()
-    }
-
-    // **`updateGlassTint()` stood here until 2026-08-09.** It resolved
-    // `fillMaterial` against the live `MaterialSet` and wrote the result
-    // onto `glassBacking`'s `tintColor`, which with the design panel silent
-    // was an unconditional `nil` — untinted glass, the answer Task 2 measured
-    // and shipped. It went with the dial that was its only non-nil source:
-    // ABSORB deletes the backing it wrote to, so the tint path dies ahead of
-    // the view rather than behind it.
-    //
-    // Untinted is unchanged and now unconditional by construction rather than
-    // by assignment: nothing in this file writes `tintColor`, so the backing
-    // carries the nil it is created with. The Ghostty #9973 lesson the old doc
-    // cited — that a stale tint must not survive a focus or theme change — is
-    // satisfied more strongly by there being no writer than it was by a
-    // rewrite on every ``invalidate()``.
-
-    /// Clips ``glassBacking`` to the same outline the drawn fill clips to in
-    /// `draw(_:)`, so the glass does not square off a corner the window itself
-    /// rounds.
-    ///
-    /// `NSGlassEffectView.cornerRadius` draws a uniform radius on every corner,
-    /// which is the wrong shape twice over for this bar: it would round corners
-    /// the window does not cut as well as the ones it does, and a circular arc
-    /// beside the window's own squircle reads as a visible mismatch the way
-    /// `WindowCorner`'s own doc comment measures for the drawn frame. A
-    /// `CAShapeLayer` mask built from the identical `WindowCorner.path` is what
-    /// keeps the glass and the drawn fill agreeing about the shape.
-    private func updateGlassMask() {
-        guard let glassBacking, let layer = glassBacking.layer else { return }
-        guard bounds.width > 0, bounds.height > 0 else { return }
-        let mask = (layer.mask as? CAShapeLayer) ?? CAShapeLayer()
-        mask.frame = bounds
-        mask.path = WindowCorner.cgPath(in: bounds, corners: bottomCorners)
-        layer.mask = mask
     }
 
     // MARK: - State
@@ -633,12 +522,12 @@ final class PaneStatusBarView: NSView {
         NSGraphicsContext.saveGraphicsState()
         cornerPath(in: bounds).addClip()
         // Flat draws its own opaque fill, unchanged from what Plan 1 shipped.
-        // Glass draws no fill at all (Task 2): `draw(_:)` is this view's base
-        // layer, which every subview (including `glassBacking`) renders above,
-        // so any fill here — opaque or translucent — would sit under the glass
-        // and hide it. Leaving this layer transparent under glass is what lets the
-        // glass view's own blur and vibrancy read with nothing painted between
-        // it and the terminal beneath.
+        // Glass draws no fill at all (Task 2). Since ABSORB the glass is the
+        // pane-wide plane *behind* this view rather than a subview of it, which
+        // makes the skip matter more, not less: a fill here — opaque or
+        // translucent — is painted directly over the plane and is the last thing
+        // between it and the eye. Leaving the layer transparent under glass is
+        // what lets the plane's blur and vibrancy reach the footer strip at all.
         if materialSet == nil {
             nsColor(theme.barBackground).setFill()
             bounds.fill()
