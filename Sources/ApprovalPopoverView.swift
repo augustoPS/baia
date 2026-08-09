@@ -169,7 +169,7 @@ final class ApprovalPopoverView: NSView {
 
     /// **Untinted glass (Task 2) is still what ships.** `backing.tintColor` used
     /// to carry `set.fillMenu`; the tint is nil now, the same untinted `regular`
-    /// glass ``PaneStatusBarView``'s own copy resolves to.
+    /// glass the pane's own plane (`PaneGlassPlaneView`) ships with.
     ///
     /// ``fillMaterial`` can put it back and only the debug design panel can set
     /// it, which is why the `.glass` case below still does not bind its `set`:

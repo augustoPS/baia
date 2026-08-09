@@ -431,7 +431,7 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
     ///
     /// **Untinted glass (Task 2) is still what ships.** `backing.tintColor` used
     /// to carry `set.fillMenu`; it is left nil now, the same untinted `regular`
-    /// glass ``PaneStatusBarView``'s own copy resolves to. The three bands above
+    /// glass the pane's own plane (`PaneGlassPlaneView`) ships with. The three bands above
     /// (``PaletteQueryView``, ``PaletteListView``, ``PaletteHintsView``) used to
     /// draw `fillMenu` a second time as their own fill; Task 2 removed that too,
     /// so nothing downstream of this method paints `fillMenu` any more — see
