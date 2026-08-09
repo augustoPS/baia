@@ -454,10 +454,16 @@ let paneFrame = NSRect(
 // (blur on, opacity 0.42, no accessibility overrides) resolve to
 // `parityBlurRadius`. If the derivation or the constant moves, this probe
 // grades against the moved value.
+// `paneGlassActive: false` because the number being asked for is the flat
+// radius: this probe exists to compare the compositor blur against a glass
+// plane, and its own measurement is what later taught `windowBlurRadius` to
+// return 0 under a plane. Passing `true` here would ask the derivation for the
+// answer the probe is meant to justify.
 let appRadius = windowBlurRadius(
     backgroundBlur: true,
     backgroundOpacity: 0.42,
-    appearance: ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
+    appearance: ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false),
+    paneGlassActive: false
 )
 guard appRadius > 0 else {
     FileHandle.standardError.write(

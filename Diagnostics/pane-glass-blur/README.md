@@ -13,9 +13,11 @@ baia's background blur is **window-wide**: `CGSSetWindowBackgroundBlurRadius`
 (the same CGS SPI ghostty, iTerm2 and Alacritty use, declared here exactly as
 `Sources/WorkspaceWindowController.swift` declares it) frosts whatever the
 compositor has behind the window, at `PaneChrome.parityBlurRadius` — resolved
-at run time through `windowBlurRadius(backgroundBlur:backgroundOpacity:appearance:)`
-against the shipped defaults (blur on, opacity 0.42), which is **20** on this
-run. In-window glass then samples that already-frosted composite.
+at run time through
+`windowBlurRadius(backgroundBlur:backgroundOpacity:appearance:paneGlassActive:)`
+against the shipped defaults (blur on, opacity 0.42, `paneGlassActive: false`),
+which is **20** on this run. In-window glass then samples that already-frosted
+composite.
 
 The pane-as-glass plan ships with the compositor blur **off** so the glass does
 all the lensing. This probe measures what an `NSGlassEffectView` plane over

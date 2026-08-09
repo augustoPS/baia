@@ -278,12 +278,28 @@ public func windowIsDark(paneTheme: PaneTheme) -> Bool {
 /// single fact they are rather than a rule restated in a second place that can
 /// drift from the first.
 ///
+/// `paneGlassActive` is a fourth gate above all of those, and the only one that
+/// answers `0` while every other input says yes: pane-as-glass constraint 3.
+/// With a real glass plane behind every pane, glass does all the lensing, and
+/// the compositor blur under it is a window-server pass per frame for nothing.
+/// Measured rather than assumed, in `Diagnostics/pane-glass-blur`: the blur
+/// under a plane is invisible (mean +0.3/255 against the same scene with it
+/// off), and the plane is the stronger low-pass of the two (1.5% fine-detail
+/// retention against the compositor's 3.7%).
+///
 /// ``parityBlurRadius`` is the value, and its own doc comment carries why 20.
 public func windowBlurRadius(
     backgroundBlur: Bool,
     backgroundOpacity: Double,
-    appearance: ChromeAppearance
+    appearance: ChromeAppearance,
+    paneGlassActive: Bool
 ) -> Int {
+    // Pane-as-glass constraint 3: with a real glass plane behind every pane,
+    // glass does all lensing. Diagnostics/pane-glass-blur measured the
+    // compositor blur under a plane as invisible (mean +0.3/255) and the
+    // plane as the stronger low-pass (1.5% vs 3.7% fine-detail retention),
+    // so leaving it on buys a window-server pass per frame for nothing.
+    guard !paneGlassActive else { return 0 }
     guard backgroundBlur else { return 0 }
     guard windowIsTransparent(backgroundOpacity: backgroundOpacity, appearance: appearance) else {
         return 0
@@ -301,8 +317,8 @@ public func windowBlurRadius(
 /// as "true, equivalent to the default blur intensity of 20", the man page in
 /// `Ghostty.app/Contents/Resources/man` says the same, and the string is
 /// compiled into the shipped binary. `false` is `0` there too, which is what
-/// ``windowBlurRadius(backgroundBlur:backgroundOpacity:appearance:)`` returns
-/// for every one of its off cases.
+/// ``windowBlurRadius(backgroundBlur:backgroundOpacity:appearance:paneGlassActive:)``
+/// returns for every one of its off cases.
 ///
 /// A named constant rather than a literal at the call site because parity is
 /// the entire justification for the number: 20 is not a value baia tuned, and

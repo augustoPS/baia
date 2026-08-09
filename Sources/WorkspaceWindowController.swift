@@ -196,7 +196,7 @@ final class WorkspaceWindowController: NSObject {
     /// config produces with `background-blur = true` and the one baia's sidebar
     /// glass already gets for its own column. Both halves are needed: blur
     /// behind an opaque window is invisible, which is why
-    /// ``PaneChrome/windowBlurRadius(backgroundBlur:backgroundOpacity:appearance:)``
+    /// ``PaneChrome/windowBlurRadius(backgroundBlur:backgroundOpacity:appearance:paneGlassActive:)``
     /// gates this on the transparency rule rather than on the setting alone,
     /// and it carries the whole decision including where the number 20 comes
     /// from.

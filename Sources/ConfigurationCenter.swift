@@ -354,18 +354,29 @@ final class ConfigurationCenter {
     /// window right now, or `0` for no blur.
     ///
     /// The third of these one-line derivations and the same shape as the two
-    /// above: `PaneChrome.windowBlurRadius(backgroundBlur:backgroundOpacity:appearance:)`
-    /// holds the rule and the tests, and this passes it the three live inputs.
+    /// above: `PaneChrome.windowBlurRadius(backgroundBlur:backgroundOpacity:appearance:paneGlassActive:)`
+    /// holds the rule and the tests, and this passes it the four live inputs.
     /// It reads `backgroundBlur` *and* `backgroundOpacity` (both off
     /// ``effectiveSettings``, like its two neighbours) because blur is gated on
     /// the window being transparent at all — see that function's own doc
     /// comment — which is also how Reduce Transparency reaches it without this
     /// line mentioning the flag.
+    ///
+    /// The fourth input is the live ``resolvedChrome``, read here rather than
+    /// stored: glass panes turn the compositor blur off entirely, because the
+    /// plane behind them already does the lensing. That means a *mixed* window
+    /// — panes spawned under glass still running after a live flip to flat, or
+    /// the reverse — briefly gets a radius matching the setting rather than
+    /// each pane, since one window has one backdrop and the panes in it do not.
+    /// It costs nothing visible: `Diagnostics/pane-glass-blur` measured the
+    /// blur under a plane as invisible either way, so the transient is a
+    /// compositor pass appearing or disappearing where nobody can see it.
     var windowBlurRadius: Int {
         PaneChrome.windowBlurRadius(
             backgroundBlur: effectiveSettings.backgroundBlur,
             backgroundOpacity: effectiveSettings.backgroundOpacity,
-            appearance: appearanceObserver.appearance
+            appearance: appearanceObserver.appearance,
+            paneGlassActive: { if case .glass = resolvedChrome { true } else { false } }()
         )
     }
 
@@ -403,10 +414,24 @@ final class ConfigurationCenter {
     /// ``terminalConfiguration`` a given pane is handed, frozen at that pane's
     /// spawn; see that property's own doc comment for why a pane already
     /// running must never be moved from one to the other.
+    ///
+    /// `background-opacity` is appended for the same reason and on the same
+    /// last-value-wins rule as the padding line above, and it goes to `0`: under
+    /// glass the well belongs to the plane and the wash, so the pane's own Metal
+    /// layer must stop painting a second one over them. That doubled well is the
+    /// difference between what `Diagnostics/pane-glass-legibility` measured and
+    /// what would otherwise ship. The settings key keeps its value and its other
+    /// readers — ``windowIsTransparent`` and the wash both still resolve off
+    /// `effectiveSettings.backgroundOpacity`; this zeroes the *surface*, not the
+    /// setting. The per-pane freeze through `isSpawnedUnderGlass` is unchanged:
+    /// a pane still gets this configuration or ``terminalConfiguration`` once,
+    /// at spawn, and is never moved between them.
     var glassCompensatedTerminalConfiguration: TerminalConfiguration {
-        terminalConfiguration.windowPaddingY(
-            Int((effectiveSettings.windowPadding + PaneStatusBarMetrics.glassWindowPaddingBump).rounded())
-        )
+        terminalConfiguration
+            .windowPaddingY(
+                Int((effectiveSettings.windowPadding + PaneStatusBarMetrics.glassWindowPaddingBump).rounded())
+            )
+            .backgroundOpacity(0)
     }
 
     /// The configuration and theme `settings` would produce, without applying them.

@@ -205,7 +205,8 @@ import Testing
             windowBlurRadius(
                 backgroundBlur: composed.backgroundBlur,
                 backgroundOpacity: composed.backgroundOpacity,
-                appearance: reduced
+                appearance: reduced,
+                paneGlassActive: false
             ) == 0
         )
 
@@ -330,8 +331,12 @@ import Testing
     @Test func blurAppliesTheParityRadiusWhenTheSettingAndTheWindowBothAllowIt() {
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
         #expect(
-            windowBlurRadius(backgroundBlur: true, backgroundOpacity: 0.42, appearance: appearance)
-                == parityBlurRadius
+            windowBlurRadius(
+                backgroundBlur: true,
+                backgroundOpacity: 0.42,
+                appearance: appearance,
+                paneGlassActive: false
+            ) == parityBlurRadius
         )
     }
 
@@ -348,7 +353,12 @@ import Testing
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
         #expect(windowIsTransparent(backgroundOpacity: 0.42, appearance: appearance))
         #expect(
-            windowBlurRadius(backgroundBlur: false, backgroundOpacity: 0.42, appearance: appearance) == 0
+            windowBlurRadius(
+                backgroundBlur: false,
+                backgroundOpacity: 0.42,
+                appearance: appearance,
+                paneGlassActive: false
+            ) == 0
         )
     }
 
@@ -357,7 +367,14 @@ import Testing
         // compositor pass with no visible effect — the same reason
         // `windowIsTransparent` leaves that case alone.
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
-        #expect(windowBlurRadius(backgroundBlur: true, backgroundOpacity: 1, appearance: appearance) == 0)
+        #expect(
+            windowBlurRadius(
+                backgroundBlur: true,
+                backgroundOpacity: 1,
+                appearance: appearance,
+                paneGlassActive: false
+            ) == 0
+        )
     }
 
     @Test func reduceTransparencyForcesNoBlurThroughTheTransparencyGate() {
@@ -367,7 +384,14 @@ import Testing
         // accessibility answers are visible at once.
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: true, reduceMotion: false)
         #expect(!windowIsTransparent(backgroundOpacity: 0.42, appearance: appearance))
-        #expect(windowBlurRadius(backgroundBlur: true, backgroundOpacity: 0.42, appearance: appearance) == 0)
+        #expect(
+            windowBlurRadius(
+                backgroundBlur: true,
+                backgroundOpacity: 0.42,
+                appearance: appearance,
+                paneGlassActive: false
+            ) == 0
+        )
     }
 
     @Test func allThreeAccessibilityGatesAgreeUnderReduceTransparency() {
@@ -379,7 +403,14 @@ import Testing
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: true, reduceMotion: false)
         #expect(resolvedStyle(setting: .glass, materialIsDark: true, appearance: appearance) == .flat)
         #expect(!windowIsTransparent(backgroundOpacity: 0.42, appearance: appearance))
-        #expect(windowBlurRadius(backgroundBlur: true, backgroundOpacity: 0.42, appearance: appearance) == 0)
+        #expect(
+            windowBlurRadius(
+                backgroundBlur: true,
+                backgroundOpacity: 0.42,
+                appearance: appearance,
+                paneGlassActive: false
+            ) == 0
+        )
     }
 
     @Test func blurIgnoresTheChromeStyleTheSameWayTransparencyDoes() {
@@ -389,8 +420,48 @@ import Testing
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
         #expect(resolvedStyle(setting: .flat, materialIsDark: true, appearance: appearance) == .flat)
         #expect(
-            windowBlurRadius(backgroundBlur: true, backgroundOpacity: 0.42, appearance: appearance)
-                == parityBlurRadius
+            windowBlurRadius(
+                backgroundBlur: true,
+                backgroundOpacity: 0.42,
+                appearance: appearance,
+                paneGlassActive: false
+            ) == parityBlurRadius
+        )
+    }
+
+    @Test func glassPanesTurnTheCompositorBlurOff() {
+        // Pane-as-glass constraint 3. Every other gate here says yes — the
+        // setting is on, the window is transparent, no accessibility flag is
+        // overruling anything — and the radius is still `0`, because a glass
+        // plane behind every pane is already the stronger low-pass and the
+        // compositor pass under it buys nothing. `Diagnostics/pane-glass-blur`
+        // measured both halves of that: the blur under a plane is invisible
+        // (mean +0.3/255) and the plane retains 1.5% of fine detail against the
+        // compositor's 3.7%.
+        let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
+        #expect(
+            windowBlurRadius(
+                backgroundBlur: true,
+                backgroundOpacity: 0.42,
+                appearance: appearance,
+                paneGlassActive: true
+            ) == 0
+        )
+    }
+
+    @Test func flatKeepsTheParityBlur() {
+        // The other side of the same gate, and the reason it is a parameter
+        // rather than a removal: with no plane in the way there is nothing else
+        // lensing the desktop, so flat keeps the ghostty-parity radius it has
+        // always had.
+        let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
+        #expect(
+            windowBlurRadius(
+                backgroundBlur: true,
+                backgroundOpacity: 0.42,
+                appearance: appearance,
+                paneGlassActive: false
+            ) == parityBlurRadius
         )
     }
 
