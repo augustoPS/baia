@@ -123,4 +123,15 @@ import Testing
         #expect(advance(.acknowledged) == 27)
         #expect(advance(.done) == 13)          // bare glyph 7 + gap 6
     }
+
+    /// The glass padding compensation is a live grid's worth of SIGWINCH if it
+    /// ever moves: +11 is what held a real PTY at 82x23 in the glass-backdrop
+    /// grid measurement, and +22 silently cost a row. The derivation
+    /// (`height / 2`, symmetric key) is the doc's claim; the value is the
+    /// measured one. Moving either is a reviewed diff against this failing,
+    /// not a drive-by.
+    @Test func theGlassPaddingBumpStaysTheMeasuredHalfBar() {
+        #expect(PaneStatusBarMetrics.glassWindowPaddingBump == PaneStatusBarMetrics.height / 2)
+        #expect(PaneStatusBarMetrics.glassWindowPaddingBump == 11)
+    }
 }

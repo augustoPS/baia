@@ -80,6 +80,19 @@ when the owner A/B'd naked native glass against the hand-drawn layer through
 `chrome.bareGlass` and ruled that the naked material wins. `chrome.bareGlass`
 retired in the same stroke, having answered the one question it was built to ask.
 
+**`chrome.paneWashFloor` and the pane plane inherit the same gap, written down
+here for the same reason.** The pane-as-glass work (2026-08-09) gave every
+glass pane a `PaneGlassPlaneView` with a `PaneGlassWashView` over it, both
+owned by `TerminalPaneController` and built against a live window, so neither
+renders standalone and neither gets an arm: `cacheDisplay` on the plane would
+capture no material contribution, and the wash's pixels only mean something
+composited over that material. What covers the knob instead: the arithmetic
+under it (`max(backgroundOpacity, floor)` and the 0.4712 AA bound) is pinned in
+`ChromeMaterialsTests`' `PaneWash` suite, the composited result is measured by
+`pane-glass-legibility`'s shipped-default arm through the screen route, and the
+look of a dialled floor is owed to the owner's eye through the panel, recorded
+as owed rather than claimed, exactly as `surface-fill`'s visual half is above.
+
 **The lift's duration has no arm here.** It reaches a `CABasicAnimation`, and a
 transition's length is not something a still rendering can hold. The wire is
 visible in `PaneLiftView.apply(animated:)` and Reduce Motion still wins over it.
