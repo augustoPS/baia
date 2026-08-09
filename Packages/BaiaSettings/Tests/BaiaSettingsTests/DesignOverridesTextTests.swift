@@ -118,19 +118,22 @@
             "chrome.surfaces.sidebar", "chrome.surfaces.palette",
             "chrome.surfaces.popover", "chrome.surfaces.titlebar",
 
-            // `chrome.sidebarWashFloor` and `chrome.bareGlass` sat beside this
+            // `chrome.sidebarWashFloor` and `chrome.bareGlass` sat beside these
             // until 2026-08-08. Both retired with the glass washes they dialled,
             // on the owner's ruling that naked native glass beats the
             // hand-drawn layer; see `DesignOverrides.Chrome`. The count below
             // dropped 32 -> 30 in the same stroke, which is what makes this list
             // and that number a matched pair rather than two places to edit.
-            "chrome.barLift",
+            //
+            // `chrome.paneWashFloor` is new on 2026-08-09 and took it 29 -> 30:
+            // a floor under the *pane* wash, not the sidebar's coming back.
+            "chrome.barLift", "chrome.paneWashFloor",
         ]
 
-        /// Twenty-nine, which is the count `DesignOverrides` carries: seven
-        /// settings shadows, nine lift, two rim, six inks, four surfaces, one
+        /// Thirty, which is the count `DesignOverrides` carries: seven
+        /// settings shadows, nine lift, two rim, six inks, four surfaces, two
         /// window.
-        static let expectedKeyCount = 29
+        static let expectedKeyCount = 30
 
         // MARK: - JSON shapes
 
@@ -237,10 +240,11 @@
         }
 
         @Test func aSparseValueSurvivesTheRoundTrip() {
-            // The realistic shape: two knobs dialled after an afternoon, twenty
-            // nine still nil. A parser that filled the absent fields with zeroes
-            // rather than leaving them nil would pin every un-dialled knob, which
-            // is precisely the failure `DesignOverrides`' own doc comment names.
+            // The realistic shape: two knobs dialled after an afternoon,
+            // twenty-eight still nil. A parser that filled the absent fields
+            // with zeroes rather than leaving them nil would pin every
+            // un-dialled knob, which is precisely the failure `DesignOverrides`'
+            // own doc comment names.
             var overrides = DesignOverrides()
             overrides.chrome.lift.ringAlpha = 0.31
             overrides.chrome.inks.sessionHeaderHex = "#ff8800"
@@ -457,11 +461,12 @@
             "chrome.surfaces.titlebar": "\"chrome\"",
 
             "chrome.barLift": "0.10",
+            "chrome.paneWashFloor": "0.9",
         ]
 
         // MARK: - Fixture
 
-        /// Every one of the twenty-nine knobs dialled to something, so a test can
+        /// Every one of the thirty knobs dialled to something, so a test can
         /// assert over the complete output.
         private func everythingDialled() -> DesignOverrides {
             var overrides = DesignOverrides()
@@ -499,6 +504,7 @@
             overrides.chrome.surfaces.titlebar = .chrome
 
             overrides.chrome.barLift = 0.10
+            overrides.chrome.paneWashFloor = 0.9
             return overrides
         }
     }

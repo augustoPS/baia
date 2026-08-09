@@ -144,6 +144,16 @@ public extension DesignOverrides {
         /// two things change.
         public var barLift: Double?
 
+        /// Stands in for `ChromeMaterials.PaneWash.floor`, today 0.5: the
+        /// legibility floor under the pane wash's opacity. The wash draws at
+        /// `max(backgroundOpacity, this)`, so the dial moves the floor, and
+        /// `backgroundOpacity` above it still wins.
+        ///
+        /// Appearance only: the wash is a repaint over the pane's glass plane
+        /// and reaches no ghostty key, which
+        /// `composedSettingsEmitNoGeometryChangeToGhostty` asserts.
+        public var paneWashFloor: Double?
+
         // **`sidebarWashFloor` and `bareGlass` were here, and both retired on
         // 2026-08-08. The inventory is thirty, not thirty-two.**
         //
@@ -176,9 +186,11 @@ public extension DesignOverrides {
         // tint — stops existing. A dial whose write target has been deleted is
         // not a dormant path waiting to be re-checked; it is a control wired to
         // nothing, and it retires ahead of the deletion rather than behind it so
-        // no commit ever ships the wired-to-nothing state. The inventory is
-        // twenty-nine. The other four surfaces keep theirs, and `SurfaceFill`
-        // with them.
+        // no commit ever ships the wired-to-nothing state. That took the
+        // inventory to twenty-nine, and `paneWashFloor` above put it back to
+        // thirty on the same day, from the other side of the same fork: the
+        // one glass plane the footer folds into is what the wash paints. The
+        // other four surfaces keep theirs, and `SurfaceFill` with them.
 
         public init() {}
     }

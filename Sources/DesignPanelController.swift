@@ -571,21 +571,27 @@
             )
         }
 
-        /// The one chrome extra that belongs to neither the lift, the rim, the
-        /// inks nor the materials: the footer bar's lift off the terminal
-        /// background.
+        /// The chrome extras that belong to neither the lift, the rim, the inks
+        /// nor the materials: the footer bar's lift off the terminal
+        /// background, and the floor under the pane wash's opacity.
         ///
-        /// It had a second row, "Sidebar wash floor", until 2026-08-08. That
-        /// floor sat under the sidebar's glass wash, and the wash retired on the
-        /// owner's naked-glass ruling, so the row went with the thing it dialled.
-        /// The group keeps its header for one row because "Window" is where the
-        /// bar lift belongs, not because two were expected.
+        /// It had a different second row, "Sidebar wash floor", until
+        /// 2026-08-08. That floor sat under the sidebar's glass wash, and the
+        /// wash retired on the owner's naked-glass ruling, so the row went with
+        /// the thing it dialled. The group stood at one row until
+        /// "Pane wash floor" joined it on 2026-08-09, which is a floor under
+        /// the *pane's* wash and not the sidebar's coming back.
         private func buildWindow(into stack: NSStackView) {
             stack.addArrangedSubview(makeHeader("Window"))
             addSlider(
                 to: stack, label: "Bar lift (moves backdrop AND its ink)", range: 0 ... 1, step: 0.01,
                 get: { $0.chrome.barLift }, set: { $0.chrome.barLift = $1 },
                 help: "One slider, two things: `barBackground` is the backdrop the repair chain grades footer text on, so lifting the bar moves the text with it. That is the effect working."
+            )
+            addSlider(
+                to: stack, label: "Pane wash floor", range: 0 ... 1, step: 0.01,
+                get: { $0.chrome.paneWashFloor }, set: { $0.chrome.paneWashFloor = $1 },
+                help: "The wash draws at max(backgroundOpacity, floor). 0.47 is the measured AA bound against the brightest glass on record; below it is a legibility probe, not a look."
             )
         }
 

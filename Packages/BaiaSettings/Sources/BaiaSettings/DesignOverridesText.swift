@@ -16,7 +16,7 @@
     ///
     /// This file is exactly that shape. It needs no `NSWindow` and no AppKit — it
     /// is a pure value-to-string map over ``DesignOverrides`` — while carrying
-    /// twenty-nine field paths and twenty-nine hand-written notes naming the
+    /// thirty field paths and thirty hand-written notes naming the
     /// constants they stand in for. Both halves drift silently: a renamed field
     /// would fail to compile, but a note that still says "today 0.22" after the
     /// constant moved would not, and neither would a field added to
@@ -75,7 +75,7 @@
     /// ## Only what is set
     ///
     /// A nil field is absent from the output rather than emitted as `null`,
-    /// because nil means "the committed value" and printing all twenty-nine would
+    /// because nil means "the committed value" and printing all thirty would
     /// list the knobs the owner never touched beside the two he did.
     public enum DesignOverridesText {
         /// `overrides` as commented JSON, or a single comment when nothing is
@@ -182,11 +182,14 @@
             var group: [String] = []
             append(&group, "chrome.barLift", chrome.barLift,
                    note: "PaneTheme.barLift, today 0.08; moves the backdrop AND the ink graded on it")
+            append(&group, "chrome.paneWashFloor", chrome.paneWashFloor,
+                   note: "floor under the pane wash; ChromeMaterials.PaneWash.floor, today 0.5")
             // `chrome.sidebarWashFloor` and `chrome.bareGlass` emitted here
             // until 2026-08-08. Both retired with the washes themselves; see
-            // `DesignOverrides.Chrome`, where the reason is recorded. This group
-            // is one key wide now, which is why it still reads as a group at
-            // all: `add(_:titled:into:)` prints no header over nothing.
+            // `DesignOverrides.Chrome`, where the reason is recorded. The group
+            // narrowed to one key then and is two wide again with
+            // `chrome.paneWashFloor`, which is a floor under a *pane* wash and
+            // not a revival of the sidebar's.
             add(group, titled: "window", into: &lines)
         }
 
@@ -354,6 +357,7 @@
             case "chrome.surfaces.titlebar": return rawValue(value, key, &overrides.chrome.surfaces.titlebar)
 
             case "chrome.barLift": return double(value, key, &overrides.chrome.barLift)
+            case "chrome.paneWashFloor": return double(value, key, &overrides.chrome.paneWashFloor)
 
             // `chrome.sidebarWashFloor` and `chrome.bareGlass` parsed here until
             // 2026-08-08, and `chrome.surfaces.footer` until 2026-08-09. All

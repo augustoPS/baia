@@ -192,6 +192,13 @@ import Testing
         overrides.backgroundBlur = false
         overrides.chromeStyle = .flat
         overrides.focusAccent = .bone
+        // `paneWashFloor` sits in this arm because it is the knob nearest to
+        // looking like geometry and is not: the wash is a repaint over the
+        // pane's glass plane, so a dialled floor must reach no ghostty key at
+        // all, least of all one that resizes a live PTY. Set beside
+        // `backgroundOpacity`, which the wash reads, so the pair that interact
+        // are both dialled when the four geometry keys are compared.
+        overrides.chrome.paneWashFloor = 0.9
 
         let before = settings.sessionOverrides
         let after = settings.applying(overrides).sessionOverrides
@@ -233,6 +240,7 @@ import Testing
         #expect(extras.inks.sectionHeaderMinimumRatio == nil)
         #expect(extras.inks.busyDotHex == nil)
         #expect(extras.barLift == nil)
+        #expect(extras.paneWashFloor == nil)
         #expect(extras.surfaces.sidebar == nil)
         #expect(extras.surfaces.palette == nil)
         #expect(extras.surfaces.popover == nil)
