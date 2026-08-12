@@ -47,3 +47,4 @@ upstream/libghostty-spm/
 # Python bytecode from the diagnostics probes
 __pycache__/
 *.pyc
+.superpowers/
