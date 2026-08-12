@@ -41,4 +41,42 @@ import Testing
         let gapX = changes.x + changes.width + PaneClusterMetrics.segmentGap / 2
         #expect(PaneClusterLayout.segment(at: gapX, in: placed) == nil)
     }
+
+    // MARK: - The spawn arrangement
+
+    // The full truth table, all four cells, because the answer freezes into a
+    // pane for its whole lifetime: a wrong cell here is a pane spawned with
+    // the wrong bottom edge, and nothing downstream may correct it without
+    // resizing a live grid.
+
+    @Test func aClusterOnlySpawnUnderFlatRunsClearToTheBottom() {
+        #expect(
+            PaneClusterMetrics.bottomArrangement(clusterOnly: true, underGlass: false)
+                == .fullHeightClear
+        )
+    }
+
+    @Test func aClusterOnlySpawnUnderGlassRunsClearToTheBottom() {
+        // Glass changes nothing once the footer is gone: the bump exists to
+        // clear a bar overlapping the surface's last points, and there is no
+        // bar to clear.
+        #expect(
+            PaneClusterMetrics.bottomArrangement(clusterOnly: true, underGlass: true)
+                == .fullHeightClear
+        )
+    }
+
+    @Test func aFooterSpawnUnderGlassRunsFullHeightWithTheBump() {
+        #expect(
+            PaneClusterMetrics.bottomArrangement(clusterOnly: false, underGlass: true)
+                == .fullHeightWithBump
+        )
+    }
+
+    @Test func aFooterSpawnUnderFlatInsetsAboveTheBar() {
+        #expect(
+            PaneClusterMetrics.bottomArrangement(clusterOnly: false, underGlass: false)
+                == .insetAboveBar
+        )
+    }
 }

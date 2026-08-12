@@ -509,7 +509,8 @@ final class TerminalPaneController: NSViewController {
     /// mode carries no extra view and nothing the compositor could touch.
     ///
     /// The footer goes the other way — hidden, never removed — and the
-    /// asymmetry is the SIGWINCH wall. Under a flat spawn `terminalView`'s
+    /// asymmetry is the SIGWINCH wall. Under a flat footer spawn
+    /// (`.insetAboveBar`) `terminalView`'s
     /// bottom is pinned to `statusBar.topAnchor`, so removing the bar (or
     /// collapsing its height) would resize the surface and signal whatever is
     /// running in the pane. A hidden view keeps its constraints and its
@@ -818,10 +819,32 @@ final class TerminalPaneController: NSViewController {
 
     /// Read-only outward face of ``spawnedUnderGlass``, for
     /// `ConfigurationCenter.apply(to:)` to decide whether this pane's
-    /// `TerminalConfiguration` needs the glass `window-padding-y` bump. See
+    /// `TerminalConfiguration` needs the glass `background-opacity` zeroing
+    /// (the padding bump keys off ``spawnedBottomArrangement`` instead, which
+    /// knows whether there is a footer for the bump to clear). See
     /// ``spawnedUnderGlass``'s own doc comment for why the answer is frozen
     /// rather than read fresh from ``resolvedChrome`` on every call.
     var isSpawnedUnderGlass: Bool { spawnedUnderGlass }
+
+    /// The ``PaneBottomArrangement`` this pane spawned with: the second
+    /// spawn-frozen fact, beside ``spawnedUnderGlass`` and frozen at the same
+    /// moment, from the pane's mode and chrome as
+    /// `ConfigurationCenter.apply(to:)` first resolved them. `lazy` for
+    /// ``spawnedUnderGlass``'s whole argument: every one of the three answers
+    /// names a bottom anchor and a padding, so moving a running pane between
+    /// them is the live grid resize (`SIGWINCH`) that property's doc comment
+    /// closes off. A mode flip after spawn changes the arrangement of the
+    /// next pane opened, never this one's.
+    private lazy var spawnedBottomArrangement: PaneBottomArrangement =
+        PaneClusterMetrics.bottomArrangement(
+            clusterOnly: clusterMode == .cluster,
+            underGlass: spawnedUnderGlass
+        )
+
+    /// Read-only outward face of ``spawnedBottomArrangement``, for
+    /// `ConfigurationCenter.apply(to:)` to pick which `TerminalConfiguration`
+    /// this pane is handed, on the same terms as ``isSpawnedUnderGlass``.
+    var bottomArrangementAtSpawn: PaneBottomArrangement { spawnedBottomArrangement }
 
     /// Re-resolves this pane's surface config, cursor accent included.
     ///
@@ -1130,8 +1153,9 @@ final class TerminalPaneController: NSViewController {
         barHeight.priority = .init(999)
 
         // Arrangement (B) from the glass-backdrop spike's verdict, read from
-        // ``spawnedUnderGlass`` — frozen at this pane's first chrome
-        // resolution — rather than live from ``resolvedChrome``.
+        // ``spawnedBottomArrangement`` — frozen at this pane's first chrome
+        // resolution — rather than live from ``resolvedChrome`` or
+        // ``clusterMode``.
         //
         // `resolvedChrome`'s own `didSet` deliberately does not touch this
         // constraint, and this is the only place the constraint is built at
@@ -1156,13 +1180,22 @@ final class TerminalPaneController: NSViewController {
         // to `view` after `terminalView` above, so it already sits on top in
         // z-order — no restacking needed for the overlap to render). The grid
         // keeps its inset through `window-padding-y` instead of through frame
-        // geometry: see `applyTerminalConfiguration()`, which raises it by
-        // `PaneStatusBarMetrics.glassWindowPaddingBump` whenever
-        // ``spawnedUnderGlass`` is true, so the two never disagree about which
-        // arrangement is in effect.
-        let terminalBottom = spawnedUnderGlass
-            ? terminalView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-            : terminalView.bottomAnchor.constraint(equalTo: statusBar.topAnchor)
+        // geometry: see `ConfigurationCenter.apply(to:)`, which raises it by
+        // `PaneStatusBarMetrics.glassWindowPaddingBump` exactly when the
+        // frozen arrangement is `.fullHeightWithBump`, so the two never
+        // disagree about which arrangement is in effect.
+        //
+        // Under a cluster-only spawn (`.fullHeightClear`): the surface runs
+        // to the view's bottom edge as under glass, but with no bump, because
+        // there is no bar below the surface to stop above and none floating
+        // over its last points to clear. Same anchor for flat and glass both;
+        // the hidden footer keeps its constraints (see `applyClusterMode()`)
+        // without holding the surface's bottom edge, and a later flip back to
+        // `.footer` or `.both` un-hides the bar over the running surface
+        // rather than resizing it, the next-pane discipline again.
+        let terminalBottom = spawnedBottomArrangement == .insetAboveBar
+            ? terminalView.bottomAnchor.constraint(equalTo: statusBar.topAnchor)
+            : terminalView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
 
         NSLayoutConstraint.activate([
             terminalView.topAnchor.constraint(equalTo: view.topAnchor),

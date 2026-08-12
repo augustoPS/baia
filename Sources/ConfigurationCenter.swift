@@ -410,10 +410,12 @@ final class ConfigurationCenter {
     /// a background override on top of a theme, so one more `window-padding-y`
     /// line after the settings-derived one simply wins.
     ///
-    /// `TerminalPaneController.isSpawnedUnderGlass` decides which of this or
-    /// ``terminalConfiguration`` a given pane is handed, frozen at that pane's
-    /// spawn; see that property's own doc comment for why a pane already
-    /// running must never be moved from one to the other.
+    /// `TerminalPaneController.bottomArrangementAtSpawn` decides which of
+    /// this, ``glassClearTerminalConfiguration`` or ``terminalConfiguration``
+    /// a given pane is handed, frozen at that pane's spawn; see
+    /// `spawnedUnderGlass`'s doc comment for why a pane already running must
+    /// never be moved between them. This one is `.fullHeightWithBump`'s:
+    /// glass, with the footer floating over the surface's last points.
     ///
     /// `background-opacity` is appended for the same reason and on the same
     /// last-value-wins rule as the padding line above, and it goes to `0`: under
@@ -432,6 +434,17 @@ final class ConfigurationCenter {
                 Int((effectiveSettings.windowPadding + PaneStatusBarMetrics.glassWindowPaddingBump).rounded())
             )
             .backgroundOpacity(0)
+    }
+
+    /// ``glassCompensatedTerminalConfiguration``'s `background-opacity`
+    /// zeroing without its padding bump, for a glass pane spawned with no
+    /// footer (`.fullHeightClear` under glass). The well still belongs to the
+    /// plane and the wash, so the surface must not paint a second one over
+    /// them, but no bar floats over the surface's last points, so there is
+    /// nothing for a `window-padding-y` bump to clear and the settings-derived
+    /// padding stands. Frozen per pane on the same terms as the other two.
+    var glassClearTerminalConfiguration: TerminalConfiguration {
+        terminalConfiguration.backgroundOpacity(0)
     }
 
     /// The configuration and theme `settings` would produce, without applying them.
@@ -568,10 +581,13 @@ final class ConfigurationCenter {
         // The mode's nil resolves here — nil is `.footer`, today's rendering
         // — so the pane holds a total value, and in Release, where
         // `chromeOverrides` is always empty, it can hold nothing else. All
-        // three are appearance-only: the capsule is an overlay pinned over
-        // the surface, and the footer hides rather than being removed, so no
-        // mode change touches the grid (the pane's `applyClusterMode()`
-        // carries the SIGWINCH argument).
+        // three are appearance-only on a running pane: the capsule is an
+        // overlay pinned over the surface, and the footer hides rather than
+        // being removed, so no live mode change touches the grid (the pane's
+        // `applyClusterMode()` carries the SIGWINCH argument). At spawn the
+        // mode does one more thing: it feeds the pane's frozen
+        // `bottomArrangementAtSpawn`, read below to pick the configuration,
+        // which is why this assignment stays ahead of that read.
         pane.clusterMode = chromeOverrides.cluster.mode ?? .footer
         pane.clusterCornerInset = chromeOverrides.cluster.cornerInset
         pane.clusterOpacity = chromeOverrides.cluster.opacity
@@ -585,21 +601,35 @@ final class ConfigurationCenter {
         // scrollback and whatever was running in the pane.
         //
         // **Which configuration, not just whether one applies.** Reading
-        // `pane.isSpawnedUnderGlass` here rather than branching on the live
-        // `resolvedChrome` just assigned above is deliberate: that property is
-        // frozen at this pane's first configuration (see its own doc comment),
-        // so a pane spawned under flat keeps taking `terminalConfiguration`
-        // even after a live toggle moves `resolvedChrome` to glass, and a pane
-        // spawned under glass keeps its `+glassWindowPaddingBump` even after a
-        // toggle moves back to flat. Either direction, changing which
-        // configuration an already-running pane receives would move its
-        // `window-padding-y` on a live surface, which is a live grid resize —
-        // the SIGWINCH hazard arrangement (B) was built to avoid, not to
-        // relocate to a settings reload.
-        pane.applyTerminalConfiguration(
-            pane.isSpawnedUnderGlass ? glassCompensatedTerminalConfiguration : terminalConfiguration,
-            theme: terminalTheme
-        )
+        // `pane.bottomArrangementAtSpawn` here rather than branching on the
+        // live `resolvedChrome` and `clusterMode` just assigned above is
+        // deliberate: that property is frozen at this pane's first
+        // configuration (see `spawnedUnderGlass`'s doc comment), so a pane
+        // spawned under flat keeps taking `terminalConfiguration` even after
+        // a live toggle moves `resolvedChrome` to glass, and a pane spawned
+        // under glass keeps its `+glassWindowPaddingBump` even after a toggle
+        // moves back to flat. Either direction, changing which configuration
+        // an already-running pane receives would move its `window-padding-y`
+        // on a live surface, which is a live grid resize — the SIGWINCH
+        // hazard arrangement (B) was built to avoid, not to relocate to a
+        // settings reload.
+        //
+        // The cluster case rides the same freeze: a pane spawned at
+        // `.cluster` has no footer, so it takes the bump-free arrangement
+        // (`.fullHeightClear`), still zeroed under glass because the plane
+        // and the wash own the well whatever the mode. A mode flip after
+        // spawn changes the arrangement of the next pane opened, never the
+        // padding of one already running. This is also the first read of the
+        // frozen pair, and it runs at registration — after `clusterMode` and
+        // `resolvedChrome` are assigned above, before the view loads — which
+        // is what "at spawn" means concretely.
+        let spawnConfiguration: TerminalConfiguration = switch pane.bottomArrangementAtSpawn {
+        case .insetAboveBar: terminalConfiguration
+        case .fullHeightWithBump: glassCompensatedTerminalConfiguration
+        case .fullHeightClear:
+            pane.isSpawnedUnderGlass ? glassClearTerminalConfiguration : terminalConfiguration
+        }
+        pane.applyTerminalConfiguration(spawnConfiguration, theme: terminalTheme)
     }
 
     // MARK: - Watching
