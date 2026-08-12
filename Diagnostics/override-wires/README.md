@@ -97,11 +97,14 @@ as owed rather than claimed, exactly as `surface-fill`'s visual half is above.
 transition's length is not something a still rendering can hold. The wire is
 visible in `PaneLiftView.apply(animated:)` and Reduce Motion still wins over it.
 
-**The three ink ratios and the two ink hexes are not here**, deliberately: they
-are decidable without a view and are asserted in `PaneThemeAdjustmentsTests` in
-the `PaneChrome` package, field by field and across a dark and a light theme. A
-probe arm restating a package test would be a second copy free to drift from the
-first.
+**The ink ratio and the ink hex are not here**, deliberately: they are decidable
+without a view and are asserted in `PaneThemeAdjustmentsTests` in the
+`PaneChrome` package, field by field and across a dark and a light theme. A probe
+arm restating a package test would be a second copy free to drift from the first.
+There were three ratios and two hexes until 2026-08-12, when the rulings that
+removed the sidebar's session header and its "New session" row took the
+derivations those dialled; the sentence is worth keeping in this shape because
+what makes them absent is where they are decidable, not how many there are.
 
 **A sidebar-ink arm was written and then removed, and the reason is worth
 recording.** The intended arm would have rendered the sidebar's two ink-bearing
@@ -114,22 +117,27 @@ the sidebar's shared row metrics, which lived in `ChangesSurface.swift` and woul
 have dragged most of the sidebar hierarchy onto this probe's compile line. That
 was a bigger dependency than the arm was worth.
 
-**Both halves of that pricing moved on 2026-08-12, and the verdict did not.**
-The morning's ruling removed the CHANGES section and the constants moved to
-`Sources/SidebarRowMetrics.swift`, a leaf importing only `AppKit` and
-`PaneChrome`, which made the arm cheap to compile. The afternoon's ruling removed
-`SidebarSessionHeaderView` itself, so the arm now has one row to render rather
-than two, `SidebarActionRowView`, and the session-header ink derivation and its
-two dials retired with the view. The arm is still unwritten, because what it
-would assert is what `PaneThemeAdjustmentsTests` already pins below. Recorded so
-the next reader weighing this arm prices it from the tree as it stands.
+**That pricing moved three times on 2026-08-12 and the arm ended with no
+subject.** The morning's ruling removed the CHANGES section and the constants
+moved to `Sources/SidebarRowMetrics.swift`, a leaf importing only `AppKit` and
+`PaneChrome`, which made the arm cheap to compile. The afternoon's first ruling
+removed `SidebarSessionHeaderView`, leaving one row to render rather than two.
+The second removed `SidebarActionRowView`, the "New session" row being a second
+face for the `New Tab` menu item, and its ink derivation and two dials retired
+with it. Both ink-bearing rows this arm was about are now gone, so it is
+unwritable rather than merely unwritten: the sidebar's one surviving graded ink
+is `SurfaceTitleView`'s caps label, which *does* branch on `resolvedChrome` by
+design, so an arm asserting an ink does not move between flat and glass would now
+assert the opposite of the shipped rendering. Recorded because "cheap to compile
+now" was the last note here, and a later reader acting on it would write a red
+arm against correct code.
 
 What caught the defect instead, and what would catch it again, is
 `PaneThemeAdjustmentsTests.theRepairIsNotANoOpOnTheBrightGlassStandIn`: it pins
 that the repair is *not* the identity on `#4b4b4b`, so the "these derivations are
 the identity" claim is stated with the backdrop it depends on. The residual gap
-is the two views' choice of backdrop, which is asserted in prose at both sites
-and by a reviewer's eye, not by a test.
+is the surviving view's choice of backdrop, which is asserted in prose at
+`SurfaceTitleView.measuredBrightGlass` and by a reviewer's eye, not by a test.
 
 ## Related
 

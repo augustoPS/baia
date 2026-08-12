@@ -11,7 +11,9 @@ import PaneChrome
 /// the same window). The section's rendering went with it; these did not,
 /// because they were never the changes list's own: the file tree, the session
 /// header and the action row each read them, and the point of a shared row
-/// metric is that a row is a row wherever it is drawn. Leaving them behind a
+/// metric is that a row is a row wherever it is drawn. Two of those three
+/// readers went the same day, on the two rulings that followed, and the tree
+/// and its heading carry every constant here unchanged. Leaving them behind a
 /// type named for a retired section would have made every call site read as a
 /// dependency on something that no longer exists.
 ///
@@ -44,10 +46,13 @@ enum SidebarRowMetrics {
     /// a point apart, which does not read as a difference, it reads as a mistake.
     static let textOrigin = rowBaseline - Double(font.ascender)
 
-    /// One inset for the tree, the heading above it and the action row below.
-    /// The tree used to use 10, so it sat 2 pt out from everything else. Design
-    /// v3 §8/03. The session header was the fourth reader until the 2026-08-12
-    /// ruling removed it.
+    /// One inset for the tree and the heading above it. The tree used to use 10,
+    /// so it sat 2 pt out from everything else. Design v3 §8/03. The session
+    /// header and the action row were the third and fourth readers until the
+    /// 2026-08-12 rulings removed both rows; the constant is still shared rather
+    /// than folded into the tree, because the heading is a second reader and
+    /// because what it says is where the column's text starts, which is a fact
+    /// about the column and not about a row.
     static let inset: Double = 12
 
     /// Design v5 §5's row radius, shared with both palette rows.

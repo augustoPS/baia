@@ -421,37 +421,36 @@ public extension DesignOverrides.Chrome {
     /// 484 themes in the catalog, which is the exact mistake
     /// `PaneTheme.sectionHeaderInk(on:)`'s own comment records having made once.
     ///
-    /// Each ratio nevertheless has a hex beside it, for free dialling: the panel
-    /// exists to find out what looks right before anyone can say why, and a hex
-    /// answers "what if it were simply this colour" in one step. The hex bypasses
-    /// the repair chain entirely, so a value set here can be illegible, on the
-    /// owner's own theme and certainly on someone else's. It is a probe and not a
-    /// candidate setting: what ships from an afternoon of dialling is a ratio.
+    /// **Each ratio had a hex beside it until 2026-08-12, and none does now.**
+    /// The hex was there for free dialling: the panel exists to find out what
+    /// looks right before anyone can say why, and a hex answers "what if it were
+    /// simply this colour" in one step, bypassing the repair chain entirely and
+    /// so able to go illegible on the owner's own theme and certainly on someone
+    /// else's. It was a probe and not a candidate setting, what ships from an
+    /// afternoon of dialling being a ratio. Both pairings went with the two
+    /// sidebar rows the owner's rulings removed that day, and what is left is
+    /// one bare ratio and one bare hex that never had a ratio: the pairing comes
+    /// back the day a repaired ink needs probing again, and this paragraph is
+    /// how it would be spelled.
     struct Inks: Sendable, Equatable {
-        // `sessionHeaderMinimumRatio` and `sessionHeaderHex` stood here until
-        // 2026-08-12, dialling the sidebar's session-header row. The owner's
-        // ruling that day removed that row, the capsule being the one home for
-        // repo facts, and both keys now fall through to the parser's `default`
-        // and are rejected by name. See the note beside the retired knobs in
-        // `DesignOverridesText`.
-
-        /// The minimum contrast ratio the sidebar's action-row ink targets.
-        /// Today `PaneTheme.minimumTextContrast`, 4.5, WCAG AA for body text.
-        public var actionRowMinimumRatio: Double?
-
-        /// An explicit `#RRGGBB` for the action-row ink, bypassing the repair
-        /// chain. Wins over ``actionRowMinimumRatio`` when both are set, since a
-        /// named colour has no ratio left to satisfy.
-        public var actionRowHex: String?
+        // Four keys stood here until 2026-08-12, in two pairs, and both pairs
+        // dialled a sidebar row the owner removed that day:
+        // `sessionHeaderMinimumRatio` and `sessionHeaderHex` the session header,
+        // the capsule being the one home for repo facts, and
+        // `actionRowMinimumRatio` and `actionRowHex` the "New session" row, a
+        // second face for the `New Tab` menu item. All four now fall through to
+        // the parser's `default` and are rejected by name. See the note beside
+        // the retired knobs in `DesignOverridesText`.
 
         /// The minimum contrast ratio `PaneTheme.sectionHeaderInk(on:)` targets,
         /// today 4.5.
         ///
-        /// Separate from the sidebar ink above even though both sit at 4.5
-        /// today. The section header is the one already graded against a
-        /// *bright glass* backdrop rather than against the bar, so it is the one
-        /// whose repair actually fires, and folding it in with the other would
-        /// hide which of the two a dial moved.
+        /// **The last ink ratio, and the one whose repair actually fires.** It
+        /// was kept separate from the action row's own until 2026-08-12 even
+        /// though both read 4.5, because the section header is graded against a
+        /// *bright glass* backdrop rather than against the bar; folding the two
+        /// together would have hidden which of them a dial moved. The ruling
+        /// that removed the other row settled the question by subtraction.
         public var sectionHeaderMinimumRatio: Double?
 
         /// An explicit `#RRGGBB` for the working-agent dot, today `PaneTheme.ok`.

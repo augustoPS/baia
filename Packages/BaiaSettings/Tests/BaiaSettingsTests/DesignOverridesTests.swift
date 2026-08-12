@@ -233,8 +233,8 @@ import Testing
         #expect(extras.lift.duration == nil)
         #expect(extras.rim.enabled == nil)
         #expect(extras.rim.topAlpha == nil)
-        #expect(extras.inks.actionRowMinimumRatio == nil)
-        #expect(extras.inks.actionRowHex == nil)
+        // `actionRowMinimumRatio` and `actionRowHex` were asserted here until
+        // the 2026-08-12 ruling removed the "New session" row they dialled.
         #expect(extras.inks.sectionHeaderMinimumRatio == nil)
         #expect(extras.inks.busyDotHex == nil)
         #expect(extras.barLift == nil)

@@ -40,8 +40,9 @@ import Testing
     @Test func noneCarriesNothing() {
         let none = PaneThemeAdjustments.none
         #expect(none.barLift == nil)
-        #expect(none.actionRowMinimumRatio == nil)
-        #expect(none.actionRowInk == nil)
+        // `actionRowMinimumRatio` and `actionRowInk` were asserted here until
+        // the 2026-08-12 ruling removed the "New session" row they dialled, the
+        // session header's own pair having gone the same way that morning.
         #expect(none.sectionHeaderMinimumRatio == nil)
         #expect(none.busyDotInk == nil)
     }
@@ -65,17 +66,15 @@ import Testing
             #expect(adjusted.busyDot == base.ok)
             #expect(adjusted.sectionHeaderInk(on: base.barBackground)
                 == base.sectionHeaderInk(on: base.barBackground))
-            #expect(adjusted.actionRowInk(on: base.barBackground)
-                == base.actionRowInk(on: base.barBackground))
         }
     }
 
-    /// Both inks are `inkFaint` on a backdrop that already clears, which is
-    /// what makes flat byte-identical: the repair is a no-op there and this is
-    /// the arm that says so, rather than the prose alone. A third, the session
-    /// header's, was asserted here until the 2026-08-12 ruling removed its row.
+    /// The ink is `inkFaint` on a backdrop that already clears, which is what
+    /// makes flat byte-identical: the repair is a no-op there and this is the
+    /// arm that says so, rather than the prose alone. Two others were asserted
+    /// beside it until 2026-08-12, the session header's and the action row's,
+    /// each retiring with the row the owner's rulings removed that day.
     @Test func theUnadjustedInksAreTheFaintTierOnABarThatAlreadyClears() {
-        #expect(theme.actionRowInk(on: theme.barBackground) == theme.inkFaint)
         #expect(theme.sectionHeaderInk(on: theme.barBackground) == theme.inkFaint)
     }
 
@@ -91,11 +90,21 @@ import Testing
     /// `resolvedChrome` to pass the glass stand-in would have moved a pixel with
     /// every override nil.
     ///
-    /// That branch was written, and this arm is why it was reverted: the
-    /// sidebar's action row passes `barBackground` on both paths (see
-    /// `SidebarActionRowView.labelInk`), and only `SurfaceTitleView`'s caps
-    /// label — which was always graded there — keeps the glass branch. The
-    /// session header was the second such row until 2026-08-12.
+    /// That branch was written and reverted, and this arm is why. It was tried
+    /// on the sidebar's action row, which passed `barBackground` on both paths;
+    /// grading it here instead walked its keycap glyph from `#898989` to
+    /// `#dcdcdc` on every glass launch with every override nil, which is the
+    /// rendering change a nil-moves-nothing wire may not make. Only
+    /// `SurfaceTitleView`'s caps label — which was *always* graded here, so
+    /// routing it through a derivation was identity — keeps the glass branch.
+    ///
+    /// **Both counterexamples are gone and the arm is not.** The session header
+    /// was the second such row until 2026-08-12 and the action row the last, the
+    /// owner's rulings that day removing both. What is measured here is a
+    /// property of the repair chain against a backdrop, not of any row: the next
+    /// site tempted to grade a faint ink against sampled glass is told the price
+    /// before it draws, and the sole surviving reader's "glass only" claim still
+    /// needs a backdrop on which the repair demonstrably fires.
     ///
     /// The numbers are asserted rather than described, so a change to `inkFaint`
     /// or to the repair chain that made the two backdrops agree would fail here
@@ -104,13 +113,9 @@ import Testing
         let brightGlass = RGB.eightBit(0x4B, 0x4B, 0x4B)
         #expect(theme.inkFaint.contrastRatio(against: brightGlass) < PaneTheme.minimumTextContrast)
 
-        for repaired in [
-            theme.actionRowInk(on: brightGlass),
-            theme.sectionHeaderInk(on: brightGlass),
-        ] {
-            #expect(repaired != theme.inkFaint)
-            #expect(repaired.contrastRatio(against: brightGlass) >= PaneTheme.minimumTextContrast)
-        }
+        let repaired = theme.sectionHeaderInk(on: brightGlass)
+        #expect(repaired != theme.inkFaint)
+        #expect(repaired.contrastRatio(against: brightGlass) >= PaneTheme.minimumTextContrast)
     }
 
     /// The unadjusted busy dot is the constant the drawing site used to name
@@ -195,47 +200,26 @@ import Testing
             .contrastRatio(against: brightGlass) < PaneTheme.minimumTextContrast)
     }
 
-    /// **The arm that narrowed `bareGlass`'s ink suppression to one site, and it
-    /// failed first as a three-ink version of itself.**
-    ///
-    /// The knob's first spelling pinned every ink ratio to ``bareGlassRatio``,
-    /// on the reading that the repair chain is a glass-era addition and a no-op
-    /// under flat. That reading is true on ``PaneTheme/darkPastel`` and **false
-    /// on a light theme**: here `inkFaint` scores under the 4.5 floor against
-    /// ``PaneTheme/barBackground`` itself, so the shipped chain repairs the
-    /// sidebar's own row *on the flat path*.
-    ///
-    /// That row passes `barBackground` on both paths (see
-    /// `SidebarActionRowView.labelInk`, which records that its glass branch was
-    /// tried and reverted), so a ratio pinned for it is a pin that reaches flat
-    /// — a rendering change on every light theme, under a knob whose whole
-    /// contract is that it touches glass only. Only `SurfaceTitleView`'s caps
-    /// label is graded against the glass stand-in, so it was the only ink
-    /// `bareGlass` suppressed. The session header was the second row under this
-    /// arm until the 2026-08-12 ruling removed it.
-    ///
-    /// Kept as an arm rather than a note, and kept after the knob itself retired
-    /// on 2026-08-08: "a ratio pinned here reaches flat" is a standing property
-    /// of this type, and this is the theme that disproved the easy version of
-    /// it. The caps label's repair survived that retirement unconditional on
-    /// glass, so the narrowing this arm forced is still the shipped shape.
-    @Test func theSidebarRowsRepairFiresOnTheBarItselfOnALightTheme() {
-        #expect(paper.inkFaint.contrastRatio(against: paper.barBackground)
-            < PaneTheme.minimumTextContrast)
-        #expect(paper.actionRowInk(on: paper.barBackground) != paper.inkFaint)
+    // `theSidebarRowsRepairFiresOnTheBarItselfOnALightTheme` stood here until
+    // 2026-08-12. It was the arm that narrowed `bareGlass`'s ink suppression to
+    // one site, by measuring on `paper` that `inkFaint` fails the 4.5 floor
+    // against `barBackground` itself, so a ratio pinned for a row graded there
+    // reaches the *flat* path. It asserted that on the action row's ink, the
+    // owner's ruling that day removed the row, and the derivation retired with
+    // it, so the arm had no site left to pin.
+    //
+    // Nothing it established is unmeasured. The arm below makes the same claim
+    // one layer down and on the same light theme, against
+    // `sectionHeaderMinimumRatio`, which is the ratio that still exists: a pin
+    // is invisible on the dark bar and a flat-path rendering change on the light
+    // one. That was always the load-bearing half, this one having been the step
+    // that got there.
 
-        // Which is why pinning its ratio would move a flat-path pixel.
-        var pinned = paper
-        pinned.adjustments.actionRowMinimumRatio = Self.bareGlassRatio
-        #expect(pinned.actionRowInk(on: paper.barBackground)
-            != paper.actionRowInk(on: paper.barBackground))
-    }
-
-    /// **Why the ink suppression is not spelled as a pinned ratio at all, and
-    /// this arm is the second failure that said so.**
+    /// **Why the ink suppression is not spelled as a pinned ratio at all.**
     ///
-    /// After ``theSidebarRowsRepairFiresOnTheBarItselfOnALightTheme`` narrowed
-    /// the suppression to the caps label alone, the remaining spelling was to pin
+    /// The suppression was narrowed to the caps label alone by an arm on the
+    /// sidebar's action row, retired above with the row it measured. The
+    /// remaining spelling was to pin
     /// ``PaneThemeAdjustments/sectionHeaderMinimumRatio`` to ``bareGlassRatio``.
     /// That fails here for the same reason one layer down: on the light theme the
     /// caps label's repair fires against ``PaneTheme/barBackground`` too, so a
@@ -325,66 +309,43 @@ import Testing
         #expect(dialled.contrastRatio(against: backdrop) >= 12)
     }
 
-    /// The same, on the sidebar's own ink, and on both a dark and a light theme:
-    /// the chain picks its direction off the backdrop's luminance, so a ratio
-    /// that only worked downhill would pass a dark-only arm. The session
-    /// header's ratio was the other half of this until 2026-08-12.
+    /// The same claim on a light theme as well as a dark one: the chain picks
+    /// its direction off the backdrop's luminance, so a ratio that only worked
+    /// downhill would pass a dark-only arm.
+    ///
+    /// Asserted on the section header's ratio, which is the only one left. It
+    /// ran on the action row's until 2026-08-12 and the session header's until
+    /// that morning, both retiring with the rows the owner's rulings removed;
+    /// what they demonstrated was the chain's direction, which is a property of
+    /// the chain rather than of the ink handed to it.
     @Test func raisingASidebarRatioBrightensTheSidebarInk() {
         for base in [theme, paper] {
             let backdrop = base.barBackground
 
-            var action = base
-            action.adjustments.actionRowMinimumRatio = 11
-            #expect(action.actionRowInk(on: backdrop).contrastRatio(against: backdrop)
-                > base.actionRowInk(on: backdrop).contrastRatio(against: backdrop))
+            var raised = base
+            raised.adjustments.sectionHeaderMinimumRatio = 11
+            #expect(raised.sectionHeaderInk(on: backdrop).contrastRatio(against: backdrop)
+                > base.sectionHeaderInk(on: backdrop).contrastRatio(against: backdrop))
         }
     }
 
-    /// Each ratio reaches exactly one ink. Separate fields that moved together
-    /// would be one field with two names, and the reason `DesignOverrides` keeps
-    /// them apart is so the owner can tell which of them a dial moved. A third
-    /// ratio, the session header's, was pinned here until the 2026-08-12 ruling
-    /// removed the row it reached.
-    @Test func eachRatioMovesOnlyItsOwnInk() {
-        let backdrop = theme.barBackground
+    // `eachRatioMovesOnlyItsOwnInk` stood here until 2026-08-12. It pinned that
+    // a ratio reaches exactly one ink, separate fields that moved together being
+    // one field with two names, and it needed two ratios to say so. The owner's
+    // rulings that day removed the session header and the action row, and with
+    // their derivations went every ratio but the section header's: an arm about
+    // one dial not disturbing another has nothing left to disturb. It comes back
+    // the day a second ink ratio does, and `DesignOverrides.Chrome.Inks` still
+    // records why they would be spelled apart.
 
-        var action = theme
-        action.adjustments.actionRowMinimumRatio = 11
-        #expect(action.actionRowInk(on: backdrop) != theme.actionRowInk(on: backdrop))
-        #expect(action.sectionHeaderInk(on: backdrop) == theme.sectionHeaderInk(on: backdrop))
-
-        var section = theme
-        section.adjustments.sectionHeaderMinimumRatio = 11
-        #expect(section.sectionHeaderInk(on: backdrop) != theme.sectionHeaderInk(on: backdrop))
-        #expect(section.actionRowInk(on: backdrop) == theme.actionRowInk(on: backdrop))
-    }
-
-    /// A hex bypasses the chain outright: it comes back as itself, on a backdrop
-    /// it fails badly against. That is the documented hazard of the probe and
-    /// this arm pins it, so nobody later "fixes" the hex into a candidate the
-    /// chain then repairs away.
-    @Test func aHexIsReturnedUnrepairedEvenWhereItIsIllegible() {
-        let backdrop = theme.barBackground
-        let illegible = RGB.eightBit(0x16, 0x16, 0x16)
-        #expect(illegible.contrastRatio(against: backdrop) < PaneTheme.minimumTextContrast)
-
-        var action = theme
-        action.adjustments.actionRowInk = illegible
-        #expect(action.actionRowInk(on: backdrop) == illegible)
-    }
-
-    /// A hex beside a ratio: the colour wins, because a named colour has no
-    /// ratio left to satisfy. `DesignOverrides.Chrome.Inks` states that
-    /// precedence and this is where it is enforced.
-    @Test func aHexWinsOverTheRatioBesideIt() {
-        let backdrop = theme.barBackground
-        let named = RGB.eightBit(0xFF, 0x00, 0x99)
-
-        var action = theme
-        action.adjustments.actionRowInk = named
-        action.adjustments.actionRowMinimumRatio = 21
-        #expect(action.actionRowInk(on: backdrop) == named)
-    }
+    // `aHexIsReturnedUnrepairedEvenWhereItIsIllegible` and
+    // `aHexWinsOverTheRatioBesideIt` stood here too, and retired the same day
+    // for the same reason. Both were about the repair chain being bypassed by a
+    // named colour, and both ran on `actionRowInk`, the last hex that sat beside
+    // a ratio. `busyDotInk` is not a substitute: it is a plain `??` over `ok`
+    // with no chain to bypass and no ratio to win over, which is exactly what
+    // `PaneThemeAdjustments` says about it, and asserting the hazard there would
+    // be asserting it where it cannot occur.
 
     /// The dot's colour is replaceable and nothing else about it is. Geometry is
     /// deliberately absent from the whole override layer (the SIGWINCH wall), so

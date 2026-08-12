@@ -241,17 +241,34 @@ final class SurfaceTitleView: NSView {
     /// desktop brighter than anything that finding saw composites brighter than
     /// the top row. The probe's finding 6b measured exactly that and it is why
     /// this constant is recorded as owed rather than sufficient.
-    /// **Still one reader, and the sidebar's other ink deliberately does not
-    /// join it.** The action row's keycap glyph sits in this same column over
-    /// this same glass, so grading it here looks obvious; it was tried and
-    /// reverted. On `.darkPastel` the repair fires on this backdrop — `inkFaint`
-    /// scores 2.49:1 against `#4b4b4b` — and walks that ink from `#898989` to
-    /// `#dcdcdc`, which would have moved a pixel on every glass launch with
-    /// every design override nil. The caps label is different because it was
-    /// *always* graded here, so nothing about it moved. See
-    /// ``SidebarActionRowView/labelInk`` for the open question that leaves
-    /// behind. The session header's own faint strings were the third case here
-    /// until the owner's 2026-08-12 ruling removed that row.
+    /// **One reader, and now the only one, which does not make the argument for
+    /// the narrowness moot.** Two other faint-tier inks sat in this column over
+    /// this same glass and deliberately did not join it: the session header's
+    /// strings and the action row's keycap glyph. Both went on the owner's
+    /// 2026-08-12 rulings, the header as a fourth copy of what the window title,
+    /// the prompt and the capsule already say and the row as a second face for
+    /// the `New Tab` menu item, and the reasoning they carried lands here
+    /// because this is the site it was ever about.
+    ///
+    /// Grading a second sidebar ink here looks obvious and was tried and
+    /// reverted. On `.darkPastel` the repair *fires* on this backdrop —
+    /// `inkFaint` scores 2.49:1 against `#4b4b4b` — and walks an ink from
+    /// `#898989` to `#dcdcdc`. For the action row that would have moved a pixel
+    /// on every glass launch with every design override nil, which is the one
+    /// thing a nil-moves-nothing wire may not do. The caps label is different
+    /// because it was *always* graded here, so routing it through a derivation
+    /// was identity and nothing about it moved.
+    ///
+    /// **The open question outlives both rows and is recorded here because
+    /// nothing else now records it.** Whether a faint sidebar ink *should* be
+    /// graded against sampled glass rather than against `barBackground` was
+    /// never answered: the glass-backdrop spike's finding 6 measured the caps
+    /// label alone, and the two rows that raised the question were removed
+    /// rather than resolved. So the honest state is that this backdrop is
+    /// measured for one ink and assumed for none, and the next sidebar element
+    /// drawn in the faint tier over this glass inherits the question rather than
+    /// a precedent. `PaneThemeAdjustmentsTests.theRepairIsNotANoOpOnTheBrightGlassStandIn`
+    /// is what keeps the price of answering it wrong measured.
     private static let measuredBrightGlass = RGB.eightBit(0x4B, 0x4B, 0x4B)
 
     /// The caps label's ink: ``PaneChrome/PaneTheme/inkFaint`` graded against
@@ -278,8 +295,9 @@ final class SurfaceTitleView: NSView {
     /// it clears, on this backdrop, whatever the theme is.
     ///
     /// This reaches only the two caps-row draws below. Every other `inkFaint`
-    /// reader in the sidebar (the action row's keycap, the file tree's
-    /// disclosure chevron, both empty-state messages) is untouched,
+    /// reader in the sidebar (the file tree's disclosure chevron, both
+    /// empty-state messages; the action row's keycap was the fourth until the
+    /// 2026-08-12 ruling removed that row) is untouched,
     /// and the file rows beside this header measured 6.99:1 and never needed
     /// repairing — which is why the fix is one header's ink rather than the
     /// column's.

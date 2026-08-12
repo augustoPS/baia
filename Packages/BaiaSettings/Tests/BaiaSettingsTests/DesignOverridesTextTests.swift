@@ -7,7 +7,7 @@
 
     /// What `DesignOverridesText` emits, pinned from the side that can drift.
     ///
-    /// The emitter carries thirty-three field paths and thirty-three
+    /// The emitter carries twenty-nine field paths and twenty-nine
     /// hand-written notes naming the constants they stand in for. A renamed field breaks the
     /// compile and needs no test; the two failures that compile cleanly are what
     /// these hold:
@@ -110,11 +110,13 @@
 
             "chrome.rim.enabled", "chrome.rim.topAlpha",
 
-            // `chrome.inks.sessionHeaderMinimumRatio` and
-            // `chrome.inks.sessionHeaderHex` led this line until 2026-08-12,
-            // retired with the sidebar's session header on the owner's ruling
-            // that the capsule is the one home for repo facts; 33 -> 31.
-            "chrome.inks.actionRowMinimumRatio", "chrome.inks.actionRowHex",
+            // Four keys led this line and left it on 2026-08-12, in two pairs
+            // and on two rulings. `chrome.inks.sessionHeaderMinimumRatio` and
+            // `chrome.inks.sessionHeaderHex` went with the sidebar's session
+            // header, the capsule being the one home for repo facts; 33 -> 31.
+            // `chrome.inks.actionRowMinimumRatio` and `chrome.inks.actionRowHex`
+            // went with the "New session" row, a second face for the `New Tab`
+            // menu item; 31 -> 29.
             "chrome.inks.sectionHeaderMinimumRatio", "chrome.inks.busyDotHex",
 
             // `chrome.surfaces.footer` led this line until 2026-08-09, retired
@@ -140,10 +142,10 @@
             "chrome.barLift", "chrome.paneWashFloor",
         ]
 
-        /// Thirty-one, which is the count `DesignOverrides` carries: seven
-        /// settings shadows, nine lift, two rim, four inks, four surfaces,
+        /// Twenty-nine, which is the count `DesignOverrides` carries: seven
+        /// settings shadows, nine lift, two rim, two inks, four surfaces,
         /// three cluster, two window.
-        static let expectedKeyCount = 31
+        static let expectedKeyCount = 29
 
         // MARK: - JSON shapes
 
@@ -152,7 +154,7 @@
 
             #expect(text.contains("\"backgroundBlur\": true,"))
             #expect(text.contains("\"chromeStyle\": \"glass\","))
-            #expect(text.contains("\"chrome.inks.actionRowHex\": \"#00aaff\","))
+            #expect(text.contains("\"chrome.inks.busyDotHex\": \"#00ff00\","))
             #expect(text.contains("\"chrome.surfaces.sidebar\": \"thick\","))
             #expect(text.contains("\"chrome.cluster.mode\": \"both\","))
         }
@@ -203,10 +205,18 @@
             // travels with the value.
             let text = DesignOverridesText.commentedJSON(everythingDialled())
 
-            // The hex/ratio distinction: different kinds of thing, one bypasses
-            // the repair chain and can go illegible, and it wins when both are set.
+            // That a ratio walks the repair chain rather than naming a colour
+            // outright. Carried by the action row's own ratio until 2026-08-12
+            // and by the section header's since: the owner's ruling that day
+            // removed the "New session" row, and the last pair of ink knobs that
+            // sat a hex beside a ratio went with it.
             #expect(text.contains("walks the repair chain"))
-            #expect(text.contains("bypasses the repair chain; wins over the ratio above"))
+            // "bypasses the repair chain; wins over the ratio above" was
+            // asserted here for that hex. The caveat retires with the pairing
+            // rather than moving: `busyDotHex` is the only hex left and it has
+            // no ratio to win over and no chain to bypass, which is what its own
+            // note says instead. A precedence rule stated where no precedence
+            // can arise is a caveat about nothing.
             // One slider, two things moved.
             #expect(text.contains("moves the backdrop AND the ink graded on it"))
             // "A floor, not a thinner" was asserted here for
@@ -252,13 +262,13 @@
 
         @Test func aSparseValueSurvivesTheRoundTrip() {
             // The realistic shape: two knobs dialled after an afternoon,
-            // twenty-nine still nil. A parser that filled the absent fields
+            // twenty-seven still nil. A parser that filled the absent fields
             // with zeroes rather than leaving them nil would pin every
             // un-dialled knob, which is precisely the failure `DesignOverrides`'
             // own doc comment names.
             var overrides = DesignOverrides()
             overrides.chrome.lift.ringAlpha = 0.31
-            overrides.chrome.inks.actionRowHex = "#00aaff"
+            overrides.chrome.inks.busyDotHex = "#00ff00"
             let text = DesignOverridesText.commentedJSON(overrides)
 
             #expect(DesignOverridesText.parse(text) == .success(overrides))
@@ -459,8 +469,6 @@
             "chrome.rim.enabled": "true",
             "chrome.rim.topAlpha": "0.42",
 
-            "chrome.inks.actionRowMinimumRatio": "4.5",
-            "chrome.inks.actionRowHex": "\"#00aaff\"",
             "chrome.inks.sectionHeaderMinimumRatio": "4.5",
             "chrome.inks.busyDotHex": "\"#00ff00\"",
 
@@ -479,7 +487,7 @@
 
         // MARK: - Fixture
 
-        /// Every one of the thirty-one knobs dialled to something, so a test
+        /// Every one of the twenty-nine knobs dialled to something, so a test
         /// can assert over the complete output.
         private func everythingDialled() -> DesignOverrides {
             var overrides = DesignOverrides()
@@ -504,8 +512,6 @@
             overrides.chrome.rim.enabled = true
             overrides.chrome.rim.topAlpha = 0.42
 
-            overrides.chrome.inks.actionRowMinimumRatio = 4.5
-            overrides.chrome.inks.actionRowHex = "#00aaff"
             overrides.chrome.inks.sectionHeaderMinimumRatio = 4.5
             overrides.chrome.inks.busyDotHex = "#00ff00"
 

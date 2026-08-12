@@ -508,8 +508,6 @@ final class ConfigurationCenter {
         let inks = chromeOverrides.inks
         var adjustments = PaneThemeAdjustments.none
         adjustments.barLift = chromeOverrides.barLift
-        adjustments.actionRowMinimumRatio = inks.actionRowMinimumRatio
-        adjustments.actionRowInk = inks.actionRowHex.flatMap(RGB.init(hex:))
         adjustments.sectionHeaderMinimumRatio = inks.sectionHeaderMinimumRatio
         adjustments.busyDotInk = inks.busyDotHex.flatMap(RGB.init(hex:))
         return adjustments

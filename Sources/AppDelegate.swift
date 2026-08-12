@@ -423,14 +423,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Which fill this column's glass is tinted with, nil with nothing
         // dialled. See ``SurfaceFill``.
         host.fillMaterial = configuration.chromeOverrides.surfaces.sidebar
-        // The action row's click is wired below to the same shape as
-        // `newTab(_:)` (`joining: controller.window`), so its keycap has to
-        // read the menu's own binding for `.newTab` rather than assume one:
-        // see ``SidebarActionRowView/keycap``. Falls back to the view's own
-        // default if the bar ever ships with no shortcut for it.
-        if let keycap = MenuBarLayout.shortcutText(of: .newTab) {
-            host.newSessionKeycap = keycap
-        }
+        // A `MenuBarLayout.shortcutText(of: .newTab)` lookup stood here until
+        // 2026-08-12, pushing the bar's own binding into the action row's
+        // keycap so the row could not advertise a key its click did not
+        // perform. The owner's ruling that day removed the row on exactly what
+        // that lookup was evidence of: a button that has to ask the menu what it
+        // is called is the menu's command wearing a second face. `.newTab` keeps
+        // its item and its `⌘T`.
         return host
     }
 
@@ -520,26 +519,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Coalesced by the same timer every other session change goes through, so a
         // drag writes the file once when it settles rather than on every frame.
         controller.sidebar.onGeometryChange = { [weak self] in self?.scheduleSave() }
-        // The sidebar's own "New session" row (design v5 §5). Same shape as
-        // ``newTab(_:)`` (opens where the focused pane already is, joins the
-        // clicked sidebar's own window rather than whichever window is
-        // `focused`), captured on `controller`/`tree` rather than read through
-        // `self.tree`/`self.focused`: a click in a background window's sidebar
-        // must open a tab on *that* window, not steal one from whichever window
-        // the app considers focused.
-        controller.sidebar.onNewSession = { [weak self, weak controller, weak tree] in
-            guard let self, let controller, let tree else { return }
-            let directory = tree.focusedPane?.anchorTracker.workingDirectory?
-                .path(percentEncoded: false) ?? Self.defaultWorkingDirectory
-            openWindow(
-                tree: PaneTreeController(
-                    workingDirectory: directory,
-                    configuration: configuration,
-                    channel: control
-                ),
-                joining: controller.window
-            )
-        }
+        // The sidebar's own "New session" row was wired here until 2026-08-12,
+        // to the same shape as ``newTab(_:)``: open where the focused pane
+        // already is, joining a window. The owner's ruling that day removed the
+        // row as a second face for the `New Tab` item it read its own keycap
+        // off, and ``newTab(_:)`` is the surviving path.
+        //
+        // The one thing the closure did that the menu item does not is worth
+        // recording rather than mourning: it captured `controller`/`tree` rather
+        // than reading `self.focused`, so a click in a *background* window's
+        // sidebar opened a tab on that window instead of on the focused one.
+        // With the row gone there is no click in a background window's chrome to
+        // route, ``newTab(_:)`` arriving from the menu or from `⌘T` and the
+        // focused window being the only window either can mean.
         windows.append(controller)
         controller.onClose = { [weak self, weak controller] in
             guard let self, let controller else { return }

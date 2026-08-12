@@ -645,31 +645,13 @@ public struct PaneTheme: Sendable, Equatable {
     // title, the prompt and the capsule already say, and a derivation with no
     // reader is a repair nothing runs.
 
-    /// The sidebar's action-row ink — the "New session" keycap glyph — on the
-    /// backdrop it is drawn on.
-    ///
-    /// Spelled the same way ``sectionHeaderInk(on:)`` is, and it answers the
-    /// same value today: ``inkFaint`` graded against the surface it lands on,
-    /// which under flat is ``barBackground`` and is a no-op there. It exists as
-    /// its own function rather than as a second caller of the section header's
-    /// so the panel can move one without moving the other — the sidebar's rows
-    /// and the heading above them sit on different backdrops, and only the
-    /// heading's contrast has been measured (the glass-backdrop spike's finding
-    /// 6 covered the caps label alone).
-    ///
-    /// ``PaneThemeAdjustments/actionRowInk`` bypasses the repair outright when
-    /// set, and wins over the ratio beside it, since a named colour has no ratio
-    /// left to satisfy. That path can return something illegible. It is a probe
-    /// for the owner's eye, not a candidate setting; see
-    /// ``PaneThemeAdjustments`` for the longer form.
-    public func actionRowInk(on backdrop: RGB) -> RGB {
-        if let named = adjustments.actionRowInk { return named }
-        return readable(
-            inkFaint,
-            on: backdrop,
-            minimumRatio: adjustments.actionRowMinimumRatio ?? Self.minimumTextContrast
-        )
-    }
+    // `actionRowInk(on:)` stood here until 2026-08-12, spelled exactly like the
+    // one below and read by the sidebar's "New session" keycap glyph alone. The
+    // owner's ruling that day removed that row as a second face for the `New
+    // Tab` menu item, and this is the second derivation in one day to retire for
+    // want of a reader: the session header's went the same way that afternoon,
+    // for the same reason and by the same rule, that a repair nothing runs is
+    // arithmetic pretending to be a policy.
 
     /// The colour to draw a segment of this emphasis in, on a given bar.
     ///

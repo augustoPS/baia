@@ -2,12 +2,16 @@ import AppKit
 
 /// One row of a cluster card, drawn rather than an `NSControl`.
 ///
-/// ``SidebarActionRowView`` is the row idiom this follows (hover and press as
-/// drawn washes, the click fired on mouse-up inside the row, a drag off it
-/// cancelling, a pointing hand over anything clickable) but not the class it
-/// reuses: that view is sidebar-coupled through `PaneTheme` fills, a
-/// `ResolvedChrome` gate and a hard-coded label, and a card row that fed those
-/// would be plumbing theme state this task deliberately leaves out. Cards
+/// The row idiom is hover and press as drawn washes, the click fired on
+/// mouse-up inside the row, a drag off it cancelling, and a pointing hand over
+/// anything clickable. `SidebarActionRowView` was where this file learned it and
+/// named it here until 2026-08-12, when the owner's ruling removed that row as a
+/// second face for the `New Tab` menu item; ``FileTreeRowsView`` is the idiom's
+/// surviving statement in the sidebar and this is its statement in a card. The
+/// class was never reused either way: that view was sidebar-coupled through
+/// `PaneTheme` fills, a `ResolvedChrome` gate and a hard-coded label, and a card
+/// row that fed those would be plumbing theme state this task deliberately
+/// leaves out. Cards
 /// follow the theme through window appearance alone, so every ink here is a
 /// system colour resolved against the panel's `NSAppearance` (which
 /// `ClusterCardController.isDark` sets from the theme's own derivation).
@@ -117,9 +121,9 @@ final class ClusterCardRowView: NSView {
         isPressed = true
     }
 
-    /// Held rather than fired on the way down, ``SidebarActionRowView``'s own
-    /// rule: a press is a state the eye can see and a drag off the row
-    /// cancels rather than acts.
+    /// Held rather than fired on the way down, the rule every drawn row in this
+    /// app follows and ``FileTreeRowsView`` states: a press is a state the eye
+    /// can see and a drag off the row cancels rather than acts.
     override func mouseDragged(with event: NSEvent) {
         guard onClick != nil else { return }
         isPressed = bounds.contains(convert(event.locationInWindow, from: nil))

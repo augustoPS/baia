@@ -37,28 +37,25 @@ public struct PaneThemeAdjustments: Sendable, Equatable {
     public var barLift: Double?
 
     // `sessionHeaderMinimumRatio` and `sessionHeaderInk` stood here until
-    // 2026-08-12. They dialled one view's two faint strings, and the owner's
-    // ruling that day removed that view: the sidebar's session header was a
-    // fourth copy of what the window title, the prompt and the capsule already
-    // say. A dial whose only site is gone is a knob that moves nothing.
-
-    /// Stands in for ``PaneTheme/minimumTextContrast`` where
-    /// ``PaneTheme/actionRowInk(on:)`` targets it, today 4.5.
-    public var actionRowMinimumRatio: Double?
-
-    /// An explicit colour for the sidebar's action-row ink, bypassing the repair
-    /// chain. Wins over ``actionRowMinimumRatio`` when both are set, since a
-    /// named colour has no ratio left to satisfy.
-    public var actionRowInk: RGB?
+    // 2026-08-12, and `actionRowMinimumRatio` and `actionRowInk` beside them
+    // until later the same day. Each pair dialled one sidebar row's faint ink,
+    // and the owner's rulings removed both rows: the session header was a fourth
+    // copy of what the window title, the prompt and the capsule already say, and
+    // the action row was a second face for the `New Tab` menu item. A dial whose
+    // only site is gone is a knob that moves nothing.
 
     /// Stands in for ``PaneTheme/minimumTextContrast`` where
     /// ``PaneTheme/sectionHeaderInk(on:)`` targets it, today 4.5.
     ///
-    /// Separate from the one above even though both sit at 4.5 today, because
-    /// the section header is the one already graded against a *bright glass*
-    /// backdrop rather than against the bar, so it is the one whose repair
-    /// actually fires. Folding them together would hide which of the two a dial
-    /// moved.
+    /// **The only ink ratio left, and the one that was always doing the work.**
+    /// It sat beside the action row's own until 2026-08-12 and was kept separate
+    /// from it even though both read 4.5, because the section header is graded
+    /// against a *bright glass* backdrop rather than against the bar, so it is
+    /// the one whose repair actually fires; folding them together would have
+    /// hidden which of the two a dial moved. The rulings that day settled that
+    /// distinction by removing the other side of it, and the argument is kept
+    /// because it is the reason this one is spelled per-site rather than as a
+    /// single ratio for every ink in the app.
     public var sectionHeaderMinimumRatio: Double?
 
     /// An explicit colour for the working-agent dot, standing in for

@@ -168,12 +168,14 @@ final class PaletteQueryView: NSView {
         handle.stroke()
     }
 
-    /// The same drawn keycap ``SidebarActionRowView`` and ``PaletteHintsView``
-    /// each draw their own copy of: outlined capsule corners, a centred glyph,
-    /// right edge at `trailing`. Not shared with either — the header's keycap
-    /// is 10pt like the hint row's but sits in a 40pt band with different
-    /// vertical centring, and a routine bent to fit three heights would be
-    /// harder to read than three short ones.
+    /// The same drawn keycap ``PaletteHintsView`` draws its own copy of:
+    /// outlined capsule corners, a centred glyph, right edge at `trailing`. Not
+    /// shared with it — the header's keycap is 10pt like the hint row's but sits
+    /// in a 40pt band with different vertical centring, and a routine bent to
+    /// fit both heights would be harder to read than two short ones. There were
+    /// three copies until 2026-08-12: the sidebar's action row drew a `⌘T` and
+    /// went with the row on the owner's ruling that day, which cost this
+    /// argument a case and did not change it.
     ///
     /// Answers the rect's leading edge, so the count text can be drawn flush
     /// against it rather than at a second hard-coded inset that could drift
@@ -624,8 +626,8 @@ final class PaletteHintsView: NSView {
     }
 
     /// Each hint's key drawn as its own outlined capsule, 10pt tertiary ink
-    /// (design v5 §6), the same construction ``SidebarActionRowView`` and the
-    /// header's `⌘K` each draw independently: a stroked rounded rect sized to
+    /// (design v5 §6), the same construction the header's `⌘K` draws
+    /// independently: a stroked rounded rect sized to
     /// its glyph rather than plain mono text, so `esc`/`⏎`/`⇧⏎` read as keys
     /// rather than as prose abbreviations.
     @discardableResult

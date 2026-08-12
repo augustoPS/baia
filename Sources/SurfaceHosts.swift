@@ -157,16 +157,15 @@ final class SidebarHost: NSViewController {
             // The same guard ``resolvedChrome`` below carries. Written
             // unconditionally by `AppDelegate.settingsDidChange()` on every
             // announcement, and this didSet fans out to every section, both
-            // headings, the header, the action row and the divider layer, so an
-            // unmoved theme was doing all of that for nothing once per
-            // settings-file save — and would do it once per control event under
-            // the design panel.
+            // headings and the divider layer, so an unmoved theme was doing all
+            // of that for nothing once per settings-file save — and would do it
+            // once per control event under the design panel. The header and the
+            // action row were the other two fan-out targets until 2026-08-12.
             guard theme != oldValue else { return }
             for section in sections {
                 section.surface.theme = theme
                 section.heading.theme = theme
             }
-            actionRow.theme = theme
             divider.layer?.backgroundColor = nsColor(theme.hairline).cgColor
         }
     }
@@ -177,25 +176,15 @@ final class SidebarHost: NSViewController {
     // that day made the capsule the one home for repo facts and removed it.
     // Nothing took its place: the FILES heading is the column's top row now.
 
-    /// The bottom action row (32pt, design v5 §5): "New session" and its
-    /// keycap. Fired on click; what a new session means is the caller's
-    /// business, the same split ``WorkspaceSurface/onSelect`` already keeps
-    /// between a row that knows it was clicked and an owner that knows what
-    /// clicking it does.
-    var onNewSession: (() -> Void)? {
-        get { actionRow.onNewSession }
-        set { actionRow.onNewSession = newValue }
-    }
-
-    /// The keycap the action row draws. See ``SidebarActionRowView/keycap``:
-    /// the caller sets this from `WorkspaceMenu.MenuBarLayout.shortcutText(of:)`
-    /// so the row can never advertise a key its click does not perform.
-    var newSessionKeycap: String {
-        get { actionRow.keycap }
-        set { actionRow.keycap = newValue }
-    }
-
-    private let actionRow = SidebarActionRowView()
+    // The bottom action row stood here too, until the same day. It drew "New
+    // session" and a `⌘T` keycap and its click called
+    // `openWindow(tree:joining:)` on the clicked window, which is what
+    // `AppDelegate.newTab(_:)` does under the `New Tab` item the keycap was
+    // reading its own caption off. A row that has to look up the menu's binding
+    // to caption itself is a second button for the menu's command, so the owner
+    // ruled it out and the sections took its 32 pt. `onNewSession` and
+    // `newSessionKeycap` were this host's two passthroughs to it and went with
+    // it; `AppDelegate` keeps `newTab(_:)`, which is the surviving path.
 
     /// The repository the column is describing.
     ///
@@ -278,7 +267,6 @@ final class SidebarHost: NSViewController {
             guard resolvedChrome != oldValue else { return }
             for section in sections { section.surface.resolvedChrome = resolvedChrome }
             for section in sections { section.heading.resolvedChrome = resolvedChrome }
-            actionRow.resolvedChrome = resolvedChrome
             applyResolvedChrome()
         }
     }
@@ -516,10 +504,6 @@ final class SidebarHost: NSViewController {
         widthDivider.wantsLayer = true
         view.addSubview(widthDivider)
 
-        actionRow.theme = theme
-        actionRow.resolvedChrome = resolvedChrome
-        view.addSubview(actionRow)
-
         install()
     }
 
@@ -685,8 +669,8 @@ final class SidebarHost: NSViewController {
         //
         // - `bounds` (full, band included): the column's glass, which is the
         //   whole reason for the split, and the band's glass above it.
-        // - `content` (band excluded): everything else. The action row, the
-        //   sections, both dividers and the pane tree all lay out inside it and
+        // - `content` (band excluded): everything else. The sections, both
+        //   dividers and the pane tree all lay out inside it and
         //   therefore sit exactly where they sat before the style-mask change.
         //   The column's *content* stays below the band even though its *glass*
         //   does not, which is the same line arm 5 draws and for the same reason:
@@ -767,42 +751,28 @@ final class SidebarHost: NSViewController {
         // themselves inside it.
         glassContainer?.frame = bounds
 
-        // The bottom action row is chrome around the sections rather than a
-        // section itself: fixed height, drawn even when the sidebar has nothing
-        // in it. Hidden with the column, the same rule the width divider
-        // follows, since a closed sidebar has no room for it.
-        //
-        // **The session header was the other half of this until 2026-08-12**,
-        // a 28 pt strip at the column's top with the sections starting below it.
-        // The owner's ruling removed it, and the space closes by subtraction:
-        // the column the sections are laid out in now starts at `content.maxY`
-        // and `layoutSections` puts the first heading at its top edge, so the
-        // FILES heading is the column's top row with nothing above it. That top
-        // edge is `content`'s rather than `bounds`'s since the merge, which is
-        // what keeps the heading out of the titlebar band.
-        // The action row sits at the column's bottom, which `content` and
-        // `bounds` share, so the rect it takes is only visibly a choice at the
-        // top. It takes `content` anyway, because "the column's chrome lays out
-        // in `content`" is the rule and a consumer exempted for sharing an edge
-        // is a consumer that breaks silently if the other edge ever moves.
-        let hasSidebar = sidebarWidth > 0
-        actionRow.isHidden = !hasSidebar
-        actionRow.frame = NSRect(
-            x: content.minX,
-            y: content.minY,
-            width: sidebarWidth,
-            height: Self.actionRowHeight
-        )
-
         // The sections, and this is where holding the band back is visible: the
         // first heading lands at `content.maxY`, which is the row it landed on
         // before the style-mask change, rather than up in the band beside the
         // window title.
+        //
+        // **The column is `content` and nothing else since 2026-08-12.** Two
+        // strips of chrome bracketed it that morning: a 28 pt session header at
+        // the top and a 32 pt action row at the bottom, with the sections taking
+        // what the two left between them. The owner's rulings removed both, and
+        // both closed by subtraction rather than by rebalancing a term.
+        // `layoutSections` already puts the first heading flush against the top
+        // of what it is given and gives the last section whatever is left at the
+        // bottom, so dropping the top offset put FILES at `content.maxY` and
+        // dropping the bottom one runs its tree to `content.minY`. That the top
+        // edge is `content`'s rather than `bounds`'s is the merge's doing and
+        // what keeps the heading out of the titlebar band; the bottom edge the
+        // two rects share, so the tree reaches the window's floor either way.
         layoutSections(in: NSRect(
             x: content.minX,
-            y: content.minY + (hasSidebar ? Self.actionRowHeight : 0),
+            y: content.minY,
             width: sidebarWidth,
-            height: max(0, content.height - (hasSidebar ? Self.actionRowHeight : 0))
+            height: content.height
         ))
 
         let gutter = sidebarWidth > 0 ? Self.dividerWidth : 0
@@ -939,11 +909,10 @@ final class SidebarHost: NSViewController {
     /// A hairline, the same one the tree draws between panes.
     private static let dividerWidth: Double = 1
 
-    /// Named locally rather than read off ``SidebarActionRowView/height`` at
-    /// every call site above, which is what every other geometry constant in
-    /// this file already does for its own view. `sessionHeaderHeight` stood
-    /// beside it until the 2026-08-12 ruling took the row it measured.
-    private static let actionRowHeight = SidebarActionRowView.height
+    // `sessionHeaderHeight` and `actionRowHeight` stood here until 2026-08-12,
+    // the two strips of chrome that bracketed the column. The owner's rulings
+    // that day removed both rows, and a height naming a view that is gone is a
+    // term the layout would carry forward without a subject.
 
     /// How little a stacked section may be dragged to.
     private static let minimumSectionHeight: Double = 48
