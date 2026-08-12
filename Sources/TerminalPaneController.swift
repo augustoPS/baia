@@ -1302,9 +1302,10 @@ final class TerminalPaneController: NSViewController {
 
     // MARK: - Cluster cards
 
-    /// Routes a capsule click to its card. Place and changes present; agent
-    /// and attention are Task 6's and do nothing yet, absent rather than
-    /// stubbed with an empty card.
+    /// Routes a capsule click to its card. Agent and attention share one
+    /// card: the two segments describe one thing, the agent in the pane and
+    /// how hard it is asking, and two cards would carve that sentence in
+    /// half.
     private func clusterSegmentClicked(
         _ role: PaneClusterSegmentRole, segmentRect: NSRect
     ) {
@@ -1331,7 +1332,7 @@ final class TerminalPaneController: NSViewController {
         switch role {
         case .place: presentPlaceCard(anchoredTo: anchor, in: window)
         case .changes: presentChangesCard(anchoredTo: anchor, in: window)
-        case .agent, .attention: break
+        case .agent, .attention: presentAttentionCard(role, anchoredTo: anchor, in: window)
         }
     }
 
@@ -1483,6 +1484,78 @@ final class TerminalPaneController: NSViewController {
                 }
             }
         }
+    }
+
+    /// Builds and presents the attention card from the same `PaneStatus` the
+    /// capsule's segments were built from, read back off the bar the way
+    /// `refreshStatus` wrote it. No agent-or-attention guard on purpose: the
+    /// two segments only exist while the status carries those facts
+    /// (`PaneClusterSegments.build`), so the route is unreachable without
+    /// them and the optionals below already make each row absent rather than
+    /// blank.
+    ///
+    /// The approval embeds from the same per-pane state the standalone
+    /// popover presents. There is no stored pending-approval object anywhere:
+    /// `AppDelegate.presentApprovalPopover` builds its popover at click time
+    /// from the pane's `attentionMessage` and answers through
+    /// `pane.send(ApprovalPopover.bytes(for:))`, so this card is a second
+    /// door into the same room — the gate is `ApprovalPopover.presents(for:)`
+    /// (the popover's own), the title is `onCapsuleClick`'s derivation, the
+    /// body is the same `body(for:)` fallback, and the answer is the same one
+    /// keystroke, written here directly because the pane already owns
+    /// `send(_:)`. The popover flow is untouched.
+    ///
+    /// - Parameter role: which of the two segments summoned the card, stored
+    ///   as the toggle's memory. Tracking the summoning segment rather than a
+    ///   single shared role keeps the toggle per segment: a second click on
+    ///   the same segment dismisses, a click on the sibling re-presents the
+    ///   card anchored there, the same swap any other segment pair gets.
+    private func presentAttentionCard(
+        _ role: PaneClusterSegmentRole, anchoredTo anchor: NSRect, in window: NSWindow
+    ) {
+        let status = statusBar.status
+        let agent = status?.agent
+        let attention = status?.attention ?? .none
+
+        var approval: ClusterAttentionCardView.Model.Approval?
+        if ApprovalPopover.presents(for: attention) {
+            // `agent · repo`, `onCapsuleClick`'s own title rule, unchanged,
+            // so the embedded approval and the standalone popover cannot
+            // title the same question two ways.
+            let anchorName = status?.anchorName ?? "baia"
+            let agentLabel = agent?.label
+            approval = .init(
+                title: agentLabel.map { "\($0) · \(anchorName)" } ?? anchorName,
+                message: ApprovalPopover.body(for: attentionMessage)
+            )
+        }
+
+        let card = ClusterAttentionCardView(
+            model: .init(
+                agentLabel: agent.flatMap { $0.label.isEmpty ? nil : $0.label },
+                state: agent.map { $0.isBusy ? "working" : "waiting" },
+                attention: PaneStatus.Attention.name(of: attention),
+                approval: approval
+            ),
+            theme: theme
+        )
+        card.onApprovalAction = { [weak self] action in
+            guard let self else { return }
+            // Dismiss before the bytes, `ApprovalPopoverController.commit`'s
+            // own ordering: key is back with the host window before the
+            // keystroke lands in the pane.
+            clusterCards.dismiss()
+            send(ApprovalPopover.bytes(for: action))
+        }
+        card.onClose = { [weak self] in self?.clusterCards.dismiss() }
+
+        clusterCards.show(content: card, anchoredTo: anchor, in: window) { [weak self] in
+            self?.clusterCardRole = nil
+        }
+        // After `show`, for `presentPlaceCard`'s reason: assigned first, the
+        // role would be consumed by the outgoing card's teardown inside
+        // `show` and the toggle would go blind.
+        clusterCardRole = role
     }
 
     /// Hands a card's command to the terminal and dismisses the card.
