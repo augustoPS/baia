@@ -639,35 +639,29 @@ public struct PaneTheme: Sendable, Equatable {
         )
     }
 
-    /// The sidebar's session-header ink — the repo name's neighbours, the branch
-    /// and the status word — on the backdrop it is drawn on.
+    // `sessionHeaderInk(on:)` stood here until 2026-08-12, spelled exactly like
+    // the two below and read by the sidebar's session header alone. The owner's
+    // ruling that day removed that row as a fourth copy of what the window
+    // title, the prompt and the capsule already say, and a derivation with no
+    // reader is a repair nothing runs.
+
+    /// The sidebar's action-row ink — the "New session" keycap glyph — on the
+    /// backdrop it is drawn on.
     ///
     /// Spelled the same way ``sectionHeaderInk(on:)`` is, and it answers the
     /// same value today: ``inkFaint`` graded against the surface it lands on,
     /// which under flat is ``barBackground`` and is a no-op there. It exists as
     /// its own function rather than as a second caller of the section header's
     /// so the panel can move one without moving the other — the sidebar's rows
-    /// and the heading above them sit on different backdrops and only the
-    /// header's contrast has been measured (the glass-backdrop spike's finding 6
-    /// covered the caps label alone).
+    /// and the heading above them sit on different backdrops, and only the
+    /// heading's contrast has been measured (the glass-backdrop spike's finding
+    /// 6 covered the caps label alone).
     ///
-    /// ``PaneThemeAdjustments/sessionHeaderInk`` bypasses the repair outright
-    /// when set, and wins over the ratio beside it, since a named colour has no
-    /// ratio left to satisfy. That path can return something illegible. It is a
-    /// probe for the owner's eye, not a candidate setting; see
+    /// ``PaneThemeAdjustments/actionRowInk`` bypasses the repair outright when
+    /// set, and wins over the ratio beside it, since a named colour has no ratio
+    /// left to satisfy. That path can return something illegible. It is a probe
+    /// for the owner's eye, not a candidate setting; see
     /// ``PaneThemeAdjustments`` for the longer form.
-    public func sessionHeaderInk(on backdrop: RGB) -> RGB {
-        if let named = adjustments.sessionHeaderInk { return named }
-        return readable(
-            inkFaint,
-            on: backdrop,
-            minimumRatio: adjustments.sessionHeaderMinimumRatio ?? Self.minimumTextContrast
-        )
-    }
-
-    /// The sidebar's action-row ink — the "New session" keycap glyph. Identical
-    /// in shape to ``sessionHeaderInk(on:)`` and separate for the same reason:
-    /// two rows the panel has to be able to tell apart.
     public func actionRowInk(on backdrop: RGB) -> RGB {
         if let named = adjustments.actionRowInk { return named }
         return readable(

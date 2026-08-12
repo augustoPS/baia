@@ -233,8 +233,6 @@ import Testing
         #expect(extras.lift.duration == nil)
         #expect(extras.rim.enabled == nil)
         #expect(extras.rim.topAlpha == nil)
-        #expect(extras.inks.sessionHeaderMinimumRatio == nil)
-        #expect(extras.inks.sessionHeaderHex == nil)
         #expect(extras.inks.actionRowMinimumRatio == nil)
         #expect(extras.inks.actionRowHex == nil)
         #expect(extras.inks.sectionHeaderMinimumRatio == nil)

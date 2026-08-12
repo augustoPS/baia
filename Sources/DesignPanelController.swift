@@ -503,16 +503,10 @@
             stack.addArrangedSubview(makeNote(
                 "Ratio walks the repair chain and stays legible. Hex bypasses it and can go illegible. Hex wins when both are set."
             ))
-            addSlider(
-                to: stack, label: "Session header — min ratio", range: 1 ... 21, step: 0.1,
-                get: { $0.chrome.inks.sessionHeaderMinimumRatio },
-                set: { $0.chrome.inks.sessionHeaderMinimumRatio = $1 }
-            )
-            addHex(
-                to: stack, label: "Session header — hex (bypasses repair)",
-                get: { $0.chrome.inks.sessionHeaderHex },
-                set: { $0.chrome.inks.sessionHeaderHex = $1 }
-            )
+            // A "Session header" ratio and hex led this group until 2026-08-12.
+            // The owner's ruling removed the row they dialled, so the panel no
+            // longer offers a control whose only effect would be to write a key
+            // this build rejects by name.
             addSlider(
                 to: stack, label: "Action row — min ratio", range: 1 ... 21, step: 0.1,
                 get: { $0.chrome.inks.actionRowMinimumRatio },

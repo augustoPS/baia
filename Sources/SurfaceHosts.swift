@@ -141,22 +141,16 @@ final class SidebarHost: NSViewController {
                 section.surface.theme = theme
                 section.heading.theme = theme
             }
-            sessionHeader.theme = theme
             actionRow.theme = theme
             divider.layer?.backgroundColor = nsColor(theme.hairline).cgColor
         }
     }
 
-    /// The session header row (28pt, design v5 §5), naming the same pane the
-    /// column's sections describe. Set by ``AppDelegate/refreshSidebar(of:)``
-    /// alongside ``anchorName``, from ``PaneChrome/PaneStatus`` directly rather
-    /// than from a second derivation: see ``SidebarSessionHeaderView``.
-    var sessionStatus: PaneStatus? {
-        get { sessionHeader.status }
-        set { sessionHeader.status = newValue }
-    }
-
-    private let sessionHeader = SidebarSessionHeaderView()
+    // The session header row stood here until 2026-08-12. It named the anchor
+    // and the branch at the top of the column, which the window title, the
+    // shell prompt and the capsule each already said, so the owner's ruling
+    // that day made the capsule the one home for repo facts and removed it.
+    // Nothing took its place: the FILES heading is the column's top row now.
 
     /// The bottom action row (32pt, design v5 §5): "New session" and its
     /// keycap. Fired on click; what a new session means is the caller's
@@ -181,8 +175,9 @@ final class SidebarHost: NSViewController {
     /// The repository the column is describing.
     ///
     /// Design v3 §4.2 had the first heading draw this trailing, "the connector
-    /// between the footer and the sidebar". Design v5 §5 replaces that connector
-    /// with ``sessionStatus``'s own row, so it feeds no heading; the property
+    /// between the footer and the sidebar". Design v5 §5 replaced that connector
+    /// with the session header's own row, and the owner's 2026-08-12 ruling
+    /// removed that row in turn, so this feeds no heading at all; the property
     /// stays because ``SettingsPreviewColumn`` still themes
     /// `SurfaceTitleView.anchorName` directly, and removing the value this host
     /// used to compute for it would be a change to that preview dressed up as a
@@ -258,7 +253,6 @@ final class SidebarHost: NSViewController {
             guard resolvedChrome != oldValue else { return }
             for section in sections { section.surface.resolvedChrome = resolvedChrome }
             for section in sections { section.heading.resolvedChrome = resolvedChrome }
-            sessionHeader.resolvedChrome = resolvedChrome
             actionRow.resolvedChrome = resolvedChrome
             applyResolvedChrome()
         }
@@ -427,11 +421,8 @@ final class SidebarHost: NSViewController {
         widthDivider.wantsLayer = true
         view.addSubview(widthDivider)
 
-        sessionHeader.theme = theme
-        sessionHeader.resolvedChrome = resolvedChrome
         actionRow.theme = theme
         actionRow.resolvedChrome = resolvedChrome
-        view.addSubview(sessionHeader)
         view.addSubview(actionRow)
 
         install()
@@ -585,21 +576,19 @@ final class SidebarHost: NSViewController {
             )
         }
 
-        // The session header and the bottom action row are chrome around the
-        // sections rather than sections themselves: fixed height, drawn even
-        // when the sidebar has nothing in it. Hidden with the column, the same
-        // rule the width divider follows, since a closed sidebar has no room
-        // for either. `sessionHeader.status` is left as it was even while
-        // hidden, so it needs no repopulating the moment the column reopens.
+        // The bottom action row is chrome around the sections rather than a
+        // section itself: fixed height, drawn even when the sidebar has nothing
+        // in it. Hidden with the column, the same rule the width divider
+        // follows, since a closed sidebar has no room for it.
+        //
+        // **The session header was the other half of this until 2026-08-12**,
+        // a 28 pt strip at `bounds.maxY` with the sections starting below it.
+        // The owner's ruling removed it, and the space closes by subtraction:
+        // the column the sections are laid out in now starts at `bounds.maxY`
+        // and `layoutSections` puts the first heading at its top edge, so the
+        // FILES heading is the column's top row with nothing above it.
         let hasSidebar = sidebarWidth > 0
-        sessionHeader.isHidden = !hasSidebar
         actionRow.isHidden = !hasSidebar
-        sessionHeader.frame = NSRect(
-            x: bounds.minX,
-            y: bounds.maxY - Self.sessionHeaderHeight,
-            width: sidebarWidth,
-            height: Self.sessionHeaderHeight
-        )
         actionRow.frame = NSRect(
             x: bounds.minX,
             y: bounds.minY,
@@ -611,7 +600,7 @@ final class SidebarHost: NSViewController {
             x: bounds.minX,
             y: bounds.minY + (hasSidebar ? Self.actionRowHeight : 0),
             width: sidebarWidth,
-            height: max(0, bounds.height - (hasSidebar ? Self.sessionHeaderHeight + Self.actionRowHeight : 0))
+            height: max(0, bounds.height - (hasSidebar ? Self.actionRowHeight : 0))
         ))
 
         let gutter = sidebarWidth > 0 ? Self.dividerWidth : 0
@@ -735,10 +724,10 @@ final class SidebarHost: NSViewController {
     /// A hairline, the same one the tree draws between panes.
     private static let dividerWidth: Double = 1
 
-    /// Named locally rather than read off ``SidebarSessionHeaderView/height``
-    /// at every call site above, which is what every other geometry constant
-    /// in this file already does for its own view.
-    private static let sessionHeaderHeight = SidebarSessionHeaderView.height
+    /// Named locally rather than read off ``SidebarActionRowView/height`` at
+    /// every call site above, which is what every other geometry constant in
+    /// this file already does for its own view. `sessionHeaderHeight` stood
+    /// beside it until the 2026-08-12 ruling took the row it measured.
     private static let actionRowHeight = SidebarActionRowView.height
 
     /// How little a stacked section may be dragged to.

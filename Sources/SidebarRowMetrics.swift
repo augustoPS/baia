@@ -44,9 +44,10 @@ enum SidebarRowMetrics {
     /// a point apart, which does not read as a difference, it reads as a mistake.
     static let textOrigin = rowBaseline - Double(font.ascender)
 
-    /// One inset for the tree, the heading above it, the session header and the
-    /// action row. The tree used to use 10, so it sat 2 pt out from everything
-    /// else. Design v3 §8/03.
+    /// One inset for the tree, the heading above it and the action row below.
+    /// The tree used to use 10, so it sat 2 pt out from everything else. Design
+    /// v3 §8/03. The session header was the fourth reader until the 2026-08-12
+    /// ruling removed it.
     static let inset: Double = 12
 
     /// Design v5 §5's row radius, shared with both palette rows.

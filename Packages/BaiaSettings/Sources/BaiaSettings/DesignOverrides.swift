@@ -428,31 +428,30 @@ public extension DesignOverrides.Chrome {
     /// owner's own theme and certainly on someone else's. It is a probe and not a
     /// candidate setting: what ships from an afternoon of dialling is a ratio.
     struct Inks: Sendable, Equatable {
-        /// The minimum contrast ratio the sidebar's session-header ink targets.
-        /// Today `PaneTheme.minimumTextContrast`, 4.5, WCAG AA for body text.
-        public var sessionHeaderMinimumRatio: Double?
-
-        /// An explicit `#RRGGBB` for the session-header ink, bypassing the repair
-        /// chain. Wins over ``sessionHeaderMinimumRatio`` when both are set,
-        /// since a named colour has no ratio left to satisfy.
-        public var sessionHeaderHex: String?
+        // `sessionHeaderMinimumRatio` and `sessionHeaderHex` stood here until
+        // 2026-08-12, dialling the sidebar's session-header row. The owner's
+        // ruling that day removed that row, the capsule being the one home for
+        // repo facts, and both keys now fall through to the parser's `default`
+        // and are rejected by name. See the note beside the retired knobs in
+        // `DesignOverridesText`.
 
         /// The minimum contrast ratio the sidebar's action-row ink targets.
-        /// Today 4.5.
+        /// Today `PaneTheme.minimumTextContrast`, 4.5, WCAG AA for body text.
         public var actionRowMinimumRatio: Double?
 
-        /// An explicit `#RRGGBB` for the action-row ink. Same bypass as
-        /// ``sessionHeaderHex``.
+        /// An explicit `#RRGGBB` for the action-row ink, bypassing the repair
+        /// chain. Wins over ``actionRowMinimumRatio`` when both are set, since a
+        /// named colour has no ratio left to satisfy.
         public var actionRowHex: String?
 
         /// The minimum contrast ratio `PaneTheme.sectionHeaderInk(on:)` targets,
         /// today 4.5.
         ///
-        /// Separate from the two sidebar inks above even though all three sit at
-        /// 4.5 today. The section header is the one already graded against a
+        /// Separate from the sidebar ink above even though both sit at 4.5
+        /// today. The section header is the one already graded against a
         /// *bright glass* backdrop rather than against the bar, so it is the one
-        /// whose repair actually fires, and folding it in with the others would
-        /// hide which of the three a dial moved.
+        /// whose repair actually fires, and folding it in with the other would
+        /// hide which of the two a dial moved.
         public var sectionHeaderMinimumRatio: Double?
 
         /// An explicit `#RRGGBB` for the working-agent dot, today `PaneTheme.ok`.

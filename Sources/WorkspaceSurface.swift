@@ -241,16 +241,17 @@ final class SurfaceTitleView: NSView {
     /// desktop brighter than anything that finding saw composites brighter than
     /// the top row. The probe's finding 6b measured exactly that and it is why
     /// this constant is recorded as owed rather than sufficient.
-    /// **Still one reader, and the sidebar's other two inks deliberately do not
-    /// join it.** The session header's and the action row's faint-tier strings
-    /// sit in this same column over this same glass, so grading them here looks
-    /// obvious; it was tried and reverted. On `.darkPastel` the repair fires on
-    /// this backdrop — `inkFaint` scores 2.49:1 against `#4b4b4b` — and walks
-    /// those inks from `#898989` to `#dcdcdc`, which would have moved a pixel on
-    /// every glass launch with every design override nil. The caps label is
-    /// different because it was *always* graded here, so nothing about it moved.
-    /// See ``SidebarSessionHeaderView/labelInk`` for the open question that
-    /// leaves behind.
+    /// **Still one reader, and the sidebar's other ink deliberately does not
+    /// join it.** The action row's keycap glyph sits in this same column over
+    /// this same glass, so grading it here looks obvious; it was tried and
+    /// reverted. On `.darkPastel` the repair fires on this backdrop — `inkFaint`
+    /// scores 2.49:1 against `#4b4b4b` — and walks that ink from `#898989` to
+    /// `#dcdcdc`, which would have moved a pixel on every glass launch with
+    /// every design override nil. The caps label is different because it was
+    /// *always* graded here, so nothing about it moved. See
+    /// ``SidebarActionRowView/labelInk`` for the open question that leaves
+    /// behind. The session header's own faint strings were the third case here
+    /// until the owner's 2026-08-12 ruling removed that row.
     private static let measuredBrightGlass = RGB.eightBit(0x4B, 0x4B, 0x4B)
 
     /// The caps label's ink: ``PaneChrome/PaneTheme/inkFaint`` graded against
@@ -277,8 +278,8 @@ final class SurfaceTitleView: NSView {
     /// it clears, on this backdrop, whatever the theme is.
     ///
     /// This reaches only the two caps-row draws below. Every other `inkFaint`
-    /// reader in the sidebar (the session header, the action row's keycap, the
-    /// file tree's disclosure chevron, both empty-state messages) is untouched,
+    /// reader in the sidebar (the action row's keycap, the file tree's
+    /// disclosure chevron, both empty-state messages) is untouched,
     /// and the file rows beside this header measured 6.99:1 and never needed
     /// repairing — which is why the fix is one header's ink rather than the
     /// column's.
@@ -342,9 +343,9 @@ final class SurfaceTitleView: NSView {
     /// sets both directly and they are what carries theme colour into a heading's
     /// trailing half.
     ///
-    /// Drawn in the same trailing slot ``anchorName`` used before design v5 moved
-    /// the repository name to ``SidebarSessionHeaderView``; where both are set,
-    /// `totals` wins.
+    /// Drawn in the same trailing slot ``anchorName`` used before design v5
+    /// moved the repository name to the session header's row, itself removed on
+    /// 2026-08-12; where both are set, `totals` wins.
     var totals: (adds: Int, deletes: Int)? { didSet { needsDisplay = true } }
 
     /// Gated the way the footer's focus frame is: an accent left bright on a

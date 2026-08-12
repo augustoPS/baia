@@ -36,39 +36,37 @@ public struct PaneThemeAdjustments: Sendable, Equatable {
     /// effect working rather than a surprise.
     public var barLift: Double?
 
-    /// Stands in for ``PaneTheme/minimumTextContrast`` where
-    /// ``PaneTheme/sessionHeaderInk(on:)`` targets it, today 4.5.
-    public var sessionHeaderMinimumRatio: Double?
-
-    /// An explicit colour for the sidebar's session-header ink, bypassing the
-    /// repair chain. Wins over ``sessionHeaderMinimumRatio`` when both are set,
-    /// since a named colour has no ratio left to satisfy.
-    public var sessionHeaderInk: RGB?
+    // `sessionHeaderMinimumRatio` and `sessionHeaderInk` stood here until
+    // 2026-08-12. They dialled one view's two faint strings, and the owner's
+    // ruling that day removed that view: the sidebar's session header was a
+    // fourth copy of what the window title, the prompt and the capsule already
+    // say. A dial whose only site is gone is a knob that moves nothing.
 
     /// Stands in for ``PaneTheme/minimumTextContrast`` where
     /// ``PaneTheme/actionRowInk(on:)`` targets it, today 4.5.
     public var actionRowMinimumRatio: Double?
 
-    /// An explicit colour for the sidebar's action-row ink. Same bypass as
-    /// ``sessionHeaderInk``.
+    /// An explicit colour for the sidebar's action-row ink, bypassing the repair
+    /// chain. Wins over ``actionRowMinimumRatio`` when both are set, since a
+    /// named colour has no ratio left to satisfy.
     public var actionRowInk: RGB?
 
     /// Stands in for ``PaneTheme/minimumTextContrast`` where
     /// ``PaneTheme/sectionHeaderInk(on:)`` targets it, today 4.5.
     ///
-    /// Separate from the two above even though all three sit at 4.5 today,
-    /// because the section header is the one already graded against a *bright
-    /// glass* backdrop rather than against the bar, so it is the one whose
-    /// repair actually fires. Folding them together would hide which of the
-    /// three a dial moved.
+    /// Separate from the one above even though both sit at 4.5 today, because
+    /// the section header is the one already graded against a *bright glass*
+    /// backdrop rather than against the bar, so it is the one whose repair
+    /// actually fires. Folding them together would hide which of the two a dial
+    /// moved.
     public var sectionHeaderMinimumRatio: Double?
 
     /// An explicit colour for the working-agent dot, standing in for
     /// ``PaneTheme/ok``.
     ///
-    /// A colour with no ratio beside it, unlike the three inks above, because
-    /// the dot is a filled shape and not text: nothing is read off it, so there
-    /// is no text-contrast floor for a repair chain to target.
+    /// A colour with no ratio beside it, unlike the inks above, because the dot
+    /// is a filled shape and not text: nothing is read off it, so there is no
+    /// text-contrast floor for a repair chain to target.
     public var busyDotInk: RGB?
 
     /// Nothing dialled: the identity every ``PaneTheme`` carries until an app

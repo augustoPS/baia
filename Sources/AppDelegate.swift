@@ -918,11 +918,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         controller.sidebar.anchorName = anchor?.displayName
-        // The session header (design v5 §5), read straight off the same
-        // `PaneStatus` the pane's own footer draws from rather than rebuilt from
-        // the anchor and the git poll separately: see
-        // ``SidebarSessionHeaderView``.
-        controller.sidebar.sessionStatus = pane?.statusBar.status
+        // `sidebar.sessionStatus` was pushed here too until 2026-08-12, feeding
+        // the session header row its anchor name, branch and status word off
+        // the same `PaneStatus` the pane's own footer draws from. The owner's
+        // ruling that day removed the row as a fourth copy of what the window
+        // title, the prompt and the capsule already say, and the pane's status
+        // reaches this column through none of them now.
     }
 
     /// Puts a clicked path on the focused pane's prompt.

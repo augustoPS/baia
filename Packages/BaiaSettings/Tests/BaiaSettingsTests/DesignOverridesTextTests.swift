@@ -110,7 +110,10 @@
 
             "chrome.rim.enabled", "chrome.rim.topAlpha",
 
-            "chrome.inks.sessionHeaderMinimumRatio", "chrome.inks.sessionHeaderHex",
+            // `chrome.inks.sessionHeaderMinimumRatio` and
+            // `chrome.inks.sessionHeaderHex` led this line until 2026-08-12,
+            // retired with the sidebar's session header on the owner's ruling
+            // that the capsule is the one home for repo facts; 33 -> 31.
             "chrome.inks.actionRowMinimumRatio", "chrome.inks.actionRowHex",
             "chrome.inks.sectionHeaderMinimumRatio", "chrome.inks.busyDotHex",
 
@@ -137,10 +140,10 @@
             "chrome.barLift", "chrome.paneWashFloor",
         ]
 
-        /// Thirty-three, which is the count `DesignOverrides` carries: seven
-        /// settings shadows, nine lift, two rim, six inks, four surfaces,
+        /// Thirty-one, which is the count `DesignOverrides` carries: seven
+        /// settings shadows, nine lift, two rim, four inks, four surfaces,
         /// three cluster, two window.
-        static let expectedKeyCount = 33
+        static let expectedKeyCount = 31
 
         // MARK: - JSON shapes
 
@@ -149,7 +152,7 @@
 
             #expect(text.contains("\"backgroundBlur\": true,"))
             #expect(text.contains("\"chromeStyle\": \"glass\","))
-            #expect(text.contains("\"chrome.inks.sessionHeaderHex\": \"#ff8800\","))
+            #expect(text.contains("\"chrome.inks.actionRowHex\": \"#00aaff\","))
             #expect(text.contains("\"chrome.surfaces.sidebar\": \"thick\","))
             #expect(text.contains("\"chrome.cluster.mode\": \"both\","))
         }
@@ -249,13 +252,13 @@
 
         @Test func aSparseValueSurvivesTheRoundTrip() {
             // The realistic shape: two knobs dialled after an afternoon,
-            // thirty-one still nil. A parser that filled the absent fields
+            // twenty-nine still nil. A parser that filled the absent fields
             // with zeroes rather than leaving them nil would pin every
             // un-dialled knob, which is precisely the failure `DesignOverrides`'
             // own doc comment names.
             var overrides = DesignOverrides()
             overrides.chrome.lift.ringAlpha = 0.31
-            overrides.chrome.inks.sessionHeaderHex = "#ff8800"
+            overrides.chrome.inks.actionRowHex = "#00aaff"
             let text = DesignOverridesText.commentedJSON(overrides)
 
             #expect(DesignOverridesText.parse(text) == .success(overrides))
@@ -456,8 +459,6 @@
             "chrome.rim.enabled": "true",
             "chrome.rim.topAlpha": "0.42",
 
-            "chrome.inks.sessionHeaderMinimumRatio": "7.0",
-            "chrome.inks.sessionHeaderHex": "\"#ff8800\"",
             "chrome.inks.actionRowMinimumRatio": "4.5",
             "chrome.inks.actionRowHex": "\"#00aaff\"",
             "chrome.inks.sectionHeaderMinimumRatio": "4.5",
@@ -478,7 +479,7 @@
 
         // MARK: - Fixture
 
-        /// Every one of the thirty-three knobs dialled to something, so a test
+        /// Every one of the thirty-one knobs dialled to something, so a test
         /// can assert over the complete output.
         private func everythingDialled() -> DesignOverrides {
             var overrides = DesignOverrides()
@@ -503,8 +504,6 @@
             overrides.chrome.rim.enabled = true
             overrides.chrome.rim.topAlpha = 0.42
 
-            overrides.chrome.inks.sessionHeaderMinimumRatio = 7
-            overrides.chrome.inks.sessionHeaderHex = "#ff8800"
             overrides.chrome.inks.actionRowMinimumRatio = 4.5
             overrides.chrome.inks.actionRowHex = "#00aaff"
             overrides.chrome.inks.sectionHeaderMinimumRatio = 4.5

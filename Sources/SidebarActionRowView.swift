@@ -26,9 +26,8 @@ final class SidebarActionRowView: NSView {
     /// for the live pass rather than guessed at here.
     ///
     /// **Still gates only the fill, and ``labelInk`` deliberately does not read
-    /// it**, for the reason ``SidebarSessionHeaderView/labelInk`` states at
-    /// length: a `.glass` branch there fires the repair chain and moves the ink
-    /// with every override nil.
+    /// it**, for the reason ``labelInk`` states at length: a `.glass` branch
+    /// there fires the repair chain and moves the ink with every override nil.
     var resolvedChrome: ResolvedChrome = .flat { didSet { needsDisplay = true } }
 
     /// The keycap glyph's ink, from ``PaneChrome/PaneTheme/actionRowInk(on:)``
@@ -42,14 +41,27 @@ final class SidebarActionRowView: NSView {
     /// reaching a site that would otherwise be a constant no dial can touch.
     ///
     /// **`barBackground` under glass too**, unlike
-    /// ``SurfaceTitleView/labelInk``, and ``SidebarSessionHeaderView/labelInk``
-    /// carries the full argument: grading against the bright-glass stand-in
-    /// fires the repair and walks this glyph from `#898989` to `#dcdcdc` on
-    /// every glass launch with every override nil, which is a rendering change
-    /// under a wire whose contract is that nil moves nothing. Whether the keycap
-    /// *should* be graded against sampled glass is the open question this row's
-    /// `resolvedChrome` doc has recorded since Task 3, and the panel is how it
-    /// gets answered.
+    /// ``SurfaceTitleView/labelInk``. The full argument used to live one file
+    /// over on the session header's own ink and moved here when the owner's
+    /// 2026-08-12 ruling removed that row, this being the sidebar's last
+    /// faint-tier ink that grades against `barBackground` on both branches.
+    ///
+    /// Copying ``SurfaceTitleView/labelInk``'s glass branch here was tried and
+    /// reverted. Measured on `.darkPastel`, the repair fires on the bright-glass
+    /// stand-in (`inkFaint` scores 2.49:1 against `#4b4b4b`, under the 4.5
+    /// floor) and walks this glyph from `#898989` to `#dcdcdc`. Every glass
+    /// launch would render it near-white, in Release, with every override nil, a
+    /// rendering change under a wire whose whole contract is that nil moves
+    /// nothing. The caps label is not the precedent it looks like: that site was
+    /// *always* graded against the stand-in, so routing it through a derivation
+    /// was identity, where this one is unconditionally `theme.inkFaint` and a
+    /// glass branch would be the repair firing for the first time.
+    ///
+    /// Whether the keycap *should* be graded against sampled glass is a real and
+    /// open question, and this is not the change that answers it: the spike's
+    /// finding 6 measured the caps label alone. The dials reach this site either
+    /// way, so the panel is how the owner answers it with the real column in
+    /// front of him.
     ///
     /// The row's own "New session" label and its hover/press washes are
     /// deliberately not routed here: they are a different tier and a fill, and

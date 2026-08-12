@@ -151,12 +151,8 @@
 
         private static func appendInks(_ inks: DesignOverrides.Chrome.Inks, into lines: inout [String]) {
             var group: [String] = []
-            append(&group, "chrome.inks.sessionHeaderMinimumRatio", inks.sessionHeaderMinimumRatio,
-                   note: "PaneTheme.minimumTextContrast, today 4.5 (walks the repair chain)")
-            append(&group, "chrome.inks.sessionHeaderHex", inks.sessionHeaderHex,
-                   note: "bypasses the repair chain; wins over the ratio above")
             append(&group, "chrome.inks.actionRowMinimumRatio", inks.actionRowMinimumRatio,
-                   note: "today 4.5 (walks the repair chain)")
+                   note: "PaneTheme.minimumTextContrast, today 4.5 (walks the repair chain)")
             append(&group, "chrome.inks.actionRowHex", inks.actionRowHex,
                    note: "bypasses the repair chain; wins over the ratio above")
             append(&group, "chrome.inks.sectionHeaderMinimumRatio", inks.sectionHeaderMinimumRatio,
@@ -352,10 +348,6 @@
             case "chrome.rim.enabled": return bool(value, key, &overrides.chrome.rim.enabled)
             case "chrome.rim.topAlpha": return double(value, key, &overrides.chrome.rim.topAlpha)
 
-            case "chrome.inks.sessionHeaderMinimumRatio":
-                return double(value, key, &overrides.chrome.inks.sessionHeaderMinimumRatio)
-            case "chrome.inks.sessionHeaderHex":
-                return string(value, key, &overrides.chrome.inks.sessionHeaderHex)
             case "chrome.inks.actionRowMinimumRatio":
                 return double(value, key, &overrides.chrome.inks.actionRowMinimumRatio)
             case "chrome.inks.actionRowHex":
@@ -379,11 +371,14 @@
             case "chrome.paneWashFloor": return double(value, key, &overrides.chrome.paneWashFloor)
 
             // `chrome.sidebarWashFloor` and `chrome.bareGlass` parsed here until
-            // 2026-08-08, and `chrome.surfaces.footer` until 2026-08-09. All
-            // three now fall through to `default`, which is the right answer
-            // rather than a gap: an overrides file still carrying one is naming
-            // a knob this build genuinely does not have, and the owner is told
-            // so by name instead of having it silently ignored.
+            // 2026-08-08, `chrome.surfaces.footer` until 2026-08-09, and
+            // `chrome.inks.sessionHeaderMinimumRatio` and
+            // `chrome.inks.sessionHeaderHex` until 2026-08-12, when the ruling
+            // that removed the sidebar's session header took the only site they
+            // reached. All five now fall through to `default`, which is the
+            // right answer rather than a gap: an overrides file still carrying
+            // one is naming a knob this build genuinely does not have, and the
+            // owner is told so by name instead of having it silently ignored.
             default:
                 return ParseError(message: "`\(key)` is not a knob baia dials")
             }
