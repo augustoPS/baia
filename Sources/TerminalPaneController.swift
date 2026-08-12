@@ -567,6 +567,39 @@ final class TerminalPaneController: NSViewController {
         clusterEdgeConstraints = edges
     }
 
+    /// Where the approval popover anchors, in the pane's window's own
+    /// coordinates — the space ``ApprovalRequest/capsuleFrame`` promises and
+    /// `ApprovalPopoverController.origin(forAnchor:size:in:)` hands to
+    /// `convertToScreen`.
+    ///
+    /// One rule, keyed off ``clusterMode``'s own semantics. Under `.footer`
+    /// and `.both` the footer shows, and its capsule — the rect the click
+    /// handed up, the one thing the bar drew and the click resolved — stays
+    /// the anchor, converted exactly as before. Under `.cluster` the footer
+    /// is hidden, so a rect on it would anchor the popover to an invisible
+    /// bar; the anchor moves to the chrome that now carries attention, the
+    /// cluster capsule's attention-segment rect. The dot may not be in the
+    /// capsule's placement yet — a request can arrive before the status poll
+    /// adds the segment — and then the capsule's whole frame stands in. If
+    /// the capsule is not installed at all (unreachable under `.cluster`,
+    /// where ``applyClusterMode()`` installs it, but a nil-window `convert`
+    /// would answer garbage rather than fail) the pane's top-right corner —
+    /// where the capsule would sit — keeps the popover on the pane it speaks
+    /// for instead of anchored at a zero rect.
+    private func approvalPopoverAnchor(footerCapsule: NSRect) -> NSRect {
+        guard clusterMode == .cluster else {
+            return statusBar.convert(footerCapsule, to: nil)
+        }
+        guard clusterView.superview != nil else {
+            return view.convert(
+                NSRect(x: view.bounds.maxX, y: view.bounds.maxY, width: 0, height: 0),
+                to: nil
+            )
+        }
+        let rect = clusterView.segmentRect(for: .attention) ?? clusterView.bounds
+        return clusterView.convert(rect, to: nil)
+    }
+
     /// Clips the plane and the wash to the pane's window corners, the
     /// footer-backing mask relocated to the plane per ABSORB. Rebuilt from the
     /// ``bottomCorners`` setter and from layout, because a mask frame does not
@@ -1257,14 +1290,13 @@ final class TerminalPaneController: NSViewController {
         statusBar.onClick = { [weak self] in self?.takeFocus() }
         statusBar.onCapsuleClick = { [weak self] capsuleFrame in
             guard let self else { return }
-            let inWindow = statusBar.convert(capsuleFrame, to: nil)
             // `agent · repo`, or the bare repo name when nothing is running
             // under this pane to give the popover an agent half of the title.
             let anchorName = statusBar.status?.anchorName ?? "baia"
             let agentLabel = statusBar.status?.agent?.label
             let title = agentLabel.map { "\($0) · \(anchorName)" } ?? anchorName
             onApprovalRequested?(ApprovalRequest(
-                capsuleFrame: inWindow,
+                capsuleFrame: approvalPopoverAnchor(footerCapsule: capsuleFrame),
                 title: title,
                 message: attentionMessage
             ))

@@ -160,12 +160,21 @@ final class PaneClusterView: PaneOverlayView {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         guard let segment = PaneClusterLayout.segment(at: Double(point.x), in: placed),
-              let hit = placed.first(where: { $0.segment == segment })
+              let rect = segmentRect(for: segment.role)
         else { return }
-        onSegmentClick?(
-            segment.role,
-            NSRect(x: hit.x, y: 0, width: hit.width, height: bounds.height)
-        )
+        onSegmentClick?(segment.role, rect)
+    }
+
+    /// The named segment's rect in this view's own coordinates, or nil while
+    /// the segment is not in the cached placement — a role only enters
+    /// `placed` when the status carries its fact. The same derivation
+    /// `mouseDown` hands ``onSegmentClick`` (it calls through here), off the
+    /// same cache `draw` paints from, so a rect asked for by name — the
+    /// approval popover anchoring to the attention dot without a click to
+    /// resolve — cannot disagree with what is on screen.
+    func segmentRect(for role: PaneClusterSegmentRole) -> NSRect? {
+        guard let hit = placed.first(where: { $0.segment.role == role }) else { return nil }
+        return NSRect(x: hit.x, y: 0, width: hit.width, height: bounds.height)
     }
 
     /// Measures every segment with the drawing font, solves the placement,
