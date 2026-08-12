@@ -119,6 +119,20 @@ final class TerminalPaneController: NSViewController {
 
     let statusBar = PaneStatusBarView(frame: .zero)
 
+    /// Whether the pane-cluster capsule is installed at all. Hard-coded off:
+    /// every shipped pixel stays byte-identical until the `chrome.cluster`
+    /// design override replaces this flag in a later task. When false the
+    /// view is never added to the hierarchy — not added-and-hidden — so the
+    /// flat build carries no extra view, no extra constraint, and nothing the
+    /// compositor could touch.
+    private let clusterEnabled = false
+
+    /// The capsule in the pane's top-right (design v6). Created beside
+    /// ``statusBar`` and fed by the same passthroughs, so the day the gate
+    /// opens the pill is already telling the truth; while the gate is closed
+    /// the writes land on a view no window holds, which renders nothing.
+    private let clusterView = PaneClusterView(frame: .zero)
+
     /// Covers the terminal and the footer both, which is the point: a background
     /// window recedes as one object, and a scrim that stopped at the footer would
     /// leave every pane in it wearing a bright band.
@@ -193,6 +207,7 @@ final class TerminalPaneController: NSViewController {
         didSet {
             guard resolvedChrome != oldValue else { return }
             statusBar.resolvedChrome = resolvedChrome
+            clusterView.resolvedChrome = resolvedChrome
             applyResolvedGlassPlane()
             applyPresentation()
         }
@@ -235,6 +250,7 @@ final class TerminalPaneController: NSViewController {
         didSet {
             guard attentionAccent != oldValue else { return }
             statusBar.attentionAccent = attentionAccent
+            clusterView.attentionAccent = attentionAccent
             applyPresentation()
         }
     }
@@ -243,6 +259,7 @@ final class TerminalPaneController: NSViewController {
         didSet {
             guard alertBehavior != oldValue else { return }
             statusBar.alertBehavior = alertBehavior
+            clusterView.alertBehavior = alertBehavior
             applyPresentation()
         }
     }
@@ -304,6 +321,8 @@ final class TerminalPaneController: NSViewController {
         statusBar.isFocused = isPaneFocused
         statusBar.isWindowActive = isWindowActive
         statusBar.theme = theme
+        clusterView.isPaneFocused = isPaneFocused
+        clusterView.theme = theme
         scrim.colour = theme.background
         // See `isWindowActive` above for why an inactive window is the only thing
         // that scrims a pane. An unfocused pane in the key window is left alone
@@ -914,6 +933,31 @@ final class TerminalPaneController: NSViewController {
             view.addSubview(overlay)
         }
 
+        // Before the overlays in z-order, deliberately: the inactive-window
+        // scrim must lay over the pill so a background window recedes as one
+        // object, and the scrim's hitTest-nil means a click still falls
+        // through it to the pill underneath. Added at all only behind the
+        // gate — see ``clusterEnabled``: absent, not hidden, is what keeps
+        // the shipped rendering byte-identical. Pinned by its top-right
+        // corner alone; width and height come from the view's own
+        // `intrinsicContentSize`, which tracks the measured segments, the
+        // same self-sizing arrangement Auto Layout already runs the rest of
+        // this hierarchy on.
+        if clusterEnabled {
+            clusterView.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(clusterView, positioned: .below, relativeTo: scrim)
+            NSLayoutConstraint.activate([
+                clusterView.topAnchor.constraint(
+                    equalTo: view.topAnchor,
+                    constant: PaneClusterMetrics.cornerInset
+                ),
+                view.trailingAnchor.constraint(
+                    equalTo: clusterView.trailingAnchor,
+                    constant: PaneClusterMetrics.cornerInset
+                ),
+            ])
+        }
+
         // Edge pinning alone leaves the hierarchy with no size of its own.
         // TerminalView has no intrinsic content size, so `fittingSize` collapses
         // to zero and a window using this controller as its contentViewController
@@ -1161,6 +1205,7 @@ final class TerminalPaneController: NSViewController {
     private func refreshStatus() {
         guard let anchor = anchorTracker.anchor else {
             statusBar.status = nil
+            clusterView.segments = []
             return
         }
         let home = FileManager.default
@@ -1182,6 +1227,13 @@ final class TerminalPaneController: NSViewController {
             agent: activityTracker.agent,
             notice: notice
         )
+        // The capsule's segments, rebuilt at the one point the footer's value
+        // moves, from the same `PaneStatus`, so the two surfaces cannot drift.
+        // Read back off the bar rather than built from a second construction,
+        // which is the same value and one fewer place for the two to part.
+        if let status = statusBar.status {
+            clusterView.segments = PaneClusterSegments.build(from: status)
+        }
     }
 
     /// The sentence the footer is showing instead of its segments, and nil the
