@@ -147,15 +147,18 @@ final class SidebarSessionHeaderView: NSView {
             x += repo.size().width
         }
 
-        // `wt:branch`, tertiary, only inside a repository: a plain directory has
+        // The branch, tertiary, only inside a repository: a plain directory has
         // no branch to qualify, and ``PaneStatus/git`` can hold a stale answer
         // from before a `cd` out of one, the same guard
         // ``PaneStatusSegments/build(from:)`` applies before it draws anything
-        // from `git`.
+        // from `git`. The `wt:` prefix left on 2026-08-12 (owner ruling: the
+        // capsule is the one home for repo facts) — the place card's worktree
+        // row owns that fact now, and the prefix here was its second copy. The
+        // branch itself stays: this row names the session, and which branch it
+        // sits on is the naming, not a repo fact restated.
         if status.anchorIsRepository, let git = status.git, !git.head.isEmpty {
-            let prefix = git.isLinkedWorktree ? "wt:" : ""
             let branch = NSAttributedString(
-                string: " \(prefix)\(git.head)",
+                string: " \(git.head)",
                 attributes: [.font: Self.monoFont, .foregroundColor: nsColor(labelInk)]
             )
             branch.draw(at: NSPoint(x: x, y: baseline(for: Self.monoFont)))
