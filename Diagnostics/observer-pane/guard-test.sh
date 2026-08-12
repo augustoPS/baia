@@ -29,6 +29,11 @@ check 2 './Diagnostics/control-channel/run.sh'
 # the reason the deny message names focus as well as launching.
 check 2 'cd ~/Projects/baia && ./Diagnostics/footer-corners/run.sh'
 check 2 './Diagnostics/fullscreen-strip/run.sh'
+# Denied for the same focus reason, and pinned here because its safe sibling
+# `cluster-wires` is allowed below: the card probe's subject is the cluster
+# cards' key discipline, so like `design-panel-key` it takes the keyboard on
+# purpose and no version of it could qualify.
+check 2 './Diagnostics/cluster-card-key/run.sh'
 
 # The five that take no focus are allowed, and a command pairing one with a real
 # driver is not. Without that last pair the carve-out is a hole: naming a safe
@@ -49,6 +54,7 @@ check 0 'cd ~/Projects/baia && ./Diagnostics/pane-resize/run.sh'
 # adding a probe to SAFE_PROBES was invisible to this file until 2026-08-11.
 check 0 './Diagnostics/glass-backdrop/run.sh'
 check 0 './Diagnostics/override-wires/run.sh'
+check 0 './Diagnostics/cluster-wires/run.sh'
 check 0 './Diagnostics/footer-accessory/run.sh'
 check 2 './Diagnostics/app-icon/run.sh; ./Diagnostics/path-picker/run.sh'
 check 2 './Diagnostics/theme-catalog/run.sh && ./Diagnostics/control-channel/run.sh'
