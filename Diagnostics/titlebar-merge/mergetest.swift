@@ -265,6 +265,47 @@ enum Arm: String, CaseIterable {
     /// material's.
     case flatControl = "4-flat-control"
 
+    /// Arm 5, route A. `.fullSizeContentView`, but the two halves of the shared
+    /// layout rect are **split**: the sidebar column's rect extends up under the
+    /// band, while the pane tree's rect keeps the top edge it has *without* the
+    /// style-mask change.
+    ///
+    /// **This arm exists to price one number and the seam is the secondary
+    /// question.** `SurfaceHosts.layout` lays the column and the pane tree out
+    /// from ONE shared `bounds`, side by side, which is exactly why
+    /// `.fullSizeContentView` moves both: extend the content view and `bounds`
+    /// grows upward, taking the tree's rect with it. Route A asks whether the
+    /// tree's rect can be held back by 40 pt while the column's is allowed to
+    /// grow — and if it can, the merge is bought without a single ghostty grid
+    /// changing size and without a `SIGWINCH`.
+    ///
+    /// So the load-bearing measurement is not `boundaryStep` at all: it is the
+    /// **tree region's frame in window coordinates, compared against arm 1's**.
+    /// Equal means no grid moves. Any difference is the cost, reported as a
+    /// number rather than as a judgement. See `treeRegionFrame`.
+    case splitRect = "5-split-rect"
+
+    /// Arm 6, route D. **No style-mask change at all**: the window keeps today's
+    /// `contentLayoutRect`, so by construction nothing the pane tree lays out
+    /// against can move.
+    ///
+    /// The question is whether a view that lives in `contentView` can put glass
+    /// into the titlebar band region for the column's width, so the column
+    /// *appears* to extend up while no content actually does. That is the cheap
+    /// route if it exists: zero geometry cost, zero `SIGWINCH`.
+    ///
+    /// Two arrangements are honest and both are built and reported, because
+    /// "impossible" is a finding worth as much as a number:
+    ///
+    /// - a glass view in `contentView` with a **negative-y frame**, reaching
+    ///   above the content view's own bounds into the band. AppKit's answer to
+    ///   that is what `RouteDArrangement` records.
+    /// - the frame-view route (`contentView.superview`) with a plane sized to
+    ///   the **column's width only**, beside the rest of the band.
+    ///
+    /// See `RouteDArrangement` for what each one did.
+    case bandDrawnByColumn = "6-band-drawn-by-column"
+
     var usesGlass: Bool { self != .flatControl }
 
     /// **Arm 2 needs `.fullSizeContentView` too, and that is a finding rather than
@@ -278,13 +319,53 @@ enum Arm: String, CaseIterable {
     ///
     /// The consequence is the headline cost: **the container route and the
     /// single-plane route need the same window-level change.** See the README.
-    var wantsFullSizeContentView: Bool { self == .fullSizeOnePlane || self == .containerMerged }
+    /// **Arm 5 takes `.fullSizeContentView` and arm 6 pointedly does not**, and
+    /// that difference is the whole comparison between the two routes. Arm 5 buys
+    /// the extended content view and then tries to hold the pane tree's rect back
+    /// by hand; arm 6 refuses the purchase and asks whether the band can be
+    /// reached from below without it.
+    var wantsFullSizeContentView: Bool {
+        self == .fullSizeOnePlane || self == .containerMerged || self == .splitRect
+    }
 
     /// Whether the band's glass is a separate shape from the column's.
     ///
     /// True for arms 1 and 2 (two shapes, merged or not) and false for arm 3, which
     /// has one shape by construction.
     var hasTwoShapes: Bool { self == .shippedTwoPlanes || self == .containerMerged }
+}
+
+/// What AppKit did with each of route D's two arrangements, recorded per arm
+/// rather than asserted in a comment.
+///
+/// **An arrangement that does not render is the finding**, and the probe has to
+/// be able to say which one failed and how. A negative-y frame either clips at
+/// the content view's bounds or it does not; a column-width plane in the frame
+/// view either sits beside the band's own glass or it does not. Both are
+/// answerable by looking, and both are answered by the capture rather than by
+/// this type — what this type carries is the *structural* observation AppKit
+/// makes available before any pixel is read: the frame the view ended up with,
+/// and whether its superview clips to bounds.
+struct RouteDArrangement {
+    let name: String
+    /// The frame the glass view actually holds after being added, in its
+    /// superview's coordinates. A frame AppKit refused to honour shows here.
+    let frame: NSRect
+    /// Whether the superview clips its subviews to its own bounds. A `true` here
+    /// with a negative-y frame is the structural answer to "does it clip": the
+    /// part of the plane above the content view cannot render.
+    let superviewClips: Bool
+    /// How far the plane reaches above its superview's top edge, in points. Zero
+    /// means it does not reach the band at all.
+    let reachAboveSuperview: CGFloat
+
+    var description: String {
+        String(
+            format: "%@ frame=(%.0f,%.0f,%.0fx%.0f) clipsToBounds=%@ reachAbove=%.0f",
+            name, frame.origin.x, frame.origin.y, frame.width, frame.height,
+            superviewClips ? "YES" : "no", reachAboveSuperview
+        )
+    }
 }
 
 /// Where arm 2's `NSGlassEffectContainerView` ended up, which is a *finding* rather
@@ -356,9 +437,54 @@ final class ProbeWindow: NSWindow {
     /// coordinates, recorded by `buildArm` as it places the plane.
     private var recordedColumnTop: CGFloat?
 
+    /// The stand-in occupying the pane tree's place, held so `treeRegionFrame`
+    /// can be read off the view AppKit ended up with rather than off the rect the
+    /// arm asked for.
+    private var recordedSurface: NSView?
+
     /// Whether the traffic lights survived this arm's arrangement, and whether they
     /// remained hit-testable. Both are asked of AppKit after the window is built.
     private(set) var trafficLightReport: String = ""
+
+    /// **The pane tree's region, in WINDOW coordinates, and it is the number arm 5
+    /// exists to produce.**
+    ///
+    /// The stand-in that occupies the pane tree's place is what stands for the
+    /// ghostty grids. Where its rect sits is where a grid would sit, so comparing
+    /// this frame between arm 1 (the shipped arrangement) and arm 5 (route A)
+    /// answers the only question route A has to answer: does holding the tree's
+    /// rect back while the column's grows leave the tree where it was?
+    ///
+    /// **Window coordinates rather than content-view coordinates, and the choice
+    /// is the measurement.** Under `.fullSizeContentView` the content view's own
+    /// origin moves relative to the window, so a frame read in content-view terms
+    /// would report "unmoved" for a region that moved on screen — the exact error
+    /// that would make route A look free when it is not. Converting to the
+    /// window's own space, whose origin is the frame's bottom-left and does not
+    /// move with the style mask, is what makes arms 1 and 5 comparable at all.
+    private(set) var treeRegionFrame: NSRect = .zero
+
+    /// Route D's two arrangements and what AppKit did with each. Non-empty for
+    /// arm 6 only.
+    private(set) var routeD: [RouteDArrangement] = []
+
+    /// The one window frame every arm is held to.
+    ///
+    /// Derived from AppKit rather than written down: `frameRect(forContentRect:)`
+    /// on a plain titled mask answers "what frame does this content rect imply
+    /// under the arrangement the app ships", which is the shipped window's own
+    /// outer rectangle. Every arm is then set to it, so the style mask changes
+    /// only how the content view is inset inside a fixed frame.
+    ///
+    /// **A constant would have been wrong.** The inset is the toolbar's metric
+    /// plus the title bar's, neither of which this probe controls, and the README
+    /// already records a run where a hardcoded 380 left a 58 pt gap because the
+    /// live number was 438. Asking AppKit keeps the normalisation correct if a
+    /// system metric moves.
+    private static func normalisedFrame(for contentRect: NSRect) -> NSRect {
+        let shipped: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable]
+        return NSWindow.frameRect(forContentRect: contentRect, styleMask: shipped)
+    }
 
     init(arm: Arm, contentRect: NSRect) {
         self.arm = arm
@@ -415,6 +541,30 @@ final class ProbeWindow: NSWindow {
         content.wantsLayer = true
         contentView = content
 
+        // **Every arm is forced to the SAME WINDOW FRAME, and without this line the
+        // probe cannot compare geometry between arms at all.**
+        //
+        // `NSWindow(contentRect:)` interprets its argument differently under
+        // `.fullSizeContentView`: without the flag the frame grows by the chrome
+        // (a 380 pt content rect measured a 478 pt frame here), with the flag the
+        // content rect IS the frame (380 pt). So arms built from one `contentRect`
+        // end up 98 pt different in height — and arm 5's whole purpose is to
+        // compare its pane-tree rect against arm 1's.
+        //
+        // The first run of these two arms measured exactly that confound and
+        // reported it as route A's cost: `dtop=-98.0`, which decomposes as the
+        // 40 pt band plus the 58 pt of chrome growth the README already records
+        // from an earlier defect. A -98 that is 58 parts probe and 40 parts
+        // finding is worse than no number, because it looks like a measurement.
+        //
+        // Setting the frame explicitly after construction makes the window's outer
+        // rectangle the fixed thing and lets the style mask decide only how the
+        // content view is inset within it — which is the real difference between
+        // the arrangements and the only difference the comparison should see. The
+        // capture rect is the window frame too, so this also makes every arm's
+        // capture the same size.
+        setFrame(Self.normalisedFrame(for: contentRect), display: false)
+
         // The band height is read off the window rather than written as 40, for the
         // reason `layoutTitlebarGlass()` gives: it is whatever the window is
         // currently spending on chrome, so a toolbar metric this probe does not
@@ -448,6 +598,16 @@ final class ProbeWindow: NSWindow {
         )
 
         recordTrafficLights()
+
+        // **The pane tree's region, converted into window coordinates once the
+        // arm has placed it.** Read off the stand-in's live frame rather than
+        // recomputed here, so an arm that moves the tree cannot be reported as
+        // having left it alone: whatever the arm actually built is what is
+        // measured. See `treeRegionFrame` for why the conversion to window space
+        // is the load-bearing part.
+        if let surface = recordedSurface {
+            treeRegionFrame = surface.convert(surface.bounds, to: nil)
+        }
 
         // The plane boundary, converted from the column plane's own top edge into
         // the fraction of the window frame the strip reads in. `convert(_:to: nil)`
@@ -508,6 +668,10 @@ final class ProbeWindow: NSWindow {
             height: columnTop
         ))
         surface.autoresizingMask = [.width, .height]
+        // Held before the switch so every arm's tree region is read off one
+        // place. Arms that re-frame the stand-in (2 and 5) do so on this same
+        // instance, so the frame read afterwards is the one that rendered.
+        recordedSurface = surface
 
         switch arm {
         case .shippedTwoPlanes:
@@ -632,6 +796,176 @@ final class ProbeWindow: NSWindow {
             )
             content.addSubview(bandRemainder, positioned: .above, relativeTo: panel)
             heldViews.append(bandRemainder)
+
+            content.addSubview(surface)
+            addColumnContent(to: content, columnWidth: columnWidth, height: columnTop)
+
+        case .splitRect:
+            // ROUTE A. `.fullSizeContentView`, and the shared layout rect is SPLIT:
+            // the column's half grows up under the band, the pane tree's half does
+            // not.
+            //
+            // **What "does not" has to mean, or the arm measures nothing.** Under
+            // `.fullSizeContentView` the content view spans the whole window, so
+            // its top edge is the window's top edge and `height` already includes
+            // the band. The shipped arrangement (arm 1) has a content view that
+            // stops below the band, so its tree region's top edge is the window's
+            // top minus `bandHeight`. Holding the tree back therefore means giving
+            // it a top edge of `height - bandHeight` in THIS content view's
+            // coordinates — which is the same absolute row, in window terms, that
+            // arm 1's tree reaches. That equality is the claim, and
+            // `treeRegionFrame` is what tests it rather than this comment.
+            titlebarAppearsTransparent = true
+
+            // The column's plane spans band AND column: from the content view's
+            // bottom to its very top, which under `.fullSizeContentView` is the
+            // window's top edge. One shape down the strip's whole path, which is
+            // what arm 3 established merges — route A's seam question is whether
+            // splitting the *layout* rect disturbs that, not whether glass merges.
+            let columnPlane = makeGlass()
+            columnPlane.frame = NSRect(x: 0, y: 0, width: columnWidth, height: height)
+
+            // The band's own plane, to the right of the column, merged with the
+            // column's through one container exactly as arm 2 does. Arm 2 is the
+            // arrangement this probe already recommends, so route A is priced
+            // against it rather than against a different merge.
+            let bandRemainder = makeGlass()
+            bandRemainder.frame = NSRect(
+                x: columnWidth,
+                y: height - bandHeight,
+                width: width - columnWidth,
+                height: bandHeight
+            )
+
+            let container = NSGlassEffectContainerView(frame: contentBounds)
+            container.spacing = 0
+            container.autoresizingMask = [.width, .height]
+            let host = NSView(frame: contentBounds)
+            host.autoresizingMask = [.width, .height]
+            host.addSubview(columnPlane)
+            host.addSubview(bandRemainder)
+            container.contentView = host
+            content.addSubview(container, positioned: .below, relativeTo: nil)
+            heldViews += [container, host, columnPlane, bandRemainder]
+
+            // **The whole point of the arm.** The tree's rect stops at
+            // `height - bandHeight` — the row arm 1's content view tops out at —
+            // while the column beside it has just been allowed to reach `height`.
+            // Two different top edges out of what `SurfaceHosts.layout` treats as
+            // one `bounds`.
+            surface.frame = NSRect(
+                x: columnWidth,
+                y: 0,
+                width: width - columnWidth,
+                height: height - bandHeight
+            )
+            content.addSubview(surface)
+
+            // **The column's CONTENT stays below the band even though its GLASS
+            // extends up**, and the first capture of this arm is why the line
+            // reads this way. Handing it the full `height` drew "FILES" up into
+            // the band where it collided with the window title — a legibility
+            // problem of the probe's own making, and one that would have been read
+            // as route A's.
+            //
+            // Route A's claim is that the *glass* extends while the *content* does
+            // not, which is the same claim the tree region tests on the other side
+            // of the column. Drawing the content at `height - bandHeight` is that
+            // claim built rather than described.
+            addColumnContent(to: content, columnWidth: columnWidth, height: height - bandHeight)
+
+            // There is one sampling shape down the strip, so the boundary the
+            // strip reads is the one between the column plane and the band plane
+            // — which is at the column's RIGHT edge, not down the strip. The
+            // strip's boundary is therefore still recorded at the band/column row
+            // so arms 1 and 5 are read at the same place and the comparison is
+            // like for like.
+            recordedColumnTop = height - bandHeight
+
+        case .bandDrawnByColumn:
+            // ROUTE D. **No style-mask change.** `wantsFullSizeContentView` is
+            // false for this arm, so the content view stops below the band exactly
+            // as it does today and `contentLayoutRect` is untouched. Whatever this
+            // arm finds, it finds without moving any geometry — which is why it is
+            // worth building even if the answer is "impossible".
+            titlebarAppearsTransparent = true
+
+            // ARRANGEMENT 1: a glass view in `contentView` with a NEGATIVE-Y frame.
+            //
+            // The content view is unflipped, so y = 0 is its bottom and its top is
+            // `height`. Reaching INTO the band means reaching above `height`, so
+            // the honest frame is one whose maxY exceeds the content view's own
+            // bounds. (The brief calls this "negative y"; in an unflipped view the
+            // same overhang is a maxY past the top edge, and it is the same
+            // question: does a subview render outside its superview's bounds.)
+            //
+            // What is recorded is structural and available before any pixel: the
+            // frame AppKit kept, whether the superview clips, and how far the view
+            // reaches past the edge. The capture then says whether it rendered.
+            let overhang = makeGlass()
+            overhang.frame = NSRect(
+                x: 0, y: 0, width: columnWidth, height: height + bandHeight
+            )
+            content.addSubview(overhang, positioned: .below, relativeTo: nil)
+            heldViews.append(overhang)
+            routeD.append(RouteDArrangement(
+                name: "negative-y-in-contentView",
+                frame: overhang.frame,
+                superviewClips: content.clipsToBounds,
+                reachAboveSuperview: max(0, overhang.frame.maxY - height)
+            ))
+
+            // ARRANGEMENT 2: the frame-view route, but sized to the COLUMN's width
+            // only, sitting beside the rest of the band.
+            //
+            // This is the arrangement the app already uses for the band
+            // (`applyTitlebarGlass()` parents into `contentView.superview`), just
+            // cut narrower. It needs no style-mask change because the frame view
+            // already contains the band region — that is the whole reason
+            // `applyTitlebarGlass()` chose it. The question route D asks of it is
+            // whether a column-width piece of band glass can merge with the column
+            // below, which is in `contentView`: a different hierarchy, which arm 2
+            // already established no container can span.
+            if let frameView = contentView?.superview {
+                let bandOverColumn = makeGlass()
+                bandOverColumn.frame = NSRect(
+                    x: 0,
+                    y: frameView.bounds.height - bandHeight,
+                    width: columnWidth,
+                    height: bandHeight
+                )
+                frameView.addSubview(bandOverColumn, positioned: .below, relativeTo: nil)
+                heldViews.append(bandOverColumn)
+                routeD.append(RouteDArrangement(
+                    name: "column-width-plane-in-frameView",
+                    frame: bandOverColumn.frame,
+                    superviewClips: frameView.clipsToBounds,
+                    reachAboveSuperview: 0
+                ))
+
+                // The rest of the band still needs its glass or the window is not
+                // the app's — the same necessity arm 3 records for its own band
+                // remainder. It is NOT what the strip reads.
+                let bandRest = makeGlass()
+                bandRest.frame = NSRect(
+                    x: columnWidth,
+                    y: frameView.bounds.height - bandHeight,
+                    width: frameView.bounds.width - columnWidth,
+                    height: bandHeight
+                )
+                frameView.addSubview(bandRest, positioned: .below, relativeTo: nil)
+                heldViews.append(bandRest)
+            }
+
+            // The column's own glass inside `contentView`, where it ships. Under
+            // no style-mask change it reaches the content view's top edge, which is
+            // the bottom of the band: the two planes MEET there, in two
+            // hierarchies, which is arm 1's arrangement with the band cut to the
+            // column's width. The strip reads that boundary.
+            let columnGlass = makeGlass()
+            columnGlass.frame = NSRect(x: 0, y: 0, width: columnWidth, height: columnTop)
+            content.addSubview(columnGlass, positioned: .below, relativeTo: nil)
+            heldViews.append(columnGlass)
 
             content.addSubview(surface)
             addColumnContent(to: content, columnWidth: columnWidth, height: columnTop)
@@ -1210,6 +1544,10 @@ var reports: [String] = []
 var backdropChecks: [String] = []
 /// The pipeline's own noise floor, measured off the flat control's capture.
 var noiseFloor: NoiseFloor?
+/// Every arm's pane-tree region in window coordinates, which is what route A is
+/// priced on. Arm 5 against arm 1 is the comparison; the rest are kept so a
+/// reader can see the arms that were expected to move actually moving.
+var treeRegions: [Arm: NSRect] = [:]
 
 /// Captures a window, re-settling and re-capturing until the file shows the glass has
 /// sampled. Each retry waits longer than the last: the first failure is usually a
@@ -1343,6 +1681,17 @@ for arm in Arm.allCases {
     if let placement = window.placement {
         reports.append("  container: \(placement.note)")
     }
+    // Every arm's tree region, in window coordinates, so the arm-5-against-arm-1
+    // comparison below is not the only place the number can be checked.
+    let tree = window.treeRegionFrame
+    treeRegions[arm] = tree
+    reports.append(String(
+        format: "  tree region (window coords): x=%.1f y=%.1f w=%.1f h=%.1f  top=%.1f",
+        tree.origin.x, tree.origin.y, tree.width, tree.height, tree.maxY
+    ))
+    for arrangement in window.routeD {
+        reports.append("  route-D: \(arrangement.description)")
+    }
 
     window.orderOut(nil)
 }
@@ -1394,6 +1743,92 @@ for arm in Arm.allCases {
             + padLeft(String(format: "%.2f", strip.maxStep), 13)
             + padLeft(String(format: "%.4f", strip.maxStepAt), 13)
     )
+}
+
+// MARK: - route A's real question
+
+// **The pane tree's rect, arm 5 against arm 1, and this is route A's verdict
+// rather than its seam number.**
+//
+// `boundaryStep` says whether route A merges. This says whether route A is
+// affordable, and the two are independent: an arrangement that merges perfectly
+// while moving every ghostty grid is the arrangement `applyTitlebarGlass()`
+// already rejected. Arm 1 is the shipped arrangement, so its tree region is
+// where a grid sits today; arm 5 is route A. Equal frames mean no grid would
+// move and no shell would be signalled. Any difference is the cost.
+//
+// Compared in WINDOW coordinates for the reason `treeRegionFrame` documents:
+// under `.fullSizeContentView` the content view's own origin shifts, so a
+// content-view-relative read would report "unmoved" for a region that moved on
+// screen — which is exactly the error that would make route A look free.
+print()
+print("=== route A: does the pane tree's rect stay put? ===")
+print("Arm 1 is the shipped arrangement, so its tree region is where a ghostty")
+print("grid sits today. Arm 5 is route A. Equal = no grid moves = no SIGWINCH.")
+print("Window coordinates, because .fullSizeContentView moves the content view's")
+print("own origin and a content-relative read would call a moved region unmoved.")
+print()
+if let shipped = treeRegions[.shippedTwoPlanes], let routeA = treeRegions[.splitRect] {
+    print(String(
+        format: "  arm 1 (shipped)     x=%.1f y=%.1f w=%.1f h=%.1f  top=%.1f",
+        shipped.origin.x, shipped.origin.y, shipped.width, shipped.height, shipped.maxY
+    ))
+    print(String(
+        format: "  arm 5 (split-rect)  x=%.1f y=%.1f w=%.1f h=%.1f  top=%.1f",
+        routeA.origin.x, routeA.origin.y, routeA.width, routeA.height, routeA.maxY
+    ))
+    let dx = routeA.origin.x - shipped.origin.x
+    let dy = routeA.origin.y - shipped.origin.y
+    let dw = routeA.width - shipped.width
+    let dh = routeA.height - shipped.height
+    let dtop = routeA.maxY - shipped.maxY
+    print(String(
+        format: "  delta               dx=%.1f dy=%.1f dw=%.1f dh=%.1f  dtop=%.1f",
+        dx, dy, dw, dh, dtop
+    ))
+    // The height and the top edge are what a grid is computed from: a tree region
+    // of the same height at the same rows holds the same number of rows and
+    // columns. A pure x/width change would still move a grid, so all four are
+    // tested rather than only the vertical pair.
+    let moved = abs(dx) > 0.01 || abs(dy) > 0.01 || abs(dw) > 0.01 || abs(dh) > 0.01
+    if moved {
+        print("  ROUTE A MOVES THE PANE TREE. The rect is not held: the numbers above")
+        print("  are the cost, in points, that every ghostty grid would pay and every")
+        print("  running shell would be SIGWINCH'd for.")
+    } else {
+        print("  ROUTE A HOLDS THE PANE TREE. The tree region is identical to the")
+        print("  shipped arrangement's in all four components, so no grid changes")
+        print("  size and no shell is signalled. The merge is bought without it.")
+    }
+} else {
+    print("  NOT MEASURED — arm 1 or arm 5 produced no tree region.")
+    failures += 1
+}
+
+// MARK: - route D's structural answer
+
+// **Whether route D is possible at all, which is a structural question and is
+// answered structurally.** A `boundaryStep` for arm 6 is reported with the other
+// arms, but a number for an arrangement that never rendered would be worse than
+// no number: it would look like a measurement. So what AppKit did with each
+// arrangement is printed on its own, before any grading.
+print()
+print("=== route D: can the band region be reached from contentView? ===")
+print("No style-mask change, so contentLayoutRect is untouched by construction and")
+print("nothing the pane tree lays out against can move. The question is only")
+print("whether the band region can be reached at all from below.")
+print()
+for line in reports where line.contains("route-D:") {
+    print(" " + line.trimmingCharacters(in: .whitespaces))
+}
+if let arm6Tree = treeRegions[.bandDrawnByColumn], let shipped = treeRegions[.shippedTwoPlanes] {
+    let same = abs(arm6Tree.origin.x - shipped.origin.x) < 0.01
+        && abs(arm6Tree.origin.y - shipped.origin.y) < 0.01
+        && abs(arm6Tree.width - shipped.width) < 0.01
+        && abs(arm6Tree.height - shipped.height) < 0.01
+    print()
+    print("  tree region vs arm 1: \(same ? "IDENTICAL" : "MOVED") — route D's whole claim is that")
+    print("  it costs no geometry, and this is that claim tested rather than asserted.")
 }
 
 // The grading threshold, derived from the pipeline's own noise floor.

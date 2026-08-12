@@ -1,10 +1,15 @@
 # Titlebar merge probe
 
-`./run.sh [output-directory]` from anywhere. Writes four captures, an `-backing.png`
+`./run.sh [output-directory]` from anywhere. Writes six captures, an `-backing.png`
 companion and a `backdrop-check-*.png` strip for each, and a strip measurement;
 exits non-zero if a capture fails, if a glass arm never samples its backdrop, or if
 **any arm's controlled backdrop was displaced** — the last naming the arm and
 refusing to publish a number for it.
+
+Arms 1-4 answer *whether* the band and the column can merge. **Arms 5 and 6 price
+the two candidate routes to getting there**, and their headline number is not a
+seam at all: it is whether the pane tree's rect moves. See "Routing: what the
+merge costs".
 
 ## The question
 
@@ -73,15 +78,40 @@ its material, as `WorkspaceWindowController` documents), a titlebar band, and a
 260 pt column at `SidebarGeometry.default.width` read off `WorkspaceLayout` at run
 time rather than transcribed.
 
-| Arm | Band plane | Column plane | Hierarchy |
-|---|---|---|---|
-| 1 `1-shipped-two-planes` | frame view | `contentView` | **two**, as shipped |
-| 2 `2-container-merged` | `contentView`, in a container | `contentView`, same container | one |
-| 3 `3-fullsize-one-plane` | one plane spans both | same plane | one |
-| 4 `4-flat-control` | system slab | flat fill | n/a |
+| Arm | Band plane | Column plane | Hierarchy | `.fullSizeContentView` |
+|---|---|---|---|---|
+| 1 `1-shipped-two-planes` | frame view | `contentView` | **two**, as shipped | no |
+| 2 `2-container-merged` | `contentView`, in a container | `contentView`, same container | one | yes |
+| 3 `3-fullsize-one-plane` | one plane spans both | same plane | one | yes |
+| 4 `4-flat-control` | system slab | flat fill | n/a | no |
+| 5 `5-split-rect` (route A) | `contentView`, container | spans band+column | one | **yes** |
+| 6 `6-band-drawn-by-column` (route D) | frame view, **column width** | `contentView` | two | **no** |
 
 Arm 4 is not a candidate. It is the control that says how much of any difference
 between the others is glass rather than layout.
+
+### Every arm is held to ONE window frame, and without that the geometry arms measure nothing
+
+`NSWindow(contentRect:)` interprets its argument differently under
+`.fullSizeContentView`: without the flag the frame grows by the chrome (a 380 pt
+content rect measured a **478 pt** frame), with the flag the content rect *is* the
+frame (**380 pt**). Arms built from one `contentRect` therefore end up **98 pt
+different in height** — and arm 5's entire purpose is to compare its pane-tree rect
+against arm 1's.
+
+**The first run of arms 5 and 6 measured exactly that confound and reported it as
+route A's cost**: `dtop=-98.0`, which decomposes as the 40 pt band plus the 58 pt of
+chrome growth this README already records from an earlier defect. A -98 that is 58
+parts probe and 40 parts finding is worse than no number, because it looks like a
+measurement. It was caught by asking why the delta was not 40.
+
+So `ProbeWindow.normalisedFrame` asks AppKit for `frameRect(forContentRect:)` under
+the *shipped* style mask and every arm is `setFrame` to it. The window's outer
+rectangle is then the fixed thing and the style mask decides only how the content
+view is inset within it — which is the real difference between the arrangements and
+the only difference the comparison should see. A constant would have been wrong: the
+inset is the toolbar's metric plus the title bar's, neither of which this probe
+controls.
 
 ### What arm 2 measures, and what it does not
 
@@ -318,11 +348,20 @@ Every arm, all three runs:
 | 1 shipped two planes | **34.33** | **34.33** | **34.33** | SEAM |
 | 2 container merged | **0.00** | **0.00** | **0.00** | MERGED |
 | 3 full-size one plane | **0.00** | **0.00** | **0.00** | MERGED |
-| 4 flat control | 14.93 | 14.93 | 14.93 | — (two-tone layout, for scale) |
+| 4 flat control | 16.00 | 16.00 | 16.00 | — (two-tone layout, for scale) |
+| 5 split-rect (route A) | **0.00** | **0.00** | **0.00** | MERGED |
+| 6 band-drawn-by-column (route D) | **6.21** | **6.21** | **6.21** | SEAM |
 
 Threshold 2.00 in all three runs; noise floor 0.00 at all five positions in all
 three. The three runs agree exactly, which is far inside the measured noise floor —
-there is no run-to-run variation at all to be within.
+there is no run-to-run variation at all to be within. All six backdrop assertions
+passed in all three runs at `white-half=255.0 black-half=0.0`.
+
+**The flat control moved from 14.93 to 16.00 and no conclusion moves with it.** The
+window-frame normalisation above changed every arm's capture height, so the strip
+crosses the two-tone boundary at a slightly different row. The control is a scale
+marker, not an error bar; arm 1 is unchanged at 34.33 because its step is a real
+edge rather than a sampling position.
 
 **These numbers supersede the 38.00 / 26.93 pair this README previously carried.**
 Those came from a run whose backdrop happened to survive, but over a backdrop with
@@ -360,14 +399,23 @@ buttons, and `frameView.hitTest` at each button's own centre, which answers "doe
 click here reach the button rather than something laid over it":
 
 ```
-1-shipped-two-planes  close=visible,hit min=visible,hit zoom=visible,hit
-2-container-merged    close=visible,hit min=visible,hit zoom=visible,hit
-3-fullsize-one-plane  close=visible,hit min=visible,hit zoom=visible,hit
-4-flat-control        close=visible,hit min=visible,hit zoom=visible,hit
+1-shipped-two-planes    close=visible,hit min=visible,hit zoom=visible,hit
+2-container-merged      close=visible,hit min=visible,hit zoom=visible,hit
+3-fullsize-one-plane    close=visible,hit min=visible,hit zoom=visible,hit
+4-flat-control          close=visible,hit min=visible,hit zoom=visible,hit
+5-split-rect            close=visible,hit min=visible,hit zoom=visible,hit
+6-band-drawn-by-column  close=visible,hit min=visible,hit zoom=visible,hit
 ```
 
-All three buttons are present, visible and reachable in **all four arms**, including
-both merged ones. They are also visible in every capture. This is the expected result
+All three buttons are present, visible and reachable in **all six arms**, including
+both merged ones and both routes. They are also visible in every capture.
+
+**Arm 5 is the one this was asked of specifically**, because under route A the
+buttons sit over the *sidebar's* glass rather than over a band plane of their own:
+the column's plane spans band and column, so it passes underneath all three lights.
+They remain visible and hit-testable anyway, for the same z-order reason the merged
+arms do — the plane is added `positioned: .below`, so the buttons render and hit-test
+above it. Route A does not cost the traffic lights. This is the expected result
 for arms 1 and 3 — the app's `TitlebarGlassBacking` overrides `hitTest` to return
 `nil` precisely so it cannot swallow a window-close click, and the probe's glass
 carries no such override yet still does not intercept, because both merged
@@ -396,6 +444,96 @@ band and column indistinguishable. Traffic lights present in both.
 That matches `glass-backdrop`'s finding 5 on the capsule — `spacing = 0` keeps
 adjacent shapes distinct while sharing one sampling pass — applied to two much larger
 shapes, where the shared pass is exactly the point.
+
+## Routing: what the merge costs
+
+Arms 1-4 established that the merge is available and that both merged arrangements
+need `.fullSizeContentView`, whose cost is a `contentLayoutRect` drop that resizes
+every ghostty grid. Arms 5 and 6 price the two candidate routes around that cost.
+`Diagnostics/titlebar-toolbar`'s "Why not ghostty parity (arrangement B)" already
+rules out per-pane padding compensation on structural grounds and is not re-derived
+here.
+
+### 5. Route A holds the pane tree exactly. Delta 0.0 on all four components.
+
+**This is the headline of the two new arms and it is not a seam number.** Route A
+takes `.fullSizeContentView` and then splits what `SurfaceHosts.layout` treats as
+one `bounds`: the sidebar column's rect is allowed up under the band while the pane
+tree's rect keeps the top edge it has *without* the style-mask change.
+
+The load-bearing measurement is the pane tree's region in **window coordinates**,
+arm 5 against arm 1:
+
+```
+arm 1 (shipped)     x=260.0 y=0.0 w=640.0 h=372.0  top=372.0
+arm 5 (split-rect)  x=260.0 y=0.0 w=640.0 h=372.0  top=372.0
+delta               dx=0.0 dy=0.0 dw=0.0 dh=0.0  dtop=0.0
+```
+
+Identical in all four components, in all three runs. **No grid would change size and
+no running shell would be `SIGWINCH`'d.** The style-mask change moves the content
+view; it does not have to move what is laid out inside it, because the pane tree's
+rect is arithmetic this app writes rather than a rect AppKit hands down.
+
+Window coordinates rather than content-view coordinates, and the choice is the
+measurement: under `.fullSizeContentView` the content view's own origin moves
+relative to the window, so a content-relative read would report "unmoved" for a
+region that moved on screen. That is the exact error that would make route A look
+free when it is not.
+
+And route A merges: `boundaryStep` **0.00**, the same as arms 2 and 3, against arm
+1's 34.33. The capture shows one continuous panel from the window's top edge down
+the column, with the pane rows starting at the same y as arm 1's.
+
+**What this does and does not retire.** It does not dispute that
+`.fullSizeContentView` drops `contentLayoutRect` from 292 to 220 pt — that remains
+true and `titlebar-toolbar` still asserts it. What it measures is that the drop need
+not propagate: the pane tree can be anchored to a rect the app computes rather than
+to `contentLayoutRect` directly. That is the "anchor to the safe area rather than to
+`contentLayoutRect`" move the previous verdict handed on as unmeasured, and this is
+it measured — **in a probe, on a stand-in, without a PTY**. See "What is not
+answered".
+
+### 6. Route D is structurally possible, and one of its two arrangements is the reason.
+
+Route D takes **no style-mask change at all**, so `contentLayoutRect` is untouched by
+construction and the tree region is `IDENTICAL` to arm 1's without anything having to
+be held back. The question was only whether the band region can be reached from
+below. Two arrangements were built and AppKit's answer recorded for each:
+
+```
+negative-y-in-contentView        frame=(0,0,260x412) clipsToBounds=no  reachAbove=40
+column-width-plane-in-frameView  frame=(0,372,260x40) clipsToBounds=YES reachAbove=0
+```
+
+- **The overhanging view in `contentView` keeps its frame and is not clipped by its
+  superview** (`clipsToBounds=no`, reaching 40 pt above the content view's top edge).
+  AppKit does not refuse the frame. But the content view is not the top of the
+  window's view hierarchy, and the band is composited above it — so reaching past the
+  content view's bounds does not put glass *in front of* the band. This arrangement
+  renders nothing visible in the band region.
+- **The column-width plane in the frame view renders, and it is what makes route D
+  possible.** It is the arrangement `applyTitlebarGlass()` already uses, cut to the
+  column's width, with the rest of the band beside it. It needs no style-mask change
+  for the reason that method chose the frame view in the first place: the frame view
+  already contains the band region.
+
+So the answer to "can a view living in `contentView` draw into the band" is **no**,
+and the answer to "is route D structurally possible" is **yes, from the frame view**.
+Those are different questions and only the second one matters.
+
+**But route D does not merge.** `boundaryStep` **6.21**, against a threshold of 2.00
+— graded SEAM in all three runs. It is a much softer seam than arm 1's 34.33 (about
+a fifth), and the capture reads as one column rather than two stacked planes, which
+is why the number is worth reporting rather than dismissing. The residual is the same
+sampling-boundary artifact arms 1-4 diagnosed: the band's plane is in the frame view
+and the column's is in `contentView`, two hierarchies, and **arm 2 already established
+that no `NSGlassEffectContainerView` can span that split**. Route D changes the band
+plane's width; it does not change the fact that there are two planes sampling
+separately.
+
+Route D therefore buys **a 5x reduction in the seam for zero geometry cost**, and
+does not buy the merge.
 
 ## Verdict
 
@@ -441,21 +579,58 @@ measured it dropping from 292 to 220 pt, which resizes every ghostty grid and
 `SIGWINCH`s every running shell. That is a real cost paid by every pane, and it is
 disqualifying on its own unless it is compensated.
 
-**Whether it can be compensated is the open question this probe hands on**, and there
-is precedent that it can: `glass-backdrop`'s grid measurement faced the same shape of
-problem for the footer and closed it by raising `window-padding-y`, verified against a
-real PTY at 0 rows delta. The analogous move here is anchoring the pane tree to the
-safe area rather than to `contentLayoutRect`, so the backing extends while the visible
-layout does not move — which is exactly what `titlebar-toolbar`'s shipped-shape arms
-do with their well. **Neither is measured here.** A follow-up probe wanting a real PTY
-and a grid count, on `gridtest.swift`'s pattern, is what would close it.
+**Whether it can be compensated was the open question this probe handed on, and arm
+5 now answers it: yes, and the compensation is free.** The previous revision named
+the move — anchor the pane tree to a rect the app computes rather than to
+`contentLayoutRect` — and could not measure it. Route A is that move built, and the
+pane tree's region comes back **identical to the shipped arrangement's in all four
+components** while the seam goes to 0.00. The `contentLayoutRect` drop is real and
+still asserted by `titlebar-toolbar`; what arm 5 measures is that it need not
+propagate to the panes.
 
-So the recommendation in one line: **the merge is available and costs a window-style
-change whose grid impact is unmeasured; measure that before adopting it, and do not
-adopt it on this probe alone.**
+This is the load-bearing correction to the previous verdict. The recommendation was
+"do not adopt on this probe alone" *because* the grid impact was unmeasured. It is
+now measured, in this probe, and it is zero.
+
+### Route A or route D
+
+**Route A**: merges completely (0.00), holds the pane tree exactly (delta 0.0),
+keeps the traffic lights. Costs `.fullSizeContentView` plus the split-rect arithmetic
+in `SurfaceHosts.layout` — the column's rect and the tree's rect stop being two
+halves of one `bounds` and become two rects with different top edges.
+
+**Route D**: costs nothing structural at all — no style-mask change,
+`contentLayoutRect` untouched by construction — and does not merge (6.21 against a
+2.00 threshold). It reduces the seam about fivefold and leaves a real one.
+
+**Take route A.** Route D is the cheaper route and it does not do the job the owner
+asked for: the brief is one panel, and 6.21 is a visible boundary. Route D's value is
+as a fallback if the split-rect arithmetic turns out to cost more in `SurfaceHosts`
+than it appears to, because it is a two-line change to `applyTitlebarGlass()` that
+buys most of the visual improvement for none of the risk.
+
+So the recommendation in one line: **route A merges the panel and, measured here,
+moves no grid; adopt it, and confirm the grid count against a real PTY before
+shipping.**
 
 ### What is not answered
 
+- **Route A's tree region is a rect, not a grid.** Arm 5 measures that the pane
+  tree's *rectangle* is unmoved, which is the precondition for no `SIGWINCH` and is
+  the thing that was previously unmeasured. It is not a count of ghostty rows and
+  columns: the stand-in is an `NSColor` fill, not a surface with a cell metric, and
+  this probe spawns no PTY by construction. An unmoved rect cannot produce a
+  different grid — the grid is a function of the rect and the cell size — but the
+  chain is argued here rather than measured end to end. **A follow-up on
+  `gridtest.swift`'s pattern, with a real PTY and a row count across the flip, is
+  what closes it, and it should be run before adopting route A.**
+- **Route A's split rect is measured in the probe's own layout, not in
+  `SurfaceHosts`.** The arm builds two rects with different top edges and shows the
+  result merges and holds. What it does not do is carry `SurfaceHosts.layout`'s real
+  arithmetic — the divider, the width divider, the action row and `layoutSections`
+  all derive from the same `bounds` the split would divide, and each is a call site
+  that has to be audited. The probe says the shape is sound; it does not say how many
+  lines it takes.
 - **Drag and click are inspected, not exercised** (finding 3). A focus-taking probe or
   a hand check in the dev build is what settles them.
 - **The key-to-non-key transition is unmeasured**, for `glass-backdrop`'s reason: every
@@ -477,6 +652,8 @@ arm-1-shipped-two-planes.png    the control: the seam as it ships
 arm-2-container-merged.png      NSGlassEffectContainerView, both planes
 arm-3-fullsize-one-plane.png    one plane down the column
 arm-4-flat-control.png          the same geometry, no glass
+arm-5-split-rect.png            route A: column's rect extends, tree's does not
+arm-6-band-drawn-by-column.png  route D: column-width band plane, no style change
 <name>-backing.png              the `-l` cross-check for each of the above
 backdrop-check-<arm>.png        the off-window strip each arm's backdrop assertion
                                 read, one per arm: the evidence that what the glass

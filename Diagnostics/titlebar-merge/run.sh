@@ -44,7 +44,8 @@ swiftc -swift-version 6 -default-isolation MainActor -o "$BUILD/mergetest" \
   -Xlinker -rpath -Xlinker "$LIB" \
   "$HERE/mergetest.swift"
 
-echo "=== four arms: shipped two planes, container merge, one full-size plane, flat control ==="
+echo "=== six arms: shipped two planes, container merge, one full-size plane, flat"
+echo "    control, route A (split rect), route D (band drawn by the column) ==="
 "$BUILD/mergetest" "$OUT" | tee "$OUT/measurement.txt"
 status=${PIPESTATUS[0]}
 
