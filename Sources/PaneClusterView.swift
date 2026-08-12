@@ -61,6 +61,19 @@ final class PaneClusterView: PaneOverlayView {
         isPaneFocused && isWindowActive
     }
 
+    /// The segment whose card is up, wearing the hot wash while it is: a
+    /// rounded rect behind the segment, brighter than the pill fill, the
+    /// design mockup's active treatment (owner ruling, 2026-08-12). Set by the
+    /// controller beside its own `clusterCardRole` and cleared in the same
+    /// `onDismiss`, so the wash on screen and the toggle's memory cannot
+    /// disagree about which card is open. Nil is no card and no wash.
+    var activeRole: PaneClusterSegmentRole? {
+        didSet {
+            guard activeRole != oldValue else { return }
+            needsDisplay = true
+        }
+    }
+
     var theme: PaneTheme = .darkPastel {
         didSet {
             guard theme != oldValue else { return }
@@ -235,6 +248,23 @@ final class PaneClusterView: PaneOverlayView {
             nsColor(theme.barBackground, alpha: fillAlpha).setFill()
         }
         pill.fill()
+
+        // The hot wash behind the segment whose card is up, over the fill and
+        // under the ink — the design mockup's active treatment. Half a gap
+        // wider than the segment on each side, so the glyphs get breathing
+        // room without touching a neighbour, and always inside the pill's
+        // ends because `horizontalInset` (8) exceeds the outset (4). White at
+        // 0.14 is a starting value chosen to read brighter than both fills
+        // (chrome and thick are dark paint); the exact alpha and the 4 pt
+        // radius are dial-in fodder, not tokens. Off the same cached `placed`
+        // the segments draw from, via `segmentRect(for:)`, so the wash cannot
+        // land beside the segment it highlights; a role no longer placed
+        // (the status moved while its card was up) washes nothing.
+        if let activeRole, let active = segmentRect(for: activeRole) {
+            let wash = active.insetBy(dx: -PaneClusterMetrics.segmentGap / 2, dy: 3)
+            NSColor(white: 1, alpha: 0.14).setFill()
+            NSBezierPath(roundedRect: wash, xRadius: 4, yRadius: 4).fill()
+        }
 
         // The inset stroke, in the same ink as the footer's focus frame and
         // at its width, inset by half so the stroke lands inside the pill's

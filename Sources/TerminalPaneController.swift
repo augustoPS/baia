@@ -1575,14 +1575,20 @@ final class TerminalPaneController: NSViewController {
 
         clusterCards.show(content: card, anchoredTo: anchor, in: window) { [weak self] in
             self?.clusterCardRole = nil
+            self?.clusterView.activeRole = nil
         }
         // After `show`, never before: switching cards makes `show` dismiss
         // the one already up, and that dismissal fires the OLD card's
         // `onDismiss`, which nils the role. A role assigned first would be
         // consumed by the old card's teardown and the toggle would go blind,
         // the same consumed-by-old-teardown race `ClusterCardController`'s
-        // `onDismiss`-as-parameter shape exists to close.
+        // `onDismiss`-as-parameter shape exists to close. `activeRole` — the
+        // capsule's hot wash on the summoning segment (owner ruling,
+        // 2026-08-12) — rides the same rule for the same reason, and is
+        // cleared in the same `onDismiss`, so the wash cannot outlive its
+        // card or be wiped by the outgoing one's teardown.
         clusterCardRole = .place
+        clusterView.activeRole = .place
     }
 
     /// Presents the changes card, then runs the poller's own porcelain read
@@ -1621,11 +1627,14 @@ final class TerminalPaneController: NSViewController {
 
         clusterCards.show(content: card, anchoredTo: anchor, in: window) { [weak self] in
             self?.clusterCardRole = nil
+            self?.clusterView.activeRole = nil
         }
         // After `show`, for `presentPlaceCard`'s reason: assigned first,
         // these would be consumed by the outgoing card's teardown inside
-        // `show` and the toggle would go blind.
+        // `show` and the toggle would go blind. `activeRole` rides the same
+        // rule (see `presentPlaceCard`).
         clusterCardRole = .changes
+        clusterView.activeRole = .changes
         changesCard = card
         changesCardHeadExists = true
 
@@ -1718,11 +1727,16 @@ final class TerminalPaneController: NSViewController {
 
         clusterCards.show(content: card, anchoredTo: anchor, in: window) { [weak self] in
             self?.clusterCardRole = nil
+            self?.clusterView.activeRole = nil
         }
         // After `show`, for `presentPlaceCard`'s reason: assigned first, the
         // role would be consumed by the outgoing card's teardown inside
-        // `show` and the toggle would go blind.
+        // `show` and the toggle would go blind. `activeRole` rides the same
+        // rule (see `presentPlaceCard`); the wash lands on the summoning
+        // segment — `.attention` or `.agent`, whichever was clicked — the
+        // same per-segment memory the toggle keeps.
         clusterCardRole = role
+        clusterView.activeRole = role
     }
 
     /// Hands a card's command to the terminal and dismisses the card.
