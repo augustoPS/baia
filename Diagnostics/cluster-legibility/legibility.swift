@@ -24,15 +24,18 @@ import PaneChrome
 // README as an exact value, where pane-glass-legibility's absolutes are
 // within-run only.
 //
-// Where alpha is in play the fill is composited over the dark theme document
-// colour (`PaneTheme.darkPastel.background`, `#141414`) — the realistic
-// content behind the pill. The compositing arithmetic is
-// `RGBA.composited(over:)` (ChromeMaterials.swift), the package's own copy of
-// glass-backdrop's `flatten(rgba:over:)`: per channel,
-// `out = rgb·α + backdrop·(1−α)`. It is not trusted blind: each arm renders
-// the capsule over an opaque backdrop view and asserts the *measured* fill
-// band equals the flatten's prediction within ±1 byte per channel, so the
-// arithmetic and AppKit's actual compositing are held to agree on every run.
+// Where alpha is in play the pill composites in two layers since 2026-08-12
+// (the owner's read-through ruling): the backing — `theme.background` at
+// `ChromeMaterials.PaneWash.floor` — onto the backdrop, then the material
+// fill onto the backing. Two backdrops per arm: the dark theme document
+// colour (`PaneTheme.darkPastel.background`, `#141414`), and the bright
+// bound `#7c7c7c` the backing exists to survive. The prediction is not
+// trusted blind: each arm renders the capsule over an opaque backdrop view
+// and asserts the *measured* fill band equals the predicted composite within
+// ±1 byte per channel, so the layer stack and AppKit's actual compositing
+// are held to agree on every run. The prediction's per-channel arithmetic is
+// `NSColor.blended(withFraction:of:)` — see `predictedBand` for why the
+// package's sRGB flatten, exact in the dark regime, is not it.
 //
 // Every arm has a negative control, the house pattern (`override-wires` via
 // `cluster-wires`): under `break` the graded ink — the theme foreground for
@@ -210,6 +213,60 @@ let textFloor = PaneTheme.minimumTextContrast
 /// it; the README carries the citation.
 let dotFloor = 3.0
 
+/// The backdrops every arm renders over. The document colour is the realistic
+/// content behind the pill; the bright bound is glass-backdrop finding 6b's
+/// `#7c7c7c`, the brightest backdrop this repo has measured, standing in for
+/// prompt text and bright content beneath the pill.
+///
+/// Two since 2026-08-12, when the pill grew its backing (`theme.background`
+/// at `ChromeMaterials.PaneWash.floor`, painted under the material fill so
+/// what is beneath never reads through — the owner's ruling). Before the
+/// backing, the bright case was derived arithmetic in the README's "bound
+/// this probe does not measure"; the backing is plain paint in the same
+/// `draw(_:)`, so the case became renderable here and is measured. The bright
+/// arm is also what makes the flatten cross-check see the backing at all:
+/// over the document colour the backing composites to exactly the document
+/// colour (background over background) and a missing backing would be
+/// invisible, where over `#7c7c7c` its absence moves the band by ~29 bytes.
+let backdrops: [(name: String, colour: RGB)] = [
+    ("the document colour", PaneTheme.darkPastel.background),
+    ("the bright bound #7c7c7c", .eightBit(124, 124, 124)),
+]
+
+/// The pill's fill band as `draw(_:)` composites it since 2026-08-12: the
+/// backing first (`theme.background` at the `PaneWash` floor), the material
+/// fill over it.
+///
+/// Blended through `NSColor.blended(withFraction:of:)` rather than the
+/// package's `RGBA.composited(over:)`, and the difference is the compositing
+/// space, found the day the bright backdrop joined: the rep
+/// `bitmapImageRepForCachingDisplay(in:)` hands back is Generic RGB
+/// (gamma 1.8), and AppKit blends in the rep's space, which `NSColor`'s own
+/// calibrated blend reproduces to sub-byte on both backdrops. The package's
+/// sRGB flatten is the same layer stack in sRGB bytes and agrees to sub-byte
+/// over the dark document colour — which is the regime every pre-2026-08-12
+/// pin lived in, and why the divergence stayed invisible — but lands ~6 bytes
+/// dark of the measurement at the bright bound. The layer stack under
+/// prediction is unchanged either way; only the per-channel arithmetic is
+/// AppKit's, so the ±1 check keeps its teeth on both backdrops.
+func predictedBand(fill: RGBA, over backdrop: RGB) -> RGB {
+    let backing = nsSRGB(backdrop).blended(
+        withFraction: ChromeMaterials.PaneWash.floor,
+        of: nsSRGB(PaneTheme.darkPastel.background)
+    )!
+    let band = backing.blended(withFraction: fill.alpha, of: nsSRGB(fill.rgb))!
+    return asRGB(band)
+}
+
+func nsSRGB(_ rgb: RGB) -> NSColor {
+    NSColor(srgbRed: rgb.red, green: rgb.green, blue: rgb.blue, alpha: 1)
+}
+
+func asRGB(_ colour: NSColor) -> RGB {
+    guard let srgb = colour.usingColorSpace(.sRGB) else { fatalError("no sRGB form") }
+    return RGB(red: srgb.redComponent, green: srgb.greenComponent, blue: srgb.blueComponent)
+}
+
 /// One text arm: the capsule at a fill tier, segment ink graded over the
 /// composited pill fill. Shared by `resting` (fillChrome) and `focused`
 /// (fillThick); the two arms differ only in which material the focus step
@@ -217,53 +274,60 @@ let dotFloor = 3.0
 /// this probe's.
 @MainActor func gradeText(tier: String, fill: RGBA, focused: Bool) {
     let base = PaneTheme.darkPastel
-    // The flatten: RGBA.composited(over:) — out = rgb·α + backdrop·(1−α), the
-    // package's copy of glass-backdrop's flatten(rgba:over:).
-    let predicted = fill.composited(over: base.background)
 
-    // The negative control: ink deliberately set to the composited fill
-    // colour. Same render, same sampling, same grade — and the grade must
-    // fail, or the probe is not measuring what it claims.
-    var theme = base
-    if broken { theme.foreground = predicted }
+    for backdrop in backdrops {
+        // The composite, two layers since 2026-08-12: the backing (background
+        // at the PaneWash floor) onto the backdrop, then the material fill
+        // onto the backing — predictedBand's calibrated blend, and its doc
+        // for where the package's sRGB flatten sits.
+        let predicted = predictedBand(fill: fill, over: backdrop.colour)
 
-    let capsule = makeCapsule(theme: theme, focused: focused)
-    let size = capsule.intrinsicContentSize
-    let rep = renderOverBackdrop(capsule, backdrop: base.background)
+        // The negative control: ink deliberately set to the composited fill
+        // colour. Same render, same sampling, same grade — and the grade must
+        // fail, or the probe is not measuring what it claims.
+        var theme = base
+        if broken { theme.foreground = predicted }
 
-    // The measured fill band must be the flatten's prediction: this is what
-    // makes the arithmetic citable rather than assumed, and what proves the
-    // graded backdrop is the pill's fill and not some other pixel.
-    let band = sample(at: gapPoint, in: rep, size: size)
-    check(
-        within(band, predicted, bytes: 1),
-        "the fill band \(band.hexString) is \(tier) flattened over "
-            + "\(base.background.hexString) (predicted \(predicted.hexString), ±1 byte)"
-    )
+        let capsule = makeCapsule(theme: theme, focused: focused)
+        let size = capsule.intrinsicContentSize
+        let rep = renderOverBackdrop(capsule, backdrop: backdrop.colour)
 
-    // Worst case over the content: every text segment graded, the minimum
-    // carries the assertion.
-    var worst = Double.infinity
-    var worstDetail = ""
-    for placement in placed where placement.segment.role != .attention {
-        let ink = brightest(in: glyphBand(placement), rep: rep, size: size)
-        let ratio = ink.contrastRatio(against: band)
-        print(String(
-            format: "       %@ ink %@ over %@ -> %.2f:1",
-            String(describing: placement.segment.role), ink.hexString, band.hexString, ratio
-        ))
-        if ratio < worst {
-            worst = ratio
-            worstDetail = String(describing: placement.segment.role)
-        }
-    }
-    check(
-        worst >= textFloor,
-        String(
-            format: "worst segment (%@) reads %.2f:1 >= %.1f:1 (PaneTheme.minimumTextContrast) on the %@ fill",
-            worstDetail, worst, textFloor, tier
+        // The measured fill band must be the flatten's prediction: this is
+        // what makes the arithmetic citable rather than assumed, and what
+        // proves the graded backdrop is the pill's fill and not some other
+        // pixel. On the bright backdrop it is also the backing's existence
+        // check — without the backing the band lands ~29 bytes away.
+        let band = sample(at: gapPoint, in: rep, size: size)
+        check(
+            within(band, predicted, bytes: 1),
+            "the fill band \(band.hexString) is backing + \(tier) flattened over "
+                + "\(backdrop.name) (predicted \(predicted.hexString), ±1 byte)"
         )
-    )
+
+        // Worst case over the content: every text segment graded, the
+        // minimum carries the assertion.
+        var worst = Double.infinity
+        var worstDetail = ""
+        for placement in placed where placement.segment.role != .attention {
+            let ink = brightest(in: glyphBand(placement), rep: rep, size: size)
+            let ratio = ink.contrastRatio(against: band)
+            print(String(
+                format: "       %@ ink %@ over %@ -> %.2f:1",
+                String(describing: placement.segment.role), ink.hexString, band.hexString, ratio
+            ))
+            if ratio < worst {
+                worst = ratio
+                worstDetail = String(describing: placement.segment.role)
+            }
+        }
+        check(
+            worst >= textFloor,
+            String(
+                format: "worst segment (%@) reads %.2f:1 >= %.1f:1 (PaneTheme.minimumTextContrast) on the %@ fill over %@",
+                worstDetail, worst, textFloor, tier, backdrop.name
+            )
+        )
+    }
 }
 
 func armResting() {
@@ -285,51 +349,53 @@ func armDot() {
         ("fillChrome", set.fillChrome, false),
         ("fillThick", set.fillThick, true),
     ] {
-        let predicted = fill.composited(over: base.background)
+        for backdrop in backdrops {
+            let predicted = predictedBand(fill: fill, over: backdrop.colour)
 
-        // The control damages the accent at its source: `attentionColour(.alert,
-        // behavior: .stock)` resolves to `ansi[1]`, so a fill-coloured `ansi[1]`
-        // is a dot the eye cannot find — and the grade must say so.
-        var theme = base
-        if broken { theme.ansi[1] = predicted }
+            // The control damages the accent at its source: `attentionColour(.alert,
+            // behavior: .stock)` resolves to `ansi[1]`, so a fill-coloured `ansi[1]`
+            // is a dot the eye cannot find — and the grade must say so.
+            var theme = base
+            if broken { theme.ansi[1] = predicted }
 
-        let capsule = makeCapsule(theme: theme, focused: focused)
-        let size = capsule.intrinsicContentSize
-        let rep = renderOverBackdrop(capsule, backdrop: base.background)
+            let capsule = makeCapsule(theme: theme, focused: focused)
+            let size = capsule.intrinsicContentSize
+            let rep = renderOverBackdrop(capsule, backdrop: backdrop.colour)
 
-        let band = sample(at: gapPoint, in: rep, size: size)
-        check(
-            within(band, predicted, bytes: 1),
-            "the fill band \(band.hexString) is \(tier) flattened over "
-                + "\(base.background.hexString) (predicted \(predicted.hexString), ±1 byte)"
-        )
-
-        // The dot's centre pixel: 6 pt of opaque accent, fully covered at its
-        // centre, the same pixel cluster-wires reads. Sampled rather than
-        // computed, so the grade is on what is drawn.
-        guard let dot = placed.first(where: { $0.segment.role == .attention }) else {
-            check(false, "the fixture has an attention dot")
-            return
-        }
-        let centre = NSPoint(
-            x: dot.x + PaneClusterMetrics.dotDiameter / 2,
-            y: PaneClusterMetrics.height / 2
-        )
-        let dotInk = sample(at: centre, in: rep, size: size)
-        let accent = theme.attentionColour(.alert, behavior: .stock)
-        check(
-            within(dotInk, accent, bytes: 1),
-            "the dot centre \(dotInk.hexString) is the attention accent \(accent.hexString) (±1 byte)"
-        )
-
-        let ratio = dotInk.contrastRatio(against: band)
-        check(
-            ratio >= dotFloor,
-            String(
-                format: "the dot reads %.2f:1 >= %.1f:1 (WCAG 1.4.11 non-text) over %@",
-                ratio, dotFloor, tier
+            let band = sample(at: gapPoint, in: rep, size: size)
+            check(
+                within(band, predicted, bytes: 1),
+                "the fill band \(band.hexString) is backing + \(tier) flattened over "
+                    + "\(backdrop.name) (predicted \(predicted.hexString), ±1 byte)"
             )
-        )
+
+            // The dot's centre pixel: 6 pt of opaque accent, fully covered at
+            // its centre, the same pixel cluster-wires reads. Sampled rather
+            // than computed, so the grade is on what is drawn.
+            guard let dot = placed.first(where: { $0.segment.role == .attention }) else {
+                check(false, "the fixture has an attention dot")
+                return
+            }
+            let centre = NSPoint(
+                x: dot.x + PaneClusterMetrics.dotDiameter / 2,
+                y: PaneClusterMetrics.height / 2
+            )
+            let dotInk = sample(at: centre, in: rep, size: size)
+            let accent = theme.attentionColour(.alert, behavior: .stock)
+            check(
+                within(dotInk, accent, bytes: 1),
+                "the dot centre \(dotInk.hexString) is the attention accent \(accent.hexString) (±1 byte)"
+            )
+
+            let ratio = dotInk.contrastRatio(against: band)
+            check(
+                ratio >= dotFloor,
+                String(
+                    format: "the dot reads %.2f:1 >= %.1f:1 (WCAG 1.4.11 non-text) over %@ over %@",
+                    ratio, dotFloor, tier, backdrop.name
+                )
+            )
+        }
     }
 }
 

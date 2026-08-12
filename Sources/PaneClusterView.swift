@@ -242,6 +242,24 @@ final class PaneClusterView: PaneOverlayView {
         // both branches drawing the bytes they always drew.
         let fillAlpha = fillOpacity ?? 1
         if let set = materialSet {
+            // The backing under the material, before the fill: the pill's own
+            // shape in `theme.background` at the `PaneWash` floor, so what is
+            // beneath — prompt text, whatever the terminal is showing — never
+            // reads through into the segment ink (owner ruling, 2026-08-12:
+            // the fills alone are 0.44/0.52 alpha and text beneath collided
+            // with the segments). The construction and the 0.5 are
+            // ``ChromeMaterials/PaneWash``'s, cited rather than re-derived:
+            // its doc carries the measured bound (`alpha >= (B - 75) / (B - 20)`,
+            // 0.4712 on the brightest backdrop this repo has measured) that
+            // makes 0.5 a legibility floor and not a taste. A floor and never
+            // a ceiling, per the same contract: the `chrome.cluster.opacity`
+            // dial thins the material fill above, never this backing, so
+            // dialling the pill toward the backdrop cannot dial the text into
+            // it. Flat is untouched — its `barBackground` fill is already
+            // opaque undialled.
+            nsColor(theme.background, alpha: ChromeMaterials.PaneWash.floor).setFill()
+            pill.fill()
+
             let fill = framesForFocus ? set.fillThick : set.fillChrome
             nsColor(fill.rgb, alpha: fill.alpha * fillAlpha).setFill()
         } else {
