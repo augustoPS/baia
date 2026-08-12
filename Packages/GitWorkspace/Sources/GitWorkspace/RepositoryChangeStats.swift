@@ -1,8 +1,14 @@
 import Foundation
 
-/// One repository's line counts, in the shape the sidebar's `CHANGED` header
-/// and rows need: per-file counts for the rows, and totals for the header,
+/// One repository's line counts: per-file counts and the totals across them,
 /// from one `git diff --raw --numstat` read.
+///
+/// Built for the sidebar's `CHANGED` header and rows, which the owner's
+/// 2026-08-12 ruling removed. `GitCommand.changeStats` still produces it and is
+/// still tested; the per-pane poll that called every tick retired with the
+/// section it drew, so nothing reads this today. Kept rather than deleted
+/// because the read is the answer to "how much changed", which the capsule's
+/// changes card is the obvious next asker for.
 ///
 /// The deliberate companion to ``RepositoryStatus``, which counts files and
 /// never lines. Kept as its own type rather than a field added there for the

@@ -12,7 +12,7 @@ import PaneChrome
 /// four signal keys with nothing to look at, which is what this column exists to
 /// fix.
 ///
-/// The headings are `SurfaceTitleView`, the same view the real sidebar draws, so
+/// The heading is a `SurfaceTitleView`, the same view the real sidebar draws, so
 /// the one part carrying theme colour into the sidebar is shared rather than
 /// reimplemented. `SidebarHost` itself is not reused: its initialiser takes a
 /// `PaneTreeController`, and building one here would spawn real `.exec` panes and
@@ -21,7 +21,11 @@ import PaneChrome
 final class SettingsPreviewColumn: NSViewController {
     private let focusedPane: SettingsPreviewPane
     private let askingPane: SettingsPreviewPane
-    private let changesHeading = SurfaceTitleView()
+    /// One heading, since the owner's 2026-08-12 ruling removed the sidebar's
+    /// CHANGES section. A second `SurfaceTitleView` stood above this one until
+    /// then, drawing a hardcoded `CHANGES 4` with a gap below it standing in for
+    /// rows; a preview of a section the column no longer has would be the
+    /// settings window showing a window that cannot exist.
     private let filesHeading = SurfaceTitleView()
     private let sidebar = NSView()
 
@@ -76,25 +80,18 @@ final class SettingsPreviewColumn: NSViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        changesHeading.title = "CHANGES"
-        changesHeading.count = 4
-        changesHeading.anchorName = "baia"
         filesHeading.title = "FILES"
+        // Kept on the one heading left, where they used to dress the `CHANGES`
+        // one: they are what carries theme colour into the trailing half of a
+        // heading, and dropping them with the section would have quietly taken
+        // two themed things out of the preview.
+        filesHeading.anchorName = "baia"
 
         sidebar.wantsLayer = true
-        for heading in [changesHeading, filesHeading] {
-            heading.translatesAutoresizingMaskIntoConstraints = false
-            sidebar.addSubview(heading)
-        }
+        filesHeading.translatesAutoresizingMaskIntoConstraints = false
+        sidebar.addSubview(filesHeading)
         NSLayoutConstraint.activate([
-            changesHeading.topAnchor.constraint(equalTo: sidebar.topAnchor),
-            changesHeading.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor),
-            changesHeading.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor),
-            changesHeading.heightAnchor.constraint(equalToConstant: 24),
-            // Parked below the first with a gap standing in for the rows a real
-            // Changes list would hold. The preview shows how a heading is themed,
-            // not what is in the repository.
-            filesHeading.topAnchor.constraint(equalTo: changesHeading.bottomAnchor, constant: 64),
+            filesHeading.topAnchor.constraint(equalTo: sidebar.topAnchor),
             filesHeading.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor),
             filesHeading.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor),
             filesHeading.heightAnchor.constraint(equalToConstant: 24),
@@ -138,11 +135,9 @@ final class SettingsPreviewColumn: NSViewController {
         for pane in [focusedPane, askingPane] {
             pane.apply(configuration, theme: theme, chrome: chrome, settings: settings)
         }
-        for heading in [changesHeading, filesHeading] {
-            heading.theme = chrome
-        }
+        filesHeading.theme = chrome
         // The sidebar takes the pane background, the way the real column does:
         // a surface is filled with the same material a pane is.
-        sidebar.layer?.backgroundColor = ChangesSurface.nsColor(chrome.panelBackground).cgColor
+        sidebar.layer?.backgroundColor = SidebarRowMetrics.nsColor(chrome.panelBackground).cgColor
     }
 }

@@ -2,10 +2,11 @@ import Testing
 
 @testable import GitWorkspace
 
-/// Design v5 §5: the sidebar's CHANGED row spends one fixed column on a single
-/// letter, `M`/`A`/`D`, distinct from ``FileChangeMarks``' collapsed tree glyph
-/// (which reduces every kind to one of four *urgency* categories) and from the
-/// two-column `XY` marker the row still draws beside it. This is git's own
+/// Design v5 §5: a changed-file row spends one fixed column on a single letter,
+/// `M`/`A`/`D`, distinct from ``FileChangeMarks``' collapsed tree glyph (which
+/// reduces every kind to one of four *urgency* categories). Drawn by the
+/// capsule's changes card; the sidebar's CHANGED rows drew it too until the
+/// owner's 2026-08-12 ruling removed that section. This is git's own
 /// single-letter status, picked the same way ``FileChangeMark`` already picks
 /// which of `index`/`worktree` matters more for one glyph: the worktree column
 /// outranks the index column for a file that is both, since that is the half

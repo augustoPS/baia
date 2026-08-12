@@ -60,10 +60,13 @@ final class SidebarHost: NSViewController {
 
     /// The stacked sections, top to bottom.
     ///
-    /// A list rather than one surface, because the changes and the tree are worth
-    /// seeing together: the changes list is short and glanceable and the tree is long
-    /// and browsable, so a short list above a scrolling tree is a column's natural
-    /// shape rather than a compromise between two claims on it.
+    /// **A list, holding at most one since 2026-08-12.** It stacked a short
+    /// glanceable changes list above the long browsable tree until the owner's
+    /// ruling that day removed the CHANGES section, the capsule's changes card
+    /// having already listed the same files. The list shape stays because the
+    /// stacking arithmetic is what makes a column of sections a column rather
+    /// than a special case: with one section the layout below hands it the whole
+    /// height, and with none the column closes.
     private(set) var sections: [Section] = []
 
     /// A surface with the heading the host draws for it.
@@ -105,8 +108,8 @@ final class SidebarHost: NSViewController {
 
     /// What the file tree was left showing, per anchor, and what a relaunch puts
     /// back. Empty for a sidebar with no Files section, which is a real state:
-    /// the section can be switched off, and a column showing only Changes has no
-    /// expansions to report rather than none to remember.
+    /// the column can be switched off, and a closed column has no expansions to
+    /// report rather than none to remember.
     ///
     /// Read and written through the host for the reason ``geometry`` is: the
     /// delegate writes the session file and knows what a window is, and the
@@ -179,14 +182,17 @@ final class SidebarHost: NSViewController {
     ///
     /// Design v3 §4.2 had the first heading draw this trailing, "the connector
     /// between the footer and the sidebar". Design v5 §5 replaces that connector
-    /// with ``sessionStatus``'s own row, so ``refreshHeadings()`` no longer feeds
-    /// it to any heading; the property stays because ``SettingsPreviewColumn``
-    /// still themes `SurfaceTitleView.anchorName` directly, and removing the
-    /// value this host used to compute for it would be a change to that preview
-    /// dressed up as a rename.
-    var anchorName: String? {
-        didSet { refreshHeadings() }
-    }
+    /// with ``sessionStatus``'s own row, so it feeds no heading; the property
+    /// stays because ``SettingsPreviewColumn`` still themes
+    /// `SurfaceTitleView.anchorName` directly, and removing the value this host
+    /// used to compute for it would be a change to that preview dressed up as a
+    /// rename.
+    ///
+    /// Assigning it did call `refreshHeadings()` until 2026-08-12, which read
+    /// nothing this value fed. That call went with the CHANGES section (owner's
+    /// ruling that day) and with the two heading properties the section was the
+    /// only surface ever to answer.
+    var anchorName: String?
 
     /// Whether the window is key, which the anchor name's accent is gated on.
     private var isWindowActive = true {
@@ -196,17 +202,12 @@ final class SidebarHost: NSViewController {
         }
     }
 
-    /// Pushes what the headings draw beside their labels.
-    ///
-    /// Called by the caller that fed the surfaces rather than watched, because the
-    /// count is a property of what was just assigned into them and nothing else
-    /// changes it.
-    func refreshHeadings() {
-        for section in sections {
-            section.heading.count = section.surface.headingCount
-            section.heading.totals = section.surface.headingTotals
-        }
-    }
+    // `refreshHeadings()` stood here until 2026-08-12. It pushed
+    // `headingCount` and `headingTotals` from each surface into the heading
+    // above it, and CHANGES was the only surface that ever answered either with
+    // a number: FILES answered nil to both by design. The owner's ruling that
+    // day removed the section, so the function had two nils to copy and was
+    // removed with it. A heading now draws its label and nothing else.
 
     /// What the sections fill their bodies at, so the column is the same material
     /// as the panes it sits beside. Design v3 §1.
@@ -234,16 +235,15 @@ final class SidebarHost: NSViewController {
     /// ``glassBacking`` is built or torn down to match.
     ///
     /// **This host now has real glass of its own (this task).** Task 2 found
-    /// the sidebar had never had one — its "glass" was ``ChangesSurface`` and
-    /// ``FilesSurface`` swapping their scroll view's flat background colour for
-    /// ``MaterialSet/fillSidebar``, an `rgba` fill with no `NSGlassEffectView`
-    /// underneath it to reveal, and Task 2 dropped that fill along with the
-    /// footer's tint. The glass-backdrop spike's sidebar arm (its README's
-    /// finding 6) measured that an untinted `regular` glass column, positioned
-    /// where the sidebar actually sits over the transparent window region,
-    /// carries the file rows and (once repaired through
-    /// ``PaneChrome/PaneTheme/sectionHeaderInk(on:)`` — see
-    /// ``SurfaceTitleView/labelInk``) the CHANGED header both, and its
+    /// the sidebar had never had one — its "glass" was each surface swapping its
+    /// scroll view's flat background colour for ``MaterialSet/fillSidebar``, an
+    /// `rgba` fill with no `NSGlassEffectView` underneath it to reveal, and Task
+    /// 2 dropped that fill along with the footer's tint. The glass-backdrop
+    /// spike's sidebar arm (its README's finding 6) measured that an untinted
+    /// `regular` glass column, positioned where the sidebar actually sits over
+    /// the transparent window region, carries the file rows and (once repaired
+    /// through ``PaneChrome/PaneTheme/sectionHeaderInk(on:)`` — see
+    /// ``SurfaceTitleView/labelInk``) the heading above them both, and its
     /// verdict rejects the `NSSplitViewController` restructure this could have
     /// reached for instead.
     ///
@@ -251,8 +251,8 @@ final class SidebarHost: NSViewController {
     /// the same shape as ``theme`` and ``backgroundOpacity`` immediately above:
     /// the surfaces still decide their own fill (now: none at all under glass,
     /// so nothing opaque sits between this glass and what it samples — see
-    /// ``ChangesSurface/fill()`` and ``FilesSurface/fill()``), this host only
-    /// carries the resolution down and now also owns the glass itself.
+    /// ``FilesSurface/fill()``), this host only carries the resolution down and
+    /// now also owns the glass itself.
     var resolvedChrome: ResolvedChrome = .flat {
         didSet {
             guard resolvedChrome != oldValue else { return }
@@ -349,10 +349,12 @@ final class SidebarHost: NSViewController {
 
     /// How tall the first section is when two are stacked.
     ///
-    /// Starts at a value rather than at a share of the column, because the two
-    /// surfaces are not symmetrical: a changes list is a handful of rows and a file
-    /// tree is a whole repository, so an even split leaves half the column holding
-    /// three lines. Dragging replaces the guess with the owner's answer.
+    /// Starts at a value rather than at a share of the column, from when two
+    /// asymmetrical surfaces stacked here: a changes list was a handful of rows
+    /// against a whole repository, so an even split left half the column holding
+    /// three lines. Unreachable while the column holds one section (the 2026-08-12
+    /// ruling), and kept with the split machinery around it, which the session file
+    /// still carries and a second section would need again.
     /// Read by ``geometry`` and written by a drag. Not private for that reason
     /// alone: the clamp that keeps it usable lives in layout, where the column's
     /// height is known.
@@ -433,7 +435,6 @@ final class SidebarHost: NSViewController {
         view.addSubview(actionRow)
 
         install()
-        refreshHeadings()
     }
 
     /// The key state the anchor name's accent is gated on, watched the way the
@@ -537,9 +538,9 @@ final class SidebarHost: NSViewController {
     /// The sidebar's own edge hid it by half. Its right half lies over `tree.view`,
     /// which is added before it and stays below, so dragging the column worked as
     /// long as the grab started on the pane's side of the hairline and did nothing
-    /// on the sidebar's. The split between the two sections has no such half: the
-    /// changes list is above it on one side and the files heading on the other, so
-    /// all seven points of it were dead.
+    /// on the sidebar's. The split between two stacked sections had no such half,
+    /// with a surface above it on one side and a heading on the other, so all seven
+    /// points of it were dead.
     private func raiseGrabStrips() {
         for strip in [sectionDivider, widthDivider] {
             view.addSubview(strip, positioned: .above, relativeTo: nil)
@@ -641,11 +642,12 @@ final class SidebarHost: NSViewController {
 
     /// Stacks the sections from the top down.
     ///
-    /// Every section but the last is capped rather than given an equal share. The
-    /// two surfaces are not symmetrical: a changes list is a handful of rows and a
-    /// file tree is a whole repository, so splitting the column evenly would leave
-    /// half of it holding three lines and the tree scrolling in the rest. The last
-    /// section takes whatever is left, which is why the tree goes last.
+    /// Every section but the last is capped rather than given an equal share, and
+    /// the last takes whatever is left. That rule is why the tree goes last, and
+    /// since the 2026-08-12 ruling left it alone in the column it is also why the
+    /// space the CHANGES section vacated closed on its own: one section is the
+    /// last section, so the tree is handed the whole height below the heading with
+    /// no arithmetic here changing at all.
     private func layoutSections(in column: NSRect) {
         sectionDivider.isHidden = sections.count < 2
         guard !sections.isEmpty else { return }

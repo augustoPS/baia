@@ -5,9 +5,10 @@ import PaneChrome
 ///
 /// The whole point of the split: a surface knows how to draw itself into a rect and
 /// nothing about where the rect is, and the host knows how to produce a rect and
-/// nothing about what goes in it. That is what lets the sidebar stack two of them,
-/// swap them, or show neither, without either surface knowing which of those is
-/// happening.
+/// nothing about what goes in it. That is what lets the sidebar show a surface,
+/// swap it, or show none, without the surface knowing which of those is
+/// happening. It stacked two until the owner's 2026-08-12 ruling removed the
+/// CHANGES section, and the host's arithmetic still stacks any number.
 @MainActor
 protocol WorkspaceSurface: AnyObject {
     /// What the host installs. Never added to a pane's view hierarchy: a view
@@ -21,21 +22,15 @@ protocol WorkspaceSurface: AnyObject {
 
     var theme: PaneTheme { get set }
 
-    /// What the heading prints after the label, or nil for a surface whose size is
-    /// not a fact worth stating.
-    ///
-    /// Design v3 §4.1 asks for it on Changes alone: how many files are waiting to
-    /// be dealt with is the question that list answers, and how many files a
-    /// repository contains is not a question anyone has. It also earns the heading
-    /// its keep at the 48 pt minimum, where two rows under `CHANGES 41` is still a
-    /// useful section and two rows under `CHANGES` is a broken one.
-    var headingCount: Int? { get }
-
-    /// The heading's right-aligned `+n −n`, or nil for a surface with no line
-    /// counts to report. Design v5 §5, `CHANGED`'s own total; `FILES` answers
-    /// nil the same way it answers nil to ``headingCount``, since a file tree
-    /// counts paths and not lines.
-    var headingTotals: (adds: Int, deletes: Int)? { get }
+    // `headingCount` and `headingTotals` stood here until 2026-08-12. Design v3
+    // §4.1 asked for a count on Changes alone and design v5 §5 gave that heading
+    // its `+n −n`; `FILES` answered nil to both, because a file tree counts paths
+    // rather than lines and how many files a repository contains is not a
+    // question anyone has. The owner's ruling that day removed the CHANGES
+    // section, which left every surface in the column answering nil forever, so
+    // the two requirements went with the section that was the reason for them.
+    // `SurfaceTitleView` keeps `count` and `totals`: `SettingsPreviewColumn`
+    // still sets them directly to show how a heading is themed.
 
     /// What the terminal's own background is drawn at, so a surface is filled with
     /// the same material a pane is.
@@ -80,10 +75,10 @@ enum SurfaceMessage {
         NSAttributedString(
             string: text,
             attributes: [
-                .font: ChangesRowsView.font,
-                .foregroundColor: ChangesSurface.nsColor(theme.inkFaint),
+                .font: SidebarRowMetrics.font,
+                .foregroundColor: SidebarRowMetrics.nsColor(theme.inkFaint),
             ]
-        ).draw(at: NSPoint(x: ChangesRowsView.inset, y: ChangesRowsView.textOrigin))
+        ).draw(at: NSPoint(x: SidebarRowMetrics.inset, y: SidebarRowMetrics.textOrigin))
     }
 
     /// A pane that is not in a repository at all, with where it is instead.
@@ -110,7 +105,7 @@ enum SurfaceMessage {
     /// a section whose own floor is 48 pt.
     static func drawAbsent(path: String?, in view: NSView, theme: PaneTheme) {
         let visible = view.visibleRect
-        let available = max(0, visible.width - ChangesRowsView.inset * 2)
+        let available = max(0, visible.width - SidebarRowMetrics.inset * 2)
 
         let centred = NSMutableParagraphStyle()
         centred.alignment = .center
@@ -119,8 +114,8 @@ enum SurfaceMessage {
         let message = NSAttributedString(
             string: "not a repository",
             attributes: [
-                .font: ChangesRowsView.font,
-                .foregroundColor: ChangesSurface.nsColor(theme.inkContext),
+                .font: SidebarRowMetrics.font,
+                .foregroundColor: SidebarRowMetrics.nsColor(theme.inkContext),
                 .paragraphStyle: centred,
             ]
         )
@@ -136,16 +131,16 @@ enum SurfaceMessage {
             return NSAttributedString(
                 string: (path as NSString).abbreviatingWithTildeInPath,
                 attributes: [
-                    .font: ChangesRowsView.font,
-                    .foregroundColor: ChangesSurface.nsColor(theme.inkFaint),
+                    .font: SidebarRowMetrics.font,
+                    .foregroundColor: SidebarRowMetrics.nsColor(theme.inkFaint),
                     .paragraphStyle: head,
                 ]
             )
         }
         // One line, always: the head truncation is what makes a long path fit, so
         // measuring it for wrapping would defeat its own line-break mode.
-        let pathHeight = pathString == nil ? 0 : ChangesRowsView.font.ascender
-            - ChangesRowsView.font.descender + 2
+        let pathHeight = pathString == nil ? 0 : SidebarRowMetrics.font.ascender
+            - SidebarRowMetrics.font.descender + 2
 
         // These views are flipped, so y grows downward and the message takes the
         // smaller y. Getting this backwards puts the path above the message,
@@ -155,7 +150,7 @@ enum SurfaceMessage {
         let top = visible.midY - total / 2
 
         message.draw(with: NSRect(
-            x: visible.minX + ChangesRowsView.inset,
+            x: visible.minX + SidebarRowMetrics.inset,
             y: top,
             width: available,
             height: messageHeight
@@ -163,7 +158,7 @@ enum SurfaceMessage {
 
         guard let pathString else { return }
         pathString.draw(with: NSRect(
-            x: visible.minX + ChangesRowsView.inset,
+            x: visible.minX + SidebarRowMetrics.inset,
             y: top + messageHeight,
             width: available,
             height: pathHeight
@@ -336,12 +331,18 @@ final class SurfaceTitleView: NSView {
 
     /// The right-aligned `+n −n`, mono 10pt, adds in ``PaneChrome/PaneTheme/staged``
     /// and deletes in ``PaneChrome/PaneTheme/alert`` (design v5 §5). Nil renders
-    /// nothing rather than `+0 −0`: see ``WorkspaceSurface/headingTotals``.
+    /// nothing rather than `+0 −0`.
+    ///
+    /// **Fed by nothing on a shipping heading since 2026-08-12.** The `CHANGED`
+    /// heading was the case it existed for, and the owner's ruling that day
+    /// removed that section along with the `headingTotals` requirement that
+    /// pushed this value in. Kept, with ``count``, because `SettingsPreviewColumn`
+    /// sets both directly and they are what carries theme colour into a heading's
+    /// trailing half.
     ///
     /// Drawn in the same trailing slot ``anchorName`` used before design v5 moved
-    /// the repository name to ``SidebarSessionHeaderView``; the two are never both
-    /// non-nil on a shipping heading; where they would be, `totals` wins, since a
-    /// `CHANGED` heading with something to total is the case this exists for.
+    /// the repository name to ``SidebarSessionHeaderView``; where both are set,
+    /// `totals` wins.
     var totals: (adds: Int, deletes: Int)? { didSet { needsDisplay = true } }
 
     /// Gated the way the footer's focus frame is: an accent left bright on a
@@ -496,7 +497,7 @@ final class SurfaceTitleView: NSView {
     /// Cap-centred in the height: the label, the count and the anchor all sit on
     /// this line whatever font they are in.
     private static let baselineFromTop: Double = 18
-    private static let inset = ChangesRowsView.inset
+    private static let inset = SidebarRowMetrics.inset
     /// 6 pt between the label and its count, per design v3 §4.1.
     private static let countGap: Double = 6
     private static let labelFont = NSFont.systemFont(ofSize: 10, weight: .bold)

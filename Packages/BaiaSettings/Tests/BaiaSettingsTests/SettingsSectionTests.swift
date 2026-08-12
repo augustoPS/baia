@@ -87,7 +87,7 @@ import Testing
         settings.projectRoots = ["/somewhere/else"]
         settings.gitPollSeconds = 11
         settings.controlAllowRun = true
-        settings.sidebar = .changes
+        settings.sidebar = .files
 
         var restored = settings
         for section in SettingsSection.allCases {
@@ -97,7 +97,7 @@ import Testing
         #expect(restored.projectRoots == ["/somewhere/else"])
         #expect(restored.gitPollSeconds == 11)
         #expect(restored.controlAllowRun)
-        #expect(restored.sidebar == .changes)
+        #expect(restored.sidebar == .files)
     }
 
     /// Drives the `↺` control's enabled state, so a section already at stock says

@@ -530,10 +530,11 @@ public struct PaneTheme: Sendable, Equatable {
 
     /// The colour ``colour(for:)`` resolves a file's change state to.
     ///
-    /// One policy shared by the changes list's two-column marker, the CHANGED
-    /// row's fixed status letter, and the file tree's single glyph, which colour
-    /// a `staged`/`unstaged` pair, an `M`/`A`/`D` letter, and a rolled-up
-    /// worst-case respectively but agree on what each state means.
+    /// One policy shared by the changes card's fixed status letter and the file
+    /// tree's single glyph, which colour an `M`/`A`/`D` letter and a rolled-up
+    /// worst-case respectively but agree on what each state means. The sidebar's
+    /// changes rows were the third reader until the owner's 2026-08-12 ruling
+    /// removed that section.
     public enum ChangeMark: Sendable, Equatable, CaseIterable {
         case staged, unstaged, untracked, conflict
         /// An addition, drawn in ``staged``'s own green. Design v5 §5's `A`
@@ -595,7 +596,7 @@ public struct PaneTheme: Sendable, Equatable {
         foreground.blended(with: background, fraction: 0.30)
     }
 
-    /// A caps section header — the sidebar's `CHANGED` — on a backdrop that is
+    /// A caps section header — the sidebar's `FILES` — on a backdrop that is
     /// not this theme's own.
     ///
     /// ``inkFaint`` is the tier the header wants and the right answer wherever
@@ -646,9 +647,9 @@ public struct PaneTheme: Sendable, Equatable {
     /// which under flat is ``barBackground`` and is a no-op there. It exists as
     /// its own function rather than as a second caller of the section header's
     /// so the panel can move one without moving the other — the sidebar's rows
-    /// and the CHANGED header sit on different backdrops and only the header's
-    /// contrast has been measured (the glass-backdrop spike's finding 6 covered
-    /// the caps label alone).
+    /// and the heading above them sit on different backdrops and only the
+    /// header's contrast has been measured (the glass-backdrop spike's finding 6
+    /// covered the caps label alone).
     ///
     /// ``PaneThemeAdjustments/sessionHeaderInk`` bypasses the repair outright
     /// when set, and wins over the ratio beside it, since a named colour has no

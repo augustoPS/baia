@@ -1,6 +1,10 @@
 import Foundation
 
-/// The sidebar CHANGED row's fixed status-letter column: `M`, `A`, or `D`.
+/// A changed file's status letter in one fixed column: `M`, `A`, or `D`.
+///
+/// Drawn by the capsule's changes card. The sidebar's CHANGED rows drew it too
+/// until the owner's 2026-08-12 ruling removed that section, which is why the
+/// design note below says "row" rather than naming a surface.
 ///
 /// Design v5 §5. A different vocabulary from ``FileChangeMark``, which the file
 /// tree already uses: that type collapses every kind to one of four *urgency*

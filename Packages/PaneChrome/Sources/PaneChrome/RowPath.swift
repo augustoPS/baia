@@ -2,7 +2,7 @@ import Foundation
 
 /// A repository-relative path fitted to a row that cannot hold all of it.
 ///
-/// The sidebar's changed-file rows draw a path in two inks: the directory faint
+/// The sidebar's file rows draw a path in two inks: the directory faint
 /// and the file name in the foreground, because a column of paths under one
 /// repository repeats the directory and differs in the name. **What a row loses
 /// when it does not fit follows from that**: the directory is context and gives

@@ -110,9 +110,17 @@ move between the two — the exact claim a first cut of this wiring got wrong, b
 branching on `resolvedChrome` and grading against the bright-glass stand-in,
 which fires the repair chain and walks `#898989` to `#dcdcdc` with every override
 nil. Both views import only `AppKit` and `PaneChrome`, but
-`SidebarSessionHeaderView` reads two constants off `ChangesRowsView`, which lives
-in `ChangesSurface.swift` and would drag most of the sidebar hierarchy onto this
-probe's compile line. That is a bigger dependency than the arm is worth.
+`SidebarSessionHeaderView` reads two constants off the sidebar's shared row
+metrics, which lived in `ChangesSurface.swift` and would have dragged most of the
+sidebar hierarchy onto this probe's compile line. That is a bigger dependency than
+the arm is worth.
+
+**That dependency shrank on 2026-08-12** without the verdict changing. The owner's
+ruling removed the CHANGES section, and the constants moved to
+`Sources/SidebarRowMetrics.swift`, a leaf that imports only `AppKit` and
+`PaneChrome`. The arm is now cheap to compile; it is still unwritten, because what
+it would assert is what `PaneThemeAdjustmentsTests` already pins below. Recorded
+so the next reader weighing this arm prices it from the tree as it stands.
 
 What caught the defect instead, and what would catch it again, is
 `PaneThemeAdjustmentsTests.theRepairIsNotANoOpOnTheBrightGlassStandIn`: it pins

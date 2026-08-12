@@ -10,7 +10,7 @@ import PaneChrome
 /// key view loop and be reachable by tab, which is the one thing nothing in this
 /// window may do. Clicks are hit-tested in `mouseDown` with no
 /// `becomeFirstResponder` anywhere near it, the same shape
-/// ``ChangesRowsView``/``FileTreeRowsView`` already use.
+/// ``FileTreeRowsView`` already uses.
 @MainActor
 final class SidebarActionRowView: NSView {
     var theme: PaneTheme = .darkPastel { didSet { needsDisplay = true } }
@@ -183,7 +183,7 @@ final class SidebarActionRowView: NSView {
 
     static let height: Double = 32
 
-    private static let inset = ChangesRowsView.inset
+    private static let inset = SidebarRowMetrics.inset
     private static let labelFont = NSFont.systemFont(ofSize: 11, weight: .regular)
     private static let keycapFont = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
     private static let keycapHeight: Double = 18

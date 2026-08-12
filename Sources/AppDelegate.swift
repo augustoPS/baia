@@ -436,15 +436,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The surfaces for a content, built fresh.
     ///
-    /// The tree goes last under ``SidebarContent/both``, because the last section is
-    /// the one given whatever height is left and the tree is the one that wants it.
+    /// One surface or none since 2026-08-12. The column used to stack a CHANGES
+    /// section above this tree, and the owner's ruling that day removed it: the
+    /// capsule's changes card already lists the changed files with their status
+    /// letters and hands each one to a diff split, so the section was a second
+    /// copy of the same list in the same window. The tree still goes last for
+    /// the reason it always did, which is now also the reason it goes alone: the
+    /// last section is given whatever height is left, and the tree is the one
+    /// that wants it.
     private func surfaces(
         for content: SidebarContent,
         tree: PaneTreeController
     ) -> [any WorkspaceSurface] {
-        let changes = ChangesSurface()
         let files = FilesSurface()
-        // `weak tree` is not decoration. The surfaces are held by the sidebar
+        // `weak tree` is not decoration. The surface is held by the sidebar
         // host, which is held by the window controller, which holds the tree, so a
         // strong capture here is a cycle that outlives the close. The `onClose`
         // comment below records what that class of cycle already cost once: a
@@ -452,16 +457,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // with no window to reach them.
         // False when the window has gone: a click that reaches nothing is a
         // refusal from the row's point of view, which is the honest thing to draw.
-        let send: (RepositoryPath) -> Bool = { [weak self, weak tree] path in
+        files.onSelect = { [weak self, weak tree] path in
             guard let self, let tree else { return false }
             return sendToPrompt(path, of: tree)
         }
-        changes.onSelect = send
-        files.onSelect = send
         switch content {
-        case .changes: return [changes]
         case .files: return [files]
-        case .both: return [changes, files]
         // Off is an empty column rather than a missing one. The host stays the
         // window's content view either way, so nothing is ever reparented.
         case .off: return []
@@ -678,15 +679,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         find.toggle(over: focused?.window)
     }
 
-    /// Switches the sidebar between its two contents.
-    ///
-    /// This window's and not every window's: the region describes the focused pane's
-    /// repository, so switching a background tab's from the front one would change a
-    /// surface nobody is looking at.
-    ///
-    /// Does nothing when the window has no sidebar, which is the honest behaviour
-    /// for a menu item that stays enabled: the alternative needs a new availability
-    /// field carrying a setting that cannot change while the app runs.
     /// Returns the sidebar to the size it ships with.
     ///
     /// Every window, unlike Switch Sidebar, because the geometry is session-level: a
@@ -698,15 +690,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         scheduleSave()
     }
 
+    /// Opens the sidebar on the file tree, or closes it.
+    ///
+    /// This window's and not every window's: the column describes the focused
+    /// pane's repository, so switching a background tab's from the front one
+    /// would change a surface nobody is looking at.
+    ///
+    /// **A toggle since 2026-08-12, and a four-state cycle before it.** It used
+    /// to walk `off → changes → files → both → off`, matched against the surface
+    /// titles the column was showing. The owner's ruling that day removed the
+    /// CHANGES section, which left two states, and a cycle through two states is
+    /// a toggle. Reading the section count rather than the titles follows from
+    /// that: with one surface left there is no title worth matching, and the
+    /// string match was the arm that broke silently whenever a title moved.
     @objc func toggleSurfacePanels(_: Any?) {
         guard let window = focused ?? windows.first else { return }
-        let titles = window.sidebar.sections.map(\.surface.title)
-        let next: SidebarContent = switch titles {
-        case []: .changes
-        case ["Changes"]: .files
-        case ["Files"]: .both
-        default: .off
-        }
+        let next: SidebarContent = window.sidebar.sections.isEmpty ? .files : .off
         // The window's own tree, not the focused one: this rebuilds the surfaces
         // of one window, and a click in them has to reach that window's panes.
         window.sidebar.show(surfaces(for: next, tree: window.tree))
@@ -881,24 +880,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func refreshSidebar(of controller: WorkspaceWindowController) {
         let pane = controller.tree.focusedPane
         let anchor = pane?.anchorTracker.anchor
-        // The repository root, and nil outside one. Changes answers for a
-        // repository and has nothing to say about a plain directory, so this stays
-        // what it was.
+        // The repository root, and nil outside one: git lists a repository's
+        // files and a plain directory is walked instead.
         let root = anchor?.kind == .repository ? anchor?.url : nil
 
         // The anchor's own path, not the working directory: the absent state is
         // answering for what the section is pointed at.
         let anchorPath = anchor?.url.path(percentEncoded: false)
 
+        // The CHANGES section was fed here too until 2026-08-12, from
+        // `gitStatus.changes` and `gitStatus.stats`. The owner's ruling that day
+        // removed it. `files.changes` below is not what went: the tree's own
+        // per-file dirty marks are the tree's annotation on a row it was already
+        // drawing, not a second list of changed files.
         for section in controller.sidebar.sections {
-            if let changes = section.surface as? ChangesSurface {
-                changes.hasRepository = pane?.gitStatus.git != nil
-                changes.changes = pane?.gitStatus.changes ?? []
-                changes.anchorPath = anchorPath
-                // Task 1's own read, from the same poller: see
-                // ``PaneGitStatus/stats``.
-                changes.stats = pane?.gitStatus.stats ?? RepositoryChangeStats(entries: [])
-            }
             if let files = section.surface as? FilesSurface {
                 files.hasRoot = anchor != nil
                 // Inside a repository git lists the files; outside one the
@@ -922,10 +917,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 files.anchorPath = anchorPath
             }
         }
-        // After the surfaces, not before: the count a heading prints is a property
-        // of what was just assigned into the section below it.
         controller.sidebar.anchorName = anchor?.displayName
-        controller.sidebar.refreshHeadings()
         // The session header (design v5 §5), read straight off the same
         // `PaneStatus` the pane's own footer draws from rather than rebuilt from
         // the anchor and the git poll separately: see

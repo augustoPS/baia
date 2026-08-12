@@ -124,12 +124,16 @@ public struct Settings: Sendable, Equatable {
     /// What the sidebar opens showing, or that there is none. See
     /// ``SidebarContent``.
     ///
-    /// One key rather than one per surface, because there is one region. It shows
-    /// what the footer cannot: the footer says `*3 ?1` on a line that must not
-    /// wrap, and the sidebar names which three files are dirty and which one is
-    /// untracked. The footer therefore stands nothing down when this is set, unlike
-    /// the first draft of the design where the panel was to own branch and
-    /// ahead-behind and the footer was to go quiet.
+    /// One key rather than one per surface, because there is one region. The
+    /// footer stands nothing down when this is set, unlike the first draft of the
+    /// design where the panel was to own branch and ahead-behind and the footer
+    /// was to go quiet.
+    ///
+    /// It named which three files were dirty and which one was untracked until
+    /// 2026-08-12, when the owner's ruling removed the sidebar's CHANGES section
+    /// as a second copy of the capsule's changes card. What the column shows now
+    /// is the file tree, which answers where a file lives rather than what
+    /// changed.
     public var sidebar: SidebarContent
 
     /// Whether the in-pane control channel answers a pane's requests.

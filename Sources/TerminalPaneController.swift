@@ -626,11 +626,11 @@ final class TerminalPaneController: NSViewController {
     }
 
     /// The wash's one derivation: `theme.background` at
-    /// `max(backgroundOpacity, floor)`. Through `ChangesSurface.nsColor`, the
+    /// `max(backgroundOpacity, floor)`. Through `SidebarRowMetrics.nsColor`, the
     /// helper the retired sidebar wash used, so one colour cannot resolve two
     /// ways.
     private func updateGlassWashColour() {
-        glassWash?.colour = ChangesSurface.nsColor(
+        glassWash?.colour = SidebarRowMetrics.nsColor(
             theme.background,
             alpha: ChromeMaterials.PaneWash.opacity(
                 backgroundOpacity: backgroundOpacity,

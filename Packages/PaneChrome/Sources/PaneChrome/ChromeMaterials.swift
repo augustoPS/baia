@@ -182,7 +182,7 @@ public enum ChromeMaterials {
         ///
         /// **Retired from every live draw path as of Task 2 (untinted glass).**
         /// The sidebar was never backed by an `NSGlassEffectView`; its glass
-        /// case in `FilesSurface`/`ChangesSurface` used to swap this in as the
+        /// case in `FilesSurface` used to swap this in as the
         /// scroll view's flat `backgroundColor`, and Task 2 dropped that swap
         /// (both cases now paint `theme.background`). Kept as the tested
         /// transcription of the CSS token, not as anything a live path draws.

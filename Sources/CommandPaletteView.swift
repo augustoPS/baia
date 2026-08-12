@@ -352,8 +352,8 @@ final class PaletteListView: NSView {
 
         if selected {
             // Radius 6, concentric with every other row-selection surface v5
-            // draws (the sidebar's `ChangesSurface`/`FilesSurface` rows use the
-            // same construction). No accent edge: v5 §6 spends the row's own
+            // draws (the sidebar's `FilesSurface` rows use the same
+            // construction). No accent edge: v5 §6 spends the row's own
             // fill on saying "this one" and asks the text to carry the
             // high-contrast repair instead, which is what ``colour(for:selected:)``
             // is for.

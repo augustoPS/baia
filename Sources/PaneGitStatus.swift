@@ -26,19 +26,12 @@ final class PaneGitStatus {
     /// of those it is.
     private(set) var changes: [RepositoryFileChange] = []
 
-    /// Per-file line counts behind the sidebar's `+n −n`, from the same poll.
-    ///
-    /// A second `git` invocation per read rather than a second field on the
-    /// same one: `git diff --raw --numstat` is a different command from
-    /// `git status`, so this cannot ride the read that produces ``changes``
-    /// the way that read already rides the one that produces ``git``. It
-    /// stays on this poller's own cadence rather than a poller of its own,
-    /// which is what keeps it at one extra spawn per pane per tick rather
-    /// than one per changed file: see ``GitCommand/changeStats(ofRepositoryRoot:)``.
-    /// Empty for a pane that is not in a repository, the same answer a
-    /// repository with nothing changed gives, and the footer already says
-    /// which of those it is.
-    private(set) var stats = RepositoryChangeStats(entries: [])
+    // `stats` stood here until 2026-08-12: per-file line counts from a second
+    // `git diff --numstat` invocation on this same poll, read by the sidebar's
+    // CHANGES rows for their `+n −n` and by that header for the total. The
+    // owner's ruling that day removed the section and nothing else ever read
+    // the value, so the field and the spawn behind it went with it. See the
+    // note in `refresh()`.
 
     /// Whether the head reported in ``git`` is the repository's default branch.
     ///
@@ -159,14 +152,15 @@ final class PaneGitStatus {
         let requested = root
         queue.async { [weak self] in
             let (status, changes) = command.read(ofRepositoryRoot: requested)
-            // A second `git` invocation, on this same background read: the
-            // numstat counts come from `git diff`, which `git status` cannot
-            // answer, so there is no capture here for a second parse to
-            // share the way `status` and `changes` share one. Run on the
-            // same poll and the same utility queue as everything else this
-            // closure reads, which is what keeps it at one extra spawn per
-            // tick rather than a poller of its own.
-            let stats = command.changeStats(ofRepositoryRoot: requested)
+            // A second `git` invocation ran here until 2026-08-12:
+            // `GitCommand.changeStats`, a `git diff --numstat` read whose
+            // per-file counts drew the sidebar CHANGES rows' `+n −n` and that
+            // header's own total. The owner's ruling that day removed the
+            // section, which left the read with no reader, so it retired with
+            // it rather than staying as one extra spawn per pane per tick for
+            // a value nothing draws. `GitCommand.changeStats` itself stays,
+            // tested and callable, for whatever asks next.
+            //
             // Resolved on this thread, beside the status read, and never on the
             // main one. The first read of a repository forks git; every read after
             // it is a dictionary lookup.
@@ -178,7 +172,6 @@ final class PaneGitStatus {
                     self?.finish(
                         status,
                         changes: changes,
-                        stats: stats,
                         isOnDefaultBranch: isDefault,
                         from: requested
                     )
@@ -190,13 +183,11 @@ final class PaneGitStatus {
     private func finish(
         _ status: RepositoryStatus?,
         changes: [RepositoryFileChange],
-        stats: RepositoryChangeStats,
         isOnDefaultBranch isDefault: Bool,
         from requested: URL
     ) {
         isReading = false
         self.changes = changes
-        self.stats = stats
         // The anchor may have moved while git was running. Applying this answer
         // would label the new repository with the old one's branch, so it is
         // dropped and the newer read stands on its own.

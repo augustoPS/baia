@@ -2,10 +2,10 @@ import AppKit
 import PaneChrome
 
 /// The sidebar's own row naming the session it is a working set for. Design v5
-/// §5, above `CHANGED`.
+/// §5, at the top of the column above its heading.
 ///
 /// A restyle target the sidebar never drew before Plan 3: `SurfaceTitleView`'s
-/// `anchorName` used to carry the repository name on the `CHANGED` heading
+/// `anchorName` used to carry the repository name on the section heading
 /// (design v3 §4.2, "the connector between the footer and the sidebar"), and
 /// this row replaces that connector with a purpose-built one that also carries
 /// the branch and the pane's status word, which the heading had no room for.
@@ -193,10 +193,10 @@ final class SidebarSessionHeaderView: NSView {
 
     static let height: Double = 28
 
-    private static let inset = ChangesRowsView.inset
+    private static let inset = SidebarRowMetrics.inset
     private static let baselineFromTop: Double = 18
     private static let markGap: Double = 4
-    private static let monoFont = ChangesRowsView.font
+    private static let monoFont = SidebarRowMetrics.font
     private static let repoFont = NSFont.systemFont(ofSize: 11, weight: .bold)
     private static let boldFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .bold)
     private static let statusFont = NSFont.systemFont(ofSize: 9.5, weight: .regular)

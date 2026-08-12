@@ -51,10 +51,18 @@ public struct RepositoryFileChange: Sendable, Equatable {
     /// is the only spelling that names the file, so it is what a click would have to
     /// send.
     ///
-    /// **This is what the picker sends.** `Sources/ChangesSurface.swift` and
-    /// `Sources/FilesSurface.swift` hand it to `onSelect`, `PromptPath.resolve`
-    /// takes the bytes, and `TerminalPaneController.send` writes them through
-    /// `sendBytes`, so the route from git's index to the pty decodes nothing.
+    /// **This is what the picker sends.** `Sources/FilesSurface.swift` hands it
+    /// to `onSelect`, `PromptPath.resolve` takes the bytes, and
+    /// `TerminalPaneController.send` writes them through `sendBytes`, so the
+    /// route from git's index to the pty decodes nothing. The sidebar's
+    /// `ChangesSurface` was the second sender until the owner's 2026-08-12 ruling
+    /// removed that section.
+    ///
+    /// `inCommitOrder()` retired with it, on the same date and for the same
+    /// reason. It sorted conflicts first, then staged, unstaged and untracked,
+    /// and the CHANGES section was its only caller: the capsule's changes card
+    /// draws the parser's own order and never asked for that policy. It is
+    /// recorded here rather than left as a tested function nothing called.
     ///
     /// The rule that leaves: ``path`` draws, ``rawPath`` names. A new call site
     /// that has to identify a file, rather than show one, wants this. The two

@@ -1,6 +1,6 @@
 # Clip-layout probe
 
-`./run.sh` from anywhere. It drives a real `ChangesRowsView` through a first
+`./run.sh` from anywhere. It drives a real `FileTreeRowsView` through a first
 layout, a width change and a scroll, and asserts that the three things derived
 from its size follow: the document view's frame, the tracking areas, and what is
 actually drawn. Five arms, one process each, and every arm is followed by a
@@ -54,13 +54,24 @@ assumed, and both are load-bearing:
 A probe that got either wrong would be green and would be measuring nothing, which
 is why both are spelled out in `Host` rather than left to read as boilerplate.
 
-`Sources/ChangesSurface.swift`, `Sources/WorkspaceSurface.swift`,
-`Sources/RowFeedback.swift` and `Sources/DividerGrabView.swift` are compiled
-verbatim by `run.sh`, not sliced and not retyped. `DividerGrabView` was the last
-hundred lines of `SurfaceHosts.swift` until this probe existed: `SurfaceTitleView`
-names `DividerGrabView.Touch`, so `WorkspaceSurface.swift` could not be compiled by
-anything that was not the whole app, and neither could `ChangesSurface.swift`
-beside it. Moving it to its own file is what made the sidebar reachable from here.
+`Sources/FilesSurface.swift`, `Sources/SidebarRowMetrics.swift`,
+`Sources/WorkspaceSurface.swift`, `Sources/RowFeedback.swift` and
+`Sources/DividerGrabView.swift` are compiled verbatim by `run.sh`, not sliced and
+not retyped. `DividerGrabView` was the last hundred lines of `SurfaceHosts.swift`
+until this probe existed: `SurfaceTitleView` names `DividerGrabView.Touch`, so
+`WorkspaceSurface.swift` could not be compiled by anything that was not the whole
+app, and neither could the sidebar surface beside it. Moving it to its own file is
+what made the sidebar reachable from here.
+
+**The subject was `ChangesSurface` until 2026-08-12.** The owner's ruling that day
+removed the sidebar's CHANGES section, the capsule's changes card having already
+listed the same files. This probe follows a bug *shape* rather than a surface, and
+the file tree carries that shape verbatim — the same clip observers, the same
+`layout()` calling `resize()`, the same tracking areas rebuilt from a visible rect
+— so it was repointed at `FilesSurface` rather than retired. All five arms pass and
+all five controls fail against the tree, as they did against the changes list.
+`SidebarRowMetrics.swift` is new to the compile line: the row metrics both surfaces
+always shared moved there out of the retired file.
 
 ## Two hosts
 
@@ -172,6 +183,7 @@ reason `reflow` records: a row's *repaint* never exposed a stale frame, because 
 row draws from a left inset that does not move. A row's *budget* is the only thing
 in the column that reads the width across a fit.
 
-`ChangesRowsView` alone. `FilesSurface` carries the same two lines, and the tree's
-host is `PaneTreeController`, which is libghostty, a Metal device and a spawned
-shell away from anything this can build.
+The rows view alone. The tree's own *host* is `PaneTreeController`, which is
+libghostty, a Metal device and a spawned shell away from anything this can build,
+which is why the surface is installed into this probe's scroll view exactly as
+`SidebarHost` installs it rather than driven through its real host.

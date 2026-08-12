@@ -20,9 +20,16 @@ cd "$ROOT"
 build_packages "$LIB" BaiaSettings GitWorkspace PaneControl PaneChrome WorkspaceLayout
 
 # The shipped sidebar files are compiled verbatim, not sliced and not retyped, so
-# the view driven below is the view the app installs. If `ChangesSurface` ever
-# grows a dependency on another file in `Sources/`, this line is where that shows
-# up, and adding it here is the right answer rather than stubbing it.
+# the view driven below is the view the app installs. If `FilesSurface` ever grows
+# a dependency on another file in `Sources/`, this line is where that shows up,
+# and adding it here is the right answer rather than stubbing it.
+#
+# `ChangesSurface.swift` stood in this list until 2026-08-12, when the owner's
+# ruling removed the sidebar's CHANGES section. The probe follows the bug shape
+# rather than the surface, and the file tree carries that shape verbatim, so it
+# was repointed at `FilesSurface` rather than retired. `SidebarRowMetrics.swift`
+# joins the list because the row metrics both surfaces always shared moved there
+# out of the retired file.
 #
 # -default-isolation MainActor matches the app target's
 # SWIFT_DEFAULT_ACTOR_ISOLATION, so they compile under the rules they ship under.
@@ -30,7 +37,8 @@ swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/cliptest" \
   -I "$LIB" -L "$LIB" -lBaiaSettings -lPaneChrome -lGitWorkspace -lWorkspaceLayout \
   -Xlinker -rpath -Xlinker "$LIB" \
   "$HERE/cliptest.swift" \
-  "$ROOT/Sources/ChangesSurface.swift" \
+  "$ROOT/Sources/FilesSurface.swift" \
+  "$ROOT/Sources/SidebarRowMetrics.swift" \
   "$ROOT/Sources/WorkspaceSurface.swift" \
   "$ROOT/Sources/RowFeedback.swift" \
   "$ROOT/Sources/DividerGrabView.swift"

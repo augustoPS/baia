@@ -6,10 +6,10 @@ import AppKit
 /// last hundred lines of `SurfaceHosts.swift`, which reaches `PaneTreeController`
 /// and therefore libghostty, a Metal device and a spawned shell. `SurfaceTitleView`
 /// names `DividerGrabView.Touch`, so `WorkspaceSurface.swift` could not be
-/// compiled by anything that was not the whole app, and neither could
-/// `ChangesSurface.swift` beside it. `Diagnostics/clip-layout` compiles all three
-/// verbatim and needs none of the terminal. Nothing here reaches past AppKit,
-/// which is what let it move.
+/// compiled by anything that was not the whole app, and neither could the sidebar
+/// surface beside it. `Diagnostics/clip-layout` compiles all three verbatim and
+/// needs none of the terminal. Nothing here reaches past AppKit, which is what let
+/// it move.
 ///
 /// Transparent and wider than the hairline beneath it, because a 1 pt drag target is
 /// one nobody can hit. Refuses first responder like everything else in this window:

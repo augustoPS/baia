@@ -87,9 +87,11 @@ final class ClusterChangesCardView: NSView {
         let shown = changes.prefix(Self.maxFileRows)
         for change in shown {
             let row = makeRow(at: &y)
-            // The sidebar CHANGED row's letter, its own precedence rule
-            // (worktree over index), leading a monospaced path so the letter
-            // column aligns by itself.
+            // `RowStatusLetter`, with its own precedence rule (worktree over
+            // index), leading a monospaced path so the letter column aligns by
+            // itself. The sidebar's CHANGED rows drew the same letter until the
+            // owner's 2026-08-12 ruling removed that section and left this card
+            // as the one place a changed file is listed.
             row.text = "\(Self.glyph(for: RowStatusLetter(change)))  \(change.path)"
             row.font = Self.fileFont
             row.onClick = { [weak self] in self?.onFileDiff?(change) }

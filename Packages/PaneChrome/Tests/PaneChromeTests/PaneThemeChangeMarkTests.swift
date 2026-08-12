@@ -3,7 +3,7 @@ import Testing
 
 @testable import PaneChrome
 
-/// Pins the mark-colour policy that ``ChangesSurface`` and ``FilesSurface``
+/// Pins the mark-colour policy that ``FilesSurface``
 /// both draw from, so the two call sites cannot drift apart the way the four
 /// candidate resolvers already had before this package existed.
 @Suite struct PaneThemeChangeMarkTests {

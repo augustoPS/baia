@@ -12,9 +12,10 @@ import WorkspaceLayout
 // reading survives for the life of the surface. Every instance so far was found by
 // hand and every one took a trace.
 //
-// `Sources/ChangesSurface.swift`, `Sources/WorkspaceSurface.swift`,
-// `Sources/RowFeedback.swift` and `Sources/DividerGrabView.swift` are compiled
-// verbatim by `run.sh`, so the view driven here is the view the app installs.
+// `Sources/FilesSurface.swift`, `Sources/SidebarRowMetrics.swift`,
+// `Sources/WorkspaceSurface.swift`, `Sources/RowFeedback.swift` and
+// `Sources/DividerGrabView.swift` are compiled verbatim by `run.sh`, so the view
+// driven here is the view the app installs.
 
 // MARK: - The host
 
@@ -183,7 +184,7 @@ final class ColumnHost {
 /// measure.
 ///
 /// A pair of closures rather than a protocol, because the control is not a
-/// `ChangesSurface` and never will be. What the two sides have in common is exactly
+/// `FilesSurface` and never will be. What the two sides have in common is exactly
 /// this much.
 @MainActor
 struct Subject {
@@ -197,34 +198,48 @@ struct Subject {
 }
 
 /// The shipped surface, built the way `SidebarHost` builds it.
+///
+/// **`FilesSurface` since 2026-08-12, and `ChangesSurface` before it.** The owner
+/// removed the sidebar's CHANGES section that day (the capsule's changes card
+/// already lists the changed files and hands each one to a diff split), so the
+/// surface this probe drove no longer exists. The bug shape does: the tree carries
+/// the same clip observers, the same `layout()`-calls-`resize()` and the same
+/// tracking areas rebuilt from a visible rect, which is what every arm below
+/// measures. Repointed rather than retired, because retiring it would have
+/// dropped the guard on the one surface the column still has.
+///
+/// The note `fitArm(subject:)` carries about the tree's own host being out of
+/// reach is about `PaneTreeController`, not about this: the surface is installed
+/// into the probe's own scroll view here, exactly as `SidebarHost` installs it.
 @MainActor
 func shipped() -> Subject {
-    let surface = ChangesSurface()
+    let surface = FilesSurface()
     guard let scroll = surface.view as? NSScrollView, let document = scroll.documentView else {
-        fatalError("ChangesSurface stopped being a scroll view with a document view")
+        fatalError("FilesSurface stopped being a scroll view with a document view")
     }
     return Subject(
         scroll: scroll,
         document: document,
         setRows: { count in
-            surface.hasRepository = true
-            surface.changes = (0 ..< count).map { index in
-                RepositoryFileChange(
-                    // `RepositoryPath(...)` rather than a bare literal: the type
-                    // took bytes in the 2026-08-02 byte-path work, and only the
-                    // `ExpressibleByStringLiteral` conformance still accepts a
-                    // plain literal. An interpolation is not a literal, so this
-                    // call needs the initializer spelled out.
-                    path: RepositoryPath("Sources/AVeryLongPathThatWantsMoreColumnThanItHas\(index).swift"),
-                    index: nil,
-                    worktree: .modified,
-                    kind: .ordinary
-                )
+            surface.hasRoot = true
+            // Flat and long-named, for the reason the changes rows were: an arm
+            // measures whether a name was fitted to the width the column ended
+            // at, so every row has to want more column than it has. Files rather
+            // than directories, so the tree draws `count` rows without anything
+            // needing to be expanded first.
+            surface.tree = (0 ..< count).map { index in
+                // `RepositoryPath(...)` rather than a bare literal: the type took
+                // bytes in the 2026-08-02 byte-path work, and only the
+                // `ExpressibleByStringLiteral` conformance still accepts a plain
+                // literal. An interpolation is not a literal, so these calls need
+                // the initializer spelled out.
+                let name = RepositoryPath("AVeryLongFileNameThatWantsMoreColumnThanItHas\(index).swift")
+                return FileTreeNode(name: name, path: name, isDirectory: false, children: [])
             }
         },
         setAbsent: {
-            surface.changes = []
-            surface.hasRepository = false
+            surface.tree = []
+            surface.hasRoot = false
             surface.anchorPath = "/Users/somebody/Projects/a/deep/enough/path/to/truncate"
         }
     )
@@ -697,9 +712,10 @@ func reflowArm(subject: Subject) -> Bool {
 /// drawing from a left inset that does not move. This one needs the rows, because
 /// a row's *budget* is the only thing that reads the width across a fit.
 ///
-/// `ChangesRowsView` alone. `FilesSurface` carries the same two lines and the
-/// tree's own host is `PaneTreeController`, which is libghostty, a Metal device
-/// and a spawned shell away from anything a probe can build.
+/// The rows view alone. The tree's own *host* is `PaneTreeController`, which is
+/// libghostty, a Metal device and a spawned shell away from anything a probe can
+/// build, so the surface is installed into this probe's own scroll view exactly
+/// as `SidebarHost` installs it.
 @MainActor
 func fitArm(subject: Subject) -> Bool {
     let host = ColumnHost(width: 260)

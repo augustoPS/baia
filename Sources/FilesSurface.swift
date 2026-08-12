@@ -44,17 +44,21 @@ final class FilesSurface: NSObject, WorkspaceSurface {
     }
 
     /// The column's body, drawn once by the scroll view and never by the rows on
-    /// top of it. See ``ChangesSurface/fill()``, which says what filling twice
-    /// costs now that the fill has an alpha, and carries the same flat/glass
-    /// branch this mirrors: `SidebarHost` now owns a real `NSGlassEffectView`
-    /// behind this surface's view, and an opaque scroll view background between
-    /// that glass and the window it samples would defeat it, so glass draws no
-    /// fill at all rather than the same fill flat uses.
+    /// top of it. Filling in both places would composite the same colour twice,
+    /// which was invisible while the fill was opaque and is a shade too light now
+    /// that it has an alpha.
+    ///
+    /// The flat/glass branch is the sidebar's own rather than a shape mirrored
+    /// from a neighbour: the 2026-08-12 ruling left one surface in this column.
+    /// `SidebarHost` owns a real `NSGlassEffectView` behind this surface's view,
+    /// and an opaque scroll view background between that glass and the window it
+    /// samples would defeat it, so glass draws no fill at all rather than the
+    /// same fill flat uses.
     private func fill() {
         switch resolvedChrome {
         case .flat:
             scrollView.drawsBackground = true
-            scrollView.backgroundColor = ChangesSurface.nsColor(theme.background, alpha: backgroundOpacity)
+            scrollView.backgroundColor = SidebarRowMetrics.nsColor(theme.background, alpha: backgroundOpacity)
         case .glass:
             scrollView.drawsBackground = false
         }
@@ -133,25 +137,20 @@ final class FilesSurface: NSObject, WorkspaceSurface {
         set { rows.expanded = expansions.seed(newValue, showing: rows.expanded) }
     }
 
-    /// The same change list the Changes section is given, which the tree reduces to
-    /// one glyph per row. The two are not alternatives: a list ordered for
-    /// `git commit` answers a question a tree ordered by path cannot, and a tree
-    /// says where in the repository the work is.
+    /// The pane's changed files, which the tree reduces to one glyph per row.
+    ///
+    /// **The tree's own annotation on a row it was already drawing, and not a
+    /// list.** The sidebar's CHANGES section took the same value and drew a row
+    /// per changed file, and the owner's 2026-08-12 ruling removed it as a second
+    /// copy of the capsule's changes card. This is what that ruling explicitly
+    /// keeps: a mark beside a name says the file in front of you is dirty, which
+    /// is a fact about a row rather than an enumeration of the repository.
     var changes: [RepositoryFileChange] = [] {
         didSet {
             guard changes != oldValue else { return }
             rows.marks = FileChangeMarks(changes)
         }
     }
-
-    /// None. How many files a repository contains is not a question anyone has,
-    /// and a four-digit number beside `FILES` would read as an error. Design v3
-    /// §4.1.
-    var headingCount: Int? { nil }
-
-    /// None. A file tree counts paths, not lines, and has nothing for `+n −n`
-    /// to total. See ``WorkspaceSurface/headingTotals``.
-    var headingTotals: (adds: Int, deletes: Int)? { nil }
 
     /// Called with a repository-relative path when a row's name is clicked.
     ///
@@ -236,7 +235,7 @@ final class FileTreeRowsView: NSView {
         feedback.reset()
         rows = FileTree.visibleRows(of: tree, expanded: expanded)
         resize()
-        // See `ChangesRowsView.changes`: a frame that does not move marks no layout
+        // A frame that does not move marks no layout
         // pass, so the areas would stay built against the list that was there
         // before.
         updateTrackingAreas()
@@ -254,7 +253,7 @@ final class FileTreeRowsView: NSView {
     override func layout() {
         super.layout()
         resize()
-        // See `ChangesRowsView.layout()`: areas built against an unlaid clip view
+        // Areas built against an unlaid clip view
         // cover nothing and are never rebuilt.
         updateTrackingAreas()
     }
@@ -309,14 +308,14 @@ final class FileTreeRowsView: NSView {
         let y = Double(index) * Self.rowHeight
         let x = Self.inset + Double(row.depth) * Self.indent
 
-        // Radius 6, the same rounded fill ``ChangesRowsView`` draws (design v5
-        // §5): one row-selection surface across both sections of the column.
+        // Radius 6, design v5 §5: the row-selection surface the palette rows
+        // draw too, so a selected row reads the same wherever it is.
         if let fill = feedback.fill(index, in: theme) {
-            ChangesSurface.nsColor(fill.colour, alpha: fill.alpha).setFill()
+            SidebarRowMetrics.nsColor(fill.colour, alpha: fill.alpha).setFill()
             NSBezierPath(
                 roundedRect: NSRect(x: 0, y: y, width: bounds.width, height: Self.rowHeight),
-                xRadius: ChangesRowsView.rowRadius,
-                yRadius: ChangesRowsView.rowRadius
+                xRadius: SidebarRowMetrics.rowRadius,
+                yRadius: SidebarRowMetrics.rowRadius
             ).fill()
         }
 
@@ -367,7 +366,7 @@ final class FileTreeRowsView: NSView {
         let trailing = Self.inset + (mark == nil ? 0 : Self.statusColumn)
         let available = max(0, bounds.width - nameX - trailing)
         let slash = row.node.isDirectory ? "/" : ""
-        let budget = Int(available / ChangesRowsView.advance) - slash.count
+        let budget = Int(available / SidebarRowMetrics.advance) - slash.count
         let name = RowPath.fit(row.node.name, budget: max(0, budget)).name + slash
 
         let rest = row.node.isDirectory ? theme.inkContext : theme.foreground
@@ -492,17 +491,17 @@ final class FileTreeRowsView: NSView {
     /// view can show, and scrolling changes which rows those are without changing
     /// this view's frame, which is the only thing AppKit calls this for by itself.
     /// Both notifications, and `resize()` alongside the areas. See
-    /// ``ChangesRowsView/viewDidMoveToWindow()``: `layout()` does not run on a live
-    /// width drag, so without this the tree fitted every name to the width the
-    /// column opened at and drew its status glyphs past the divider.
+    /// `layout()` does not run on a live width drag, so without this the tree
+    /// fitted every name to the width the column opened at and drew its status
+    /// glyphs past the divider.
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard let clip = enclosingScrollView?.contentView, clipObservers.isEmpty else { return }
         clip.postsBoundsChangedNotifications = true
         clip.postsFrameChangedNotifications = true
         for name in [NSView.boundsDidChangeNotification, NSView.frameDidChangeNotification] {
-            // `queue: nil` for the reason ``ChangesRowsView`` records: an enqueued
-            // block follows the clip a runloop turn late.
+            // `queue: nil` rather than the main queue: an enqueued block follows
+            // the clip a runloop turn late, so a drag would draw one frame behind.
             clipObservers.append(NotificationCenter.default.addObserver(
                 forName: name,
                 object: clip,
@@ -580,26 +579,26 @@ final class FileTreeRowsView: NSView {
         )
     }
 
-    private static let font = ChangesRowsView.font
+    private static let font = SidebarRowMetrics.font
 
     /// Design v5 §5: 8pt, down from the row's own 11pt body size. A disclosure
     /// glyph at body size reads as a character in the name; at 8pt it reads as
     /// the control it is.
     private static let disclosureFont = NSFont.monospacedSystemFont(ofSize: 8, weight: .regular)
-    /// The same cap-centring rule ``ChangesRowsView/textOrigin`` documents,
+    /// The same cap-centring rule ``SidebarRowMetrics/textOrigin`` documents,
     /// worked out for ``disclosureFont`` rather than ``font``: two glyphs of
     /// different sizes centred by their own idea of middle sit off the shared
     /// baseline by a fraction of a point, which reads as a mistake.
-    private static let disclosureTextOrigin = ChangesRowsView.rowBaseline - Double(disclosureFont.ascender)
+    private static let disclosureTextOrigin = SidebarRowMetrics.rowBaseline - Double(disclosureFont.ascender)
 
     /// Both surfaces read one set of row metrics, so a row in the tree and a row
     /// in the changes list sit on the same baseline at the same inset when the two
     /// are stacked. The tree used to inset at 10 against everything else's 12,
     /// which put it 2 pt out from the heading directly above it, and it placed its
     /// text by its own constant. Design v3 §8/02 and §8/03.
-    private static let rowHeight = ChangesRowsView.rowHeight
-    private static let textOrigin = ChangesRowsView.textOrigin
-    private static let inset = ChangesRowsView.inset
+    private static let rowHeight = SidebarRowMetrics.rowHeight
+    private static let textOrigin = SidebarRowMetrics.textOrigin
+    private static let inset = SidebarRowMetrics.inset
     private static let indent: Double = 12
     /// One indent step, so a child's name lands under its parent's chevron. It was
     /// 14, which put every name a fraction off the level above it. Design v3 §5.1.
