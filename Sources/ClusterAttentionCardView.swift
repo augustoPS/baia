@@ -187,7 +187,17 @@ final class ClusterAttentionCardView: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
-        if let approvalView {
+        // Only ⏎ and ⎋ forward — the two keys the embedded view answers.
+        // Forwarding everything would loop: the view's own `default:` calls
+        // `super.keyDown`, NSResponder hands an unhandled key to the next
+        // responder, and embedded that is this card (its superview), which
+        // would forward straight back. The standalone arrangement never
+        // meets this because there the view is the panel's contentView and
+        // its next responder is the panel, not another forwarder. The
+        // filter is what breaks the card → view → card cycle, so any other
+        // key falls through to the card's own branches below.
+        if let approvalView,
+           event.keyCode == Self.returnKeyCode || event.keyCode == Self.escapeKeyCode {
             approvalView.keyDown(with: event)
         } else if event.keyCode == Self.escapeKeyCode {
             onClose?()
@@ -234,7 +244,9 @@ final class ClusterAttentionCardView: NSView {
     /// values and action labels.
     private static let stateFont = NSFont.systemFont(ofSize: 11, weight: .regular)
 
-    /// `kVK_Escape`, spelled as a literal for ``ApprovalPopoverView``'s
-    /// reason: no Carbon is linked and the code is stable ABI.
+    /// `kVK_Return` and `kVK_Escape`, spelled as literals for
+    /// ``ApprovalPopoverView``'s reason: no Carbon is linked and the codes
+    /// are stable ABI.
+    private static let returnKeyCode: UInt16 = 0x24
     private static let escapeKeyCode: UInt16 = 0x35
 }

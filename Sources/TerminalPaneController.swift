@@ -1539,8 +1539,13 @@ final class TerminalPaneController: NSViewController {
             ),
             theme: theme
         )
-        card.onApprovalAction = { [weak self] action in
+        card.onApprovalAction = { [weak self, weak card] action in
             guard let self else { return }
+            // One answer only: `ApprovalPopoverController.dismiss()` nils
+            // `onAction` so a double commit sends nothing, and the card
+            // keeps the same discipline by clearing its own handler before
+            // acting.
+            card?.onApprovalAction = nil
             // Dismiss before the bytes, `ApprovalPopoverController.commit`'s
             // own ordering: key is back with the host window before the
             // keystroke lands in the pane.
