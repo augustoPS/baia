@@ -97,6 +97,18 @@ final class PaneClusterView: PaneOverlayView {
         }
     }
 
+    /// `chrome.cluster.opacity`: a multiplier on the pill fill's alpha, nil
+    /// for the shipped 1.0. Fill only — the stroke, the segments and the dot
+    /// keep their own inks — per the dial's own doc on
+    /// ``BaiaSettings/DesignOverrides/Chrome/Cluster/opacity``: it exists to
+    /// let the backdrop show through the pill, not to fade the facts on it.
+    var fillOpacity: Double? {
+        didSet {
+            guard fillOpacity != oldValue else { return }
+            needsDisplay = true
+        }
+    }
+
     /// Raised on a click inside a segment, with the segment's rect in this
     /// view's own coordinates: the one value a later task's card needs to
     /// anchor to what was clicked. Clicks in the gaps between segments raise
@@ -202,11 +214,16 @@ final class PaneClusterView: PaneOverlayView {
         // set so the pill stays correct when the appearance flips. Flat has
         // no material and takes the footer's own flat fill for both states;
         // there the stroke below is the whole step.
+        // The `chrome.cluster.opacity` dial, multiplied in rather than
+        // substituted, so a dialled 0.85 scales whatever alpha the material
+        // carries instead of overwriting it. nil is exactly 1.0 and leaves
+        // both branches drawing the bytes they always drew.
+        let fillAlpha = fillOpacity ?? 1
         if let set = materialSet {
             let fill = framesForFocus ? set.fillThick : set.fillChrome
-            nsColor(fill.rgb, alpha: fill.alpha).setFill()
+            nsColor(fill.rgb, alpha: fill.alpha * fillAlpha).setFill()
         } else {
-            nsColor(theme.barBackground).setFill()
+            nsColor(theme.barBackground, alpha: fillAlpha).setFill()
         }
         pill.fill()
 

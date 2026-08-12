@@ -132,6 +132,9 @@ public extension DesignOverrides {
         /// Which fill each glass surface draws with. See ``Surfaces``.
         public var surfaces = Surfaces()
 
+        /// The pane cluster's gate and its two dials. See ``Cluster``.
+        public var cluster = Cluster()
+
         /// Stands in for `PaneTheme.barLift`, today 0.08: how far the footer's
         /// bar is blended off the terminal background so it reads as chrome
         /// rather than as the last line of output.
@@ -330,6 +333,62 @@ public extension DesignOverrides.Chrome {
 
         /// The workspace window's titlebar backing.
         public var titlebar: Material?
+
+        public init() {}
+    }
+
+    /// The pane cluster's gate and its two dials, new on 2026-08-12 and the
+    /// stroke that took the inventory 30 to 33.
+    ///
+    /// The capsule (design v6) is the footer's facts moved to the pane's
+    /// top-right, built behind a hard-coded `false` until this group replaced
+    /// the flag. Which chrome carries the facts is a question the owner
+    /// answers by looking at real sessions, which is what this layer exists
+    /// for, so the gate is a dial here rather than a config key: a mode that
+    /// survives the afternoon is folded into shipped behaviour, not saved.
+    struct Cluster: Sendable, Equatable {
+        /// Which chrome carries the pane's facts.
+        ///
+        /// **These three spellings are what the owner types and what the
+        /// pane's gate switches on**, the same both-ends contract
+        /// ``Material`` keeps with its drawing sites.
+        public enum Mode: String, Sendable, Equatable, CaseIterable {
+            /// Today's rendering, and nil's resolution: footer only, the
+            /// capsule never added to the hierarchy. Absent, not hidden, so
+            /// the shipped build carries no extra view and nothing the
+            /// compositor could touch.
+            case footer
+
+            /// The capsule alone. The footer hides rather than being removed:
+            /// its constraints keep holding the terminal's bottom edge, so
+            /// hiding it moves no cell metric and sends no SIGWINCH, which is
+            /// the whole ``DesignOverrides`` no-geometry contract applied to
+            /// a view instead of a key.
+            case cluster
+
+            /// Capsule and footer together, for judging the two against the
+            /// same live session.
+            case both
+        }
+
+        /// nil is ``Mode/footer``: the capsule is never added and the footer
+        /// never hides, exactly what shipped.
+        public var mode: Mode?
+
+        /// Stands in for `PaneClusterMetrics.cornerInset`, today 6 points:
+        /// how far the capsule's top-right corner sits off the pane's.
+        ///
+        /// Layout of an overlay pinned over the surface, never of the surface
+        /// itself, so it reaches no cell metric — the same distinction
+        /// ``Lift/innerHighlightOffsetY`` records for its own name.
+        public var cornerInset: Double?
+
+        /// A multiplier on the capsule's pill fill alpha, 0 through 1. nil is
+        /// 1.0, the fill exactly as the material (or the flat fallback)
+        /// supplies it. Fill only: the stroke, the text and the dot keep
+        /// their own inks, because the dial exists to let the backdrop show
+        /// through the pill, not to fade the facts on it.
+        public var opacity: Double?
 
         public init() {}
     }

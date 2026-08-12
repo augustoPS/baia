@@ -159,7 +159,7 @@
 
         /// The value being edited. Written to the center on every control event,
         /// held here so a control can move one field without rebuilding the other
-        /// twenty-nine from the UI.
+        /// thirty-two from the UI.
         ///
         /// Starts empty rather than from `center.designOverrides`, which is nil at
         /// construction and can only have been made non-nil by this same object.
@@ -177,7 +177,7 @@
         /// keyed by nothing: each closure knows its own control and its own field.
         ///
         /// A list of closures rather than a stored reference per control, because
-        /// there are thirty rows and a property per control would be thirty
+        /// there are thirty-three rows and a property per control would be that many
         /// lines of boilerplate whose only reader is one loop.
         private var refreshers: [() -> Void] = []
 
@@ -327,6 +327,7 @@
             buildRim(into: stack)
             buildInks(into: stack)
             buildMaterials(into: stack)
+            buildCluster(into: stack)
             buildWindow(into: stack)
 
             let scroll = NSScrollView()
@@ -571,6 +572,34 @@
             )
         }
 
+        /// The pane cluster's gate and its two dials.
+        ///
+        /// The mode is the panel's enum idiom, a popup off `Mode.allCases` with
+        /// the leading nil row, for `buildMaterials`' reason: the cases come
+        /// from the type, so a fourth mode cannot reach this popup without the
+        /// pane's gate learning it first. Nil is `footer`, today's rendering,
+        /// with the capsule never constructed into the hierarchy.
+        private func buildCluster(into stack: NSStackView) {
+            stack.addArrangedSubview(makeHeader("Cluster"))
+            addChoice(
+                to: stack, label: "Mode", cases: DesignOverrides.Chrome.Cluster.Mode.allCases,
+                get: { $0.chrome.cluster.mode }, set: { $0.chrome.cluster.mode = $1 },
+                help: "footer is today's rendering: no capsule in the hierarchy at all. cluster installs the capsule and hides the footer (hidden, never removed, so the grid cannot resize). both shows the two together for A/B-ing against the same live session."
+            )
+            addSlider(
+                to: stack, label: "Corner inset", range: 0 ... 24, step: 0.5,
+                get: { $0.chrome.cluster.cornerInset },
+                set: { $0.chrome.cluster.cornerInset = $1 },
+                help: "PaneClusterMetrics.cornerInset, today 6 pt: how far the capsule's top-right corner sits off the pane's. An overlay pin, not a cell metric."
+            )
+            addSlider(
+                to: stack, label: "Fill opacity", range: 0 ... 1, step: 0.01,
+                get: { $0.chrome.cluster.opacity },
+                set: { $0.chrome.cluster.opacity = $1 },
+                help: "Multiplier on the capsule's pill fill alpha; 1.0 is the material's own fill. Fill only: the stroke, the text and the dot keep their inks."
+            )
+        }
+
         /// The chrome extras that belong to neither the lift, the rim, the inks
         /// nor the materials: the footer bar's lift off the terminal
         /// background, and the floor under the pane wash's opacity.
@@ -608,7 +637,7 @@
         ///
         /// Unchecking writes nil back and the knob returns to the committed value
         /// immediately, so a single row can be undone without Reset clearing the
-        /// other twenty-nine.
+        /// other thirty-two.
         ///
         /// **The checkbox reports the override; it does not gate the slider.**
         /// Dragging an unchecked row's slider writes the value *and* checks the
@@ -921,7 +950,7 @@
     /// A target object for an `NSControl`, wrapping a closure.
     ///
     /// AppKit's target/action predates blocks and `NSControl.target` is weak, so a
-    /// panel with thirty rows otherwise needs an `@objc` method or a stored
+    /// panel with thirty-three rows otherwise needs an `@objc` method or a stored
     /// property per control. This is one class and one selector; ``keepAlive`` on
     /// the controller is what stops the weak target from dropping.
     @MainActor

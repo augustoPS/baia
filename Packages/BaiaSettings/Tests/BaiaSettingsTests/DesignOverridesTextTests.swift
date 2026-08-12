@@ -7,8 +7,8 @@
 
     /// What `DesignOverridesText` emits, pinned from the side that can drift.
     ///
-    /// The emitter carries thirty field paths and thirty hand-written
-    /// notes naming the constants they stand in for. A renamed field breaks the
+    /// The emitter carries thirty-three field paths and thirty-three
+    /// hand-written notes naming the constants they stand in for. A renamed field breaks the
     /// compile and needs no test; the two failures that compile cleanly are what
     /// these hold:
     ///
@@ -37,7 +37,7 @@
 
         @Test func anUnsetFieldIsAbsentRatherThanNull() {
             // nil means "the committed value", so emitting it as `null` would
-            // list twenty-nine knobs the owner never touched beside the one he did.
+            // list thirty-two knobs the owner never touched beside the one he did.
             var overrides = DesignOverrides()
             overrides.backgroundOpacity = 0.42
             let text = DesignOverridesText.commentedJSON(overrides)
@@ -55,7 +55,8 @@
             let text = DesignOverridesText.commentedJSON(overrides)
 
             #expect(text.contains("// settings shadows"))
-            for absent in ["// lift", "// rim", "// inks", "// materials", "// window"] {
+            for absent in ["// lift", "// rim", "// inks", "// materials",
+                           "// cluster", "// window"] {
                 #expect(!text.contains(absent))
             }
         }
@@ -64,7 +65,7 @@
             let text = DesignOverridesText.commentedJSON(everythingDialled())
 
             for group in ["// settings shadows", "// lift", "// rim",
-                          "// inks", "// materials", "// window"] {
+                          "// inks", "// materials", "// cluster", "// window"] {
                 #expect(text.contains(group))
             }
         }
@@ -118,6 +119,12 @@
             "chrome.surfaces.sidebar", "chrome.surfaces.palette",
             "chrome.surfaces.popover", "chrome.surfaces.titlebar",
 
+            // The pane cluster's gate and its two dials, new on 2026-08-12,
+            // 30 -> 33: which chrome carries the pane's facts, the capsule's
+            // corner pin, and the multiplier on its pill fill alpha.
+            "chrome.cluster.mode", "chrome.cluster.cornerInset",
+            "chrome.cluster.opacity",
+
             // `chrome.sidebarWashFloor` and `chrome.bareGlass` sat beside these
             // until 2026-08-08. Both retired with the glass washes they dialled,
             // on the owner's ruling that naked native glass beats the
@@ -130,10 +137,10 @@
             "chrome.barLift", "chrome.paneWashFloor",
         ]
 
-        /// Thirty, which is the count `DesignOverrides` carries: seven
-        /// settings shadows, nine lift, two rim, six inks, four surfaces, two
-        /// window.
-        static let expectedKeyCount = 30
+        /// Thirty-three, which is the count `DesignOverrides` carries: seven
+        /// settings shadows, nine lift, two rim, six inks, four surfaces,
+        /// three cluster, two window.
+        static let expectedKeyCount = 33
 
         // MARK: - JSON shapes
 
@@ -144,6 +151,7 @@
             #expect(text.contains("\"chromeStyle\": \"glass\","))
             #expect(text.contains("\"chrome.inks.sessionHeaderHex\": \"#ff8800\","))
             #expect(text.contains("\"chrome.surfaces.sidebar\": \"thick\","))
+            #expect(text.contains("\"chrome.cluster.mode\": \"both\","))
         }
 
         @Test func theOutputIsBracedAndEveryLineIsIndented() {
@@ -241,7 +249,7 @@
 
         @Test func aSparseValueSurvivesTheRoundTrip() {
             // The realistic shape: two knobs dialled after an afternoon,
-            // twenty-eight still nil. A parser that filled the absent fields
+            // thirty-one still nil. A parser that filled the absent fields
             // with zeroes rather than leaving them nil would pin every
             // un-dialled knob, which is precisely the failure `DesignOverrides`'
             // own doc comment names.
@@ -460,14 +468,18 @@
             "chrome.surfaces.popover": "\"menu\"",
             "chrome.surfaces.titlebar": "\"chrome\"",
 
+            "chrome.cluster.mode": "\"cluster\"",
+            "chrome.cluster.cornerInset": "6.0",
+            "chrome.cluster.opacity": "0.85",
+
             "chrome.barLift": "0.10",
             "chrome.paneWashFloor": "0.9",
         ]
 
         // MARK: - Fixture
 
-        /// Every one of the thirty knobs dialled to something, so a test can
-        /// assert over the complete output.
+        /// Every one of the thirty-three knobs dialled to something, so a test
+        /// can assert over the complete output.
         private func everythingDialled() -> DesignOverrides {
             var overrides = DesignOverrides()
             overrides.backgroundOpacity = 0.5
@@ -502,6 +514,10 @@
             overrides.chrome.surfaces.palette = .menu
             overrides.chrome.surfaces.popover = .menu
             overrides.chrome.surfaces.titlebar = .chrome
+
+            overrides.chrome.cluster.mode = .both
+            overrides.chrome.cluster.cornerInset = 6
+            overrides.chrome.cluster.opacity = 0.85
 
             overrides.chrome.barLift = 0.10
             overrides.chrome.paneWashFloor = 0.9

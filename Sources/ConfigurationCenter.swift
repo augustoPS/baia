@@ -564,6 +564,17 @@ final class ConfigurationCenter {
         // neither can move a live grid the way a padding change would.
         pane.backgroundOpacity = effectiveSettings.backgroundOpacity
         pane.paneWashFloor = chromeOverrides.paneWashFloor
+        // The pane cluster's gate and its two dials (`chrome.cluster.*`).
+        // The mode's nil resolves here — nil is `.footer`, today's rendering
+        // — so the pane holds a total value, and in Release, where
+        // `chromeOverrides` is always empty, it can hold nothing else. All
+        // three are appearance-only: the capsule is an overlay pinned over
+        // the surface, and the footer hides rather than being removed, so no
+        // mode change touches the grid (the pane's `applyClusterMode()`
+        // carries the SIGWINCH argument).
+        pane.clusterMode = chromeOverrides.cluster.mode ?? .footer
+        pane.clusterCornerInset = chromeOverrides.cluster.cornerInset
+        pane.clusterOpacity = chromeOverrides.cluster.opacity
         // The footer's glass tint was assigned here until 2026-08-09, from
         // `chromeOverrides.surfaces.footer`. Both went with the glass view they
         // wrote to; see `DesignOverrides.Chrome`.

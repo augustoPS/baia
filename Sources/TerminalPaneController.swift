@@ -129,17 +129,63 @@ final class TerminalPaneController: NSViewController {
 
     let statusBar = PaneStatusBarView(frame: .zero)
 
-    /// Whether the pane-cluster capsule is installed at all. Hard-coded off:
-    /// every shipped pixel stays byte-identical until the `chrome.cluster`
-    /// design override replaces this flag in a later task. When false the
-    /// view is never added to the hierarchy — not added-and-hidden — so the
-    /// flat build carries no extra view, no extra constraint, and nothing the
-    /// compositor could touch.
-    private let clusterEnabled = false
+    /// Which chrome carries this pane's facts, resolved by
+    /// `ConfigurationCenter.apply(to:)` from the `chrome.cluster.mode` dial
+    /// (nil resolves to `.footer` there, so this holds a total value and in
+    /// Release can hold nothing else). This replaced the hard-coded
+    /// `clusterEnabled = false` that gated the capsule until the dial existed.
+    ///
+    /// `.footer` keeps the shipped rendering byte-identical: the capsule is
+    /// never added to the hierarchy — not added-and-hidden — so that build
+    /// carries no extra view, no extra constraint, and nothing the compositor
+    /// could touch. `.cluster` installs the capsule and hides the footer;
+    /// `.both` shows the two together. The footer hides rather than being
+    /// removed because its constraints hold the terminal's bottom edge: see
+    /// ``applyClusterMode()``.
+    var clusterMode: DesignOverrides.Chrome.Cluster.Mode = .footer {
+        didSet {
+            guard clusterMode != oldValue else { return }
+            applyClusterMode()
+        }
+    }
+
+    /// `chrome.cluster.cornerInset`, nil for the `PaneClusterMetrics.cornerInset`
+    /// constant. Re-pins the installed capsule's two constraints in place, the
+    /// way other live dials reach views that already exist; when the capsule is
+    /// not installed the value waits here and ``installClusterView()`` reads it
+    /// at pin time.
+    var clusterCornerInset: Double? {
+        didSet {
+            guard clusterCornerInset != oldValue else { return }
+            for constraint in clusterEdgeConstraints {
+                constraint.constant = resolvedClusterInset
+            }
+        }
+    }
+
+    /// `chrome.cluster.opacity`, straight through to the capsule for
+    /// ``liftParameters``' reason: nothing here reads it back, and the view
+    /// keeps its own equality guard.
+    var clusterOpacity: Double? {
+        get { clusterView.fillOpacity }
+        set { clusterView.fillOpacity = newValue }
+    }
+
+    /// The dialled inset or the shipped constant, the one derivation both the
+    /// install path and the live re-pin read.
+    private var resolvedClusterInset: Double {
+        clusterCornerInset ?? PaneClusterMetrics.cornerInset
+    }
+
+    /// The capsule's top and trailing pins while it is installed, held so the
+    /// `cornerInset` dial can move them without a reinstall. Emptied on
+    /// removal: the constraints die with the view's membership and a held
+    /// reference would re-point a dial at dead layout.
+    private var clusterEdgeConstraints: [NSLayoutConstraint] = []
 
     /// The capsule in the pane's top-right (design v6). Created beside
-    /// ``statusBar`` and fed by the same passthroughs, so the day the gate
-    /// opens the pill is already telling the truth; while the gate is closed
+    /// ``statusBar`` and fed by the same passthroughs, so the moment the mode
+    /// dial installs it the pill is already telling the truth; at `.footer`
     /// the writes land on a view no window holds, which renders nothing.
     private let clusterView = PaneClusterView(frame: .zero)
 
@@ -148,9 +194,9 @@ final class TerminalPaneController: NSViewController {
     /// property of the pane rather than a discipline every card keeps. Lazy
     /// beside the approval popover's own build-on-first-use shape (the
     /// popover itself is app-wide in `AppDelegate`; this is per pane because
-    /// the card's toggle state is), and load-bearing while the cluster gate
-    /// is off: the only touch is inside the click path, so a build with
-    /// ``clusterEnabled`` false never constructs the panel at all.
+    /// the card's toggle state is), and load-bearing while ``clusterMode``
+    /// sits at `.footer`: the only touch is inside the click path, so a pane
+    /// whose capsule is never installed never constructs the panel at all.
     private lazy var clusterCards = ClusterCardController()
 
     /// Which segment summoned the card now up, or nil when none is. The
@@ -452,6 +498,60 @@ final class TerminalPaneController: NSViewController {
         glassWash = wash
         updateGlassPlaneMasks()
         updateGlassWashColour()
+    }
+
+    /// Installs or removes the capsule and shows or hides the footer to match
+    /// ``clusterMode``, from `viewDidLoad` and from every later change the
+    /// design panel pushes.
+    ///
+    /// `.footer` removes the capsule outright rather than hiding it, the same
+    /// absence-is-the-contract the glass plane's teardown keeps: the shipped
+    /// mode carries no extra view and nothing the compositor could touch.
+    ///
+    /// The footer goes the other way — hidden, never removed — and the
+    /// asymmetry is the SIGWINCH wall. Under a flat spawn `terminalView`'s
+    /// bottom is pinned to `statusBar.topAnchor`, so removing the bar (or
+    /// collapsing its height) would resize the surface and signal whatever is
+    /// running in the pane. A hidden view keeps its constraints and its
+    /// frame, so the grid never hears about the mode at all.
+    private func applyClusterMode() {
+        guard isViewLoaded else { return }
+        if clusterMode == .footer {
+            clusterView.removeFromSuperview()
+            clusterEdgeConstraints = []
+        } else if clusterView.superview == nil {
+            installClusterView()
+        }
+        // The footer's visibility keys off the same mode as the capsule's
+        // membership, so the two cannot disagree about which chrome is
+        // carrying the facts. Hidden only at `.cluster`; `.both` is exactly
+        // both.
+        statusBar.isHidden = clusterMode == .cluster
+    }
+
+    /// Adds the capsule below the scrim, deliberately: the inactive-window
+    /// scrim must lay over the pill so a background window recedes as one
+    /// object, and the scrim's hitTest-nil means a click still falls through
+    /// it to the pill underneath. Pinned by its top-right corner alone, at
+    /// the dialled inset; width and height come from the view's own
+    /// `intrinsicContentSize`, which tracks the measured segments, the same
+    /// self-sizing arrangement Auto Layout already runs the rest of this
+    /// hierarchy on.
+    private func installClusterView() {
+        clusterView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(clusterView, positioned: .below, relativeTo: scrim)
+        let edges = [
+            clusterView.topAnchor.constraint(
+                equalTo: view.topAnchor,
+                constant: resolvedClusterInset
+            ),
+            view.trailingAnchor.constraint(
+                equalTo: clusterView.trailingAnchor,
+                constant: resolvedClusterInset
+            ),
+        ]
+        NSLayoutConstraint.activate(edges)
+        clusterEdgeConstraints = edges
     }
 
     /// Clips the plane and the wash to the pane's window corners, the
@@ -990,30 +1090,15 @@ final class TerminalPaneController: NSViewController {
             view.addSubview(overlay)
         }
 
-        // Before the overlays in z-order, deliberately: the inactive-window
-        // scrim must lay over the pill so a background window recedes as one
-        // object, and the scrim's hitTest-nil means a click still falls
-        // through it to the pill underneath. Added at all only behind the
-        // gate — see ``clusterEnabled``: absent, not hidden, is what keeps
-        // the shipped rendering byte-identical. Pinned by its top-right
-        // corner alone; width and height come from the view's own
-        // `intrinsicContentSize`, which tracks the measured segments, the
-        // same self-sizing arrangement Auto Layout already runs the rest of
-        // this hierarchy on.
-        if clusterEnabled {
-            clusterView.translatesAutoresizingMaskIntoConstraints = false
-            view.addSubview(clusterView, positioned: .below, relativeTo: scrim)
-            NSLayoutConstraint.activate([
-                clusterView.topAnchor.constraint(
-                    equalTo: view.topAnchor,
-                    constant: PaneClusterMetrics.cornerInset
-                ),
-                view.trailingAnchor.constraint(
-                    equalTo: clusterView.trailingAnchor,
-                    constant: PaneClusterMetrics.cornerInset
-                ),
-            ])
-        }
+        // The capsule's install runs behind the mode — see ``clusterMode``:
+        // absent at `.footer`, not hidden, is what keeps the shipped
+        // rendering byte-identical. `ConfigurationCenter.apply(to:)` set the
+        // mode at registration, before this view loaded, so its `didSet`
+        // bailed on the `isViewLoaded` guard inside ``applyClusterMode()``
+        // and this is the application site for a pane spawned with the dial
+        // already turned — the same arrangement `applyResolvedGlassPlane()`
+        // is called below for.
+        applyClusterMode()
 
         // Edge pinning alone leaves the hierarchy with no size of its own.
         // TerminalView has no intrinsic content size, so `fittingSize` collapses
@@ -1140,7 +1225,7 @@ final class TerminalPaneController: NSViewController {
             ))
         }
 
-        // Inert while ``clusterEnabled`` is false: the closure is assigned,
+        // Inert while ``clusterMode`` is `.footer`: the closure is assigned,
         // but the only view that raises it is never added to the hierarchy,
         // so nothing here runs and the shipped rendering stays byte-stable.
         clusterView.onSegmentClick = { [weak self] role, segmentRect in

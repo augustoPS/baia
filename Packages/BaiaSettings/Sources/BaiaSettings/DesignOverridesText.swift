@@ -16,7 +16,7 @@
     ///
     /// This file is exactly that shape. It needs no `NSWindow` and no AppKit — it
     /// is a pure value-to-string map over ``DesignOverrides`` — while carrying
-    /// thirty field paths and thirty hand-written notes naming the
+    /// thirty-three field paths and thirty-three hand-written notes naming the
     /// constants they stand in for. Both halves drift silently: a renamed field
     /// would fail to compile, but a note that still says "today 0.22" after the
     /// constant moved would not, and neither would a field added to
@@ -75,8 +75,8 @@
     /// ## Only what is set
     ///
     /// A nil field is absent from the output rather than emitted as `null`,
-    /// because nil means "the committed value" and printing all thirty would
-    /// list the knobs the owner never touched beside the two he did.
+    /// because nil means "the committed value" and printing all thirty-three
+    /// would list the knobs the owner never touched beside the two he did.
     public enum DesignOverridesText {
         /// `overrides` as commented JSON, or a single comment when nothing is
         /// dialled.
@@ -88,6 +88,7 @@
             appendRim(overrides.chrome.rim, into: &lines)
             appendInks(overrides.chrome.inks, into: &lines)
             appendSurfaces(overrides.chrome.surfaces, into: &lines)
+            appendCluster(overrides.chrome.cluster, into: &lines)
             appendWindow(overrides.chrome, into: &lines)
 
             guard !lines.isEmpty else {
@@ -176,6 +177,19 @@
             append(&group, "chrome.surfaces.popover", surfaces.popover?.rawValue, note: note)
             append(&group, "chrome.surfaces.titlebar", surfaces.titlebar?.rawValue, note: note)
             add(group, titled: "materials", into: &lines)
+        }
+
+        private static func appendCluster(
+            _ cluster: DesignOverrides.Chrome.Cluster, into lines: inout [String]
+        ) {
+            var group: [String] = []
+            append(&group, "chrome.cluster.mode", cluster.mode?.rawValue,
+                   note: "footer | cluster | both; nil is footer, today's rendering")
+            append(&group, "chrome.cluster.cornerInset", cluster.cornerInset,
+                   note: "PaneClusterMetrics.cornerInset, today 6 pt (an overlay pin, not a cell metric)")
+            append(&group, "chrome.cluster.opacity", cluster.opacity,
+                   note: "multiplier on the capsule's pill fill alpha, today 1.0")
+            add(group, titled: "cluster", into: &lines)
         }
 
         private static func appendWindow(_ chrome: DesignOverrides.Chrome, into lines: inout [String]) {
@@ -355,6 +369,11 @@
             case "chrome.surfaces.palette": return rawValue(value, key, &overrides.chrome.surfaces.palette)
             case "chrome.surfaces.popover": return rawValue(value, key, &overrides.chrome.surfaces.popover)
             case "chrome.surfaces.titlebar": return rawValue(value, key, &overrides.chrome.surfaces.titlebar)
+
+            case "chrome.cluster.mode": return rawValue(value, key, &overrides.chrome.cluster.mode)
+            case "chrome.cluster.cornerInset":
+                return double(value, key, &overrides.chrome.cluster.cornerInset)
+            case "chrome.cluster.opacity": return double(value, key, &overrides.chrome.cluster.opacity)
 
             case "chrome.barLift": return double(value, key, &overrides.chrome.barLift)
             case "chrome.paneWashFloor": return double(value, key, &overrides.chrome.paneWashFloor)

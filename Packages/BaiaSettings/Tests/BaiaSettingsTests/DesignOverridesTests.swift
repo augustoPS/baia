@@ -245,6 +245,9 @@ import Testing
         #expect(extras.surfaces.palette == nil)
         #expect(extras.surfaces.popover == nil)
         #expect(extras.surfaces.titlebar == nil)
+        #expect(extras.cluster.mode == nil)
+        #expect(extras.cluster.cornerInset == nil)
+        #expect(extras.cluster.opacity == nil)
     }
 
     @Test func anEmptyOverridesCarriesAnEmptyChromeExtras() {
@@ -362,6 +365,62 @@ import Testing
         #expect(first != second)
 
         second.chrome.surfaces.palette = nil
+        #expect(first != second)
+    }
+
+    // MARK: - The cluster gate and its two dials
+
+    @Test func theClusterStartsUndialled() {
+        // nil mode is `footer`, today's rendering: the capsule is never added
+        // and the footer never hides. A mode that defaulted to a named case
+        // would move the shipped chrome the moment the panel existed, which is
+        // the exact failure the type's doc comment names.
+        let cluster = DesignOverrides().chrome.cluster
+        #expect(cluster.mode == nil)
+        #expect(cluster.cornerInset == nil)
+        #expect(cluster.opacity == nil)
+    }
+
+    @Test func theThreeModeSpellingsAreWhatThePaneGateReads() {
+        // Spelled out by name, the `Material` rule: these strings are what the
+        // owner types into the overrides file and what the pane's gate switches
+        // on. A rename that looked harmless here would silently stop resolving
+        // there. The count is pinned so a fourth mode has to be a deliberate,
+        // reviewed diff.
+        #expect(DesignOverrides.Chrome.Cluster.Mode.allCases.count == 3)
+        #expect(Set(DesignOverrides.Chrome.Cluster.Mode.allCases.map(\.rawValue))
+            == ["footer", "cluster", "both"])
+    }
+
+    @Test func aClusterDialReachesNoSettingsField() {
+        // Extras, like the rest of `Chrome`: the gate and both dials map to no
+        // `Settings` field and must survive composition by being carried past
+        // it rather than folded in.
+        var overrides = DesignOverrides()
+        overrides.chrome.cluster.mode = .cluster
+        overrides.chrome.cluster.cornerInset = 10
+        overrides.chrome.cluster.opacity = 0.7
+
+        #expect(Settings.defaultSettings.applying(overrides) == Settings.defaultSettings)
+        #expect(overrides.chrome.cluster.mode == .cluster)
+        #expect(overrides.chrome.cluster.cornerInset == 10)
+        #expect(overrides.chrome.cluster.opacity == 0.7)
+    }
+
+    @Test func clusterDialsParticipateInEquality() {
+        // `ConfigurationCenter` skips a re-derivation when a dial lands back
+        // where it was, so equality has to reach this group like every other.
+        var first = DesignOverrides()
+        first.chrome.cluster.mode = .both
+        var second = DesignOverrides()
+        second.chrome.cluster.mode = .both
+        #expect(first == second)
+
+        second.chrome.cluster.opacity = 0.5
+        #expect(first != second)
+
+        second.chrome.cluster.opacity = nil
+        second.chrome.cluster.mode = nil
         #expect(first != second)
     }
 
