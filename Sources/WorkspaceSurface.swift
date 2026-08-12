@@ -377,20 +377,25 @@ final class SurfaceTitleView: NSView {
             break
         }
 
-        // A hairline along the bottom, the same one the tree draws between panes,
-        // so the heading is separated by the divider vocabulary already in use
-        // rather than by a rule of its own.
+        // A hairline along the bottom stood here until 2026-08-12. It separated
+        // this heading from the rows it labels with the same rule the tree draws
+        // between panes, and the owner's ruling that day removed it: the title
+        // and its tree are one surface and a line between them said they were
+        // two. Nothing replaced it, the caps treatment below being what already
+        // distinguishes a label from a row.
         //
-        // **This view is not flipped**, so `y: 0` is its own bottom edge and the
-        // line faces the rows it labels. The same unflipped geometry is why every
-        // baseline below is measured up from the bottom.
-        nsColor(theme.hairline).setFill()
-        NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
+        // **This view is not flipped**, so `y: 0` is its own bottom edge and
+        // `maxY` its top. That is why the split's reply below is drawn at
+        // `bounds.height - 2` and why every baseline further down is measured up
+        // from the bottom.
 
         // The split's reply, on the top edge, which in an unflipped view is
-        // `maxY`. Nothing at rest: the body meeting this heading is already the
-        // boundary, and what an undiscoverable control needs is an answer on
-        // approach rather than a permanent line.
+        // `maxY`. A different treatment from the retired hairline and kept for a
+        // different reason: it answers the grab strip above this heading rather
+        // than dividing this heading from its own rows, and it draws nothing at
+        // rest. The body meeting this heading is already the boundary, and what
+        // an undiscoverable control needs is an answer on approach rather than a
+        // permanent line.
         switch split {
         case .rest:
             break
