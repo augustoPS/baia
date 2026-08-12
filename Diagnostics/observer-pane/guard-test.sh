@@ -57,6 +57,13 @@ check 0 './Diagnostics/override-wires/run.sh'
 check 0 './Diagnostics/cluster-wires/run.sh'
 check 0 './Diagnostics/cluster-legibility/run.sh'
 check 0 './Diagnostics/footer-accessory/run.sh'
+# `titlebar-merge` is `glass-backdrop`'s closest sibling: real windows on screen over
+# a controlled backdrop, `.accessory`, `canBecomeKey` false everywhere, no
+# `makeKeyAndOrderFront` and no `activate`. Its windows are `.titled` where
+# `glass-backdrop`'s are borderless, so they carry traffic lights and a drag region —
+# neither of which it ever drives, and a titled window that is never key still takes
+# no focus.
+check 0 './Diagnostics/titlebar-merge/run.sh'
 check 2 './Diagnostics/app-icon/run.sh; ./Diagnostics/path-picker/run.sh'
 check 2 './Diagnostics/theme-catalog/run.sh && ./Diagnostics/control-channel/run.sh'
 check 2 './Diagnostics/clip-layout/run.sh; ./Diagnostics/footer-corners/run.sh'

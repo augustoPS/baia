@@ -139,9 +139,25 @@ fi
 # `activate`, no `pkill`, no shell spawned at all. The keyboard never leaves
 # the pane that launched it.
 #
+# **`titlebar-merge` qualifies the way `glass-backdrop` does, and it is the closest
+# sibling on this list.** Four real windows on screen for about twenty seconds, over
+# the same kind of full-screen controlled backdrop, for the same reason: glass has to
+# sample something the probe knows exactly or the measurement is a photograph of the
+# wallpaper. `.accessory` policy, every window `orderFrontRegardless()` with
+# `canBecomeKey` overridden to false on all of them, no `makeKeyAndOrderFront`, no
+# `activate`, no `pkill`, and no shell spawned — the only subprocess is
+# `screencapture`. The keyboard never leaves the pane that launched it.
+#
+# One difference from `glass-backdrop` worth naming, because it is the kind of thing
+# that would matter if it were the other way round: these windows are `.titled` with
+# a real toolbar rather than borderless, so they carry traffic lights and a drag
+# region. Neither is ever driven — the probe reads the buttons' state and hit-tests
+# them in-process, and synthesises no events at all. A `.titled` window that is never
+# key and never activated takes no focus, so the criterion is met on the same ground.
+#
 # Every probe named must be safe, so a command pairing a safe one with a real
 # driver is still denied.
-SAFE_PROBES='^(cluster-legibility|theme-catalog|app-icon|clip-layout|theme-refresh|pane-resize|glass-backdrop|override-wires|cluster-wires|footer-accessory)$'
+SAFE_PROBES='^(cluster-legibility|theme-catalog|app-icon|clip-layout|theme-refresh|pane-resize|glass-backdrop|override-wires|cluster-wires|footer-accessory|titlebar-merge)$'
 probes=$(printf '%s' "$COMMAND" | grep -oE 'Diagnostics/[a-zA-Z0-9_-]+/run\.sh' | sed -E 's|Diagnostics/([^/]+)/run\.sh|\1|')
 if [ -n "$probes" ]; then
   unsafe=0
