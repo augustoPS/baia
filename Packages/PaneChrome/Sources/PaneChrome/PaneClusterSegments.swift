@@ -34,6 +34,11 @@ public enum PaneClusterSegments {
         // a directory that has no branch is a lie the owner would act on.
         if status.anchorIsRepository, let git = status.git {
             if !git.head.isEmpty {
+                // Bare `head`, without the footer's `wt:` worktree prefix, on
+                // purpose (ruled at Task 2 review, 2026-08-11): the pill stays
+                // narrow, and the linked-worktree fact lives one click away in
+                // the place card. The dial-in can promote it back to the
+                // resting face if the owner misses it there.
                 segments.append(PaneClusterSegment(role: .place, text: git.head))
             }
 
