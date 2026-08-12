@@ -13,8 +13,9 @@ import GitWorkspace
 /// read is the same one that answers in a poll tick and a card that flashed
 /// a wait state for it would be louder than the wait.
 ///
-/// Every row is a handoff, not a viewer. A click names a command for a new
-/// pane and the caller's closure makes the split; the card renders nothing of
+/// Every row is a handoff, not a viewer. A click names a change and the
+/// caller's closure turns it into a split running its diff (built by
+/// `PaneChrome.DiffSplitCommand`); the card renders nothing of
 /// the diff itself, which keeps it as dumb as ``ClusterPlaceCardView`` and
 /// leaves the reading to the terminal, where diffs already live.
 ///
@@ -163,39 +164,11 @@ final class ClusterChangesCardView: NSView {
         path.stroke()
     }
 
-    // MARK: - The commands a row hands off
-
-    /// The ghostty `command` value for one file's diff, in the exact shape
-    /// `Diagnostics/split-command/README.md` proved out: ghostty already
-    /// supplies `exec -l`, so the value must not lead with its own `exec`,
-    /// and the whole thing is a login zsh running the diff and then becoming
-    /// an ordinary shell, because ghostty closes a pane whose command exits.
-    /// git's own pager does the paging; there is nothing to pipe to.
-    ///
-    /// The path is the display spelling, which is lossy for a name that is
-    /// not UTF-8. That is the nature of the destination, not a shortcut: the
-    /// value is a line of a text config file, and the byte-preserving route
-    /// (`rawPath` through `sendBytes`) has no way into one.
-    static func command(diffing change: RepositoryFileChange) -> String {
-        wrapped("git diff -- \(singleQuoted(change.path))")
-    }
-
-    static var fullDiffCommand: String { wrapped("git diff") }
-
-    /// `'/bin/zsh' -lc '<inner>; exec "$SHELL" -l'`, the README's endorsed
-    /// shape verbatim. The trailing exec is what keeps the pane once the
-    /// diff's pager quits.
-    private static func wrapped(_ inner: String) -> String {
-        "'/bin/zsh' -lc \(singleQuoted(inner + #"; exec "$SHELL" -l"#))"
-    }
-
-    /// POSIX single-quoting: close, escaped quote, reopen. The value travels
-    /// through a config file rather than a typed line, so these quotes reach
-    /// the shell unchanged; delivering them intact is the probe's whole
-    /// point.
-    private static func singleQuoted(_ text: String) -> String {
-        "'" + text.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
-    }
+    // The commands a row hands off live in `PaneChrome.DiffSplitCommand`,
+    // not here: they are pure, security-adjacent string composition, and a
+    // view file is the one place in this project where nothing can test
+    // them. The pane controller builds them, because only it knows the two
+    // git facts a row cannot (untracked, unborn HEAD).
 
     private static func glyph(for letter: RowStatusLetter) -> Character {
         switch letter {

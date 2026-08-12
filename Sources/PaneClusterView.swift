@@ -122,6 +122,15 @@ final class PaneClusterView: PaneOverlayView {
         )
     }
 
+    /// First mouse is accepted. While a card is up, its panel holds key, so
+    /// the next click on this capsule reaches a non-key window and AppKit
+    /// would by default spend it on re-activation and deliver nothing: the
+    /// same-segment toggle would need two clicks and switching segments
+    /// would too. A view whose entire purpose is the click cannot afford a
+    /// click that only knocks. Task 8's live-window probe verifies the full
+    /// card-up interaction; this override is what it verifies.
+    override func acceptsFirstMouse(for _: NSEvent?) -> Bool { true }
+
     /// The departure: self inside the pill, nil outside. See the class header
     /// for why this view alone leaves the overlay family's hitTest-nil
     /// contract, and what it keeps instead.

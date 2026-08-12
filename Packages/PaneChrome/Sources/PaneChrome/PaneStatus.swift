@@ -270,16 +270,32 @@ public struct PaneStatus: Sendable, Equatable {
         let shell = trimmingTrailingSlashes(directory)
         guard shell != trimmingTrailingSlashes(anchor) else { return nil }
         guard !shell.isEmpty else { return nil }
+        return abbreviated(shell, home: home)
+    }
 
+    /// `path` with `home` shortened to `~`, and otherwise untouched beyond
+    /// trailing-slash trimming.
+    ///
+    /// The tilde half of ``workingDirectory(ofShellAt:anchoredAt:home:)``,
+    /// split out for the place card, which abbreviates a directory with no
+    /// anchor to compare against. One copy on purpose: the first hand copy of
+    /// this in the app target forgot that a directory URL's `path` carries a
+    /// trailing slash, so its `home + "/"` prefix never matched and the
+    /// abbreviation silently never fired, exactly the class of bug this
+    /// package's tests exist to make impossible.
+    ///
+    /// Both operands are trimmed of trailing slashes first, so `/Users/gu/`
+    /// as a home still abbreviates `/Users/gu/p`. The prefix has to end at a
+    /// path boundary: `/Users/gu` against `/Users/gutao/p` matches as a plain
+    /// string prefix and would abbreviate to `~tao/p`, a path that does not
+    /// exist and cannot be pasted anywhere.
+    public static func abbreviated(_ path: String, home: String) -> String {
+        let trimmed = trimmingTrailingSlashes(path)
         let root = trimmingTrailingSlashes(home)
-        guard !root.isEmpty else { return shell }
-        if shell == root { return "~" }
-
-        // The prefix has to end at a path boundary. `/Users/gu` against
-        // `/Users/gutao/p` matches as a plain string prefix and would abbreviate
-        // to `~tao/p`, a path that does not exist and cannot be pasted anywhere.
-        guard shell.hasPrefix(root + "/") else { return shell }
-        return "~" + shell.dropFirst(root.count)
+        guard !root.isEmpty else { return trimmed }
+        if trimmed == root { return "~" }
+        guard trimmed.hasPrefix(root + "/") else { return trimmed }
+        return "~" + trimmed.dropFirst(root.count)
     }
 
     /// Drops trailing slashes so `/a/b` and `/a/b/` compare equal. Leaves a

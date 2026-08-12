@@ -166,17 +166,28 @@ final class TerminalPaneController: NSViewController {
     /// kept alive to be updated invisibly.
     private weak var changesCard: ClusterChangesCardView?
 
+    /// Whether the repository behind the open changes card has a commit for
+    /// `HEAD` to name, from the same porcelain read that fills the rows
+    /// (`# branch.oid (initial)` parses to ``RepositoryStatus/Head/unborn(_:)``).
+    /// What ``DiffSplitCommand`` needs to pick its comparison; a row cannot
+    /// know it. True until the read lands: the only command reachable before
+    /// then is `Full diff`, and on the unborn repository that window is a
+    /// transient git error ahead of the shell rather than a wrong diff.
+    private var changesCardHeadExists = true
+
     /// The changes card's one-shot read, off the main actor for
     /// ``PaneGitStatus``'s reason: forking git where the user is waiting
     /// would have the card competing with the terminal for the main queue.
-    private let clusterCardQueue = DispatchQueue(
+    /// Lazy like ``clusterCards`` and touched only in the click path, so the
+    /// closed gate builds none of this machinery.
+    private lazy var clusterCardQueue = DispatchQueue(
         label: "gutons.baia.cluster-card", qos: .utility
     )
 
     /// The card read's own spawner. ``PaneGitStatus`` keeps its instance
     /// private, and sharing a counter with the poller would only blur what
-    /// each one costs.
-    private let clusterGitCommand = GitCommand()
+    /// each one costs. Lazy for ``clusterCardQueue``'s reason.
+    private lazy var clusterGitCommand = GitCommand()
 
     /// Covers the terminal and the footer both, which is the point: a background
     /// window recedes as one object, and a scrim that stopped at the footer would
@@ -1361,24 +1372,26 @@ final class TerminalPaneController: NSViewController {
             }
         }
 
-        // `head ↑a↓b`, the footer's indicator spelling with the same
-        // no-upstream suppression: stale counts against a branch with
-        // nowhere to push are worse than none.
+        // `head ↑a↓b`, the footer's indicator spelling exactly: the counts
+        // joined unspaced the way `PaneStatusSegments.markerText` joins its
+        // runs, one space between the head and the group, and the same
+        // no-upstream suppression, because stale counts against a branch
+        // with nowhere to push are worse than none.
         let branch: String? = git.flatMap { git in
             guard !git.head.isEmpty else { return nil }
-            var text = git.head
+            var markers = ""
             if git.hasUpstream {
-                if git.ahead > 0 { text += " ↑\(git.ahead)" }
-                if git.behind > 0 { text += " ↓\(git.behind)" }
+                if git.ahead > 0 { markers += "↑\(git.ahead)" }
+                if git.behind > 0 { markers += "↓\(git.behind)" }
             }
-            return text
+            return markers.isEmpty ? git.head : "\(git.head) \(markers)"
         }
 
         let card = ClusterPlaceCardView(model: .init(
             repositoryName: repositoryName,
             worktreeName: worktreeName,
             branch: branch,
-            workingDirectory: Self.abbreviated(directoryPath, home: home)
+            workingDirectory: PaneStatus.abbreviated(directoryPath, home: home)
         ))
         // The effects live here rather than in the card, the sidebar's own
         // split: a row raises a closure, the owner acts. Both act on the full
@@ -1397,10 +1410,16 @@ final class TerminalPaneController: NSViewController {
         }
         card.onClose = { [weak self] in self?.clusterCards.dismiss() }
 
-        clusterCardRole = .place
         clusterCards.show(content: card, anchoredTo: anchor, in: window) { [weak self] in
             self?.clusterCardRole = nil
         }
+        // After `show`, never before: switching cards makes `show` dismiss
+        // the one already up, and that dismissal fires the OLD card's
+        // `onDismiss`, which nils the role. A role assigned first would be
+        // consumed by the old card's teardown and the toggle would go blind,
+        // the same consumed-by-old-teardown race `ClusterCardController`'s
+        // `onDismiss`-as-parameter shape exists to close.
+        clusterCardRole = .place
     }
 
     /// Presents the changes card, then runs the poller's own porcelain read
@@ -1417,19 +1436,35 @@ final class TerminalPaneController: NSViewController {
         let rootPath = root.path(percentEncoded: false)
 
         let card = ClusterChangesCardView()
+        // The commands are built here, not in the card, because only this
+        // controller holds the two facts `DiffSplitCommand` keys on: whether
+        // the row is untracked, and whether the repository has a `HEAD` yet.
         card.onFileDiff = { [weak self] change in
-            self?.handOff(ClusterChangesCardView.command(diffing: change), at: rootPath)
+            guard let self else { return }
+            handOff(
+                DiffSplitCommand.file(
+                    path: change.path,
+                    isUntracked: change.kind == .untracked,
+                    headExists: changesCardHeadExists
+                ),
+                at: rootPath
+            )
         }
         card.onFullDiff = { [weak self] in
-            self?.handOff(ClusterChangesCardView.fullDiffCommand, at: rootPath)
+            guard let self else { return }
+            handOff(DiffSplitCommand.fullDiff(headExists: changesCardHeadExists), at: rootPath)
         }
         card.onClose = { [weak self] in self?.clusterCards.dismiss() }
 
-        clusterCardRole = .changes
-        changesCard = card
         clusterCards.show(content: card, anchoredTo: anchor, in: window) { [weak self] in
             self?.clusterCardRole = nil
         }
+        // After `show`, for `presentPlaceCard`'s reason: assigned first,
+        // these would be consumed by the outgoing card's teardown inside
+        // `show` and the toggle would go blind.
+        clusterCardRole = .changes
+        changesCard = card
+        changesCardHeadExists = true
 
         // The same invocation `PaneGitStatus.refresh` runs, flags and all
         // (`GitCommand.read` owns them), on a utility queue with the answer
@@ -1437,10 +1472,14 @@ final class TerminalPaneController: NSViewController {
         // outlives its card updates nothing.
         let command = clusterGitCommand
         clusterCardQueue.async { [weak self] in
-            let (_, changes) = command.read(ofRepositoryRoot: root)
+            let (status, changes) = command.read(ofRepositoryRoot: root)
+            var headExists = true
+            if case .unborn = status?.head { headExists = false }
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    self?.changesCard?.changes = changes
+                    guard let self, let card = self.changesCard else { return }
+                    self.changesCardHeadExists = headExists
+                    card.changes = changes
                 }
             }
         }
@@ -1459,16 +1498,6 @@ final class TerminalPaneController: NSViewController {
         guard ControlWire.refusalForCommand(command) == nil else { return }
         onSplitCommandRequested?(command, directory)
         clusterCards.dismiss()
-    }
-
-    /// `home` shortened to `~` at a path boundary, the same guard
-    /// ``PaneStatus/workingDirectory(ofShellAt:anchoredAt:home:)`` documents:
-    /// `/Users/gu` against `/Users/gutao/p` is a string prefix and not a
-    /// directory one.
-    private static func abbreviated(_ path: String, home: String) -> String {
-        if path == home { return "~" }
-        guard path.hasPrefix(home + "/") else { return path }
-        return "~" + path.dropFirst(home.count)
     }
 
     /// The sentence the footer is showing instead of its segments, and nil the
