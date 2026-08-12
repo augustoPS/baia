@@ -244,6 +244,18 @@ public enum PaneStatusSegments {
         }
     }
 
+    /// The marker string, for example `↑1↓2*?3`, exactly as the footer's
+    /// indicators segment spells it: the same runs ``build(from:)`` hands the
+    /// segment, joined the same way the multi-run segment initializer joins
+    /// them into its `text`.
+    ///
+    /// Exists for ``PaneClusterSegments``, so the capsule and the footer render
+    /// identical markers through one assembly rather than two copies of the
+    /// vocabulary that can disagree about it.
+    static func markerText(for git: PaneStatus.Git) -> String {
+        indicatorRuns(git).map(\.text).joined()
+    }
+
     /// The markers, for example `↑1↓2*?3`, as coloured runs.
     ///
     /// Still one segment rather than five. The markers are read as a single word
