@@ -346,6 +346,8 @@ public extension DesignOverrides.Chrome {
     /// answers by looking at real sessions, which is what this layer exists
     /// for, so the gate is a dial here rather than a config key: a mode that
     /// survives the afternoon is folded into shipped behaviour, not saved.
+    /// That fold happened the same day: nil resolves to ``Mode/cluster``
+    /// since 2026-08-12, and the footer became the dialled state.
     struct Cluster: Sendable, Equatable {
         /// Which chrome carries the pane's facts.
         ///
@@ -353,17 +355,18 @@ public extension DesignOverrides.Chrome {
         /// pane's gate switches on**, the same both-ends contract
         /// ``Material`` keeps with its drawing sites.
         public enum Mode: String, Sendable, Equatable, CaseIterable {
-            /// Today's rendering, and nil's resolution: footer only, the
-            /// capsule never added to the hierarchy. Absent, not hidden, so
-            /// the shipped build carries no extra view and nothing the
-            /// compositor could touch.
+            /// The bar-only rendering that shipped before 2026-08-12, kept
+            /// dialable: footer only, the capsule never added to the
+            /// hierarchy. Absent, not hidden, so this mode carries no extra
+            /// view and nothing the compositor could touch.
             case footer
 
-            /// The capsule alone. The footer hides rather than being removed:
-            /// its constraints keep holding the terminal's bottom edge, so
-            /// hiding it moves no cell metric and sends no SIGWINCH, which is
-            /// the whole ``DesignOverrides`` no-geometry contract applied to
-            /// a view instead of a key.
+            /// The capsule alone, and nil's resolution since 2026-08-12:
+            /// what ships. The footer hides rather than being removed: on a
+            /// pane spawned wearing it, its constraints keep holding the
+            /// terminal's bottom edge, so hiding it moves no cell metric and
+            /// sends no SIGWINCH, which is the whole ``DesignOverrides``
+            /// no-geometry contract applied to a view instead of a key.
             case cluster
 
             /// Capsule and footer together, for judging the two against the
@@ -371,9 +374,21 @@ public extension DesignOverrides.Chrome {
             case both
         }
 
-        /// nil is ``Mode/footer``: the capsule is never added and the footer
-        /// never hides, exactly what shipped.
+        /// nil is ``Mode/cluster`` since the 2026-08-12 flip: undialled
+        /// means the capsule installed and the footer hidden, exactly what
+        /// ships. The flip is reversible by dialling rather than by
+        /// reverting code: ``Mode/footer`` and ``Mode/both`` stay live
+        /// spellings, so the retired bar-only rendering is one dial away,
+        /// and that reversibility is the contract this group keeps.
         public var mode: Mode?
+
+        /// The gate's total answer: ``mode``, with nil resolving to
+        /// ``Mode/cluster``. The one resolution site, which is why the pane
+        /// gate (`ConfigurationCenter.apply(to:)`) reads this rather than
+        /// re-spelling the default beside a `??`. nil resolved to
+        /// ``Mode/footer`` until 2026-08-12, when the capsule became what
+        /// ships.
+        public var resolvedMode: Mode { mode ?? .cluster }
 
         /// Stands in for `PaneClusterMetrics.cornerInset`, today 6 points:
         /// how far the capsule's top-right corner sits off the pane's.

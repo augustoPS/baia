@@ -131,18 +131,20 @@ final class TerminalPaneController: NSViewController {
 
     /// Which chrome carries this pane's facts, resolved by
     /// `ConfigurationCenter.apply(to:)` from the `chrome.cluster.mode` dial
-    /// (nil resolves to `.footer` there, so this holds a total value and in
-    /// Release can hold nothing else). This replaced the hard-coded
+    /// through `Cluster.resolvedMode` (nil resolves to `.cluster` since the
+    /// 2026-08-12 flip, so this holds a total value and in Release can hold
+    /// nothing but `.cluster`). This replaced the hard-coded
     /// `clusterEnabled = false` that gated the capsule until the dial existed.
     ///
-    /// `.footer` keeps the shipped rendering byte-identical: the capsule is
-    /// never added to the hierarchy — not added-and-hidden — so that build
-    /// carries no extra view, no extra constraint, and nothing the compositor
-    /// could touch. `.cluster` installs the capsule and hides the footer;
-    /// `.both` shows the two together. The footer hides rather than being
-    /// removed because its constraints hold the terminal's bottom edge: see
+    /// `.cluster`, what ships, installs the capsule and hides the footer.
+    /// `.footer`, the pre-flip rendering kept dialable, never adds the
+    /// capsule to the hierarchy (not added-and-hidden), so that mode
+    /// carries no extra view, no extra constraint, and nothing the
+    /// compositor could touch. `.both` shows the two together. The footer
+    /// hides rather than being removed because on a footer-wearing spawn its
+    /// constraints hold the terminal's bottom edge: see
     /// ``applyClusterMode()``.
-    var clusterMode: DesignOverrides.Chrome.Cluster.Mode = .footer {
+    var clusterMode: DesignOverrides.Chrome.Cluster.Mode = .cluster {
         didSet {
             guard clusterMode != oldValue else { return }
             applyClusterMode()
@@ -194,8 +196,8 @@ final class TerminalPaneController: NSViewController {
     /// property of the pane rather than a discipline every card keeps. Lazy
     /// beside the approval popover's own build-on-first-use shape (the
     /// popover itself is app-wide in `AppDelegate`; this is per pane because
-    /// the card's toggle state is), and load-bearing while ``clusterMode``
-    /// sits at `.footer`: the only touch is inside the click path, so a pane
+    /// the card's toggle state is), and load-bearing for a pane dialled to
+    /// `.footer`: the only touch is inside the click path, so a pane
     /// whose capsule is never installed never constructs the panel at all.
     private lazy var clusterCards = ClusterCardController()
 
@@ -505,8 +507,8 @@ final class TerminalPaneController: NSViewController {
     /// design panel pushes.
     ///
     /// `.footer` removes the capsule outright rather than hiding it, the same
-    /// absence-is-the-contract the glass plane's teardown keeps: the shipped
-    /// mode carries no extra view and nothing the compositor could touch.
+    /// absence-is-the-contract the glass plane's teardown keeps: that mode
+    /// carries no extra view and nothing the compositor could touch.
     ///
     /// The footer goes the other way — hidden, never removed — and the
     /// asymmetry is the SIGWINCH wall. Under a flat footer spawn
@@ -522,8 +524,9 @@ final class TerminalPaneController: NSViewController {
             // card floats over this capsule; removing the anchor under a
             // still-key card leaves it orphaned until the user dismisses it
             // by hand. The superview check keeps the lazy controller unforced
-            // for panes whose capsule never existed, which is what preserves
-            // byte-stability at the default mode.
+            // for panes whose capsule never existed (a `.footer` dial from
+            // spawn), which is what keeps that mode free of the panel
+            // entirely.
             if clusterView.superview != nil {
                 clusterCards.dismiss()
             }
@@ -1123,8 +1126,8 @@ final class TerminalPaneController: NSViewController {
         }
 
         // The capsule's install runs behind the mode — see ``clusterMode``:
-        // absent at `.footer`, not hidden, is what keeps the shipped
-        // rendering byte-identical. `ConfigurationCenter.apply(to:)` set the
+        // absent at `.footer`, not hidden, is what keeps that dialled
+        // rendering free of the capsule. `ConfigurationCenter.apply(to:)` set the
         // mode at registration, before this view loaded, so its `didSet`
         // bailed on the `isViewLoaded` guard inside ``applyClusterMode()``
         // and this is the application site for a pane spawned with the dial
@@ -1269,7 +1272,7 @@ final class TerminalPaneController: NSViewController {
 
         // Inert while ``clusterMode`` is `.footer`: the closure is assigned,
         // but the only view that raises it is never added to the hierarchy,
-        // so nothing here runs and the shipped rendering stays byte-stable.
+        // so nothing here runs under that dial.
         clusterView.onSegmentClick = { [weak self] role, segmentRect in
             self?.clusterSegmentClicked(role, segmentRect: segmentRect)
         }

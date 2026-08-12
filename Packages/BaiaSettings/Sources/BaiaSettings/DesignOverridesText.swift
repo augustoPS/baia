@@ -184,7 +184,7 @@
         ) {
             var group: [String] = []
             append(&group, "chrome.cluster.mode", cluster.mode?.rawValue,
-                   note: "footer | cluster | both; nil is footer, today's rendering")
+                   note: "footer | cluster | both; nil is cluster, today's rendering (flipped 2026-08-12)")
             append(&group, "chrome.cluster.cornerInset", cluster.cornerInset,
                    note: "PaneClusterMetrics.cornerInset, today 6 pt (an overlay pin, not a cell metric)")
             append(&group, "chrome.cluster.opacity", cluster.opacity,

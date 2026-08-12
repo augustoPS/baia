@@ -577,14 +577,16 @@
         /// The mode is the panel's enum idiom, a popup off `Mode.allCases` with
         /// the leading nil row, for `buildMaterials`' reason: the cases come
         /// from the type, so a fourth mode cannot reach this popup without the
-        /// pane's gate learning it first. Nil is `footer`, today's rendering,
-        /// with the capsule never constructed into the hierarchy.
+        /// pane's gate learning it first. Nil is `cluster` since the
+        /// 2026-08-12 flip: undialled means the capsule, today's rendering,
+        /// and `footer` and `both` remain dialable, so the retired bar-only
+        /// chrome stays one dial away (the reversibility contract).
         private func buildCluster(into stack: NSStackView) {
             stack.addArrangedSubview(makeHeader("Cluster"))
             addChoice(
                 to: stack, label: "Mode", cases: DesignOverrides.Chrome.Cluster.Mode.allCases,
                 get: { $0.chrome.cluster.mode }, set: { $0.chrome.cluster.mode = $1 },
-                help: "footer is today's rendering: no capsule in the hierarchy at all. cluster installs the capsule and hides the footer (hidden, never removed, so the grid cannot resize). both shows the two together for A/B-ing against the same live session."
+                help: "cluster is today's rendering (nil's resolution since 2026-08-12): capsule installed, footer hidden (hidden, never removed, so the grid cannot resize). footer restores the retired bar-only chrome. both shows the two together for A/B-ing against the same live session."
             )
             addSlider(
                 to: stack, label: "Corner inset", range: 0 ... 24, step: 0.5,

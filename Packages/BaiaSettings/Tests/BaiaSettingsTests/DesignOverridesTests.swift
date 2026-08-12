@@ -371,14 +371,30 @@ import Testing
     // MARK: - The cluster gate and its two dials
 
     @Test func theClusterStartsUndialled() {
-        // nil mode is `footer`, today's rendering: the capsule is never added
-        // and the footer never hides. A mode that defaulted to a named case
-        // would move the shipped chrome the moment the panel existed, which is
-        // the exact failure the type's doc comment names.
+        // The stored fields still start nil after the 2026-08-12 default
+        // flip: undialled means what ships, and a field that defaulted to a
+        // named case would pin the chrome the moment the panel existed,
+        // which is the exact failure the type's doc comment names. What nil
+        // *resolves* to is `resolvedMode`'s business, pinned below; until
+        // the flip it resolved to `footer`.
         let cluster = DesignOverrides().chrome.cluster
         #expect(cluster.mode == nil)
         #expect(cluster.cornerInset == nil)
         #expect(cluster.opacity == nil)
+    }
+
+    @Test func nilModeResolvesToClusterAndADialledModePassesThrough() {
+        // The flip, 2026-08-12: undialled means cluster, the capsule is what
+        // ships. `footer` and `both` stay dialable spellings, so the retired
+        // bar-only rendering remains one dial away rather than deleted; that
+        // reversibility is the contract, and this is where it is pinned.
+        #expect(DesignOverrides().chrome.cluster.resolvedMode == .cluster)
+
+        var overrides = DesignOverrides()
+        overrides.chrome.cluster.mode = .footer
+        #expect(overrides.chrome.cluster.resolvedMode == .footer)
+        overrides.chrome.cluster.mode = .both
+        #expect(overrides.chrome.cluster.resolvedMode == .both)
     }
 
     @Test func theThreeModeSpellingsAreWhatThePaneGateReads() {

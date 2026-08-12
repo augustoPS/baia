@@ -145,7 +145,18 @@ func armNilCluster() {
     // dialled. Of the group's three fields, `opacity` is the only one that
     // reaches this view: `mode` gates installation and `cornerInset` moves
     // constraints, both in `TerminalPaneController`, neither a byte here.
+    //
+    // Since the 2026-08-12 default flip, the baseline these comparisons
+    // render (the capsule, on) is the shipped chrome itself rather than a
+    // dialled preview: an undialled mode resolves to `.cluster`. The
+    // resolution is package arithmetic (`Cluster.resolvedMode`, pinned in
+    // `DesignOverridesTests`); asserted here too so this arm's own framing,
+    // undialled means what ships, cannot drift from it silently.
     let overrides = DesignOverrides()
+    check(
+        overrides.chrome.cluster.resolvedMode == .cluster,
+        "an undialled mode resolves to cluster: the capsule is what ships (flipped 2026-08-12)"
+    )
 
     for (name, chrome) in [("flat", ResolvedChrome.flat), ("glass", .glass(.dark))] {
         let untouched = makeCapsule(chrome: chrome)

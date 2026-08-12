@@ -578,9 +578,11 @@ final class ConfigurationCenter {
         pane.backgroundOpacity = effectiveSettings.backgroundOpacity
         pane.paneWashFloor = chromeOverrides.paneWashFloor
         // The pane cluster's gate and its two dials (`chrome.cluster.*`).
-        // The mode's nil resolves here — nil is `.footer`, today's rendering
-        // — so the pane holds a total value, and in Release, where
-        // `chromeOverrides` is always empty, it can hold nothing else. All
+        // The mode's nil resolves in `Cluster.resolvedMode`, the one
+        // resolution site: nil is `.cluster` since the 2026-08-12 flip,
+        // today's rendering. So the pane holds a total value, and in
+        // Release, where `chromeOverrides` is always empty, it can hold
+        // nothing but `.cluster`. All
         // three are appearance-only on a running pane: the capsule is an
         // overlay pinned over the surface, and the footer hides rather than
         // being removed, so no live mode change touches the grid (the pane's
@@ -588,7 +590,7 @@ final class ConfigurationCenter {
         // mode does one more thing: it feeds the pane's frozen
         // `bottomArrangementAtSpawn`, read below to pick the configuration,
         // which is why this assignment stays ahead of that read.
-        pane.clusterMode = chromeOverrides.cluster.mode ?? .footer
+        pane.clusterMode = chromeOverrides.cluster.resolvedMode
         pane.clusterCornerInset = chromeOverrides.cluster.cornerInset
         pane.clusterOpacity = chromeOverrides.cluster.opacity
         // The footer's glass tint was assigned here until 2026-08-09, from
