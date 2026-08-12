@@ -127,6 +127,11 @@ fi
 # cluster cards' key discipline, so like `design-panel-key` it takes the
 # keyboard on purpose and no version of it could qualify.
 #
+# **`cluster-legibility` qualifies on the same ground as `cluster-wires`:**
+# the same offscreen `cacheDisplay(in:to:)` harness pointed at a different
+# question (contrast grading rather than wire reach), no window, no focus, no
+# shell.
+#
 # **`footer-accessory` qualifies the way `glass-backdrop` does.** Four windows
 # on screen for about twenty seconds, scrolling their own content for the
 # scroll edge effect the probe compares; `.accessory` policy, every window
@@ -136,7 +141,7 @@ fi
 #
 # Every probe named must be safe, so a command pairing a safe one with a real
 # driver is still denied.
-SAFE_PROBES='^(theme-catalog|app-icon|clip-layout|theme-refresh|pane-resize|glass-backdrop|override-wires|cluster-wires|footer-accessory)$'
+SAFE_PROBES='^(cluster-legibility|theme-catalog|app-icon|clip-layout|theme-refresh|pane-resize|glass-backdrop|override-wires|cluster-wires|footer-accessory)$'
 probes=$(printf '%s' "$COMMAND" | grep -oE 'Diagnostics/[a-zA-Z0-9_-]+/run\.sh' | sed -E 's|Diagnostics/([^/]+)/run\.sh|\1|')
 if [ -n "$probes" ]; then
   unsafe=0
