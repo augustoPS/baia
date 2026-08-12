@@ -322,6 +322,7 @@ final class TerminalPaneController: NSViewController {
         statusBar.isWindowActive = isWindowActive
         statusBar.theme = theme
         clusterView.isPaneFocused = isPaneFocused
+        clusterView.isWindowActive = isWindowActive
         clusterView.theme = theme
         scrim.colour = theme.background
         // See `isWindowActive` above for why an inactive window is the only thing

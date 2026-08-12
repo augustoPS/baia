@@ -40,6 +40,27 @@ final class PaneClusterView: PaneOverlayView {
         }
     }
 
+    /// Whether this pane's window is the key window, the footer's second half
+    /// of the focus gate. Two properties rather than one pre-gated feed, the
+    /// same shape ``PaneStatusBarView`` keeps: the conjunction is computed
+    /// here, in ``framesForFocus``, so a call site that forgets one half
+    /// cannot hand the pill a focus expression the footer would refuse to
+    /// draw.
+    var isWindowActive: Bool = true {
+        didSet {
+            guard isWindowActive != oldValue else { return }
+            needsDisplay = true
+        }
+    }
+
+    /// `PaneStatusBarView.framesForFocus`, verbatim: focus is a statement
+    /// about a window that has the keyboard, so a deactivated window drops
+    /// the thick fill and the stroke with the footer's own, and the pill
+    /// recedes under the scrim like everything else in the pane.
+    private var framesForFocus: Bool {
+        isPaneFocused && isWindowActive
+    }
+
     var theme: PaneTheme = .darkPastel {
         didSet {
             guard theme != oldValue else { return }
@@ -173,7 +194,7 @@ final class PaneClusterView: PaneOverlayView {
         // no material and takes the footer's own flat fill for both states;
         // there the stroke below is the whole step.
         if let set = materialSet {
-            let fill = isPaneFocused ? set.fillThick : set.fillChrome
+            let fill = framesForFocus ? set.fillThick : set.fillChrome
             nsColor(fill.rgb, alpha: fill.alpha).setFill()
         } else {
             nsColor(theme.barBackground).setFill()
@@ -184,7 +205,17 @@ final class PaneClusterView: PaneOverlayView {
         // at its width, inset by half so the stroke lands inside the pill's
         // edge rather than straddling it — the radius comes down with it,
         // keeping the stroke concentric.
-        if isPaneFocused {
+        //
+        // Full alpha in both chrome modes, unlike the footer, and the
+        // difference is the surface. `PaneStatusBarView.glassFrameAlpha`
+        // (0.55) exists because the footer's glass path paints no fill, so
+        // an opaque stroke there was ink laid straight onto naked glass,
+        // reading as a sticker on the window. This stroke never touches
+        // naked glass: it lands inside the pill's own thick fill, the
+        // tinted surface the step above just painted, which is exactly the
+        // kind of composited backing the footer's flat case keeps its full
+        // alpha for.
+        if framesForFocus {
             let width = PaneStatusBarMetrics.focusFrameWidth
             let inner = NSBezierPath(
                 roundedRect: bounds.insetBy(dx: width / 2, dy: width / 2),
