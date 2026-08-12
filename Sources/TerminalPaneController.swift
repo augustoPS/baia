@@ -517,6 +517,15 @@ final class TerminalPaneController: NSViewController {
     private func applyClusterMode() {
         guard isViewLoaded else { return }
         if clusterMode == .footer {
+            // A mode flip can arrive from the watched overrides file while a
+            // card floats over this capsule; removing the anchor under a
+            // still-key card leaves it orphaned until the user dismisses it
+            // by hand. The superview check keeps the lazy controller unforced
+            // for panes whose capsule never existed, which is what preserves
+            // byte-stability at the default mode.
+            if clusterView.superview != nil {
+                clusterCards.dismiss()
+            }
             clusterView.removeFromSuperview()
             clusterEdgeConstraints = []
         } else if clusterView.superview == nil {
