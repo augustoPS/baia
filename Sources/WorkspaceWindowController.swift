@@ -58,27 +58,23 @@ private func CGSSetWindowBackgroundBlurRadius(
     _ radius: Int
 ) -> CGError
 
-/// The untinted glass spanning the titlebar band, so the window's top edge
-/// wears the same treatment as every other chrome surface in this app.
-///
-/// The sidebar's ``SidebarGlassBacking`` with one difference, and the
-/// difference is where it lives rather than what it is: this one is parented
-/// in the window's *frame view* (`contentView.superview`) because the titlebar
-/// band is above `contentView` and no public API hands it over. See
-/// ``WorkspaceWindowController/applyTitlebarGlass()`` for why that parent was
-/// chosen over the two alternatives, both measured.
-private final class TitlebarGlassBacking: NSGlassEffectView {
-    override var acceptsFirstResponder: Bool { false }
-
-    override var canBecomeKeyView: Bool { false }
-
-    /// Refuses every click, which matters more here than it does in the
-    /// sidebar. This view lies over the traffic lights, the title, the
-    /// toolbar and the tab bar — every one of them a control AppKit owns and
-    /// this app must not intercept. A glass view that answered a hit test here
-    /// would swallow window close and tab switching.
-    override func hitTest(_: NSPoint) -> NSView? { nil }
-}
+// **`TitlebarGlassBacking` stood here until 2026-08-12, and the band's glass
+// moved into ``SidebarHost`` with it.**
+//
+// It was an `NSGlassEffectView` parented in the window's *frame view*
+// (`contentView.superview`), because the band sits above `contentView` and no
+// public API hands it over. That parent is what `Diagnostics/titlebar-merge`
+// measured the cost of: a plane in the frame view and a plane in `contentView`
+// are two hierarchies, `NSGlassEffectContainerView` merges only its own
+// subviews, and the probe's arm 2 established that no container can span the
+// split. Two planes sampling separately is what the owner saw as a seam, and
+// arm 1 measured it at 34.33 luminance units against a 2.00 threshold.
+//
+// So the band's plane now lives in `contentView` beside the column's, where a
+// container can reach both. ``SidebarHost/bandGlass`` is the view that replaced
+// this one, and ``WorkspaceWindowController/applyTitlebarGlass()`` carries what
+// this controller still owns: the style mask, the flag that stops the system
+// slab, and the tint the design panel points at the titlebar surface.
 
 // **The titlebar's glass wash was here, and it retired on 2026-08-08.**
 //
@@ -316,6 +312,11 @@ final class WorkspaceWindowController: NSObject {
     ///
     /// Nil unless the debug design panel has pointed this surface somewhere, and
     /// in Release it can hold nothing else. See ``SurfaceFill``.
+    ///
+    /// Written through to ``SidebarHost/titlebarFillMaterial``, which owns the
+    /// plane since the merge. The titlebar and the sidebar stay two addressable
+    /// surfaces even though one host holds both planes, so pointing this at a
+    /// role tints the band and leaves the column alone.
     var fillMaterial: DesignOverrides.Chrome.Material? {
         didSet {
             guard fillMaterial != oldValue else { return }
@@ -323,16 +324,26 @@ final class WorkspaceWindowController: NSObject {
         }
     }
 
-    /// The glass under the titlebar band, `nil` under flat. Built and torn down
-    /// by ``applyTitlebarGlass()``.
+    /// How much height the window is currently spending on chrome above its
+    /// content, which under `.fullSizeContentView` is the band the sidebar's
+    /// glass has to reach up into and the pane tree has to be held back from.
     ///
-    /// **It had a wash above it until 2026-08-08**, and with that gone this
-    /// controller no longer holds `theme` or `backgroundOpacity` at all: the two
-    /// were carried here for the wash's colour and nothing else read them, so
-    /// they left with it rather than lingering as state nothing consults. The
-    /// theme still reaches the column through ``SidebarHost/theme``, which is
-    /// where it was always doing visible work.
-    private var titlebarGlass: TitlebarGlassBacking?
+    /// Derived rather than written as 40, for the reason the old
+    /// `layoutTitlebarGlass()` derived it: it is whatever the window is spending
+    /// right now, so a toolbar style change, a tab bar joining, or a system
+    /// metric this app does not control cannot leave the glass short of the band
+    /// or the tree overlapping it.
+    ///
+    /// **`contentLayoutRect` is still the source, and under
+    /// `.fullSizeContentView` it still answers correctly.** The flag extends the
+    /// content *view* under the band; `contentLayoutRect` continues to report the
+    /// region AppKit considers unobstructed, so `frame.height - contentLayoutRect
+    /// .height` is the band either way. `Diagnostics/titlebar-toolbar` measures
+    /// that drop (292 to 220 pt under the flag) and this is the arithmetic that
+    /// consumes it deliberately rather than being surprised by it.
+    var titlebarBandHeight: Double {
+        window.frame.height - window.contentLayoutRect.height
+    }
 
     /// `isTransparent`, `blurRadius`, and `isDark` are parameters rather than
     /// later assignments for the reason ``ConfigurationCenter`` states about
@@ -358,7 +369,29 @@ final class WorkspaceWindowController: NSObject {
         toolbar = NSToolbar(identifier: "baia.workspace.toolbar")
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1024, height: 680),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            // **`.fullSizeContentView` is what lets the band and the column be
+            // one panel**, and it is here rather than toggled with the chrome
+            // style on purpose: it is a window-construction property, and
+            // `Diagnostics/titlebar-merge`'s own probe bug records what
+            // inserting it on a *live* window costs — the frame shrinks by the
+            // band rather than the content view growing into it, and the band's
+            // height is then spent twice. Set once, at construction, and never
+            // moved.
+            //
+            // The flag extends `contentView` under the titlebar, which is the
+            // only way the band region is reachable from a view the sidebar's
+            // `NSGlassEffectContainerView` can hold. See ``applyTitlebarGlass()``
+            // for why the frame view no longer works and what the probe measured.
+            //
+            // **Unconditional, unlike the glass it enables.** Under flat there is
+            // no container and no band plane, and the extended content view costs
+            // that path nothing: `SidebarHost` holds the pane tree's rect back by
+            // ``titlebarBandHeight`` whatever the chrome style is, so flat renders
+            // at exactly the geometry it always did. Gating the style mask on
+            // `resolvedChrome` would mean a live style-mask flip on every settings
+            // change, which is the arrangement the probe bug above measured going
+            // wrong.
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
@@ -429,8 +462,24 @@ final class WorkspaceWindowController: NSObject {
         // fitting size and discard the contentRect above, so the size is set
         // after the assignment, not before. contentMinSize stops a future layout
         // change from collapsing the window to an invisible sliver.
-        window.contentMinSize = NSSize(width: 480, height: 320)
-        window.setContentSize(NSSize(width: 1024, height: 680))
+        //
+        // **Both numbers are the band taller than they read, and without that
+        // the merge would silently cost every window 40 pt of panes.** Under
+        // `.fullSizeContentView` the content view spans the band, so a content
+        // height of 680 leaves the pane tree 640: this host holds the tree below
+        // the band, and what `setContentSize` sizes is the rect the band comes
+        // out of. Measured rather than reasoned — the same asymmetry
+        // `Diagnostics/titlebar-merge` records as `normalisedFrame`, where one
+        // `contentRect` produced a 720 pt frame without the flag and a 680 pt
+        // frame with it. Adding the band back makes 680 mean 680 of panes, which
+        // is what it meant before the flag.
+        //
+        // Read from the window rather than written as 40, for
+        // ``titlebarBandHeight``'s reason: the metric is the toolbar's and this
+        // app does not own it.
+        let band = titlebarBandHeight
+        window.contentMinSize = NSSize(width: 480, height: 320 + band)
+        window.setContentSize(NSSize(width: 1024, height: 680 + band))
         window.center()
 
         // Every baia window shares one identifier, which is what lets AppKit
@@ -456,11 +505,11 @@ final class WorkspaceWindowController: NSObject {
         // AppKit's own default appearance until the first settings change wrote
         // one.
         applyAppearance()
-        // And the same again for the titlebar's glass. Called after
-        // `contentViewController` is assigned above, which is what gives the
-        // window a `contentView` and therefore a frame view to parent into;
-        // called before the window is ever shown, so no frame of the system
-        // slab is visible under a glass build.
+        // And the same again for the titlebar. Called after
+        // `contentViewController` is assigned above, because it hands the band's
+        // tint down to ``sidebar`` and that is the object the assignment
+        // installs; called before the window is ever shown, so no frame of the
+        // system slab is visible under a glass build.
         applyTitlebarGlass()
 
         tree.onFocusedPaneChange = { [weak self] in self?.onFocusedPaneChange?() }
@@ -527,15 +576,26 @@ final class WorkspaceWindowController: NSObject {
     /// material and drops the wells to 29.1.
     ///
     /// **Not `fullSizeContentView`, which was the first hypothesis and is
-    /// measurably not the fix.** The platform recipe for chrome over content is
-    /// content extending under the titlebar, so the probe carries an arm that
-    /// does exactly that — `.fullSizeContentView` with the well anchored to the
-    /// safe area, so the backing extends while the visible layout does not
-    /// move. Its band spreads 63.6, which is the bare-titlebar number. Content
-    /// beneath the band is not what the material samples; the window background
-    /// is. That arm is kept in the probe rather than deleted, because "we tried
-    /// the obvious platform arrangement and measured it not working" is the
-    /// part a later reader will otherwise re-derive.
+    /// measurably not the fix *for this*.** The platform recipe for chrome over
+    /// content is content extending under the titlebar, so the probe carries an
+    /// arm that does exactly that — `.fullSizeContentView` with the well
+    /// anchored to the safe area, so the backing extends while the visible
+    /// layout does not move. Its band spreads 63.6, which is the bare-titlebar
+    /// number. Content beneath the band is not what the material samples; the
+    /// window background is. That arm is kept in the probe rather than deleted,
+    /// because "we tried the obvious platform arrangement and measured it not
+    /// working" is the part a later reader will otherwise re-derive.
+    ///
+    /// **The window carries `.fullSizeContentView` anyway since 2026-08-12, and
+    /// that does not contradict the paragraph above.** The flag was rejected as
+    /// a fix for the *material* and it is still no such fix — this line's
+    /// non-zero alpha is what makes the material draw, and removing it would
+    /// bring the bare band straight back with the flag set or not. The flag is
+    /// carried for a different question the band/column merge asked: it is the
+    /// only way `contentView` reaches the band region, which is where the
+    /// sidebar's `NSGlassEffectContainerView` has to hold both planes. Two
+    /// answers about one flag, to two different questions, and the probe
+    /// measured both.
     ///
     /// **Nothing changes at `backgroundOpacity == 1`.** That path is the `else`
     /// here and still writes `.windowBackgroundColor` on an opaque window,
@@ -608,103 +668,75 @@ final class WorkspaceWindowController: NSObject {
     /// band is still 40 pt with the flag set, the title and subtitle still
     /// present, and the toolbar still reporting visible.
     ///
-    /// **Why the frame view, which is an AppKit internal.** The band sits
-    /// *above* `contentView`, and there are three ways to reach it. Parenting
-    /// in the contentViewController's own view needs `.fullSizeContentView` to
-    /// extend that view under the titlebar, and the probe's `glass-in-content`
-    /// arm measures what that costs: `contentLayoutRect` drops from 292 to 220
-    /// pt. That rect is what the pane tree lays out against, so adopting it
-    /// would resize every ghostty grid and `SIGWINCH` every running shell —
-    /// disqualifying on its own, and the arm is kept in the probe with an
-    /// assertion so the trade is not re-derived. A toolbar item filling the
-    /// band would be the third way and is refused on the owner's "go full
-    /// macOS" rule: it means inventing a fake item to carry a background,
-    /// which is mimicry of chrome the platform already draws.
+    /// **Why the band's plane left the frame view, on 2026-08-12.** It was
+    /// parented in `contentView.superview` because the band sits above
+    /// `contentView` and no public API hands it over, and that parent was chosen
+    /// over `.fullSizeContentView` on a cost this comment used to state as
+    /// disqualifying: the flag drops `contentLayoutRect` from 292 to 220 pt,
+    /// which the pane tree lays out against, so adopting it would resize every
+    /// ghostty grid and `SIGWINCH` every running shell.
     ///
-    /// So `contentView.superview`. It is undocumented in the sense that no
-    /// header names it, and it is not fragile in the way that usually implies:
-    /// it is reached through a public property (`NSView.superview`), the code
-    /// degrades to the current system titlebar if it is ever `nil` rather than
-    /// crashing or drawing wrong, and nothing here depends on its class, its
-    /// subview order, or any selector it responds to. The `guard` below is the
-    /// whole *caught* failure path, and it covers the frame view being absent;
-    /// a frame view whose layout semantics change under a future macOS is an
-    /// uncaught, visual-only failure (glass clipped or mis-stacked, never a
-    /// crash or a resize), which is what to re-check on each macOS major.
+    /// **That cost is real, still measured, and no longer disqualifying — the
+    /// rejection was stale rather than wrong.** It assumed the tree's rect
+    /// follows `contentLayoutRect`, and `Diagnostics/titlebar-merge`'s arm 5
+    /// (route A) measured the alternative: extend the content view, let the
+    /// *column's* rect grow up under the band, and hold the *tree's* rect at the
+    /// row it had. The tree region came back identical to the shipped
+    /// arrangement in all four components (`dx=dy=dw=dh=dtop=0`), and its
+    /// `gridtest` companion put a real libghostty surface in that rect and read
+    /// **73 x 19 in both arrangements with zero resize callbacks across the
+    /// flip**. `Diagnostics/titlebar-toolbar` still asserts the
+    /// `contentLayoutRect` drop; what changed is that the drop no longer
+    /// propagates, because ``SidebarHost`` splits the rect it used to share.
     ///
-    /// **No geometry moves**, which the probe asserts rather than this comment
-    /// claiming: adding and removing the backing on a live window, four times,
-    /// leaves `contentView`, `contentLayoutRect` and the window frame identical
-    /// across all five states. The band this covers is chrome AppKit already
-    /// owned; the pane tree's rect is untouched, so no grid resizes and nothing
-    /// running in a pane is signalled. That is what makes this safe to toggle
-    /// live from a settings edit rather than only at window creation.
+    /// The frame view had to go because the merge is impossible from there.
+    /// `NSGlassEffectContainerView` merges the glass views that are its own
+    /// **subviews**, and a view has one superview: a plane in the frame view and
+    /// a plane in `contentView` cannot both be in one container, which arm 2
+    /// establishes as structural rather than as an API gap. Two planes sampling
+    /// separately is the seam the owner sees, measured at 34.33 against a 2.00
+    /// threshold; both planes in `contentView` under one container measure 0.00.
+    ///
+    /// A toolbar item filling the band is still refused, on the owner's "go full
+    /// macOS" rule: it means inventing a fake item to carry a background, which
+    /// is mimicry of chrome the platform already draws.
+    ///
+    /// **What this method still owns.** The band's plane belongs to
+    /// ``SidebarHost`` now, because that is where the container is. This keeps
+    /// the flag that stops the system slab and the tint the design panel points
+    /// at the titlebar surface, and hands both down. No geometry moves here:
+    /// `titlebarAppearsTransparent` is a chrome-drawing flag, and the style mask
+    /// is fixed at construction rather than toggled with the chrome style.
     private func applyTitlebarGlass() {
         switch resolvedChrome {
         case .flat:
             // Back to the system's own titlebar, byte for byte what `78aadfe`
-            // shipped: the flag off means AppKit paints the slab again.
+            // shipped: the flag off means AppKit paints the slab again. The
+            // sidebar tears its own planes down off the same `resolvedChrome`,
+            // so flat is a window with the slab and no glass anywhere in it.
             window.titlebarAppearsTransparent = false
-            titlebarGlass?.removeFromSuperview()
-            titlebarGlass = nil
 
         case .glass:
             window.titlebarAppearsTransparent = true
-            guard titlebarGlass == nil, let frameView = window.contentView?.superview else { break }
-
-            let backing = TitlebarGlassBacking(frame: .zero)
-            backing.style = .regular
-            backing.cornerRadius = 0
-            backing.wantsLayer = true
-            // Below every sibling, so the traffic lights, the title, the
-            // toolbar and the tab bar all render over it rather than under it.
-            // The sidebar's backing takes the same position in its own host and
-            // for the same reason: glass that is not at the back samples this
-            // app's views instead of what is behind the window.
-            frameView.addSubview(backing, positioned: .below, relativeTo: nil)
-            titlebarGlass = backing
-
-            updateTitlebarGlassTint()
-            layoutTitlebarGlass()
         }
+        sidebar.titlebarFillMaterial = fillMaterial
     }
 
-    /// Frames the glass to the titlebar band.
+    /// Writes ``fillMaterial`` through to the band's plane, which
+    /// ``SidebarHost`` now owns.
     ///
-    /// The band's height is derived rather than written as 40: it is whatever
-    /// the window is currently spending on chrome, so a toolbar style change or
-    /// a system metric this app does not control cannot leave the glass short
-    /// of the band it is backing. Called from ``applyTitlebarGlass()`` and from
-    /// the resize delegate, since the width tracks the window and an
-    /// autoresizing mask alone would not survive the band's height changing
-    /// when a tab bar appears.
-    private func layoutTitlebarGlass() {
-        guard let titlebarGlass, let frameView = titlebarGlass.superview else { return }
-        let bandHeight = window.frame.height - window.contentLayoutRect.height
-        let band = NSRect(
-            x: 0,
-            y: frameView.bounds.height - bandHeight,
-            width: frameView.bounds.width,
-            height: bandHeight
-        )
-        titlebarGlass.frame = band
-    }
-
-    /// Writes ``fillMaterial``'s colour onto ``titlebarGlass``, or nil — which
-    /// is what ships and what every Release build resolves.
+    /// **The two surfaces stay separately addressable even though one host holds
+    /// both planes**, which is the whole reason this is a distinct property
+    /// rather than folded into the sidebar's own `fillMaterial`. The design
+    /// panel points `chrome.surfaces.titlebar` and `chrome.surfaces.sidebar` at
+    /// different roles, and merging the planes must not merge the overrides: an
+    /// owner tinting the titlebar to check a role would otherwise repaint the
+    /// column too and read the wrong answer.
     ///
-    /// **This was a write-once `titlebarGlassTint` static until the design panel
-    /// needed one**, spelled out rather than left at the type's default so the
-    /// "never set a tint" rule was defended by a line saying why it must stay nil
-    /// rather than by a silent default nobody has to contradict. The panel is the
-    /// deliberate, reversible contradiction; with it silent this resolves nil and
-    /// the band is exactly as untinted as it was. See ``SurfaceFill``.
-    ///
-    /// A method rather than the creation-time assignment it replaces, because
-    /// ``applyTitlebarGlass()`` returns early when the band already exists.
+    /// Nil unless the debug design panel has pointed this surface somewhere, and
+    /// in Release it can hold nothing else. See ``SurfaceFill``.
     private func updateTitlebarGlassTint() {
-        guard let titlebarGlass, case let .glass(set) = resolvedChrome else { return }
-        titlebarGlass.tintColor = SurfaceFill.colour(fillMaterial, in: set)
+        sidebar.titlebarFillMaterial = fillMaterial
     }
 
     /// Writes ``blurRadius`` onto the window through the private CGS backdrop
@@ -773,11 +805,15 @@ extension WorkspaceWindowController: NSWindowDelegate {
     }
 
     func windowDidResize(_: Notification) {
-        // The band spans the window's width and its height changes when a tab
-        // bar joins or leaves, so the glass is reframed here rather than left
-        // to an autoresizing mask, which could follow the width and not the
-        // height. No-op under flat, where there is no glass to frame.
-        layoutTitlebarGlass()
+        // **The band's height is not a constant and a resize is when it moves**:
+        // it changes when a tab bar joins or leaves the window. `SidebarHost`
+        // reads it back through ``titlebarBandHeight`` for both the band plane's
+        // frame and the row it holds the pane tree at, and a layout pass AppKit
+        // schedules for the size change alone would run against the old number.
+        // So the host is asked for a fresh pass here rather than left to an
+        // autoresizing mask, which was the same reason the retired
+        // `layoutTitlebarGlass()` was called from this delegate.
+        sidebar.view.needsLayout = true
         onSessionChange?()
     }
 

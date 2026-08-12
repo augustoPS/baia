@@ -128,16 +128,35 @@ empty afterwards. The toolbar stays and measurably must: with the flag set, the
 band is still 40 pt, the toolbar still reports visible, and the title and
 subtitle are both still present. The probe asserts all four.
 
-**The frame view, not `fullSizeContentView`.** Both glass arms produce glass;
-they are told apart by what they cost. `glass-in-content` parents the backing in
-the contentViewController's own view, which needs `.fullSizeContentView` to
-reach the band, and that drops `contentLayoutRect` from 292 to 220 pt. The pane
-tree lays out against that rect, so adopting it would resize every ghostty grid
-and `SIGWINCH` every running shell. `glass-in-frame` parents into
-`contentView.superview`, needs no style-mask change, and leaves the rect
-untouched. `spread.py` asserts both halves of that trade, so neither is
-re-derived and a future macOS that stops charging for the first shows up as a
-failure here.
+**The frame view, not `fullSizeContentView` — and the app stopped following
+that on 2026-08-12, while the measurement behind it stands.** Both glass arms
+produce glass; they are told apart by what they cost. `glass-in-content` parents
+the backing in the contentViewController's own view, which needs
+`.fullSizeContentView` to reach the band, and that drops `contentLayoutRect`
+from 292 to 220 pt. `glass-in-frame` parents into `contentView.superview`, needs
+no style-mask change, and leaves the rect untouched. `spread.py` asserts both
+halves of that trade, so neither is re-derived and a future macOS that stops
+charging for the first shows up as a failure here.
+
+**What changed is the inference, not the number.** This paragraph used to run
+from the 220 pt drop straight to "adopting it would resize every ghostty grid
+and `SIGWINCH` every running shell", and that step assumed the pane tree's rect
+follows `contentLayoutRect`. `Diagnostics/titlebar-merge`'s arm 5 measured the
+alternative: extend the content view, let the sidebar column's rect grow up
+under the band, and hold the tree's rect at the row it had. The tree region came
+back identical in all four components, and its `gridtest` companion put a real
+libghostty surface in that rect and read 73 x 19 in both arrangements with zero
+resize callbacks across the flip. The app now carries `.fullSizeContentView` and
+splits the rect in `SurfaceHosts` (`Sources/SurfaceHosts.swift`), because that
+is the only arrangement in which the band's glass and the column's can share one
+`NSGlassEffectContainerView` and stop showing a seam.
+
+**No arm was re-aimed and none needed to be.** This probe builds its own
+thirteen windows and links no app source, so it measures arrangements rather
+than baia's window: the arms are as true after the change as before, and the run
+passes unmodified. The 220-against-292 assertion is now a cost the app pays
+knowingly rather than a cost it refuses, which is a change to what the app does
+with the number and not to the number.
 
 **Glass reads dimmer than bare show-through and that is the point.** The band
 mean sits between the slab's and the raw wallpaper's because the glass is
@@ -199,7 +218,17 @@ and they are.
 - **the titlebar-glass flip**, `titlebarAppearsTransparent` plus adding and
   *removing* the frame-view backing, which is what makes the glass safe to
   toggle from a live settings edit. Removal is included rather than hiding,
-  because that is the path `applyTitlebarGlass()` takes under flat.
+  because that is the path a chrome change takes under flat.
+
+  **Kept after the app stopped parenting in the frame view (2026-08-12), and
+  the reason is the flag rather than the parent.** `applyTitlebarGlass()` no
+  longer adds a view here — the band's plane moved into `SidebarHost` so a
+  container could merge it with the column's — but the flip still measures the
+  two things that decide whether a live chrome change is safe: that
+  `titlebarAppearsTransparent` moves no geometry, and that adding or removing
+  glass in the band region moves none either. Both are exactly what the app
+  still does on every settings edit, in a different superview. Deleting the arm
+  would retire a live assertion in exchange for nothing measured.
 
 ## Why not ghostty parity (arrangement B)
 

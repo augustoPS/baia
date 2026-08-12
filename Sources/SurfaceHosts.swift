@@ -20,6 +20,31 @@ private final class SidebarGlassBacking: NSGlassEffectView {
     override func hitTest(_: NSPoint) -> NSView? { nil }
 }
 
+/// The glass filling the titlebar band beside the column, so the band is one
+/// panel with the column rather than a second plane stepping against it.
+///
+/// **The same view `WorkspaceWindowController` used to own, moved here on
+/// 2026-08-12 and for one reason: the container.**
+/// `NSGlassEffectContainerView` merges the glass views that are its own
+/// subviews, so the band's plane and the column's have to share a hierarchy, and
+/// `Diagnostics/titlebar-merge`'s arm 2 establishes that no container can span
+/// the frame-view/`contentView` split the band's plane used to live across.
+///
+/// **Refusing every click matters more here than it does one class up.** This
+/// view lies under the traffic lights, the title, the toolbar and the tab bar —
+/// every one of them a control AppKit owns and this app must not intercept. The
+/// probe measured all three lights hit-testable over route A's arrangement
+/// anyway, because the planes go in `positioned: .below`, and this override is
+/// the second guarantee rather than the first: z-order is what makes it work and
+/// this is what makes it not depend on z-order.
+private final class TitlebarBandGlass: NSGlassEffectView {
+    override var acceptsFirstResponder: Bool { false }
+
+    override var canBecomeKeyView: Bool { false }
+
+    override func hitTest(_: NSPoint) -> NSView? { nil }
+}
+
 // **The sidebar's glass wash was here, and it retired on 2026-08-08.**
 //
 // `SidebarGlassWash` laid `theme.background` at `backgroundOpacity` over
@@ -268,14 +293,81 @@ final class SidebarHost: NSViewController {
     /// costs a compositing pass macOS runs whether or not it draws anything,
     /// and flat must not pay it.
     ///
-    /// Added first, before `tree.view` and every section, so it sits behind
-    /// the whole hierarchy in z-order — `NSGlassEffectView.style = .regular`
-    /// samples what the window server has already composited beneath it, which
-    /// for a borderless transparent window is the desktop, not this app's own
+    /// Inside ``glassContainer`` since 2026-08-12 rather than a direct subview
+    /// of `view`, which is what lets it merge with ``bandGlass``. The container
+    /// is what goes in below `tree.view` and every section, so this still sits
+    /// behind the whole hierarchy in z-order — `NSGlassEffectView.style =
+    /// .regular` samples what the window server has already composited beneath
+    /// it, which for a transparent window is the desktop, not this app's own
     /// views, so being behind them in z-order is what "sampling the desktop"
     /// actually requires; a glass view stacked *above* the sections would
     /// sample the sections instead and read as an opaque tint over them.
+    ///
+    /// **It spans the band as well as the column**, which is the merge. Its
+    /// frame takes the host's whole height while everything the column *draws*
+    /// stays below the band; see ``viewDidLayout()``.
     private var glassBacking: SidebarGlassBacking?
+
+    /// The band's glass, to the right of the column, merged with
+    /// ``glassBacking`` through ``glassContainer``.
+    ///
+    /// **Two shapes rather than one, and the probe chose that.** An
+    /// `NSGlassEffectView` is a rectangle and band-plus-column is an L, so one
+    /// view can only cover both by taking the column's full height and leaving
+    /// the rest of the band to a second plane regardless. `titlebar-merge`'s
+    /// verdict prefers arm 2's container over arm 3's single plane for the
+    /// reason that survives here: the container merges shapes of *different
+    /// widths* (the band spans the window, the column is 260 pt) with no
+    /// untested boundary at the column's right edge.
+    private var bandGlass: TitlebarBandGlass?
+
+    /// What merges the two planes into one panel.
+    ///
+    /// `spacing = 0`, which `glass-backdrop`'s finding 5 measured on the capsule
+    /// and `titlebar-merge`'s finding 4 re-measured on these two much larger
+    /// shapes: adjacent glass stays distinct in shape while sharing one sampling
+    /// pass, and the shared pass is the whole point. A non-zero spacing would
+    /// dissolve the band and the column into one blob.
+    ///
+    /// The boundary between them measured **0.00** under this arrangement,
+    /// against **34.33** for the two planes this replaced.
+    private var glassContainer: NSGlassEffectContainerView?
+
+    /// Which fill role the *band's* plane is tinted with, written by
+    /// ``WorkspaceWindowController`` and kept separate from ``fillMaterial``
+    /// one property up.
+    ///
+    /// **One host holds both planes; the two design-panel surfaces stay two.**
+    /// `chrome.surfaces.titlebar` and `chrome.surfaces.sidebar` point at
+    /// different roles, and an owner tinting one to check it must not repaint
+    /// the other. Nil unless the panel has pointed the titlebar somewhere, and
+    /// in Release it can hold nothing else. See ``SurfaceFill``.
+    var titlebarFillMaterial: DesignOverrides.Chrome.Material? {
+        didSet {
+            guard titlebarFillMaterial != oldValue else { return }
+            updateGlassTint()
+        }
+    }
+
+    /// How much height the window is spending on its titlebar band, or `0` when
+    /// this host is not in a window yet.
+    ///
+    /// **The single number this host's split turns on.** The band's plane fills
+    /// it at the top of ``view``, the column's plane runs the full height up
+    /// through it, and everything the pane tree lays out is held below it. Read
+    /// from the window every layout pass rather than cached, because it is not a
+    /// constant: it changes when a tab bar joins or leaves, and
+    /// ``WorkspaceWindowController`` asks for a fresh pass on resize for exactly
+    /// that.
+    ///
+    /// Zero before the view is in a window, which is the correct answer rather
+    /// than a fallback: with no window there is no band, and a layout pass that
+    /// runs then lays out exactly as the pre-`fullSizeContentView` arrangement
+    /// did. The first pass inside a window recomputes.
+    private var bandHeight: Double {
+        guard let window = view.window else { return 0 }
+        return window.frame.height - window.contentLayoutRect.height
+    }
 
     /// Which of the four fill roles this column's glass is tinted with, or nil
     /// for the untinted glass that ships.
@@ -306,8 +398,11 @@ final class SidebarHost: NSViewController {
     /// ``applyResolvedChrome()`` returns early when the backing already exists,
     /// so a tint dialled while the column is open would otherwise never land.
     private func updateGlassTint() {
-        guard let glassBacking, case let .glass(set) = resolvedChrome else { return }
-        glassBacking.tintColor = SurfaceFill.colour(fillMaterial, in: set)
+        guard case let .glass(set) = resolvedChrome else { return }
+        glassBacking?.tintColor = SurfaceFill.colour(fillMaterial, in: set)
+        // The band's own role, not the column's. See ``titlebarFillMaterial``
+        // for why merging the planes did not merge the two overrides.
+        bandGlass?.tintColor = SurfaceFill.colour(titlebarFillMaterial, in: set)
     }
 
     private let divider = NSView()
@@ -474,10 +569,12 @@ final class SidebarHost: NSViewController {
         }
         raiseGrabStrips()
         // `show(_:)` calls `install()` after `viewDidLoad` has already built
-        // `glassBacking`, and every newly installed section view is added above
-        // it in z-order by the two `addSubview` calls just above — no restack
-        // needed here for the glass to keep reading as what is behind the
-        // column rather than as a layer painted over it.
+        // `glassContainer`, and every newly installed section view is added
+        // above it in z-order by the two `addSubview` calls just above — no
+        // restack needed here for the glass to keep reading as what is behind
+        // the column rather than as a layer painted over it. The container is
+        // the one subview of `view` that holds glass now, so raising a section
+        // above it raises it above both planes at once.
     }
 
     /// Creates or tears down ``glassBacking`` to match ``resolvedChrome``.
@@ -497,21 +594,50 @@ final class SidebarHost: NSViewController {
     private func applyResolvedChrome() {
         switch resolvedChrome {
         case .flat:
-            glassBacking?.removeFromSuperview()
+            // The container goes with the planes rather than staying as an empty
+            // host, for the reason `glassBacking` gives about hiding: flat must
+            // not pay a compositing pass macOS runs whether or not anything in it
+            // draws. An `NSGlassEffectContainerView` with no glass in it is
+            // exactly that pass with nothing to show for it.
+            glassContainer?.removeFromSuperview()
+            glassContainer = nil
             glassBacking = nil
+            bandGlass = nil
         case .glass:
-            guard glassBacking == nil else { break }
+            guard glassContainer == nil else { break }
+
             let backing = SidebarGlassBacking(frame: .zero)
             backing.style = .regular
             backing.cornerRadius = 0
             backing.wantsLayer = true
-            // First subview added to `view`, ahead of `tree.view` and every
-            // section: see `glassBacking`'s own doc comment for why sitting
-            // behind the whole hierarchy in z-order is what lets it sample the
-            // window's own transparent region (the desktop) rather than this
-            // app's other views.
-            view.addSubview(backing, positioned: .below, relativeTo: nil)
+
+            let band = TitlebarBandGlass(frame: .zero)
+            band.style = .regular
+            band.cornerRadius = 0
+            band.wantsLayer = true
+
+            // **The merge, and it is the only arrangement that produces one.**
+            // The container merges the glass views that are its own subviews, so
+            // the two planes share a host view inside it; `spacing = 0` keeps
+            // them distinct in shape while they share one sampling pass. See
+            // ``glassContainer``.
+            let container = NSGlassEffectContainerView(frame: view.bounds)
+            container.spacing = 0
+            let host = NSView(frame: view.bounds)
+            host.addSubview(backing)
+            host.addSubview(band)
+            container.contentView = host
+
+            // Below `tree.view` and every section, exactly where the column's
+            // lone backing used to go and for the reason `glassBacking`'s doc
+            // comment gives: glass that is not at the back samples this app's
+            // own views instead of what is behind the window. It is also what
+            // keeps the traffic lights clickable, since the band's plane now
+            // passes under all three of them.
+            view.addSubview(container, positioned: .below, relativeTo: nil)
+            glassContainer = container
             glassBacking = backing
+            bandGlass = band
 
             updateGlassTint()
         }
@@ -544,10 +670,37 @@ final class SidebarHost: NSViewController {
     override func viewDidLayout() {
         super.viewDidLayout()
 
+        // **What used to be one `bounds` is two rects, and every consumer below
+        // names which one it takes.** The window carries `.fullSizeContentView`
+        // (see ``WorkspaceWindowController``'s style mask), so `view.bounds` now
+        // reaches the window's top edge and includes the titlebar band. That is
+        // what lets the column's glass run up under the band and merge with it;
+        // it is also what would push every pane up by the band's height if it
+        // were handed to the pane tree, resizing every ghostty grid.
+        //
+        // `Diagnostics/titlebar-merge`'s arm 5 is this split measured on a
+        // stand-in, and `gridtest` is it measured on a real libghostty surface:
+        // hold the tree's rect at the row it had and the grid stays 73 x 19 with
+        // zero resize callbacks across the flip.
+        //
+        // - `bounds` (full, band included): the column's glass, which is the
+        //   whole reason for the split, and the band's glass above it.
+        // - `content` (band excluded): everything else. The action row, the
+        //   sections, both dividers and the pane tree all lay out inside it and
+        //   therefore sit exactly where they sat before the style-mask change.
+        //   The column's *content* stays below the band even though its *glass*
+        //   does not, which is the same line arm 5 draws and for the same reason:
+        //   FILES drawn up into the band collides with the window title.
         let bounds = view.bounds
+        let content = NSRect(
+            x: bounds.minX,
+            y: bounds.minY,
+            width: bounds.width,
+            height: max(0, bounds.height - bandHeight)
+        )
         let sidebarWidth = sections.isEmpty
             ? 0
-            : min(width, max(0, bounds.width - Self.minimumPaneWidth))
+            : min(width, max(0, content.width - Self.minimumPaneWidth))
 
         // Read from the width that was actually used, not from the sidebar's
         // existence. A window too narrow to give the sidebar any width leaves the
@@ -557,15 +710,22 @@ final class SidebarHost: NSViewController {
         divider.isHidden = sidebarWidth == 0
 
         // The glass column, sized to exactly the sidebar's own width and
-        // nothing else. `bounds` spans the whole host — sidebar column plus the
-        // pane tree beside it — and a glass view sized to all of it would
-        // sample and composite pixels behind the panes too, which have their
-        // own material (each pane's `backgroundOpacity` well) and need no
-        // second glass layer over them. `isHidden` rather than a zero frame at
-        // width 0: a `CGRect` of zero size is still a valid frame to hand
-        // `NSGlassEffectView`, and hiding is the explicit statement that there
-        // is no sidebar to back right now, matching `divider.isHidden` and
-        // `widthDivider.isHidden` immediately around it.
+        // nothing else horizontally. `bounds` spans the whole host — sidebar
+        // column plus the pane tree beside it — and a glass view sized to all of
+        // it would sample and composite pixels behind the panes too, which have
+        // their own material (each pane's `backgroundOpacity` well) and need no
+        // second glass layer over them.
+        //
+        // **Vertically it takes the whole of `bounds` rather than `content`,
+        // and that is the merge.** It runs from the host's bottom edge to the
+        // window's top edge, through the band, so the column and the band are
+        // one continuous shape down the strip the probe measures. The column's
+        // *content* is still laid out in `content` below.
+        //
+        // `isHidden` rather than a zero frame at width 0: a `CGRect` of zero
+        // size is still a valid frame to hand `NSGlassEffectView`, and hiding is
+        // the explicit statement that there is no sidebar to back right now,
+        // matching `divider.isHidden` and `widthDivider.isHidden` around it.
         if let glassBacking {
             glassBacking.isHidden = sidebarWidth == 0
             glassBacking.frame = NSRect(
@@ -576,31 +736,73 @@ final class SidebarHost: NSViewController {
             )
         }
 
+        // **The band, and with the sidebar closed it is the whole band.** With a
+        // column open this fills the band to the right of it, meeting the
+        // column's plane at the column's right edge, which is where the
+        // container's shared sampling pass makes the two read as one panel.
+        //
+        // With `sidebarWidth == 0` there is no column to merge with and the
+        // question "what draws the band" has to be answered rather than left to
+        // an empty region: this plane takes the window's full width, which is
+        // the frame the retired `TitlebarGlassBacking` held in the frame view.
+        // A closed sidebar therefore renders exactly the band the app shipped
+        // before the merge, with one plane in it and nothing to seam against.
+        //
+        // Never hidden, unlike the column's. The band exists whether or not the
+        // sidebar does, and a window whose titlebar loses its glass when the
+        // column closes would show the bare wallpaper
+        // ``WorkspaceWindowController/applyTitlebarGlass()`` sets
+        // `titlebarAppearsTransparent` to reveal.
+        if let bandGlass {
+            bandGlass.frame = NSRect(
+                x: bounds.minX + sidebarWidth,
+                y: content.maxY,
+                width: max(0, bounds.width - sidebarWidth),
+                height: bandHeight
+            )
+        }
+
+        // The container is only a coordinate space for the two planes and never
+        // draws on its own, so it takes the full `bounds` and lets them place
+        // themselves inside it.
+        glassContainer?.frame = bounds
+
         // The bottom action row is chrome around the sections rather than a
         // section itself: fixed height, drawn even when the sidebar has nothing
         // in it. Hidden with the column, the same rule the width divider
         // follows, since a closed sidebar has no room for it.
         //
         // **The session header was the other half of this until 2026-08-12**,
-        // a 28 pt strip at `bounds.maxY` with the sections starting below it.
+        // a 28 pt strip at the column's top with the sections starting below it.
         // The owner's ruling removed it, and the space closes by subtraction:
-        // the column the sections are laid out in now starts at `bounds.maxY`
+        // the column the sections are laid out in now starts at `content.maxY`
         // and `layoutSections` puts the first heading at its top edge, so the
-        // FILES heading is the column's top row with nothing above it.
+        // FILES heading is the column's top row with nothing above it. That top
+        // edge is `content`'s rather than `bounds`'s since the merge, which is
+        // what keeps the heading out of the titlebar band.
+        // The action row sits at the column's bottom, which `content` and
+        // `bounds` share, so the rect it takes is only visibly a choice at the
+        // top. It takes `content` anyway, because "the column's chrome lays out
+        // in `content`" is the rule and a consumer exempted for sharing an edge
+        // is a consumer that breaks silently if the other edge ever moves.
         let hasSidebar = sidebarWidth > 0
         actionRow.isHidden = !hasSidebar
         actionRow.frame = NSRect(
-            x: bounds.minX,
-            y: bounds.minY,
+            x: content.minX,
+            y: content.minY,
             width: sidebarWidth,
             height: Self.actionRowHeight
         )
 
+        // The sections, and this is where holding the band back is visible: the
+        // first heading lands at `content.maxY`, which is the row it landed on
+        // before the style-mask change, rather than up in the band beside the
+        // window title.
         layoutSections(in: NSRect(
-            x: bounds.minX,
-            y: bounds.minY + (hasSidebar ? Self.actionRowHeight : 0),
+            x: content.minX,
+            y: content.minY + (hasSidebar ? Self.actionRowHeight : 0),
             width: sidebarWidth,
-            height: max(0, bounds.height - (hasSidebar ? Self.actionRowHeight : 0))
+            height: max(0, content.height - (hasSidebar ? Self.actionRowHeight : 0))
         ))
 
         let gutter = sidebarWidth > 0 ? Self.dividerWidth : 0
@@ -608,24 +810,37 @@ final class SidebarHost: NSViewController {
         // edge it can see. Hidden with the sidebar: there is no edge to drag when
         // the column is closed, and an invisible grab strip over the leftmost pane
         // would swallow clicks meant for the terminal.
+        //
+        // **`content`, so the strip stops below the band.** A grab strip run up
+        // through the band would put a resize cursor and a drag over the region
+        // AppKit uses to move the window, which is the one interaction the merge
+        // must not cost.
         widthDivider.isHidden = sidebarWidth == 0
         widthDivider.frame = NSRect(
-            x: bounds.minX + sidebarWidth - Self.grabHeight / 2,
-            y: bounds.minY,
+            x: content.minX + sidebarWidth - Self.grabHeight / 2,
+            y: content.minY,
             width: Self.grabHeight,
-            height: bounds.height
+            height: content.height
         )
+        // The hairline stops below the band for the visible half of the same
+        // reason: drawn through it, it would cut a 1 pt line across the merged
+        // panel at exactly the boundary the merge exists to remove.
         divider.frame = NSRect(
-            x: bounds.minX + sidebarWidth,
-            y: bounds.minY,
+            x: content.minX + sidebarWidth,
+            y: content.minY,
             width: gutter,
-            height: bounds.height
+            height: content.height
         )
+        // **The rect this whole split exists to hold.** Identical to what it
+        // computed before `.fullSizeContentView`, because `content` is `bounds`
+        // minus the band and `bounds` grew by exactly the band. Arm 5 measures
+        // the equality (`dx=dy=dw=dh=dtop=0`) and `gridtest` measures that it is
+        // an unmoved grid rather than only an unmoved rectangle.
         tree.view.frame = NSRect(
-            x: bounds.minX + sidebarWidth + gutter,
-            y: bounds.minY,
-            width: max(0, bounds.width - sidebarWidth - gutter),
-            height: bounds.height
+            x: content.minX + sidebarWidth + gutter,
+            y: content.minY,
+            width: max(0, content.width - sidebarWidth - gutter),
+            height: content.height
         )
     }
 
