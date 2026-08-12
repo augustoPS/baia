@@ -45,20 +45,32 @@ check 0 'cd ~/Projects/baia && ./Diagnostics/app-icon/run.sh'
 check 0 './Diagnostics/clip-layout/run.sh'
 check 0 './Diagnostics/theme-refresh/run.sh'
 check 0 'cd ~/Projects/baia && ./Diagnostics/pane-resize/run.sh'
+# The three members added since this block was written. None had a check, so
+# adding a probe to SAFE_PROBES was invisible to this file until 2026-08-11.
+check 0 './Diagnostics/glass-backdrop/run.sh'
+check 0 './Diagnostics/override-wires/run.sh'
+check 0 './Diagnostics/footer-accessory/run.sh'
 check 2 './Diagnostics/app-icon/run.sh; ./Diagnostics/path-picker/run.sh'
 check 2 './Diagnostics/theme-catalog/run.sh && ./Diagnostics/control-channel/run.sh'
 check 2 './Diagnostics/clip-layout/run.sh; ./Diagnostics/footer-corners/run.sh'
-check 2 'make run'
+# `make run` and the dev bundle were unblocked 2026-08-07 (owner's call,
+# recorded in the guard): since the product split, `make run` is a bare
+# detached `open` of `baia-dev.app`, which owns its own bundle id, support
+# directory and socket, so launching it kills nothing and takes nothing.
+# These five expected deny until 2026-08-11 — the guard had been taught the
+# ruling and this file had not, so every run reported five failures against
+# behavior that was correct.
+check 0 'make run'
+check 0 'open .build/Build/Products/Debug/baia-dev.app'
 check 2 'make run-attached'
 check 2 'pkill -x baia'
 check 2 'pkill baia'
 check 2 'osascript -e '"'"'quit app "baia"'"'"''
-check 2 'open .build/Build/Products/Debug/baia-dev.app'
-# Both bundles, because there are two now. The Debug product became
-# `baia-dev.app` on 2026-08-02 so a build under test can run beside the installed
-# copy, and `baia-dev.app` does not contain the substring `baia.app`: the guard's
-# old pattern matched neither the bundle an executor is near nor the one in
-# /Applications. Opening either launches an instance that takes a socket.
+# The installed bundle stays denied, because there are two now. The Debug
+# product became `baia-dev.app` on 2026-08-02 so a build under test can run
+# beside the installed copy, and `baia-dev.app` does not contain the substring
+# `baia.app`: the guard's old pattern matched neither. Opening the installed
+# copy activates the daily driver and pulls focus off its panes.
 check 2 'open /Applications/baia.app'
 check 2 'echo hi; pkill -x baia'
 
@@ -71,10 +83,13 @@ check 2 'echo hi; pkill -x baia'
 # passed the entire time, so this arm is what the guard was missing rather than
 # what it had.
 check 2 'rtk proxy pkill -x baia'
-check 2 'rtk proxy make run'
-check 2 'rtk proxy open .build/Build/Products/Debug/baia-dev.app'
+# The rtk-prefixed forms of the two 2026-08-07 unblocks follow the bare forms:
+# the prefix must never widen what is allowed, and these show it does not
+# narrow it either.
+check 0 'rtk proxy make run'
+check 0 'rtk proxy open .build/Build/Products/Debug/baia-dev.app'
 check 2 'rtk proxy osascript -e '"'"'quit app "baia"'"'"''
-check 2 'rtk make run'
+check 0 'rtk make run'
 check 2 'echo hi; rtk proxy pkill baia'
 
 # Allowed: the whole verification loop, and things that merely mention the word.
