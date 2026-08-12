@@ -58,11 +58,30 @@ final class BackdropWindow: NSWindow {
         window.isOpaque = true
         window.hasShadow = false
         window.ignoresMouseEvents = true
-        // Below the probe window but above the desktop. `.normal - 1` rather than
-        // `.desktop`, because a desktop-level window sits under the wallpaper's own
-        // icon layer and the point of this window is to *replace* the wallpaper as
-        // the thing being sampled.
-        window.level = NSWindow.Level(rawValue: NSWindow.Level.normal.rawValue - 1)
+        // **Above `.normal`, not below it, and this line is the fix for the defect
+        // that made every absolute number this probe published meaningless.**
+        //
+        // The backdrop used to sit at `.normal - 1`, copied from `glass-backdrop`.
+        // At that level it loses to *every ordinary window on screen*: the owner's
+        // terminal, an editor, anything. `orderFrontRegardless()` only orders a
+        // window to the front of its own level, so no amount of re-asserting can
+        // lift a `.normal - 1` window above a `.normal` one. Two runs of the
+        // unchanged probe minutes apart measured arm 1 at 38.00 and at 1.26, and
+        // the second run's capture is a photograph of the operator's terminal read
+        // through the glass — legible text, in every arm, not just arm 1.
+        //
+        // `glass-backdrop` never hit it because its probe windows are `.borderless`
+        // and it never competes with a titled window for the same level. Titled
+        // windows are the difference, and the README records the failure mode
+        // without having closed it.
+        //
+        // So the backdrop is lifted to `.floating`, above `.normal` where every
+        // ordinary window lives, and the probe window is lifted one step higher
+        // still (see `ProbeWindow.init`) and explicitly ordered above the backdrop
+        // before each capture. The ordering is then a property of the levels rather
+        // than of what else happens to be on screen, and `assertBackdrop` below
+        // proves it per arm rather than trusting it.
+        window.level = .floating
         window.collectionBehavior = [.stationary, .ignoresCycle, .fullScreenNone]
         let view = BackdropView(frame: NSRect(origin: .zero, size: frame.size))
         window.contentView = view
@@ -96,11 +115,47 @@ final class BackdropView: NSView {
         // the rulers through softened, and a step between two planes shows as the
         // rulers shifting or changing contrast across the boundary. A flat fill
         // behind glass can hide a merge failure that structure reveals.
+        // **Started from x = 0 rather than from a quarter across, so the rulers
+        // reach behind the probe window's COLUMN as well as behind its panes.**
+        //
+        // They used to start at `bounds.width * 0.25`, which is to the right of
+        // where the 260 pt column lands, so the strip ran down a perfectly
+        // featureless field. That is visible in the first corrected capture: flat
+        // grey behind the column, rulers only over the surface stand-in. The
+        // consequence was a noise floor of exactly 0.00 at all five positions and
+        // therefore a threshold of 0.00, which would fail an arm on a single
+        // quantisation step.
+        //
+        // A floor measured over a flat field is not this pipeline's floor. The
+        // measurement the floor has to bound reads glass over *structure* — the
+        // backdrop's rulers are what the boundary step is a discontinuity in — so
+        // the floor has to be measured over structure too, or it is bounding a
+        // quieter problem than the one being graded.
         NSColor(white: 0.5, alpha: 1).setFill()
-        var x = bounds.width * 0.25
+        var x: CGFloat = 0
         while x < bounds.width {
             NSRect(x: x, y: 0, width: 1, height: bounds.height).fill()
             x += 24
+        }
+
+        // **Horizontal rulers as well, and they are what the noise floor is
+        // measured on.** The vertical rulers above are constant down any vertical
+        // line, so a strip read top-to-bottom crosses none of their structure: with
+        // only those, the column still measures a dead-flat field and the floor
+        // still comes out 0.00.
+        //
+        // The strip is a vertical read, so the structure it has to cross is
+        // horizontal. These lines give the column exactly what the surface
+        // stand-in's text gives the panes — something for the glass to carry, and
+        // something for the pipeline to quantise — so the floor is measured over a
+        // region with the same character as the boundary it bounds.
+        //
+        // Offset from the vertical rulers' 24 pt so the two grids do not beat
+        // against each other into a coarser pattern than either.
+        var y: CGFloat = 0
+        while y < bounds.height {
+            NSRect(x: 0, y: y, width: bounds.width, height: 1).fill()
+            y += 19
         }
     }
 }
@@ -336,6 +391,15 @@ final class ProbeWindow: NSWindow {
         // bug rather than the material.
         isMovable = true
         collectionBehavior = [.stationary, .ignoresCycle, .fullScreenNone]
+
+        // One step above the backdrop's `.floating`, which is what makes the
+        // stacking a property of the levels rather than of ordering luck. The
+        // backdrop is above every ordinary window and this window is above the
+        // backdrop, so the only thing the glass can sample is the controlled
+        // white/black field. Ordering alone could not achieve this: within one
+        // level `orderFrontRegardless()` is a race against whatever else is on
+        // screen, and losing it is exactly the defect being fixed here.
+        level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
 
         // The empty toolbar is what gives the window a titlebar band at all on
         // macOS 26, and `.unifiedCompact` is the metric the app buys with it.
@@ -702,8 +766,9 @@ func runScreencapture(_ arguments: [String], to path: String) -> Bool {
 /// brightness and EDR response at capture time, so absolute values are not
 /// comparable between runs or machines. **This probe's verdict is built only on
 /// within-run comparisons** — every arm is captured in one run against one backdrop,
-/// and the grading threshold is derived from arm 1 measured in the same run rather
-/// than from a constant. That is what makes an `-R`-based verdict safe here.
+/// and the grading threshold is re-measured from that run's own noise floor rather
+/// than frozen as a constant. It comes from a boundary-free region and never from an
+/// arm under test. That is what makes an `-R`-based verdict safe here.
 func capture(window: NSWindow, to path: String) -> Bool {
     guard let main = NSScreen.screens.first else { return false }
 
@@ -779,6 +844,92 @@ func sampledVertically(_ path: String, x: Double, top: Double, bottom: Double) -
     let delta = abs(a.0 - b.0) + abs(a.1 - b.1) + abs(a.2 - b.2)
     let notDegenerate = luminance(a) > 4 && luminance(a) < 251
     return delta > 6 || notDegenerate
+}
+
+// MARK: - the backdrop assertion
+
+/// What a backdrop check found, so a failure can name the arm and the numbers
+/// rather than just failing.
+struct BackdropCheck {
+    let whiteLuminance: Double
+    let blackLuminance: Double
+    let passed: Bool
+
+    var description: String {
+        String(
+            format: "white-half=%.1f black-half=%.1f",
+            whiteLuminance, blackLuminance
+        )
+    }
+}
+
+/// Captures a strip of screen OUTSIDE the probe window and asserts it is the
+/// controlled backdrop: one pixel in the white half, one in the black half.
+///
+/// **This is what makes the backdrop displacement impossible to reintroduce
+/// silently, and it is deliberately independent of the level fix above.** The
+/// levels make displacement not happen; this assertion makes a run where it
+/// happened anyway *fail loudly*, naming the arm. Two mechanisms because the
+/// failure being guarded is precisely the kind that survived a README paragraph
+/// describing it: glass samples whatever is behind it at capture time, and a
+/// capture over the wrong thing still looks like glass.
+///
+/// The sampled points are chosen to be unmistakable rather than approximately
+/// right. They sit **outside the probe window's frame** — the window is 900 pt
+/// wide and centred, so a point near the screen's left edge is clear of it — and
+/// each is deep inside its own half, well away from the white/black boundary
+/// where a rounding error could put a sample on the wrong side.
+///
+/// Pure white through `-R` does not read 255: the display's tone response crushes
+/// it, and `glass-backdrop` records the same effect measuring 21% on its own
+/// white half. So the thresholds are wide and asymmetric — the white half must be
+/// *bright relative to the black half* and the black half genuinely dark — which
+/// is a test the operator's terminal (a mid-grey field of text at luminance ~70
+/// in both sample positions) fails decisively while any real backdrop passes.
+func assertBackdrop(screen: NSScreen, to path: String) -> BackdropCheck? {
+    let frame = screen.frame
+    // A tall thin strip down the screen's left edge, crossing both halves and
+    // clear of the 900 pt probe window centred on the screen.
+    let stripWidth: CGFloat = 40
+    let left = frame.minX.rounded()
+    let top = (frame.maxY - frame.maxY).rounded()
+    let height = frame.height.rounded()
+    let rect = "\(Int(left)),\(Int(top)),\(Int(stripWidth)),\(Int(height))"
+    guard runScreencapture(["-R", rect], to: path) else { return nil }
+
+    // The backdrop view is flipped and fills white first, so the white half is the
+    // TOP of the screen and the black half the bottom. Sampled around 0.25 and 0.75
+    // of the strip's height, each the middle of its own half.
+    //
+    // **Averaged over several rows rather than read as one pixel**, because the
+    // backdrop now carries horizontal rulers every 19 pt (see `BackdropView.draw`)
+    // and a single sample can land on a mid-grey line. One ruler hit would drag a
+    // white-half read down toward 128 and could fail a run whose backdrop was
+    // perfectly correct. The rulers are 1 pt in 19, so a mean over a spread of rows
+    // is dominated by the half's own colour and the check keeps a wide margin
+    // either side.
+    func meanLuminance(around fy: Double) -> Double? {
+        let offsets = [-0.03, -0.015, 0.0, 0.015, 0.03]
+        var total = 0.0
+        for offset in offsets {
+            guard let pixel = samplePixel(path, fx: 0.5, fy: fy + offset) else { return nil }
+            total += luminance(pixel)
+        }
+        return total / Double(offsets.count)
+    }
+
+    guard let whiteLuminance = meanLuminance(around: 0.25),
+          let blackLuminance = meanLuminance(around: 0.75) else { return nil }
+    // The white half must be bright, the black half dark, and the two must be far
+    // apart. The desktop failure reads roughly equal mid-greys in both positions
+    // and fails the separation test even if one half sneaks past a bound.
+    let passed = whiteLuminance > 140 && blackLuminance < 60
+        && (whiteLuminance - blackLuminance) > 100
+    return BackdropCheck(
+        whiteLuminance: whiteLuminance,
+        blackLuminance: blackLuminance,
+        passed: passed
+    )
 }
 
 /// Runs the run loop for a fixed interval without blocking the window server.
@@ -875,6 +1026,104 @@ func measureStrip(
     )
 }
 
+// MARK: - the noise floor
+
+/// What "no step" looks like in this capture pipeline, measured rather than
+/// assumed.
+///
+/// **This replaces a threshold that arm 1 defined and was then graded against.**
+/// The old rule was `max(arm1 * 0.10, 2.0)`, printed as "10% of arm 1's measured
+/// seam", and it is circular: arm 1 sets the bar it is measured by, so it reads
+/// MERGED whatever it measures. The baseline run of the broken probe shows the
+/// failure exactly — arm 1 measured 1.26 and was graded `MERGED (defines
+/// threshold)` while arms 2 and 3, measuring 6.67 and 6.00, were graded SEAM.
+/// The control passed and the candidates failed, which is the grading inverted.
+///
+/// The honest question is what magnitude of `boundaryStep` this pipeline produces
+/// when there is **no boundary at all**. That is measurable: take the same
+/// `boundaryStep` computation — mean of a band above a row, minus mean of a band
+/// below it — and apply it at rows *inside one uniform region*, where both bands
+/// are the same plane with nothing between them. Whatever it reports there is
+/// sensor noise, dithering, the display's tone response and the sampling grid,
+/// and none of it is a seam.
+///
+/// Measured across several positions rather than one, because a single position
+/// could land somewhere unrepresentative. The floor reported is the **maximum**
+/// across positions: the threshold has to clear the worst noise the pipeline
+/// produces, not the average, or an arm could fail on a position that happens to
+/// be noisy.
+struct NoiseFloor {
+    /// Every position's measured pseudo-step, for the report.
+    let samples: [(Double, Double)]
+    /// The largest, which is what the threshold is built on.
+    let maxSpread: Double
+    /// The mean, for the README's derivation.
+    let meanSpread: Double
+
+    var description: String {
+        samples
+            .map { String(format: "y=%.2f:%.2f", $0.0, $0.1) }
+            .joined(separator: "  ")
+    }
+}
+
+/// Measures the noise floor down a capture's uniform region.
+///
+/// The positions are all **below the plane boundary**, inside the column's own
+/// glass, where every arm has one continuous plane and no arrangement under test
+/// puts an edge. Sampling above the boundary would cross into the band, which is
+/// the thing being measured and cannot also be the ruler.
+///
+/// The band half-width matches `measureStrip`'s `window` exactly, because a
+/// threshold derived from a different averaging width than the measurement it
+/// grades is not a threshold for that measurement.
+///
+/// **This pipeline's measured floor is genuinely 0.00, and that is a result rather
+/// than a broken measurement.** `NSGlassEffectView` over the controlled backdrop
+/// is a heavy blur: it dissolves even the backdrop's 1 pt rulers, so the column
+/// reads one identical 8-bit value at every row (141.0 across all 56 samples below
+/// the boundary, in every run measured). There is no sensor noise to find because
+/// `screencapture` is a lossless read of a composited buffer, not a photograph.
+///
+/// So the floor is reported as measured, and the *threshold* adds the pipeline's
+/// resolution limit to it rather than multiplying zero by two. See `main`.
+func measureNoiseFloor(
+    _ path: String,
+    x: Double,
+    positions: [Double],
+    window: Double = 0.04,
+    steps: Int = 64,
+    topSkip: Double = 0.02,
+    bottomSkip: Double = 0.90
+) -> NoiseFloor? {
+    // The same sample grid the strip uses, so the noise measured is the noise the
+    // measurement sees rather than the noise of a finer or coarser read.
+    var samples: [(Double, Double)] = []
+    for i in 0 ... steps {
+        let fy = topSkip + (bottomSkip - topSkip) * Double(i) / Double(steps)
+        guard let c = samplePixel(path, fx: x, fy: fy) else { return nil }
+        samples.append((fy, luminance(c)))
+    }
+
+    var results: [(Double, Double)] = []
+    for position in positions {
+        let above = samples.filter { $0.0 < position && $0.0 > position - window }.map(\.1)
+        let below = samples.filter { $0.0 > position && $0.0 < position + window }.map(\.1)
+        guard !above.isEmpty, !below.isEmpty else { continue }
+        let spread = abs(
+            above.reduce(0, +) / Double(above.count) - below.reduce(0, +) / Double(below.count)
+        )
+        results.append((position, spread))
+    }
+    guard !results.isEmpty else { return nil }
+    let spreads = results.map(\.1)
+    return NoiseFloor(
+        samples: results,
+        maxSpread: spreads.max() ?? 0,
+        meanSpread: spreads.reduce(0, +) / Double(spreads.count)
+    )
+}
+
 // MARK: - main
 
 let outputDirectory = CommandLine.arguments.count > 1
@@ -944,25 +1193,25 @@ settle(0.6)
 var failures = 0
 var strips: [Arm: Strip] = [:]
 var reports: [String] = []
+/// One line per arm recording that its capture had the controlled backdrop behind
+/// it, with the measured luminances. Printed in the report so a reader can see the
+/// assertion ran rather than assuming it did.
+var backdropChecks: [String] = []
+/// The pipeline's own noise floor, measured off the flat control's capture.
+var noiseFloor: NoiseFloor?
 
 /// Captures a window, re-settling and re-capturing until the file shows the glass has
 /// sampled. Each retry waits longer than the last: the first failure is usually a
 /// frame away, and a run that needs the last one is telling us something a constant
 /// would have hidden.
 func recordSampled(_ window: NSWindow, _ name: String, attempts: Int = 6, check: (String) -> Bool) -> String? {
-    // **The backdrop is re-asserted before every capture, and that is a repair
-    // rather than belt and braces.** Ordering a `.titled` window front does not
-    // leave the backdrop where a single `orderFrontRegardless()` at startup put it:
-    // the first working run of this probe captured arm 1 with the owner's actual
-    // terminal text legible through the glass, because the probe window was
-    // compositing over the DESKTOP rather than over the controlled white/black
-    // field. A capture over the desktop grades a photograph that is different on
-    // every machine and different again next week, which is the failure the
-    // controlled backdrop exists to prevent — and it fails silently, because the
-    // capture still looks like glass.
-    //
-    // `glass-backdrop` never hit this: its probe windows are `.borderless`, and it
-    // orders the backdrop once. Titled windows are the difference.
+    // **Ordered backdrop-first, then the probe window on top, and both are
+    // re-asserted before every capture.** The ordering here is belt to the levels'
+    // braces: the backdrop is `.floating` and the probe window one step above it,
+    // so the stack is correct by construction, and these calls only make each
+    // window frontmost *within its own level*. The previous version relied on
+    // ordering alone across levels that put the backdrop underneath every ordinary
+    // window, which cannot work — see `BackdropWindow.make`.
     backdrop.orderFrontRegardless()
     window.orderFrontRegardless()
     let path = outputDirectory + "/" + name + ".png"
@@ -1005,6 +1254,34 @@ for arm in Arm.allCases {
     let boundary = window.planeBoundary
 
     let name = "arm-" + arm.rawValue
+
+    // **The backdrop is asserted for THIS arm, immediately before its capture, and
+    // a failure ends the run naming the arm.** Per-arm rather than once at startup,
+    // because displacement is not a startup condition: it happens when this arm's
+    // titled window is ordered front, and an arm that lost the backdrop is the unit
+    // of invalid data. Every absolute number from an arm captured over the wrong
+    // thing is meaningless, so the run must not publish one.
+    backdrop.orderFrontRegardless()
+    window.orderFrontRegardless()
+    settle(0.4)
+    let backdropPath = outputDirectory + "/backdrop-check-" + arm.rawValue + ".png"
+    guard let check = assertBackdrop(screen: screen, to: backdropPath) else {
+        print("BACKDROP CHECK FAILED \(arm.rawValue) — could not capture the backdrop strip")
+        failures += 1
+        window.orderOut(nil)
+        continue
+    }
+    if !check.passed {
+        print("BACKDROP DISPLACED \(arm.rawValue) — \(check.description)")
+        print("  the controlled white/black field is not behind this arm's window, so")
+        print("  anything the glass sampled is whatever else was on screen. Refusing to")
+        print("  publish a number for it. The strip is at \(backdropPath).")
+        failures += 1
+        window.orderOut(nil)
+        continue
+    }
+    backdropChecks.append("\(arm.rawValue)  \(check.description)  OK")
+
     let captured = recordSampled(window, name) { path in
         // Sampled check for the glass arms; the flat control has nothing to sample
         // and is accepted on the first capture.
@@ -1030,6 +1307,26 @@ for arm in Arm.allCases {
         failures += 1
     }
 
+    // The noise floor is measured off **arm 1's** capture, and the choice matters.
+    //
+    // It has to be a glass arm, because the number being graded is a step read
+    // through glass and the flat control's fill is a different, quieter surface —
+    // a floor measured there would be too low and would fail arms for noise the
+    // pipeline genuinely produces. Arm 1 is chosen among the glass arms because it
+    // is the control the verdict turns on: measuring the floor in the same capture
+    // whose boundary step is under test removes any argument that the two numbers
+    // came from differently-conditioned frames.
+    //
+    // The positions are all well below the plane boundary, inside the column's one
+    // continuous glass plane, where no arm puts an edge. See `measureNoiseFloor`.
+    if arm == .shippedTwoPlanes, let captured {
+        noiseFloor = measureNoiseFloor(
+            captured,
+            x: stripX,
+            positions: [0.40, 0.50, 0.60, 0.70, 0.80]
+        )
+    }
+
     reports.append("\(arm.rawValue)  bandHeight=\(Int(bandHeight)) boundary=\(String(format: "%.4f", boundary))")
     reports.append("  traffic-lights: \(window.trafficLightReport)")
     if let placement = window.placement {
@@ -1040,6 +1337,16 @@ for arm in Arm.allCases {
 }
 
 // MARK: - the report
+
+print()
+print("=== the backdrop assertion: what was actually behind each arm ===")
+print("Sampled from a strip down the screen's left edge, OUTSIDE the probe window,")
+print("one point in the backdrop's white half and one in its black half. An arm")
+print("whose glass sampled anything else does not get a published number.")
+for line in backdropChecks { print(line) }
+if backdropChecks.count < Arm.allCases.count {
+    print("\(Arm.allCases.count - backdropChecks.count) arm(s) did NOT pass the backdrop assertion.")
+}
 
 print()
 print("=== arrangement and traffic lights ===")
@@ -1078,53 +1385,95 @@ for arm in Arm.allCases {
     )
 }
 
-// The grading threshold, derived from THIS RUN's control rather than from a constant.
+// The grading threshold, derived from the pipeline's own noise floor.
 //
-// `-R` carries the display's tone response at capture time, so a fixed absolute
-// threshold would grade differently at a different screen brightness. The threshold
-// is therefore derived from **arm 1 measured in the same run** — the seam the owner
-// is actually looking at — rather than from a constant or from the flat control.
+// **No arm can move this number, which is the whole point.** The previous rule was
+// `max(arm1 * 0.10, 2.0)` and it was circular: arm 1 defined the threshold it was
+// then graded against, so its line always read MERGED whatever it measured. The
+// baseline run of the broken probe is the demonstration — arm 1 at 1.26 graded
+// `MERGED (defines threshold)` while arms 2 and 3 at 6.67 and 6.00 graded SEAM,
+// the grading exactly inverted.
 //
-// **Why not the flat control.** An earlier revision graded against `2x` the control's
-// boundary step and reported arm 1 as MERGED at 38 against a threshold of 54, which
-// is the probe contradicting its own control capture. The mistake is that arm 4's
-// step is not noise: it is a deliberate two-tone layout (a flat column fill meeting
-// the system titlebar slab), so it measures how big a step the *geometry* draws when
-// nothing is trying to hide it. That is a useful number and it is not an error bar.
+// The replacement asks what this capture pipeline reports as a `boundaryStep` when
+// there is **no boundary**: the same computation applied at rows inside one
+// continuous glass plane, at five positions down the column. That is sensor noise,
+// dithering, the display's tone curve and the sampling grid, and it is the honest
+// definition of "no step here".
 //
-// **The basis that is defensible.** Arm 1 is the seam under test. An arrangement has
-// merged only if its step is a small fraction of the one it replaces, and 10% is the
-// fraction used here: a step at a tenth of a visible seam's magnitude is not the same
-// artifact reduced, it is a different outcome. The floor of 2.0 luminance units on
-// 0-255 stops an arm failing on rounding when arm 1 itself measures small, and is
-// under one 8-bit level of a mid-grey — below what a reader can see as an edge.
+// **The threshold is the measured floor plus one 8-bit level, doubled.**
+//
+// The measured floor on this pipeline is 0.00: the glass blur is wide enough to
+// dissolve the backdrop's rulers, and `screencapture` reads a composited buffer
+// losslessly rather than photographing a screen, so there is no sensor noise to
+// find. Multiplying that by two would give 0.00 and grade on exact equality, which
+// would fail an arm for a single least-significant-bit difference — a distinction
+// no reader can see and no reasonable probe should make.
+//
+// So the floor is added to the pipeline's *resolution* limit before doubling. One
+// 8-bit level is 1.0 luminance unit on the 0-255 scale these numbers live on, and
+// it is the smallest difference the capture can represent at all: a step below it
+// does not exist as a measurement. `(floor + 1.0) * 2` therefore says a step must
+// be at least twice the pipeline's combined noise-and-resolution limit before it
+// counts as a boundary. On this machine that is 2.00.
+//
+// **No arm can move this number.** It comes from a region with no boundary in it
+// plus a property of 8-bit colour, and the arms under test contribute nothing to
+// either. That is the whole difference from the rule it replaces.
+//
+// It is still re-measured every run rather than frozen as a constant, which `-R`
+// requires: the tone response varies with screen brightness, so a floor measured
+// last week does not bound today's capture.
 let controlStep = strips[.flatControl]?.boundaryStep ?? 0
-let seamStep = strips[.shippedTwoPlanes]?.boundaryStep ?? 0
-let threshold = max(seamStep * 0.10, 2.0)
+let floor = noiseFloor
+/// One 8-bit level on the 0-255 scale: the smallest difference a capture can
+/// represent, and therefore the smallest that can honestly be called a step.
+let quantisationLimit = 1.0
+let threshold = ((floor?.maxSpread ?? 0) + quantisationLimit) * 2.0
 
 print()
-print(String(
-    format: "grading threshold: %.2f  (10%% of arm 1's measured seam %.2f, floored at 2.0)",
-    threshold, seamStep
-))
+print("=== the noise floor: what 'no step' measures in this pipeline ===")
+if let floor {
+    print("The same boundaryStep computation, applied at five rows INSIDE arm 1's")
+    print("continuous column glass where no arm puts an edge:")
+    print("  " + floor.description)
+    print(String(
+        format: "  max %.2f, mean %.2f", floor.maxSpread, floor.meanSpread
+    ))
+    if floor.maxSpread == 0 {
+        print("  A measured 0.00 is this pipeline's real answer, not a failed read: the")
+        print("  glass blur dissolves the backdrop's rulers and screencapture reads a")
+        print("  composited buffer losslessly, so the column is one value at every row.")
+    }
+    print()
+    print(String(
+        format: "grading threshold: %.2f  ((noise floor %.2f + one 8-bit level %.2f) x 2)",
+        threshold, floor.maxSpread, quantisationLimit
+    ))
+    print("No arm contributes to this number: it is a boundary-free region plus a")
+    print("property of 8-bit colour. Arm 1 is graded against it like any other arm.")
+} else {
+    print("NOISE FLOOR UNMEASURED — no threshold can be derived, so no arm is graded.")
+    failures += 1
+}
 print(String(
     format: "flat control's boundary step, for scale: %.2f  (a two-tone layout, not an error bar)",
     controlStep
 ))
 print()
-for arm in Arm.allCases where arm != .flatControl {
-    guard let strip = strips[arm] else { continue }
-    let verdict = strip.boundaryStep <= threshold ? "MERGED" : "SEAM"
-    // Arm 1 defines the threshold, so its own line is marked rather than presented
-    // as an independent pass or fail. A control that graded itself would be
-    // circular, and reading `1-shipped-two-planes  38.00  SEAM (defines threshold)`
-    // is what stops a later reader treating it as a fourth result.
-    let note = arm == .shippedTwoPlanes ? " (defines threshold)" : ""
-    print(
-        pad(arm.rawValue, 26)
-            + padLeft(String(format: "%.2f", strip.boundaryStep), 9)
-            + "  " + verdict + note
-    )
+if floor != nil {
+    // **Every arm is graded, including arm 1.** It no longer defines the threshold,
+    // so it is a result like any other and is presented as one. If a correctly
+    // backdropped arm 1 reads below the threshold, that is a finding about the
+    // merge question rather than a probe failure — see the README.
+    for arm in Arm.allCases where arm != .flatControl {
+        guard let strip = strips[arm] else { continue }
+        let verdict = strip.boundaryStep <= threshold ? "MERGED" : "SEAM"
+        print(
+            pad(arm.rawValue, 26)
+                + padLeft(String(format: "%.2f", strip.boundaryStep), 9)
+                + "  " + verdict
+        )
+    }
 }
 
 // The full strip profiles, so a reader can see the shape rather than trusting one

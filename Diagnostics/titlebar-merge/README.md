@@ -1,8 +1,10 @@
 # Titlebar merge probe
 
 `./run.sh [output-directory]` from anywhere. Writes four captures, an `-backing.png`
-companion for each, and a strip measurement; exits non-zero if a capture fails or if
-a glass arm never samples its backdrop.
+companion and a `backdrop-check-*.png` strip for each, and a strip measurement;
+exits non-zero if a capture fails, if a glass arm never samples its backdrop, or if
+**any arm's controlled backdrop was displaced** — the last naming the arm and
+refusing to publish a number for it.
 
 ## The question
 
@@ -34,13 +36,16 @@ and that the arrangement each arm claims to build is the arrangement it actually
 on screen. A probe that only printed numbers would answer neither, and during
 development this one was wrong about both in ways only the captures caught:
 
-- **Arm 1 was measured over the desktop rather than over the controlled backdrop**,
+- **Arms were measured over the desktop rather than over the controlled backdrop**,
   with the owner's own terminal text legible through the glass. The window was
-  compositing over the wallpaper, so the "seam" number was a photograph of whatever
-  happened to be behind it. Ordering a `.titled` window front does not leave the
-  backdrop where a single `orderFrontRegardless()` at startup put it, and
-  `glass-backdrop` never hit this because its probe windows are borderless. Fixed by
-  re-asserting the backdrop before every capture and inside the retry loop.
+  compositing over whatever else was on screen, so the "seam" number was a
+  photograph of it. **This was named here as a known failure mode and left open for
+  one revision, and it invalidated every absolute number the probe published in that
+  time** — two runs minutes apart on one machine measured arm 1 at 38.00 and at
+  1.26, and the second run's captures show the terminal through the glass in *all
+  four* arms, not only arm 1. Re-asserting the backdrop before every capture, which
+  is what the previous revision did, cannot fix it: see "how the backdrop is
+  guaranteed" for why the cause was the window *level* and what closed it.
 - **Arm 2 was graded `SEAM` at 113 while its capture visibly merged.** The strip was
   reading a row well above where its planes abut, because the boundary was derived
   from the window frame (`(frame.height - contentLayoutRect.height) / frame.height`)
@@ -121,8 +126,54 @@ measured.
 
 ### The controlled backdrop
 
-A full-screen window of pure white **above** pure black, ordered below the probe
-window, with mid-grey vertical rulers for a human eye to compare structure through.
+A full-screen window of pure white **above** pure black, with a mid-grey grid for a
+human eye to compare structure through.
+
+#### How the backdrop is guaranteed
+
+**The cause was the backdrop window's level, and no amount of re-ordering could have
+fixed it.** The backdrop sat at `.normal - 1`, copied from `glass-backdrop`. At that
+level it loses to *every ordinary window on screen*, and `orderFrontRegardless()`
+only orders a window to the front of its own level — so a `.normal - 1` backdrop can
+never rise above a `.normal` terminal, however many times it is re-asserted.
+`glass-backdrop` never hit this because its probe windows are `.borderless` and it
+never competes for the same level.
+
+Two mechanisms now close it, and the second is what makes recurrence impossible
+rather than unlikely:
+
+1. **Levels.** The backdrop is `.floating` (above every ordinary window) and the
+   probe window one step above the backdrop. The stacking is a property of the
+   levels rather than of what else happens to be on screen.
+2. **A per-arm assertion.** Before each arm's capture, a strip down the screen's
+   left edge — **outside the probe window's frame** — is captured and sampled in
+   both halves. The white half must read bright, the black half dark, and the two
+   must be at least 100 luminance units apart. An arm that fails prints
+   `BACKDROP DISPLACED <arm>` with the measured values and **the run exits
+   non-zero without publishing a number for it**.
+
+Both, because the failure being guarded is exactly the kind that survived a README
+paragraph describing it: glass samples whatever is behind it at capture time, and a
+capture over the wrong thing still looks like glass.
+
+**Proved rather than asserted.** A variant of the probe with only the two level
+lines reverted was built and run against a deliberate full-screen `.normal`-level
+intruder window:
+
+```
+BACKDROP DISPLACED 1-shipped-two-planes — white-half=71.0 black-half=71.0
+BACKDROP DISPLACED 2-container-merged   — white-half=71.0 black-half=71.0
+BACKDROP DISPLACED 3-fullsize-one-plane — white-half=71.0 black-half=71.0
+BACKDROP DISPLACED 4-flat-control       — white-half=71.0 black-half=71.0
+4 arm(s) did NOT pass the backdrop assertion.   exit 1
+```
+
+Equal mid-greys in both halves is the signature of the original defect, and it
+matches the broken baseline's strip profiles (~70-80 across every arm). Against the
+**same intruder**, the fixed probe passes all four assertions
+(`white-half=255.0 black-half=0.0`) and measures the same numbers as an undisturbed
+run. The level fix is what stops displacement; the assertion is what would catch it
+if it ever returned.
 
 **Split horizontally where `glass-backdrop` splits vertically, and the rotation is
 the measurement.** That probe asked whether a 22 pt bar adapts to what is behind it,
@@ -153,8 +204,9 @@ The cost is the one `glass-backdrop` documents: `-R` carries the display's brigh
 and EDR response at capture time, so **absolute values are not comparable between
 runs or machines.** This probe's verdict is therefore built **only on within-run
 comparisons** — every arm is captured in one run against one backdrop, and the
-grading threshold is derived from arm 1 measured in the same run rather than from a
-constant.
+grading threshold is re-measured from that run's own noise floor rather than frozen
+as a constant. It is derived from a boundary-free region, never from an arm under
+test; see "the strip, and why the threshold is what it is".
 
 ### The strip, and why the threshold is what it is
 
@@ -168,47 +220,124 @@ above where the two planes meet, minus the mean just below. A mean either side r
 than two single pixels, because a one-pixel read can land on the transition row and
 report half the step.
 
-**The threshold is 10% of arm 1's measured seam, floored at 2.0 luminance units.**
+**The threshold is `(noise floor + one 8-bit level) x 2`, which on this machine is
+2.00. No arm contributes to it.**
 
-An earlier revision graded against `2x` the flat control's boundary step and reported
-arm 1 as MERGED at 38 against a threshold of 54 — the probe contradicting its own
-control capture. The mistake was treating arm 4's step as noise. It is not: it is a
-deliberate two-tone layout (a flat column fill meeting the system titlebar slab), so
-it measures how big a step the *geometry* draws when nothing is trying to hide it.
-Useful for scale, not an error bar.
+#### The threshold that was replaced, and why it could not fail
 
-Arm 1 is the seam under test, so an arrangement has merged only if its step is a
-small fraction of the one it replaces. A step at a tenth of a visible seam's
-magnitude is a different outcome, not the same artifact reduced. The 2.0 floor stops
-an arm failing on rounding, and is under one 8-bit level of a mid-grey — below what a
-reader can see as an edge. Arm 1's own line is marked `(defines threshold)` rather
-than presented as an independent result, because a control that graded itself would
-be circular.
+The previous rule was `max(arm 1 x 0.10, 2.0)`, printed as "10% of arm 1's measured
+seam". **Arm 1 defined the threshold it was then graded against, so its line read
+MERGED whatever it measured.** The broken probe's own output is the demonstration:
+
+```
+grading threshold: 2.00 (10% of arm 1's measured seam 1.26, floored at 2.0)
+1-shipped-two-planes   1.26  MERGED (defines threshold)
+2-container-merged     6.67  SEAM
+3-fullsize-one-plane   6.00  SEAM
+```
+
+The control passed and both candidates failed — the grading exactly inverted. Marking
+arm 1's line `(defines threshold)` acknowledged the circularity without removing it.
+
+#### The noise floor, measured
+
+The honest question is what magnitude of `boundaryStep` this pipeline reports when
+there is **no boundary at all**. That is measurable: apply the identical computation
+— mean of a band above a row minus mean of a band below it, at the same 0.04
+half-width the measurement uses — at rows *inside one continuous glass plane*, where
+no arm puts an edge. Five positions down arm 1's own column, at y = 0.40, 0.50,
+0.60, 0.70 and 0.80:
+
+```
+y=0.40:0.00  y=0.50:0.00  y=0.60:0.00  y=0.70:0.00  y=0.80:0.00
+max 0.00, mean 0.00
+```
+
+**A measured 0.00 is this pipeline's real answer, not a failed read**, and the
+captures say why: the glass blur is wide enough to dissolve even the backdrop's 1 pt
+rulers, so the column reads one identical 8-bit value (141.0) at all 56 samples below
+the boundary. `screencapture` is a lossless read of a composited buffer rather than a
+photograph of a screen, so there is no sensor noise to find.
+
+Getting to that number took one correction worth recording: the backdrop's rulers
+were vertical only and started a quarter of the way across, so the strip ran down a
+featureless field and the floor was measured over nothing. A floor measured over a
+flat field does not bound a measurement read through structure. The backdrop now
+carries a grid — vertical lines from x = 0 and horizontal lines every 19 pt — so the
+floor is measured over the same character of region as the boundary it bounds. The
+answer came back 0.00 anyway, which is the finding above.
+
+#### From floor to threshold
+
+Doubling a floor of 0.00 gives 0.00, which would grade on exact equality and fail an
+arm for a single least-significant-bit difference. So the floor is added to the
+pipeline's **resolution** limit before doubling. One 8-bit level is 1.0 luminance
+unit on the 0-255 scale these numbers live on, and it is the smallest difference a
+capture can represent at all — a step below it does not exist as a measurement.
+
+```
+(noise floor 0.00 + one 8-bit level 1.00) x 2 = 2.00
+```
+
+A step must be at least twice the pipeline's combined noise-and-resolution limit
+before it counts as a boundary. **Neither input can be moved by any arm**: one comes
+from a region with no boundary in it, the other from a property of 8-bit colour.
+That is the whole difference from the rule it replaces, and it is why arm 1 is now
+graded like every other arm rather than exempted.
+
+The floor is still re-measured every run rather than frozen as a constant, which `-R`
+requires: the display's tone response varies with brightness, so a floor measured
+last week does not bound today's capture.
+
+The flat control's step is still reported for scale and is still **not** an error
+bar: it is a deliberate two-tone layout (a flat column fill meeting the system
+titlebar slab), so it measures how big a step the geometry draws when nothing is
+trying to hide it.
 
 ## Findings
 
-Measured on this machine, three consecutive runs, identical to the hundredth in all
-three. Absolute values are within-run only (see "how the captures are read").
+Measured on this machine after both defects were fixed. Three consecutive runs,
+every arm identical to the hundredth in all three, every arm's backdrop assertion
+passing in all three. Absolute values are within-run only (see "how the captures are
+read").
 
-### 1. The seam is real, and it is 38 luminance units.
+### 1. A correctly-backdropped arm 1 reads a LARGE seam: 34.33 luminance units.
 
-| Arm | boundaryStep | maxStep | verdict |
-|---|---|---|---|
-| 1 shipped two planes | **38.00** | 38.00 | SEAM (defines threshold) |
-| 2 container merged | **0.00** | 0.00 | MERGED |
-| 3 full-size one plane | **0.00** | 0.00 | MERGED |
-| 4 flat control | 26.93 | 26.93 | — (two-tone layout, for scale) |
+**This is the headline, because the contingency was live.** If a control measured
+over the right backdrop had read near zero, the visible edge the owner sees would not
+be a glass-sampling discontinuity and the merge work would be aimed at the wrong
+thing. It does not. Arm 1 measures 34.33 against a threshold of 2.00 — seventeen
+times the bar — and the seam is plainly visible in
+`arm-1-shipped-two-planes.png` without any measurement. **The merge work is aimed at
+the right thing.**
 
-Threshold 3.80 (10% of 38.00, floored at 2.0).
+Every arm, all three runs:
 
-Arm 1's step is **larger than the flat control's** (38.00 against 26.93). That is the
-sharpest form of the result: two glass planes meeting produce a *bigger* discontinuity
-than a flat column fill meeting the system titlebar slab. The seam is not a subtle
-material artifact — it is the most visible boundary of the four arms, and it is
-visible in `arm-1-shipped-two-planes.png` without any measurement.
+| Arm | run 1 | run 2 | run 3 | verdict |
+|---|---|---|---|---|
+| 1 shipped two planes | **34.33** | **34.33** | **34.33** | SEAM |
+| 2 container merged | **0.00** | **0.00** | **0.00** | MERGED |
+| 3 full-size one plane | **0.00** | **0.00** | **0.00** | MERGED |
+| 4 flat control | 14.93 | 14.93 | 14.93 | — (two-tone layout, for scale) |
+
+Threshold 2.00 in all three runs; noise floor 0.00 at all five positions in all
+three. The three runs agree exactly, which is far inside the measured noise floor —
+there is no run-to-run variation at all to be within.
+
+**These numbers supersede the 38.00 / 26.93 pair this README previously carried.**
+Those came from a run whose backdrop happened to survive, but over a backdrop with
+only sparse vertical rulers; the grid backdrop the noise-floor work introduced
+changes what the glass has to sample and therefore the absolute values. Both figures
+moved, the conclusion did not.
+
+Arm 1's step is **more than twice the flat control's** (34.33 against 14.93). That is
+the sharpest form of the result: two glass planes meeting produce a much *bigger*
+discontinuity than a flat column fill meeting the system titlebar slab. The seam is
+not a subtle material artifact — it is the most visible boundary of the four arms.
 
 Both merged arms measure **exactly 0.00**, not "small". Down the strip the luminance
-either side of the boundary is identical, which is what one sampling shape means.
+either side of the boundary is identical, which is what one sampling shape means, and
+both captures show one continuous panel.
 
 ### 2. Both merged arrangements need the same window-level change.
 
@@ -272,7 +401,7 @@ shapes, where the shared pass is exactly the point.
 
 ### Which arrangement gets the merge
 
-**Both arm 2 and arm 3 merge completely (0.00 against a 38.00 seam). Prefer arm 2,
+**Both arm 2 and arm 3 merge completely (0.00 against a 34.33 seam). Prefer arm 2,
 the `NSGlassEffectContainerView`.**
 
 They measure identically down the strip, so the choice is made on what else they cost:
@@ -349,7 +478,10 @@ arm-2-container-merged.png      NSGlassEffectContainerView, both planes
 arm-3-fullsize-one-plane.png    one plane down the column
 arm-4-flat-control.png          the same geometry, no glass
 <name>-backing.png              the `-l` cross-check for each of the above
-measurement.txt                 the strip numbers and the full profiles
+backdrop-check-<arm>.png        the off-window strip each arm's backdrop assertion
+                                read, one per arm: the evidence that what the glass
+                                sampled was the controlled field
+measurement.txt                 the strip numbers, the noise floor and the profiles
 ```
 
 ## Focus

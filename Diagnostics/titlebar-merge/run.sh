@@ -51,4 +51,8 @@ status=${PIPESTATUS[0]}
 echo
 echo "captures and the strip numbers: $OUT"
 echo "The verdict is in this probe's README.md; these files are what it cites."
+echo
+echo "Every arm asserts the controlled backdrop was behind it before its number is"
+echo "published; a displaced backdrop exits non-zero naming the arm. The"
+echo "backdrop-check-<arm>.png strips are that assertion's evidence."
 exit "$status"
