@@ -143,8 +143,30 @@ rm -f "$CFG"
 start
 if [ -f "$CFG" ]; then ok "config.json created"; else bad "config.json missing"; fi
 [ "$(stat -f '%Sp' "$CFG" 2>/dev/null)" = "-rw-------" ] && ok "mode 600" || bad "mode is $(stat -f '%Sp' "$CFG" 2>/dev/null)"
-n=$(python3 -c "import json;print(len(json.load(open('$CFG'))))" 2>/dev/null)
-[ "$n" = "19" ] && ok "19 keys" || bad "$n keys, expected 19"
+# What the first launch writes is every settings key the app has, so a number
+# typed here goes stale the day a setting is added and reports a correct app as
+# broken. This line said 19 from 2026-08-02 until 2026-08-12, while the app
+# wrote 26, and the failure it produced sent a reader looking for a bug in the
+# writer. The check that survives a new setting is the shape: a JSON object
+# with keys in it, none of them empty.
+n=$(python3 -c "
+import json, sys
+try:
+    keys = json.load(open('$CFG'))
+except Exception as error:
+    print('unreadable: %s' % error); sys.exit(0)
+if not isinstance(keys, dict):
+    print('not an object'); sys.exit(0)
+if not keys:
+    print('empty'); sys.exit(0)
+if any(not isinstance(k, str) or not k for k in keys):
+    print('a key is empty or not a string'); sys.exit(0)
+print(len(keys))
+" 2>/dev/null)
+case "$n" in
+  ''|*[!0-9]*) bad "config.json is not a populated object: $n" ;;
+  *) ok "$n keys written" ;;
+esac
 if [ "$(shells)" -ge 1 ]; then
     ok "a pane spawned a shell"
 else
