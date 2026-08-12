@@ -88,15 +88,23 @@ public enum TabTitle {
     /// between however many tabs exist, and the width is known only to it. The
     /// count is the one input that predicts the width, so the drop order is
     /// expressed against the count and lands on the same answer.
+    ///
+    /// The ladder emptied on 2026-08-12, when the owner ruled the capsule the
+    /// one home for repo facts and the branch and markers left the title
+    /// grammar entirely (see ``tab(project:branch:isDefaultBranch:markers:attention:isBusy:budget:)``).
+    /// With nothing left for width pressure to drop, every budget renders the
+    /// same title. The enum and its resolution stay: the call sites still
+    /// speak width pressure through it, and the vocabulary is where a future
+    /// drop would be expressed rather than re-invented.
     public enum Budget: Sendable, Equatable, CaseIterable {
         /// One or two tabs. Everything fits.
         case everything
 
-        /// Three or four. The markers go first, being the only part that is
+        /// Three or four. The markers went first, being the only part that was
         /// still readable from the pane's own footer.
         case withoutMarkers
 
-        /// Five or six. The branch goes too.
+        /// Five or six. The branch went too.
         case withoutBranch
 
         /// Seven or more. The project name, and the state glyph in front of it.
@@ -110,17 +118,23 @@ public enum TabTitle {
             default: .projectOnly
             }
         }
-
-        var showsBranch: Bool { self == .everything || self == .withoutMarkers }
-        var showsMarkers: Bool { self == .everything }
     }
 
-    /// What a tab says: `[state] project [:branch] [markers]`.
+    /// What a tab says: `[state] project`.
     ///
     /// The app name is deliberately absent. Every tab used to open with
     /// `baia — `, which cost about a quarter of a 240 pt tab to say the thing
     /// every tab in the bar had in common. The window already knows which
     /// application it belongs to and so does the person reading it.
+    ///
+    /// The branch and the markers left on 2026-08-12, by owner ruling: the
+    /// capsule is the one home for repo facts, and everything else slims
+    /// around it. A title reading `baia--design-v6-native:design-v6-native *?8`
+    /// was saying the pill's place and changes segments a second time, and the
+    /// duplication cost more than the width — two surfaces free to disagree.
+    /// The state glyphs stay: `!` and the busy circle are pane attention, not
+    /// repo facts, and the title is the one carrier macOS shows for a window
+    /// nobody is looking at.
     ///
     /// - Parameters:
     ///   - project: already abbreviated and disambiguated by ``title(anchorName:isWorktree:)``
@@ -128,23 +142,23 @@ public enum TabTitle {
     ///     and a tab nobody can identify is the failure the whole bar exists to
     ///     prevent. AppKit truncates it if it must, which is the right last
     ///     resort because it happens per tab rather than to all of them.
-    ///   - branch: shown as `:branch` only when it is not the repository's
-    ///     default. A branch that matches the default says nothing that the
-    ///     project name did not, and a worktree always qualifies, which is why
-    ///     the footer's `wt:` prefix is redundant here and is dropped.
-    ///   - markers: the footer's own vocabulary, dropped whole rather than
-    ///     trimmed, exactly as the footer drops them.
+    ///   - branch: unread since the 2026-08-12 ruling; the capsule's place
+    ///     segment owns it. The parameter stays so call sites that still hold
+    ///     the fact compile unchanged; removing it is cleanup the ruling does
+    ///     not require.
+    ///   - markers: unread since the same ruling; the capsule's changes
+    ///     segment owns them. Kept for the same call-site reason.
     ///   - attention: `!` when asking. An acknowledged pane shows nothing,
     ///     because you have already been there and the tab is not where you were
     ///     told about it.
     public static func tab(
         project: String,
-        branch: String? = nil,
-        isDefaultBranch: Bool = true,
-        markers: String = "",
+        branch _: String? = nil,
+        isDefaultBranch _: Bool = true,
+        markers _: String = "",
         attention: PaneStatus.Attention = .none,
         isBusy: Bool = false,
-        budget: Budget = .everything
+        budget _: Budget = .everything
     ) -> String {
         var title = ""
 
@@ -158,15 +172,6 @@ public enum TabTitle {
         }
 
         title += project
-
-        if budget.showsBranch, let branch, !branch.isEmpty, !isDefaultBranch {
-            title += ":" + branch
-        }
-
-        if budget.showsMarkers, !markers.isEmpty {
-            title += " " + markers
-        }
-
         return title
     }
 

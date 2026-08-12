@@ -138,27 +138,25 @@ import Testing
         #expect(TabTitle.tab(project: "vault", attention: .asking, isBusy: true) == "! vault")
     }
 
-    @Test func theBranchAppearsOnlyWhenItIsNotTheDefault() {
-        // A branch that matches the default says nothing the project name did
-        // not, and the tab bar is the one place in the app with no room to spare.
+    @Test func theBranchNeverAppearsInATitle() {
+        // Owner ruling 2026-08-12: the capsule is the one home for repo facts,
+        // and the title slims to the anchor name. The branch used to appear as
+        // `:branch` when it was not the default; now the capsule's place
+        // segment owns it, and a title repeating it would be the duplication
+        // the ruling exists to end.
         #expect(TabTitle.tab(project: "vault", branch: "main", isDefaultBranch: true) == "vault")
         #expect(TabTitle.tab(project: "vault", branch: "fix-auth", isDefaultBranch: false)
-            == "vault:fix-auth")
-    }
-
-    @Test func theWorktreePrefixIsRedundantInATabAndIsDropped() {
-        // The footer earns `wt:` because a worktree pane and a main-checkout pane
-        // can show the same branch. A tab only shows a branch at all when it is
-        // not the default, and a worktree always qualifies, so the prefix would
-        // be spending width to repeat what showing the branch already said.
+            == "vault")
         #expect(TabTitle.tab(project: "baia", branch: "exif-display", isDefaultBranch: false)
-            == "baia:exif-display")
+            == "baia")
     }
 
-    @Test func theBudgetDropsMarkersThenTheBranchAsTabsAreAdded() {
-        // Driven off the tab count because AppKit gives no way to measure a
-        // native tab: the bar divides the titlebar between however many tabs
-        // exist and the width is known only to it.
+    @Test func branchAndMarkersLeaveTheTitleAtEveryBudget() {
+        // Owner ruling 2026-08-12. The budget ladder used to drop the markers,
+        // then the branch, as tabs were added; with both gone from the grammar
+        // entirely there is nothing left for width pressure to drop, and every
+        // budget renders the same title. The glyph and the project survive, as
+        // they always did at the narrowest budget.
         let full = { (budget: TabTitle.Budget) in
             TabTitle.tab(
                 project: "vault",
@@ -169,10 +167,9 @@ import Testing
                 budget: budget
             )
         }
-        #expect(full(.everything) == "! vault:fix-auth *?3")
-        #expect(full(.withoutMarkers) == "! vault:fix-auth")
-        #expect(full(.withoutBranch) == "! vault")
-        #expect(full(.projectOnly) == "! vault")
+        for budget in TabTitle.Budget.allCases {
+            #expect(full(budget) == "! vault")
+        }
     }
 
     @Test func theBudgetIsChosenFromTheTabCount() {
