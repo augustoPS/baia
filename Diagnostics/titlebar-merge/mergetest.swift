@@ -659,13 +659,24 @@ final class ProbeWindow: NSWindow {
 
     /// An `NSGlassEffectView` at the app's own settings.
     ///
-    /// `.regular` and `cornerRadius = 0` and no tint, which is what BOTH shipped
-    /// planes are: `applyTitlebarGlass()` and `applyResolvedChrome()` set exactly
-    /// these three and nothing else. Reading them off the app source rather than
-    /// inventing them is what makes arm 1 a control instead of a lookalike — and it
-    /// is also the first finding, because the two planes being *identically*
-    /// configured means any seam is a sampling-boundary artifact rather than a style
-    /// mismatch.
+    /// `.regular` and `cornerRadius = 0` and no tint. Reading those off the app
+    /// source rather than inventing them is what makes arm 1 a control instead of
+    /// a lookalike, and the two planes being identically configured is what makes
+    /// any seam a sampling-boundary artifact rather than a style mismatch.
+    ///
+    /// **The untinted part is a condition, not a constant, and this comment said
+    /// otherwise until 2026-08-12.** Both shipped planes also assign
+    /// `tintColor = SurfaceFill.colour(fillMaterial, in: set)`
+    /// (`WorkspaceWindowController.updateTitlebarGlassTint()`,
+    /// `SurfaceHosts.updateGlassTint()`), so "these three and nothing else" was
+    /// wrong. It resolves to no tint today because `fillMaterial` is nil on both,
+    /// fed from two *independent* knobs: `chrome.surfaces.titlebar` and
+    /// `chrome.surfaces.sidebar`, each defaulting nil and neither dialled.
+    ///
+    /// The consequence for anyone re-reading the numbers: dialling one knob and
+    /// not the other lays a style mismatch on top of the sampling seam, and this
+    /// probe would then be measuring the wrong arrangement. An arm carrying the
+    /// real tints is the honest extension if that day comes.
     private func makeGlass() -> NSGlassEffectView {
         let glass = NSGlassEffectView(frame: .zero)
         glass.style = .regular
