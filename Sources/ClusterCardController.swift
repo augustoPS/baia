@@ -20,12 +20,14 @@ import AppKit
 /// take first responder, and a card that wants ⎋ needs the keyboard.
 @MainActor
 final class ClusterCardController {
-    /// Raised after the card leaves the screen, however it left — ⎋, a click
-    /// elsewhere (resign-key), or a programmatic ``dismiss()``. Cards clean up
-    /// their subscriptions here. Cleared after firing, the same way
-    /// ``ApprovalPopoverController/onAction`` is consumed by its dismiss, so a
-    /// stale handler cannot fire for a card that already cleaned up.
-    var onDismiss: (() -> Void)?
+    /// The presented card's cleanup, taken as a parameter of
+    /// ``show(content:anchoredTo:in:onDismiss:)`` rather than as a settable
+    /// property — the same shape as ``ApprovalPopoverController``'s `present`
+    /// taking `onAction`, and for a concrete reason here: `show` dismisses any
+    /// card already up, and a property assigned before the call would be the
+    /// *new* card's handler fired (and cleared) for the *old* card's teardown.
+    /// A parameter is assigned after that internal dismiss, so it cannot be.
+    private var onDismiss: (() -> Void)?
 
     private let panel: PalettePanel
 
@@ -110,11 +112,19 @@ final class ClusterCardController {
     /// cannot, so sizing is part of the content contract.
     ///
     /// Calling this while another card is up dismisses that card first — the
-    /// old card's ``onDismiss`` must fire so its subscriptions are cleaned up
+    /// old card's `onDismiss` must fire so its subscriptions are cleaned up
     /// before its view leaves the panel, and reusing the dismiss path keeps
-    /// one exit for cards rather than two.
-    func show(content: NSView, anchoredTo segmentRect: NSRect, in host: NSWindow) {
+    /// one exit for cards rather than two. `onDismiss` is the incoming card's
+    /// cleanup, assigned only after that internal dismiss so the old card's
+    /// teardown cannot consume it — see the stored property.
+    func show(
+        content: NSView,
+        anchoredTo segmentRect: NSRect,
+        in host: NSWindow,
+        onDismiss: (() -> Void)? = nil
+    ) {
         if panel.isVisible { dismiss() }
+        self.onDismiss = onDismiss
 
         hostWindow = host
 
@@ -137,7 +147,22 @@ final class ClusterCardController {
                 object: panel,
                 queue: .main
             ) { [weak self] _ in
-                MainActor.assumeIsolated { self?.dismiss() }
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    // Ignore a resignation that has since been reversed.
+                    // Switching cards makes this panel resign and retake key
+                    // inside one `show`: the internal dismiss orders it out
+                    // (enqueueing this notification — it is delivered a turn
+                    // late, the fact `dismiss()` cites), then `show`
+                    // synchronously makes it key again with the new card.
+                    // Without this guard the queued delivery then tore the new
+                    // card down one turn after it opened. A genuine
+                    // click-elsewhere resign passes: by delivery time AppKit
+                    // has already handed key onward, so the panel is not key —
+                    // the same fact the `hadKey` guard leans on.
+                    guard !self.panel.isKeyWindow else { return }
+                    self.dismiss()
+                }
             }
         }
     }
