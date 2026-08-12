@@ -122,8 +122,9 @@ if [ "$GRID_BUILT" = "0" ]; then
   echo "      the capture arms below still run." >&2
 fi
 
-echo "=== six arms: shipped two planes, container merge, one full-size plane, flat"
-echo "    control, route A (split rect), route D (band drawn by the column) ==="
+echo "=== seven arms: shipped two planes, container merge, one full-size plane, flat"
+echo "    control, route A (split rect), route D (band drawn by the column), and the"
+echo "    VERTICAL join arm 7 reads across ==="
 "$BUILD/mergetest" "$OUT" | tee "$OUT/measurement.txt"
 status=${PIPESTATUS[0]}
 

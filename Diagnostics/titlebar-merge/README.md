@@ -86,9 +86,17 @@ time rather than transcribed.
 | 4 `4-flat-control` | system slab | flat fill | n/a | no |
 | 5 `5-split-rect` (route A) | `contentView`, container | spans band+column | one | **yes** |
 | 6 `6-band-drawn-by-column` (route D) | frame view, **column width** | `contentView` | two | **no** |
+| 7 `7-vertical-boundary` | `contentView`, container | `contentView`, same container | one | yes |
 
 Arm 4 is not a candidate. It is the control that says how much of any difference
 between the others is glass rather than layout.
+
+**Arm 7 is arm 2's arrangement read along the other axis**, and it is the only arm
+whose number comes from a *horizontal* strip across a *vertical* boundary. Arms 1-6
+all grade the row where the band meets the column; arm 7 grades the column where the
+band's plane meets the column's, inside the band. Nothing about the views differs
+from arm 2 — it is the same two planes in the same container at the same spacing,
+because that is what the app ships. Only the strip is rotated. See finding 8.
 
 ### Every arm is held to ONE window frame, and without that the geometry arms measure nothing
 
@@ -591,6 +599,84 @@ height that had already lost it — spending the 40 pt twice. Re-asserting
 never wrong. A two-row loss that is entirely the probe's arithmetic is exactly the
 kind of number that looks like a finding.
 
+### 8. The container merges the SAMPLING and not the SHAPES, and the second boundary was visible all along.
+
+**This is the finding that corrects finding 4's verdict, and it changes what we
+believe about `NSGlassEffectContainerView`.** Arm 7 was added 2026-08-12 after the
+owner reported a vertical line where the sidebar meets the terminal pane, running up
+through the titlebar band.
+
+Arms 1-6 all read a **vertical** strip across a **horizontal** boundary: the row
+where the band meets the top of the column. The shipped arrangement has a second
+boundary the other way. `SurfaceHosts.viewDidLayout` gave `glassBacking` the frame
+`x: bounds.minX, width: sidebarWidth` at the host's full height, and `bandGlass` the
+frame `x: bounds.minX + sidebarWidth`, so inside the band the two planes abutted
+along a vertical line at the column's right edge, running the band's whole height. A
+vertical strip runs parallel to it and can never cross it, so no arm measured it.
+
+The probe's own verdict had already asserted the answer without an arm for it:
+finding 4's routing paragraph preferred arm 2 over arm 3 because the container
+"merges shapes of different widths with no untested boundary at the column's right
+edge". `SurfaceHosts`'s `bandGlass` doc comment repeated the claim. It was an
+untested boundary, and the sentence naming it as untested was the one asserting it
+was fine.
+
+**Arm 7 measures the join at 0.00 and the join was plainly visible. Both are
+correct.** Read as a step between the mean luminance either side, the two planes
+sample identically at every row of the band — the container's shared sampling pass
+does exactly what finding 4 measured. Read as a *rim* (the brightest sample at the
+join against the shoulders either side), the probe still reports 0.00, and the
+shipped app reported this, measured live over a real desktop with the sidebar at
+336 pt:
+
+```
+ptY= 2  peak 116.7  left 69.9  right 72.9  excess 43.9
+ptY=18  peak 109.0  left 54.7  right 54.8  excess 54.2
+ptY=38  peak  76.0  left 58.0  right 58.8  excess 17.2
+ptY=40  band ends; the rim ends with it
+```
+
+A line **40 to 54 luminance units** above its shoulders, through the band's whole
+height, against a grading threshold of 2.00. Dragging the column 100 pt moved the
+line with it, from x = 236 to x = 336, which is what identifies it as this join
+rather than as the `divider` hairline (which stops below the band and measures an
+excess of 6-8 there) or as anything in `WorkspaceWindowController`.
+
+**Why the probe cannot see it, and why that is the instrument rather than a bug.**
+The edge treatment an `NSGlassEffectView` draws where it terminates is *refractive*:
+it bends what is behind it rather than painting a colour. Over a field that is
+uniform after blurring there is nothing to bend and the edge does not render. This
+probe's controlled backdrop is exactly such a field — the noise-floor section above
+records the column reading one identical value (141.0) at all 56 samples, because
+the blur dissolves the 1 pt rulers completely, and calls that a real result. It is a
+real result. It is also this instrument's blind spot, and the two facts are the same
+fact: the discipline that makes every other number here trustworthy is what makes
+this one blind.
+
+A coarser backdrop was tried and rejected. 64 pt tonal blocks do survive the blur,
+but they put their own edges inside the strip: arm 1 moved from 34.33 to 6.00 and
+arm 7 to a meaningless 43.30 that was a block edge rather than a join. An instrument
+that reveals one edge by destroying the six numbers beside it is worse than one that
+admits a blind spot. So arm 7 keeps the established backdrop, publishes its 0.00,
+and prints in the same breath what that zero does and does not mean.
+
+**What this changes about the API.** `NSGlassEffectContainerView` merges the
+sampling pass its subviews share. It does **not** merge their shapes, and it has no
+way to: at `spacing = 0` adjacent shapes stay distinct by design, which is the
+property finding 4 measured and the merge relies on. Two planes that abut therefore
+have two borders meeting, each drawing its own edge, whatever the container does
+with their sampling. **A merge cannot dissolve an abutment.** Only not having one
+there can.
+
+That is what the fix does: `bandGlass` now takes the window's full width, so in the
+band region it sits *over* the column's plane rather than beside it. An overlap has
+no border where two rectangles meet, because they do not meet. Re-measured live
+after the change, the same trace reads an excess of **-2.0 to -0.4** through the
+whole band, and a peak-finding sweep across the band row finds no local peak at all.
+Arms 1, 2, 3, 5 and 6 are unchanged (34.33 / 0.00 / 0.00 / 0.00 / 6.21), route A
+still holds the pane tree at `dx=dy=dw=dh=dtop=0`, and `gridtest` still reports
+73 x 19 under both arrangements.
+
 ## Verdict
 
 ### Which arrangement gets the merge
@@ -609,7 +695,17 @@ They measure identically down the strip, so the choice is made on what else they
   and the shape is an L, it can only do that by covering the column's full height and
   leaving the rest of the band to a second plane anyway. It merges down the column
   and re-introduces a boundary at the column's right edge, where this probe does not
-  read. Arm 2 has no such untested edge.
+  read.
+
+**The last sentence of that bullet used to read "Arm 2 has no such untested edge",
+and it was wrong in a way that shipped.** Arm 2 has exactly the same edge: its band
+plane starts at the column's right edge and its column plane ends there, so the two
+abut down a vertical line through the band. The clause dismissed as arm 3's cost was
+arm 2's cost too, and neither arm's strip could see it. **Finding 8 is that edge
+measured**, and the correction it forces is that no container merge dissolves an
+abutment — the two planes must overlap in the band instead, which is what
+`SurfaceHosts` now builds by giving the band plane the window's full width. The
+preference for arm 2 survives; the reason given for it did not.
 
 ### What the app must change, and what it costs
 
@@ -696,6 +792,13 @@ is the key-to-non-key transition and the tab bar's height, both below.
   when the window loses focus. Ghostty's discussion #10170 reports
   `NSGlassEffectView` flattening on unfocus, and a merged panel is a larger surface to
   flatten. **Check this before shipping.**
+- **This probe cannot see a refractive edge, and arm 7 is where that bites.** The
+  controlled backdrop blurs to a uniform field, so a plane's own border has nothing
+  to bend and renders invisibly. Arm 7's 0.00 therefore means "the sampling is
+  merged" and never "there is no edge here". The live number in finding 8 was
+  measured by hand against the running app, not by this binary, and a probe that
+  could measure it over a controlled backdrop is still unwritten. Anything asking
+  whether two glass shapes *look* joined has to be checked in the dev build.
 - **The tab bar is absent.** These windows have no tab group, and a tab bar changes
   the band's height (which is why `layoutTitlebarGlass()` derives it rather than
   writing 40). A merged panel has to follow that height change too.
@@ -712,6 +815,7 @@ arm-3-fullsize-one-plane.png    one plane down the column
 arm-4-flat-control.png          the same geometry, no glass
 arm-5-split-rect.png            route A: column's rect extends, tree's does not
 arm-6-band-drawn-by-column.png  route D: column-width band plane, no style change
+arm-7-vertical-boundary.png     arm 2's arrangement, read across the VERTICAL join
 <name>-backing.png              the `-l` cross-check for each of the above
 backdrop-check-<arm>.png        the off-window strip each arm's backdrop assertion
                                 read, one per arm: the evidence that what the glass

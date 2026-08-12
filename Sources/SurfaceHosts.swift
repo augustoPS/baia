@@ -302,11 +302,22 @@ final class SidebarHost: NSViewController {
     /// **Two shapes rather than one, and the probe chose that.** An
     /// `NSGlassEffectView` is a rectangle and band-plus-column is an L, so one
     /// view can only cover both by taking the column's full height and leaving
-    /// the rest of the band to a second plane regardless. `titlebar-merge`'s
-    /// verdict prefers arm 2's container over arm 3's single plane for the
-    /// reason that survives here: the container merges shapes of *different
-    /// widths* (the band spans the window, the column is 260 pt) with no
-    /// untested boundary at the column's right edge.
+    /// the rest of the band to a second plane regardless.
+    ///
+    /// **It spans the window's full width and OVERLAPS the column's plane, and
+    /// this comment claimed the opposite until 2026-08-12.** The line it used to
+    /// carry — that the container merges shapes of different widths "with no
+    /// untested boundary at the column's right edge" — described an edge that was
+    /// both untested and visible. `titlebar-merge`'s arm 7 is that edge measured:
+    /// the two planes sample identically (0.00 as a step) and the shipped app
+    /// still drew a rim 40 to 54 luminance units bright down the join, through the
+    /// band's whole height, tracking `sidebarWidth` when the column was dragged.
+    ///
+    /// `NSGlassEffectContainerView` merges the sampling pass, not the shapes. Two
+    /// planes that abut have two borders meeting and the container cannot dissolve
+    /// them, so the fix is to remove the abutment: this plane takes the full width
+    /// and sits over the column's in the band region rather than beside it. See
+    /// ``viewDidLayout()``, where the frame is written and the reasoning kept.
     private var bandGlass: TitlebarBandGlass?
 
     /// What merges the two planes into one panel.
@@ -317,8 +328,15 @@ final class SidebarHost: NSViewController {
     /// pass, and the shared pass is the whole point. A non-zero spacing would
     /// dissolve the band and the column into one blob.
     ///
-    /// The boundary between them measured **0.00** under this arrangement,
-    /// against **34.33** for the two planes this replaced.
+    /// The *horizontal* boundary between them measured **0.00** under this
+    /// arrangement, against **34.33** for the two planes this replaced.
+    ///
+    /// **What the shared pass does not do is dissolve a shared edge**, and arm 7
+    /// is where that was measured rather than assumed. `spacing = 0` keeps
+    /// adjacent shapes distinct by design — that is the property this merge relies
+    /// on — so two planes that abut still draw two borders at the join however
+    /// well they sample together. The band plane therefore overlaps the column's
+    /// rather than abutting it; see ``bandGlass``.
     private var glassContainer: NSGlassEffectContainerView?
 
     /// Which fill role the *band's* plane is tinted with, written by
@@ -608,6 +626,12 @@ final class SidebarHost: NSViewController {
             let container = NSGlassEffectContainerView(frame: view.bounds)
             container.spacing = 0
             let host = NSView(frame: view.bounds)
+            // **The column first, the band second, and the order is load-bearing
+            // since the band went full width.** The band's plane now overlaps the
+            // column's in the band region rather than abutting it, which is what
+            // removes the visible join; an overlap only reads as the band's
+            // material if the band's plane is the one on top. Added second is
+            // added above.
             host.addSubview(backing)
             host.addSubview(band)
             container.contentView = host
@@ -720,28 +744,61 @@ final class SidebarHost: NSViewController {
             )
         }
 
-        // **The band, and with the sidebar closed it is the whole band.** With a
-        // column open this fills the band to the right of it, meeting the
-        // column's plane at the column's right edge, which is where the
-        // container's shared sampling pass makes the two read as one panel.
+        // **The band, and it takes the window's FULL WIDTH whether or not there
+        // is a column under it.**
         //
-        // With `sidebarWidth == 0` there is no column to merge with and the
-        // question "what draws the band" has to be answered rather than left to
-        // an empty region: this plane takes the window's full width, which is
-        // the frame the retired `TitlebarGlassBacking` held in the frame view.
-        // A closed sidebar therefore renders exactly the band the app shipped
-        // before the merge, with one plane in it and nothing to seam against.
+        // It started at `bounds.minX + sidebarWidth`, so that the band's plane
+        // began exactly where the column's ended and the two abutted down a
+        // vertical line through the band. That arrangement is what the merge
+        // commit shipped, on the reasoning that the container's shared sampling
+        // pass would make the two read as one panel. **The sampling did merge and
+        // the join was still visible**, which is the correction this line carries.
+        //
+        // `Diagnostics/titlebar-merge`'s arm 7 is the measurement. Read as a step
+        // between the mean luminance either side, the join is 0.00: the two planes
+        // genuinely sample alike, so the container did its job. Read as a *rim* —
+        // the brightest sample at the join against the shoulders either side — the
+        // shipped app draws a line **40 to 54 luminance units** above its
+        // surroundings, through the band's whole height, ending exactly where the
+        // band does. Dragging the column moves that line with it, from x = 236 to
+        // x = 336 for a 100 pt drag, which is what identifies it as this join
+        // rather than as ``divider`` (which stops below the band) or as anything
+        // in ``WorkspaceWindowController``.
+        //
+        // **`NSGlassEffectContainerView` merges the SAMPLING, not the SHAPES.**
+        // Each `NSGlassEffectView` draws a refractive edge treatment wherever it
+        // terminates, and two shapes that abut have two such edges meeting. The
+        // container has no way to dissolve them, and no `spacing` value can: at
+        // `spacing = 0` the shapes stay distinct by design, which is the property
+        // finding 4 measured and relied on. So the fix cannot be a better merge.
+        // It has to remove the abutment.
+        //
+        // Full width does exactly that. In the band region this plane now sits
+        // *over* the column's rather than beside it, so there is no interior edge
+        // in the band at all — an overlap has no border where two rectangles meet
+        // because they do not meet. The column's plane still runs the host's full
+        // height underneath, so the column below the band is one continuous shape
+        // and the horizontal boundary the merge was commissioned to remove stays
+        // removed: arms 2 and 5 still measure 0.00 down the strip.
+        //
+        // The two planes are still both needed and still both in the container.
+        // The column's is what backs the sidebar below the band, where this one
+        // does not reach; this one is what backs the band across its whole width.
+        // Their sampling is shared, which is why the overlap reads as one material
+        // rather than as two thicknesses of glass stacked.
         //
         // Never hidden, unlike the column's. The band exists whether or not the
         // sidebar does, and a window whose titlebar loses its glass when the
         // column closes would show the bare wallpaper
         // ``WorkspaceWindowController/applyTitlebarGlass()`` sets
-        // `titlebarAppearsTransparent` to reveal.
+        // `titlebarAppearsTransparent` to reveal. With `sidebarWidth == 0` this
+        // frame is unchanged from what it always was, so a closed sidebar renders
+        // exactly the band it did before.
         if let bandGlass {
             bandGlass.frame = NSRect(
-                x: bounds.minX + sidebarWidth,
+                x: bounds.minX,
                 y: content.maxY,
-                width: max(0, bounds.width - sidebarWidth),
+                width: bounds.width,
                 height: bandHeight
             )
         }

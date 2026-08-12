@@ -157,6 +157,7 @@ final class BackdropView: NSView {
             NSRect(x: 0, y: y, width: bounds.width, height: 1).fill()
             y += 19
         }
+
     }
 }
 
@@ -306,7 +307,65 @@ enum Arm: String, CaseIterable {
     /// See `RouteDArrangement` for what each one did.
     case bandDrawnByColumn = "6-band-drawn-by-column"
 
+    /// Arm 7, the **vertical** boundary, and it is the one edge arms 1-6 never
+    /// measured.
+    ///
+    /// Every arm above reads a VERTICAL strip across a HORIZONTAL boundary: the
+    /// row where the band meets the column. That is the seam the merge was
+    /// commissioned to remove and it now measures 0.00. But the shipped
+    /// arrangement puts two planes side by side *inside the band* — the column's
+    /// plane spans `x: 0 ..< sidebarWidth` for the window's full height, and the
+    /// band's plane starts at `x: sidebarWidth` — so they also abut along a
+    /// vertical line at the column's right edge, running the band's whole height.
+    /// No arm above crosses it, because a vertical strip runs parallel to it.
+    ///
+    /// **The README predicted this edge and then asserted it away.** Finding 6's
+    /// verdict prefers arm 2's container over arm 3's single plane because the
+    /// container "merges shapes of different widths with no untested boundary at
+    /// the column's right edge" — a claim about an edge the probe had no arm for.
+    /// `SurfaceHosts`'s ``bandGlass`` doc comment repeats it. This arm is that
+    /// claim measured.
+    ///
+    /// So the strip is rotated: a HORIZONTAL read across a VERTICAL boundary, at
+    /// rows inside the band. Everything else is held at arm 2's arrangement,
+    /// which is what the app ships, so the only difference between arm 2's number
+    /// and this one is which axis the boundary lies on.
+    ///
+    /// **This arm reports 0.00 and the edge is real, and that pair is the arm's
+    /// actual finding.** Over this probe's controlled backdrop the two planes read
+    /// identically at every row of the band, on both shapes of edge the strip can
+    /// measure. In the shipped app over a real desktop the same join draws a bright
+    /// line 40 to 54 luminance units above its shoulders, through the band's whole
+    /// height, and it tracks `sidebarWidth` when the column is dragged. Both
+    /// measurements are correct; the backdrop is what differs.
+    ///
+    /// The edge treatment `NSGlassEffectView` draws where a plane terminates is
+    /// **refractive** — it bends what is behind it rather than painting a colour —
+    /// so over a field that is uniform after blurring there is nothing to bend and
+    /// the edge is genuinely not there to be measured. The controlled backdrop is
+    /// exactly such a field: the README's own noise-floor finding records the column
+    /// reading one identical value (141.0) at all 56 samples, because the blur
+    /// dissolves the 1 pt rulers completely. **The discipline that makes every other
+    /// number in this probe trustworthy is the same discipline that blinds this
+    /// one.**
+    ///
+    /// A coarser backdrop was tried and rejected: 64 pt tonal blocks do survive the
+    /// blur, but they put their own edges inside the strip and moved arm 1 from
+    /// 34.33 to 6.00 — an instrument that reveals this edge by destroying the six
+    /// numbers beside it is worse than one that admits a blind spot. So the arm
+    /// keeps the established backdrop, publishes its 0.00, and says in the same
+    /// breath what that zero does and does not mean. The live number is recorded in
+    /// the README where it was measured.
+    case verticalBoundary = "7-vertical-boundary"
+
     var usesGlass: Bool { self != .flatControl }
+
+    /// Whether this arm's number comes from a HORIZONTAL strip across a VERTICAL
+    /// boundary rather than the other way round.
+    ///
+    /// Only arm 7. The distinction is kept on the arm rather than in `main`'s
+    /// loop so a reader adding an arm has to answer which axis it measures.
+    var measuresVerticalBoundary: Bool { self == .verticalBoundary }
 
     /// **Arm 2 needs `.fullSizeContentView` too, and that is a finding rather than
     /// a convenience.** The container merges its own subviews, so both planes must
@@ -324,15 +383,22 @@ enum Arm: String, CaseIterable {
     /// the extended content view and then tries to hold the pane tree's rect back
     /// by hand; arm 6 refuses the purchase and asks whether the band can be
     /// reached from below without it.
+    /// **Arm 7 takes it for the same reason arm 2 does**, and it must: it builds
+    /// the shipped arrangement, and the shipped arrangement is arm 2's. Without
+    /// the extended content view there is no band region for the column's plane
+    /// to reach into and no vertical abutment to measure at all.
     var wantsFullSizeContentView: Bool {
         self == .fullSizeOnePlane || self == .containerMerged || self == .splitRect
+            || self == .verticalBoundary
     }
 
     /// Whether the band's glass is a separate shape from the column's.
     ///
     /// True for arms 1 and 2 (two shapes, merged or not) and false for arm 3, which
     /// has one shape by construction.
-    var hasTwoShapes: Bool { self == .shippedTwoPlanes || self == .containerMerged }
+    var hasTwoShapes: Bool {
+        self == .shippedTwoPlanes || self == .containerMerged || self == .verticalBoundary
+    }
 }
 
 /// What AppKit did with each of route D's two arrangements, recorded per arm
@@ -467,6 +533,17 @@ final class ProbeWindow: NSWindow {
     /// Route D's two arrangements and what AppKit did with each. Non-empty for
     /// arm 6 only.
     private(set) var routeD: [RouteDArrangement] = []
+
+    /// Where the column plane and the band plane abut **vertically**, as a
+    /// fraction of the window frame's width from its left edge. Non-zero for
+    /// arm 7 only.
+    ///
+    /// The horizontal twin of ``planeBoundary``, and recorded the same way and for
+    /// the same reason: by the arm that placed the planes, out of the frames it
+    /// actually used. A fraction reverse-engineered from the window afterwards is
+    /// how this probe once pointed a strip at a row no plane met at, and the same
+    /// mistake is available on this axis.
+    private(set) var verticalBoundaryFraction: Double = 0
 
     /// The one window frame every arm is held to.
     ///
@@ -970,6 +1047,77 @@ final class ProbeWindow: NSWindow {
             content.addSubview(surface)
             addColumnContent(to: content, columnWidth: columnWidth, height: columnTop)
 
+        case .verticalBoundary:
+            // **The shipped arrangement, rebuilt, and read along the other axis.**
+            //
+            // Structurally identical to arm 2 — two planes, one hierarchy, one
+            // `NSGlassEffectContainerView` at `spacing = 0` — because that IS what
+            // `SurfaceHosts.applyResolvedChrome()` now builds. Nothing here is a
+            // new arrangement under test. What is new is where the number comes
+            // from: a horizontal strip across the vertical line where the two
+            // planes abut, at `x = columnWidth`, inside the band.
+            //
+            // Built as its own case rather than reusing arm 2's so the two numbers
+            // can be reported side by side from one run. Arm 2 answers "does the
+            // horizontal boundary step"; this answers "does the vertical one".
+            // Same planes, same container, same spacing, two axes.
+            titlebarAppearsTransparent = true
+
+            let container = NSGlassEffectContainerView(frame: contentBounds)
+            container.spacing = 0
+            container.autoresizingMask = [.width, .height]
+
+            // The column's plane spans the band as well as the column, exactly as
+            // ``SurfaceHosts/glassBacking`` does: `x: 0, width: columnWidth`, the
+            // host's whole height. That is the frame the merge commit shipped.
+            let columnGlass = makeGlass()
+            columnGlass.frame = NSRect(x: 0, y: 0, width: columnWidth, height: height)
+
+            // The band's plane starts where the column's ends, exactly as
+            // ``SurfaceHosts/bandGlass`` does: `x: bounds.minX + sidebarWidth`.
+            // **These two frames share an edge and nothing overlaps it**, which is
+            // the whole subject of this arm.
+            let bandGlass = makeGlass()
+            bandGlass.frame = NSRect(
+                x: columnWidth,
+                y: height - bandHeight,
+                width: width - columnWidth,
+                height: bandHeight
+            )
+
+            let host = NSView(frame: contentBounds)
+            host.autoresizingMask = [.width, .height]
+            host.addSubview(columnGlass)
+            host.addSubview(bandGlass)
+            container.contentView = host
+            content.addSubview(container, positioned: .below, relativeTo: nil)
+            heldViews += [container, host, columnGlass, bandGlass]
+
+            // The tree region and the column content sit exactly where arm 2 puts
+            // them, so an arm that moved either could not be mistaken for one that
+            // only changed which axis it reads.
+            surface.frame = NSRect(
+                x: columnWidth, y: 0, width: width - columnWidth, height: height - bandHeight
+            )
+            content.addSubview(surface)
+            addColumnContent(to: content, columnWidth: columnWidth, height: height - bandHeight)
+
+            recordedColumnTop = height - bandHeight
+
+            // **Where the vertical boundary is, as a fraction of the window's
+            // width**, recorded by the arm that built the planes for the same
+            // reason `planeBoundary` is: a fraction derived afterwards from the
+            // window rather than from the frames actually used is a fraction that
+            // can point the strip at the wrong column.
+            //
+            // The two planes abut at `columnWidth` in the content view's own
+            // coordinates. Under `.fullSizeContentView` the content view spans the
+            // window's full width, so that x is the window's x too and the
+            // conversion is the identity — but it is done through `convert` anyway,
+            // so an arm that later inset the content view cannot silently break it.
+            let inWindow = content.convert(NSPoint(x: columnWidth, y: 0), to: nil)
+            verticalBoundaryFraction = Double(inWindow.x / frame.width)
+
         case .flatControl:
             // The same geometry, no glass. A flat fill at the column's frame, so a
             // reader can tell how much of any difference between the arms above is
@@ -1371,6 +1519,132 @@ func measureStrip(
     )
 }
 
+/// Samples a HORIZONTAL strip and finds its steps: the same computation as
+/// `measureStrip`, rotated ninety degrees.
+///
+/// **The rotation is the whole arm.** `measureStrip` reads down a column of the
+/// capture and grades the row where the band meets the top of the sidebar column.
+/// That strip runs *parallel* to the other boundary the shipped arrangement has —
+/// the vertical line at the column's right edge, where ``SurfaceHosts/glassBacking``
+/// ends and ``SurfaceHosts/bandGlass`` begins — so no number it produces can say
+/// anything about it. This function reads across a row and grades the column.
+///
+/// Every exclusion `measureStrip` documents has a twin here, and each one is
+/// load-bearing on this axis:
+///
+/// - **The row band (`y`)**: inside the titlebar band, which is the only place the
+///   two planes abut vertically. Below the band there is one plane on the left and
+///   a terminal pane on the right, and the step between those is the *window's own
+///   layout* rather than a glass boundary — grading it would report the sidebar's
+///   existence as a seam.
+/// - **Left of `leftSkip`**: the traffic lights. Three buttons in the band's left
+///   third, and a strip through them measures AppKit's controls.
+/// - **Right of `rightSkip`**: nothing structural, but the window's right edge is
+///   kept out for the reason the vertical strip keeps out the bottom — a rounded
+///   corner or a shadow is not a seam.
+/// - **The row itself**: chosen clear of the window title and subtitle, which
+///   `ProbeWindow` sets and AppKit draws across the band at exactly the x range the
+///   boundary lives in. Ink in the strip reads as a step that has nothing to do
+///   with the planes. See `bandStripRows` in main for how the row is picked.
+func measureHorizontalStrip(
+    _ path: String,
+    arm: Arm,
+    y: Double,
+    boundary: Double,
+    leftSkip: Double,
+    rightSkip: Double,
+    steps: Int = 64
+) -> Strip? {
+    var samples: [(Double, Double)] = []
+    for i in 0 ... steps {
+        let fx = leftSkip + (rightSkip - leftSkip) * Double(i) / Double(steps)
+        guard let c = samplePixel(path, fx: fx, fy: y) else { return nil }
+        samples.append((fx, luminance(c)))
+    }
+
+    var maxStep = 0.0
+    var maxStepAt = 0.0
+    for i in 1 ..< samples.count {
+        let step = abs(samples[i].1 - samples[i - 1].1)
+        if step > maxStep {
+            maxStep = step
+            maxStepAt = samples[i].0
+        }
+    }
+
+    // The same 0.04 half-width mean-either-side the vertical strip uses, so the
+    // number this returns is graded by the same threshold without an argument
+    // about whether the two were computed alike. A width that differed from
+    // `measureStrip`'s would need its own noise floor.
+    let window = 0.04
+    let left = samples.filter { $0.0 < boundary && $0.0 > boundary - window }.map(\.1)
+    let right = samples.filter { $0.0 > boundary && $0.0 < boundary + window }.map(\.1)
+    let boundaryStep: Double
+    if left.isEmpty || right.isEmpty {
+        boundaryStep = 0
+    } else {
+        boundaryStep = abs(
+            left.reduce(0, +) / Double(left.count) - right.reduce(0, +) / Double(right.count)
+        )
+    }
+
+    return Strip(
+        arm: arm,
+        samples: samples,
+        maxStep: maxStep,
+        maxStepAt: maxStepAt,
+        boundaryStep: boundaryStep
+    )
+}
+
+/// The largest single-sample spike within a narrow window of the boundary, and how
+/// far it stands above the shoulders either side.
+///
+/// **A mean-either-side measurement cannot see a one-pixel line, and that is the
+/// defect this closes.** `boundaryStep` compares the mean of a band left of the
+/// boundary against the mean of a band right of it. Two planes that sample
+/// identically but draw a bright rim where they meet produce *equal means and a
+/// spike between them*, so `boundaryStep` reports 0.00 for an edge a reader can
+/// see plainly. That is not hypothetical: it is what the live app does, and what
+/// the shipped `boundaryStep` of 0.00 failed to catch.
+///
+/// So the spike is measured on its own terms: the maximum sample inside a narrow
+/// window centred on the boundary, minus the higher of the two shoulder means. A
+/// merged panel has no rim and reports ~0; a rim reports its own height.
+struct BoundaryRim {
+    /// The brightest sample within the window, and where.
+    let peak: Double
+    let peakAt: Double
+    /// The mean of the samples just outside the window on each side.
+    let leftShoulder: Double
+    let rightShoulder: Double
+    /// How far the peak stands above the higher shoulder. The number that grades.
+    let excess: Double
+}
+
+/// Measures the rim at a boundary in an already-sampled strip.
+///
+/// The window is deliberately narrow — a rim is a line, not a region — and the
+/// shoulders are read just outside it so a wide soft edge is measured against the
+/// planes rather than against its own falloff.
+func measureRim(_ strip: Strip, boundary: Double, window: Double = 0.012) -> BoundaryRim? {
+    let inside = strip.samples.filter { abs($0.0 - boundary) <= window }
+    let leftOutside = strip.samples.filter { $0.0 < boundary - window && $0.0 > boundary - window - 0.04 }
+    let rightOutside = strip.samples.filter { $0.0 > boundary + window && $0.0 < boundary + window + 0.04 }
+    guard !inside.isEmpty, !leftOutside.isEmpty, !rightOutside.isEmpty else { return nil }
+
+    let peakSample = inside.max { $0.1 < $1.1 }!
+    let leftShoulder = leftOutside.map(\.1).reduce(0, +) / Double(leftOutside.count)
+    let rightShoulder = rightOutside.map(\.1).reduce(0, +) / Double(rightOutside.count)
+    return BoundaryRim(
+        peak: peakSample.1,
+        peakAt: peakSample.0,
+        leftShoulder: leftShoulder,
+        rightShoulder: rightShoulder,
+        excess: peakSample.1 - max(leftShoulder, rightShoulder)
+    )
+}
+
 // MARK: - the noise floor
 
 /// What "no step" looks like in this capture pipeline, measured rather than
@@ -1544,6 +1818,9 @@ var reports: [String] = []
 var backdropChecks: [String] = []
 /// The pipeline's own noise floor, measured off the flat control's capture.
 var noiseFloor: NoiseFloor?
+/// Arm 7's rim at the vertical boundary, if it has one. The number that catches an
+/// edge two equal means cannot see.
+var verticalRim: BoundaryRim?
 /// Every arm's pane-tree region in window coordinates, which is what route A is
 /// priced on. Arm 5 against arm 1 is the comparison; the rest are kept so a
 /// reader can see the arms that were expected to move actually moving.
@@ -1593,6 +1870,28 @@ func recordSampled(_ window: NSWindow, _ name: String, attempts: Int = 6, check:
 // band glass rather than through a button.
 let stripX = 0.06
 
+/// Where arm 7's horizontal strip runs, and both ends are exclusions rather than
+/// round numbers.
+///
+/// The left end clears the traffic lights, which sit in the band's left third and
+/// are AppKit's own controls; the right end stays off the window's right edge where
+/// a rounded corner or a shadow lives. The 260 pt boundary is at 0.289 of the 900 pt
+/// window, comfortably inside both.
+let stripLeft = 0.18
+let stripRight = 0.46
+
+/// Which row of the band arm 7 reads, as a fraction of the window's height.
+///
+/// **Picked to miss the title, and the title is why this is not simply the band's
+/// middle.** `ProbeWindow` sets `title` and `subtitle`, which AppKit draws across
+/// the band starting around x = 0.20 — directly over the boundary at 0.289. A strip
+/// through a glyph reads the glyph. So the row is taken from the band's *lower*
+/// portion, below both text baselines and above the band's bottom edge, and the
+/// value is asserted against the measured band height rather than assumed: `main`
+/// checks the row lands inside the band and refuses to publish a number if it does
+/// not.
+let bandStripRow = 0.055
+
 for arm in Arm.allCases {
     let window = ProbeWindow(arm: arm, contentRect: probeFrame)
 
@@ -1637,18 +1936,53 @@ for arm in Arm.allCases {
         arm.usesGlass ? sampledVertically(path, x: stripX, top: boundary + 0.05, bottom: 0.9) : true
     }
 
-    if let captured,
-       let strip = measureStrip(
-           captured,
-           arm: arm,
-           x: stripX,
-           boundary: boundary,
-           // Below the traffic lights and the title, which sit in the band's own
-           // vertical middle. The strip still crosses the boundary; it just does not
-           // start at the window's very top edge where a rounded corner lives.
-           topSkip: 0.02,
-           bottomSkip: 0.90
-       )
+    if arm.measuresVerticalBoundary {
+        // **Arm 7 is read along the other axis, and its own boundary.** Everything
+        // else about the capture is identical; only the strip is rotated.
+        //
+        // The row is asserted to land inside the band before any number is
+        // published. A row that fell below the band would read the sidebar against
+        // a terminal pane and report the window's layout as a seam — a large,
+        // confident, meaningless number, which is the failure mode this probe has
+        // already published once on the other axis.
+        let bandFraction = Double(bandHeight / window.frame.height)
+        if bandStripRow >= bandFraction {
+            print("BAND ROW OUTSIDE THE BAND \(arm.rawValue) — row \(bandStripRow) is not")
+            print("  inside a band \(String(format: "%.4f", bandFraction)) of the window tall. Refusing to publish a")
+            print("  number that would be the sidebar measured against a terminal pane.")
+            failures += 1
+        } else if let captured,
+                  let strip = measureHorizontalStrip(
+                      captured,
+                      arm: arm,
+                      y: bandStripRow,
+                      boundary: window.verticalBoundaryFraction,
+                      leftSkip: stripLeft,
+                      rightSkip: stripRight
+                  )
+        {
+            strips[arm] = strip
+            verticalRim = measureRim(strip, boundary: window.verticalBoundaryFraction)
+            reports.append(String(
+                format: "  vertical boundary at x=%.4f of the window, read at row y=%.4f (band is %.4f tall)",
+                window.verticalBoundaryFraction, bandStripRow, bandFraction
+            ))
+        } else if captured != nil {
+            print("STRIP FAILED \(name)")
+            failures += 1
+        }
+    } else if let captured,
+              let strip = measureStrip(
+                  captured,
+                  arm: arm,
+                  x: stripX,
+                  boundary: boundary,
+                  // Below the traffic lights and the title, which sit in the band's own
+                  // vertical middle. The strip still crosses the boundary; it just does not
+                  // start at the window's very top edge where a rounded corner lives.
+                  topSkip: 0.02,
+                  bottomSkip: 0.90
+              )
     {
         strips[arm] = strip
     } else if captured != nil {
@@ -1831,6 +2165,44 @@ if let arm6Tree = treeRegions[.bandDrawnByColumn], let shipped = treeRegions[.sh
     print("  it costs no geometry, and this is that claim tested rather than asserted.")
 }
 
+// MARK: - the vertical boundary
+
+// **The edge arms 1-6 could not see, and the claim it tests was already in the
+// source.** The merge commit's own comments say the container merges shapes of
+// different widths "with no untested boundary at the column's right edge". That
+// sentence describes an edge no arm crossed: every strip above is vertical, and a
+// vertical strip runs parallel to a vertical boundary. Arm 7 rotates the strip.
+//
+// Two numbers are printed rather than one, and the second is why the first is not
+// enough. `boundaryStep` compares the mean luminance left of the boundary against
+// the mean right of it, which is the correct question for two planes that sample
+// differently. It is the WRONG question for two planes that sample identically and
+// draw a rim where they meet: the means match, the step reads 0.00, and a bright
+// line stands between them. `rimExcess` is that line measured.
+print()
+print("=== arm 7: the VERTICAL boundary at the column's right edge ===")
+print("Every arm above reads a vertical strip across a horizontal boundary. The")
+print("shipped arrangement has a second boundary the other way: the column's plane")
+print("ends at x = sidebarWidth and the band's plane begins there, running the")
+print("band's whole height. This is a horizontal strip across it.")
+print()
+if let strip = strips[.verticalBoundary] {
+    print(String(format: "  boundaryStep (mean either side): %.2f", strip.boundaryStep))
+    if let rim = verticalRim {
+        print(String(
+            format: "  rim at the boundary:            peak %.1f at x=%.4f, shoulders %.1f / %.1f",
+            rim.peak, rim.peakAt, rim.leftShoulder, rim.rightShoulder
+        ))
+        print(String(format: "  rimExcess (peak over shoulder): %.2f", rim.excess))
+    } else {
+        print("  rim NOT MEASURED — the strip had no samples either side of the boundary.")
+        failures += 1
+    }
+} else {
+    print("  NOT MEASURED — arm 7 produced no strip.")
+    failures += 1
+}
+
 // The grading threshold, derived from the pipeline's own noise floor.
 //
 // **No arm can move this number, which is the whole point.** The previous rule was
@@ -1919,6 +2291,54 @@ if floor != nil {
                 + padLeft(String(format: "%.2f", strip.boundaryStep), 9)
                 + "  " + verdict
         )
+    }
+
+    // **Arm 7 is graded twice, against the same threshold, and the second grade is
+    // the one that matters.** A rim is a step like any other — it is a difference in
+    // luminance across a boundary, measured in the same units off the same capture —
+    // so the threshold derived from this pipeline's noise floor bounds it exactly as
+    // it bounds a mean-either-side step. What differs is only which shape of edge the
+    // number can see, and an arrangement that passes on one and fails on the other
+    // has an edge a reader can see and the headline number cannot.
+    if let rim = verticalRim {
+        print()
+        print("the vertical boundary, graded on both shapes of edge:")
+        let stepVerdict = (strips[.verticalBoundary]?.boundaryStep ?? 0) <= threshold
+            ? "MERGED" : "SEAM"
+        let rimVerdict = abs(rim.excess) <= threshold ? "MERGED" : "RIM"
+        print(
+            pad("  as a mean-either-side step", 32)
+                + padLeft(String(format: "%.2f", strips[.verticalBoundary]?.boundaryStep ?? 0), 9)
+                + "  " + stepVerdict
+        )
+        print(
+            pad("  as a rim at the join", 32)
+                + padLeft(String(format: "%.2f", rim.excess), 9)
+                + "  " + rimVerdict
+        )
+        if rimVerdict == "RIM", stepVerdict == "MERGED" {
+            print()
+            print("  THE TWO PLANES SAMPLE ALIKE AND STILL DRAW A LINE BETWEEN THEM.")
+            print("  The means either side match, so the container's shared sampling pass is")
+            print("  doing its job; what stands at the join is an edge each plane draws where")
+            print("  it terminates. `NSGlassEffectContainerView` merges the SAMPLING and not")
+            print("  the SHAPES, so two abutting planes remain two shapes with two borders.")
+            print("  A merge cannot dissolve this edge. Only having one plane there can.")
+        }
+        if rimVerdict == "MERGED", stepVerdict == "MERGED" {
+            print()
+            print("  BOTH READ ZERO HERE, AND THAT IS NOT A CLEAN BILL FOR THIS JOIN.")
+            print("  This probe's backdrop is a flat field once the glass has blurred it: the")
+            print("  noise floor above measures 0.00 for exactly that reason. A plane's edge")
+            print("  treatment is refractive, so over a uniform field it has nothing to bend")
+            print("  and does not render. The same join in the shipped app, over a real")
+            print("  desktop, draws a line 40-54 luminance units above its shoulders through")
+            print("  the band's whole height, and that line tracks sidebarWidth when the")
+            print("  column is dragged. See the README's finding 8 for that measurement.")
+            print("  What this arm establishes is the SAMPLING is merged; what it cannot see")
+            print("  is the SHAPE's own border. Two abutting planes have two borders whatever")
+            print("  a container does with their sampling.")
+        }
     }
 }
 
