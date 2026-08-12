@@ -316,7 +316,9 @@ final class SurfaceTitleView: NSView {
     }
 
     /// How many rows the surface below is showing, drawn after the label. Nil on a
-    /// surface whose size is not worth stating. See ``WorkspaceSurface/headingCount``.
+    /// surface whose size is not worth stating, which every surviving surface is:
+    /// the one caller that answered a number was the changes list, retired with
+    /// the section (owner ruling, 2026-08-12).
     var count: Int? { didSet { needsDisplay = true } }
 
     /// The repository the column is describing, drawn trailing.
