@@ -118,9 +118,16 @@ fi
 # window server to composite and nothing to take focus from. It qualifies on the
 # focus criterion by never reaching a compositor in the first place.
 #
+# **`footer-accessory` qualifies the way `glass-backdrop` does.** Four windows
+# on screen for about twenty seconds, scrolling their own content for the
+# scroll edge effect the probe compares; `.accessory` policy, every window
+# `orderFrontRegardless()` with `canBecomeKey` overridden to false, no
+# `activate`, no `pkill`, no shell spawned at all. The keyboard never leaves
+# the pane that launched it.
+#
 # Every probe named must be safe, so a command pairing a safe one with a real
 # driver is still denied.
-SAFE_PROBES='^(theme-catalog|app-icon|clip-layout|theme-refresh|pane-resize|glass-backdrop|override-wires)$'
+SAFE_PROBES='^(theme-catalog|app-icon|clip-layout|theme-refresh|pane-resize|glass-backdrop|override-wires|footer-accessory)$'
 probes=$(printf '%s' "$COMMAND" | grep -oE 'Diagnostics/[a-zA-Z0-9_-]+/run\.sh' | sed -E 's|Diagnostics/([^/]+)/run\.sh|\1|')
 if [ -n "$probes" ]; then
   unsafe=0
