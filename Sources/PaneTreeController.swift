@@ -741,6 +741,20 @@ final class PaneTreeController: NSViewController {
         pane.onApprovalRequested = { [weak self] request in
             self?.onApprovalRequested?(id, request)
         }
+        pane.onSplitCommandRequested = { [weak self] command, directory in
+            // A cluster card's handoff (Task 5): a new pane beside the asking
+            // one, running the card's command. The same `split` the channel's
+            // `baia split --command` lands on, with its non-stealing focus
+            // rule: the card was summoned from this pane, so the split opens
+            // beside it, and focus moves only if this pane held it.
+            _ = self?.split(
+                pane: id,
+                axis: .horizontal,
+                workingDirectory: directory,
+                command: command,
+                createdBy: id
+            )
+        }
         pane.onProcessClose = { [weak self] in
             guard let self else { return }
             // The shell that exited is not necessarily the focused one, so the

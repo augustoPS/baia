@@ -1,6 +1,7 @@
 import AppKit
 import BaiaSettings
 import GhosttyTerminal
+import GitWorkspace
 import PaneChrome
 import PaneControl
 import PaneSearch
@@ -84,6 +85,15 @@ final class TerminalPaneController: NSViewController {
     /// click.
     var onApprovalRequested: ((ApprovalRequest) -> Void)?
 
+    /// Raised when a cluster card hands work to the terminal: a new pane
+    /// split beside this one, running `command` at `workingDirectory`. The
+    /// same one-way shape as ``onApprovalRequested`` and for the same reason:
+    /// a pane owns no workspace, so its job ends at naming what it wants, and
+    /// `PaneTreeController` (the one thing holding one) makes the pane
+    /// through the same `split(pane:axis:workingDirectory:command:createdBy:)`
+    /// the channel's `baia split --command` lands on.
+    var onSplitCommandRequested: ((_ command: String, _ workingDirectory: String?) -> Void)?
+
     /// Everything the approval popover needs from the pane that was clicked,
     /// gathered at the one place that knows all three: the frame this view
     /// converted out of its own coordinates, the anchor's display name, and
@@ -132,6 +142,41 @@ final class TerminalPaneController: NSViewController {
     /// opens the pill is already telling the truth; while the gate is closed
     /// the writes land on a view no window holds, which renders nothing.
     private let clusterView = PaneClusterView(frame: .zero)
+
+    /// The one card mechanism for this pane's capsule: place and changes both
+    /// present through it, which is what makes "one card at a time" a
+    /// property of the pane rather than a discipline every card keeps. Lazy
+    /// beside the approval popover's own build-on-first-use shape (the
+    /// popover itself is app-wide in `AppDelegate`; this is per pane because
+    /// the card's toggle state is), and load-bearing while the cluster gate
+    /// is off: the only touch is inside the click path, so a build with
+    /// ``clusterEnabled`` false never constructs the panel at all.
+    private lazy var clusterCards = ClusterCardController()
+
+    /// Which segment summoned the card now up, or nil when none is. The
+    /// toggle's memory: ``ClusterCardController`` can say a card is showing
+    /// but cannot know whose, so this is what turns a second click on the
+    /// same segment into a dismissal. Cleared in the card's `onDismiss`, so
+    /// every exit (⎋, resign-key, switch, toggle) clears it once.
+    private var clusterCardRole: PaneClusterSegmentRole?
+
+    /// The changes card currently presented, weak so a dismissed card dies
+    /// with its panel: the background read below lands through this, and a
+    /// result arriving after dismissal must find nobody rather than a view
+    /// kept alive to be updated invisibly.
+    private weak var changesCard: ClusterChangesCardView?
+
+    /// The changes card's one-shot read, off the main actor for
+    /// ``PaneGitStatus``'s reason: forking git where the user is waiting
+    /// would have the card competing with the terminal for the main queue.
+    private let clusterCardQueue = DispatchQueue(
+        label: "gutons.baia.cluster-card", qos: .utility
+    )
+
+    /// The card read's own spawner. ``PaneGitStatus`` keeps its instance
+    /// private, and sharing a counter with the poller would only blur what
+    /// each one costs.
+    private let clusterGitCommand = GitCommand()
 
     /// Covers the terminal and the footer both, which is the point: a background
     /// window recedes as one object, and a scrim that stopped at the footer would
@@ -1084,6 +1129,13 @@ final class TerminalPaneController: NSViewController {
             ))
         }
 
+        // Inert while ``clusterEnabled`` is false: the closure is assigned,
+        // but the only view that raises it is never added to the hierarchy,
+        // so nothing here runs and the shipped rendering stays byte-stable.
+        clusterView.onSegmentClick = { [weak self] role, segmentRect in
+            self?.clusterSegmentClicked(role, segmentRect: segmentRect)
+        }
+
         activityTracker.onChange = { [weak self] in
             guard let self else { return }
             // Unconditional, so the footer keeps tracking the label.
@@ -1235,6 +1287,188 @@ final class TerminalPaneController: NSViewController {
         if let status = statusBar.status {
             clusterView.segments = PaneClusterSegments.build(from: status)
         }
+    }
+
+    // MARK: - Cluster cards
+
+    /// Routes a capsule click to its card. Place and changes present; agent
+    /// and attention are Task 6's and do nothing yet, absent rather than
+    /// stubbed with an empty card.
+    private func clusterSegmentClicked(
+        _ role: PaneClusterSegmentRole, segmentRect: NSRect
+    ) {
+        // The toggle: a second click on the segment whose card is up
+        // dismisses instead of reopening. Any other segment falls through and
+        // `show` swaps the card, which is the controller's own contract.
+        if clusterCards.isShowing, clusterCardRole == role {
+            clusterCards.dismiss()
+            return
+        }
+        guard let window = view.window else { return }
+        // The view hands the rect in its own coordinates; the controller's
+        // contract is host-window coordinates, the same conversion
+        // `onCapsuleClick` above makes for the approval popover's anchor.
+        let anchor = clusterView.convert(segmentRect, to: nil)
+        // The same derivation `ConfigurationCenter.windowIsDark` feeds the
+        // approval popover's `isDark` from, read off this pane's own theme
+        // (the center pushes that theme here, so the input is the same
+        // value): chrome follows the theme, never the system. Written at
+        // presentation rather than from `theme.didSet`, because a property
+        // write there would build the lazy panel on every themed pane with
+        // the gate off.
+        clusterCards.isDark = windowIsDark(paneTheme: theme)
+        switch role {
+        case .place: presentPlaceCard(anchoredTo: anchor, in: window)
+        case .changes: presentChangesCard(anchoredTo: anchor, in: window)
+        case .agent, .attention: break
+        }
+    }
+
+    /// Builds and presents the place card from what this pane already holds:
+    /// the anchor, and the same `PaneStatus.Git` the capsule's place segment
+    /// was built from.
+    private func presentPlaceCard(anchoredTo anchor: NSRect, in window: NSWindow) {
+        guard let paneAnchor = anchorTracker.anchor else { return }
+        // The footer's stale-facts rule, kept: a plain directory renders no
+        // git rows even when the poller still holds facts from before a `cd`
+        // out of the repository.
+        let git = paneAnchor.kind == .repository ? gitStatus.git : nil
+
+        let directoryPath = (anchorTracker.workingDirectory ?? paneAnchor.url)
+            .path(percentEncoded: false)
+        let home = FileManager.default
+            .homeDirectoryForCurrentUser
+            .path(percentEncoded: false)
+
+        var repositoryName = paneAnchor.displayName
+        var worktreeName: String?
+        if git?.isLinkedWorktree == true {
+            // In a linked worktree the anchor *is* the worktree, so its name
+            // fills that row and the repository row wants the main checkout's
+            // name instead. The worktree's git directory is
+            // `<main>/.git/worktrees/<name>`, so the main root is three
+            // components up; when the pointer cannot be resolved the
+            // worktree's own name stands, which is what the tab already
+            // shows.
+            worktreeName = paneAnchor.displayName
+            if let root = Anchor.repositoryRoot(of: paneAnchor),
+               let gitDirectory = GitDirectory.url(forRepositoryRoot: root) {
+                repositoryName = gitDirectory
+                    .deletingLastPathComponent() // worktrees/
+                    .deletingLastPathComponent() // .git/
+                    .deletingLastPathComponent() // the main checkout
+                    .lastPathComponent
+            }
+        }
+
+        // `head ↑a↓b`, the footer's indicator spelling with the same
+        // no-upstream suppression: stale counts against a branch with
+        // nowhere to push are worse than none.
+        let branch: String? = git.flatMap { git in
+            guard !git.head.isEmpty else { return nil }
+            var text = git.head
+            if git.hasUpstream {
+                if git.ahead > 0 { text += " ↑\(git.ahead)" }
+                if git.behind > 0 { text += " ↓\(git.behind)" }
+            }
+            return text
+        }
+
+        let card = ClusterPlaceCardView(model: .init(
+            repositoryName: repositoryName,
+            worktreeName: worktreeName,
+            branch: branch,
+            workingDirectory: Self.abbreviated(directoryPath, home: home)
+        ))
+        // The effects live here rather than in the card, the sidebar's own
+        // split: a row raises a closure, the owner acts. Both act on the full
+        // path, never the drawn abbreviation. Copying through
+        // `NSPasteboard` is the user's own copy, untouched by the OSC 52
+        // denials, which gate the terminal's escape-sequence route only.
+        card.onCopyPath = { [weak self] in
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(directoryPath, forType: .string)
+            self?.clusterCards.dismiss()
+        }
+        card.onReveal = { [weak self] in
+            NSWorkspace.shared.selectFile(directoryPath, inFileViewerRootedAtPath: "")
+            self?.clusterCards.dismiss()
+        }
+        card.onClose = { [weak self] in self?.clusterCards.dismiss() }
+
+        clusterCardRole = .place
+        clusterCards.show(content: card, anchoredTo: anchor, in: window) { [weak self] in
+            self?.clusterCardRole = nil
+        }
+    }
+
+    /// Presents the changes card, then runs the poller's own porcelain read
+    /// for a fresh answer. The card opens with only its `Full diff` row and
+    /// grows when the result lands; the cached ``PaneGitStatus/changes`` is
+    /// deliberately not used to seed it, because a card is opened to act on
+    /// what is true now and the cache is up to a poll interval old.
+    private func presentChangesCard(anchoredTo anchor: NSRect, in window: NSWindow) {
+        guard let root = Anchor.repositoryRoot(of: anchorTracker.anchor) else { return }
+        // The diff commands run at the repository root, not the shell's
+        // subdirectory: the porcelain's paths are root-relative, and a
+        // pathspec handed to a `git diff` running elsewhere in the tree
+        // would name a file it cannot match.
+        let rootPath = root.path(percentEncoded: false)
+
+        let card = ClusterChangesCardView()
+        card.onFileDiff = { [weak self] change in
+            self?.handOff(ClusterChangesCardView.command(diffing: change), at: rootPath)
+        }
+        card.onFullDiff = { [weak self] in
+            self?.handOff(ClusterChangesCardView.fullDiffCommand, at: rootPath)
+        }
+        card.onClose = { [weak self] in self?.clusterCards.dismiss() }
+
+        clusterCardRole = .changes
+        changesCard = card
+        clusterCards.show(content: card, anchoredTo: anchor, in: window) { [weak self] in
+            self?.clusterCardRole = nil
+        }
+
+        // The same invocation `PaneGitStatus.refresh` runs, flags and all
+        // (`GitCommand.read` owns them), on a utility queue with the answer
+        // hopped back to main. Landing on the weak card means a result that
+        // outlives its card updates nothing.
+        let command = clusterGitCommand
+        clusterCardQueue.async { [weak self] in
+            let (_, changes) = command.read(ofRepositoryRoot: root)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    self?.changesCard?.changes = changes
+                }
+            }
+        }
+    }
+
+    /// Hands a card's command to the terminal and dismisses the card.
+    ///
+    /// Checked against `ControlWire.refusalForCommand` first, though no
+    /// card-built command should trip it: the value is rendered into a
+    /// ghostty config file parsed line by line, and a filename carrying a
+    /// newline would otherwise write a config key of the caller's choosing
+    /// (`Diagnostics/split-command/README.md`, the refusal half). A refused
+    /// command hands off nothing and the card stays up, which is at least
+    /// honest about nothing having happened.
+    private func handOff(_ command: String, at directory: String) {
+        guard ControlWire.refusalForCommand(command) == nil else { return }
+        onSplitCommandRequested?(command, directory)
+        clusterCards.dismiss()
+    }
+
+    /// `home` shortened to `~` at a path boundary, the same guard
+    /// ``PaneStatus/workingDirectory(ofShellAt:anchoredAt:home:)`` documents:
+    /// `/Users/gu` against `/Users/gutao/p` is a string prefix and not a
+    /// directory one.
+    private static func abbreviated(_ path: String, home: String) -> String {
+        if path == home { return "~" }
+        guard path.hasPrefix(home + "/") else { return path }
+        return "~" + path.dropFirst(home.count)
     }
 
     /// The sentence the footer is showing instead of its segments, and nil the
