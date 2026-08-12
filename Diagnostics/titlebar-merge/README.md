@@ -535,6 +535,62 @@ separately.
 Route D therefore buys **a 5x reduction in the seam for zero geometry cost**, and
 does not buy the merge.
 
+### 7. Route A's unmoved rect is an unmoved GRID: 73 x 19 under both arrangements.
+
+**This is the follow-up the bullet above asked for, and it closes the one link arm 5
+could not measure.** Arm 5's stand-in is an `NSColor` fill; `gridtest.swift` puts a
+real libghostty surface in the same rect and reads
+`terminalDidResize(columns:rows:)`, which is the callback the app itself listens on
+and the computation that decides what size a shell is told.
+
+```
+1 shipped      73 cols x  19 rows   tree rect x=260.0 y=0.0 w=640.0 h=372.0 top=372.0
+5 split-rect   73 cols x  19 rows   tree rect x=260.0 y=0.0 w=640.0 h=372.0 top=372.0
+```
+
+Identical rows, identical columns, identical rect, in three consecutive runs. The
+rect equality is worth noting on its own: it is arm 5's number reproduced on a real
+surface rather than a fill, which is what ties the two probes together. Had the
+surface laid out differently from the stand-in, arm 5 would have been invalidated
+rather than confirmed.
+
+**The flip produces no grid report at all.** A second measurement drives one live
+surface from the shipped arrangement into route A's — style mask and both rects —
+while it runs, because a signal reaches a child that exists across the change and
+two windows have two children. Across the flip libghostty emits **zero** resize
+callbacks. That is stronger than "the size did not change": no new size was ever
+computed, and `TIOCSWINSZ` is what a `SIGWINCH` rides on. There is nothing to
+signal about.
+
+**What is measured and what is inferred, kept apart deliberately.** The row and
+column equality is measured. The absence of the signal is inferred from libghostty
+emitting no resize — sound, but an inference. The probe tried to observe the signal
+directly by trapping `SIGWINCH` in the surface's shell and counting markers in a
+file, and **it cannot, which the probe establishes rather than assumes**: a
+positive control makes a deliberate grid-changing resize (73 x 19 → 59 x 12, so the
+grid provably moves) and the marker count stays at zero. Under a `swiftc`-linked
+probe harness no child process is spawned at all — a diagnostic run's `ps` over the
+probe's process group listed only the probe binary, and a trap line written with
+`sendText` was echoed onto the surface and never executed. libghostty draws the
+prompt; no shell is behind it.
+
+So the marker count is printed and never asserted. A number that a known-positive
+case also produces measures nothing, and grading it green would have been the probe
+certifying its own blind spot. Observing the signal itself needs the app's own
+surface-spawning environment (a bundled build), which is a different probe.
+
+**A probe bug worth recording, because it wore route A's shape.** The first run of
+the flip reported 19 rows becoming 17. Inserting `.fullSizeContentView` on a *live*
+window holds the content rect fixed and **shrinks the frame** (measured: 412 → 372
+pt) rather than holding the frame and growing the content view, which is what
+construction with the flag does. The content view stayed 372 pt while
+`contentLayoutRect` dropped to 332, and the re-frame then subtracted the band from a
+height that had already lost it — spending the 40 pt twice. Re-asserting
+`normalisedFrame` after the mask change is the fix, and it is the same correction
+`init` already made for the same reason, which is why the at-rest measurement was
+never wrong. A two-row loss that is entirely the probe's arithmetic is exactly the
+kind of number that looks like a finding.
+
 ## Verdict
 
 ### Which arrangement gets the merge
@@ -609,21 +665,23 @@ as a fallback if the split-rect arithmetic turns out to cost more in `SurfaceHos
 than it appears to, because it is a two-line change to `applyTitlebarGlass()` that
 buys most of the visual improvement for none of the risk.
 
-So the recommendation in one line: **route A merges the panel and, measured here,
-moves no grid; adopt it, and confirm the grid count against a real PTY before
-shipping.**
+So the recommendation in one line: **route A merges the panel and moves no grid;
+adopt it.**
+
+The "confirm the grid count against a real PTY before shipping" this line used to
+end with has been done — finding 7, 73 x 19 under both arrangements across three
+runs, on a real libghostty surface rather than a fill. **Route A's recommendation
+survives the measurement it was made conditional on.** What remains before shipping
+is the key-to-non-key transition and the tab bar's height, both below.
 
 ### What is not answered
 
-- **Route A's tree region is a rect, not a grid.** Arm 5 measures that the pane
-  tree's *rectangle* is unmoved, which is the precondition for no `SIGWINCH` and is
-  the thing that was previously unmeasured. It is not a count of ghostty rows and
-  columns: the stand-in is an `NSColor` fill, not a surface with a cell metric, and
-  this probe spawns no PTY by construction. An unmoved rect cannot produce a
-  different grid — the grid is a function of the rect and the cell size — but the
-  chain is argued here rather than measured end to end. **A follow-up on
-  `gridtest.swift`'s pattern, with a real PTY and a row count across the flip, is
-  what closes it, and it should be run before adopting route A.**
+- ~~**Route A's tree region is a rect, not a grid.**~~ **Closed 2026-08-12 by
+  `gridtest.swift`, this probe's second binary.** A real libghostty surface in the
+  pane tree's region reports **73 x 19 under both arrangements**, identical, across
+  three consecutive runs. See "The grid measurement" below. What remains open from
+  the original bullet is narrower and is recorded there: the `SIGWINCH` signal
+  itself is not observed, because no child process is spawned under a probe harness.
 - **Route A's split rect is measured in the probe's own layout, not in
   `SurfaceHosts`.** The arm builds two rects with different top edges and shows the
   result merges and holds. What it does not do is carry `SurfaceHosts.layout`'s real
@@ -659,14 +717,33 @@ backdrop-check-<arm>.png        the off-window strip each arm's backdrop asserti
                                 read, one per arm: the evidence that what the glass
                                 sampled was the controlled field
 measurement.txt                 the strip numbers, the noise floor and the profiles
+grid-measurement.txt            finding 7: rows and columns under both arrangements,
+                                the flip, and the control that bounds what the
+                                SIGWINCH count is worth
 ```
+
+Two binaries, the way `glass-backdrop` has two. `mergetest.swift` answers which
+arrangement merges and needs no libghostty; `gridtest.swift` answers whether route A
+is affordable and needs a real surface. The grid arm is built **best-effort** on
+`glass-backdrop`'s precedent: it depends on the Debug build products and a binary
+xcframework, so a link-line change upstream degrades the run to the capture arms with
+a message rather than failing it. It needs `make build` to have run at least once,
+which `run.sh` asserts rather than assumes.
 
 ## Focus
 
 This probe is `.accessory`, every window is `orderFrontRegardless()`, `canBecomeKey`
 is overridden to `false` on all of them, and it contains no `makeKeyAndOrderFront`,
-no `activate`, no `pkill`, and spawns no shell. It puts real windows on screen for
-about twenty seconds, over a full-screen backdrop it needs as a controlled thing for
-glass to sample, and orders them out again. **The keyboard never leaves the pane that
-launched it**, which is the criterion `SAFE_PROBES` enforces — focus, not
-invisibility. It qualifies on `glass-backdrop`'s ground and is listed beside it.
+no `activate` and no `pkill`. It puts real windows on screen for about twenty
+seconds, over a full-screen backdrop it needs as a controlled thing for glass to
+sample, and orders them out again. **The keyboard never leaves the pane that launched
+it**, which is the criterion `SAFE_PROBES` enforces — focus, not invisibility. It
+qualifies on `glass-backdrop`'s ground and is listed beside it.
+
+**"Spawns no shell" was true of this probe until 2026-08-12 and the grid arm changed
+it**, in the same way `glass-backdrop`'s grid arm did: the arm asks libghostty for
+`backend: .exec` surfaces, because a stand-in has no cell metric and measuring
+`.inMemory` would close arm 5's gap with a second stand-in. Its three windows are
+`.accessory`, never key, never activated, and ordered out. As finding 7 records, no
+child process is actually spawned under this harness — but the criterion is focus,
+and nothing here takes it either way. The probe writes only into `TMPDIR`.

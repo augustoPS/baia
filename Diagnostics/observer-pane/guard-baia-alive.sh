@@ -145,8 +145,7 @@ fi
 # sample something the probe knows exactly or the measurement is a photograph of the
 # wallpaper. `.accessory` policy, every window `orderFrontRegardless()` with
 # `canBecomeKey` overridden to false on all of them, no `makeKeyAndOrderFront`, no
-# `activate`, no `pkill`, and no shell spawned — the only subprocess is
-# `screencapture`. The keyboard never leaves the pane that launched it.
+# `activate`, no `pkill`. The keyboard never leaves the pane that launched it.
 #
 # One difference from `glass-backdrop` worth naming, because it is the kind of thing
 # that would matter if it were the other way round: these windows are `.titled` with
@@ -154,6 +153,23 @@ fi
 # region. Neither is ever driven — the probe reads the buttons' state and hit-tests
 # them in-process, and synthesises no events at all. A `.titled` window that is never
 # key and never activated takes no focus, so the criterion is met on the same ground.
+#
+# **This entry said "no shell spawned" until 2026-08-12, and the second binary made
+# that stale.** `titlebar-merge` now runs a `gridtest` arm after the capture arms,
+# which builds real libghostty surfaces with `backend: .exec` to measure route A's
+# row and column counts — the follow-up the probe's own README asked for. That is
+# the same thing `glass-backdrop`'s grid arm does, and it qualifies on the same
+# ground: `.exec` asks libghostty to attach a surface, and the surface's windows are
+# `.accessory`, `orderFrontRegardless()`, `canBecomeKey` false, never activated.
+# Three windows appear for roughly twenty seconds and are ordered out.
+#
+# The criterion is focus, and nothing here takes it. Worth recording because the
+# probe measured it: under this harness no child process is spawned at all. A
+# diagnostic run's `ps` over the probe's process group listed only the probe
+# binary, and a line written into the surface with `sendText` was echoed and never
+# executed. `gridtest.swift`'s section 3 publishes that as a limitation of the
+# measurement. Either way the probe writes only into `TMPDIR` and drives no
+# terminal the owner is sitting in.
 #
 # Every probe named must be safe, so a command pairing a safe one with a real
 # driver is still denied.
