@@ -134,6 +134,15 @@ final class WorkspaceWindowController: NSObject {
     /// and a deallocated toolbar takes the titlebar material with it.
     private let toolbar: NSToolbar
 
+    /// The folder icon and the path, which is what the band says since the
+    /// owner's 2026-08-13 ruling took the folder name out of it.
+    ///
+    /// Held for the same reason the toolbar above is: `NSWindow` does not retain
+    /// an accessory controller for the caller, and this one is retinted on every
+    /// settings change. ``TitlebarPathAccessory`` carries the measurements — why
+    /// it is `.leading`, why it costs no height, and why the band is still 40 pt.
+    let titlebarPath: TitlebarPathAccessory
+
     /// Whether the window itself is transparent, so glass in it can sample the
     /// desktop rather than this app's own darkness.
     ///
@@ -358,7 +367,8 @@ final class WorkspaceWindowController: NSObject {
         isTransparent: Bool,
         blurRadius: Int,
         isDark: Bool,
-        resolvedChrome: ResolvedChrome
+        resolvedChrome: ResolvedChrome,
+        theme: PaneTheme
     ) {
         self.tree = tree
         self.sidebar = sidebar
@@ -367,6 +377,11 @@ final class WorkspaceWindowController: NSObject {
         self.isDark = isDark
         self.resolvedChrome = resolvedChrome
         toolbar = NSToolbar(identifier: "baia.workspace.toolbar")
+        // Built with the theme rather than corrected into it afterwards, which
+        // is the same rule the four parameters above follow: a band that opened
+        // in AppKit's default ink and was retinted on the first settings change
+        // would show one frame of the wrong colour on every new window.
+        titlebarPath = TitlebarPathAccessory(theme: theme)
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1024, height: 680),
             // **`.fullSizeContentView` is what lets the band and the column be
@@ -402,6 +417,44 @@ final class WorkspaceWindowController: NSObject {
         // Showing nothing is a column of zero width, not a different content view.
         window.contentViewController = sidebar
         window.title = "baia"
+
+        // **`window.title` still carries the folder name, and the band no longer
+        // draws it. Both halves are load-bearing and this flag is the seam.**
+        //
+        // The obvious spelling of the 2026-08-13 ruling is to stop writing the
+        // name into `window.title`, and it is wrong: **the native tab bar labels
+        // each tab from `window.title`**, so emptying it removes the name from
+        // the band and from every tab at once. Probed on the frame-view tree
+        // rather than reasoned about — with titles set, each `NSTabButton` holds
+        // an `NSTextField` reading `vault` / `baia`; with the titles emptied,
+        // those children do not exist and the buttons render blank. The ruling
+        // is about the titlebar band, and a bar of unlabelled tabs is not what it
+        // asked for: the tab is the one place the name is still the only thing
+        // telling two windows apart, which is the entire reason
+        // `TabTitle.disambiguated` exists.
+        //
+        // `.hidden` hides the band's title text while leaving the string on the
+        // window for the tab bar to read. Measured: the band is 40.0 pt with the
+        // flag and 40.0 pt without it, so this buys the removal at no height,
+        // and the tab buttons keep their labels across the flip.
+        //
+        // **It hides the subtitle with it**, which is why the path moved into
+        // ``titlebarPath`` rather than staying in `window.subtitle`. Probed on
+        // the frame view: shown, the band holds a `_NSToolbarTitleField` reading
+        // `baia` and a sibling `NSTextField` reading the path, both inside
+        // `NSToolbarTitleStackView` and both `visible=true`; hidden, that stack
+        // is gone and what remains is a single `NSTextField` on `NSTitlebarView`
+        // reading `baia – ~/Projects/baia` at `frame=(0, -220, 0, 0)` with
+        // `visible=false`. Zero-sized and off-screen: it is the string the tab
+        // bar and accessibility read, not drawn chrome. So `.hidden` empties the
+        // band of text and keeps the name available to everything that reads the
+        // window rather than looks at it.
+        //
+        // The path would have had to move regardless — `NSWindow.subtitle` is a
+        // `String` with no attributed spelling, so it cannot carry a glyph the
+        // theme tints — but it is worth recording that title and subtitle are one
+        // slot to AppKit and not two independently hideable ones.
+        window.titleVisibility = .hidden
 
         // **An empty toolbar, which is what gives the window a titlebar at all
         // on macOS 26.**
@@ -453,10 +506,41 @@ final class WorkspaceWindowController: NSObject {
         // taken off the titlebar is a row of cells given back to the grid, so
         // the compact metric is the one that matches.
         //
-        // Both styles stack `window.title` over `window.subtitle`, which is what
-        // `AppDelegate` writes the project path into, so neither loses the
-        // project name; compact simply spends less height doing it.
+        // Both styles stack `window.title` over `window.subtitle`. Until
+        // 2026-08-13 that was the whole titlebar grammar — the folder name on
+        // top, the path under it — and the owner's ruling that day removed the
+        // name, so the title line is now empty except when a pane is asking.
+        // See ``titlebarPath`` for what took its place and why the band is still
+        // 40 pt.
         window.toolbarStyle = .unifiedCompact
+
+        // **The folder icon and the path, on the owner's 2026-08-13 ruling.**
+        //
+        // `.leading` puts it after the traffic lights and before the title's
+        // centred slot, which is where a document window's proxy icon sits: the
+        // eye already looks there for "what is this window about". Measured to
+        // cost nothing — the band is 40.0 pt with this accessory attached and
+        // 40.0 pt without it — which is the only reason a view is allowed in
+        // this band at all. `.bottom` is the arrangement that would have paid
+        // for it, at 76.0 pt whatever height its view asks for.
+        //
+        // **`NSWindow.representedURL` was the alternative and was refused on a
+        // measurement.** It draws a real document proxy icon for free, with
+        // dragging and the ⌘-click path menu, and it was worth wanting for
+        // exactly those. Two things rule it out. It draws the *system* folder
+        // icon, full colour, which is the one thing in this window that no theme
+        // change can repaint — and the owner's ruling names a themed symbol
+        // specifically. And it accepts a path that does not exist without
+        // complaint (probed: `/does/not/exist/anywhere` is stored and returned
+        // unchanged), which in this app is not hypothetical: a pane outlives its
+        // working directory often enough that `SurfaceMessage.drawAbsent` exists
+        // to draw that state. A proxy icon is a *control* — draggable, and its
+        // menu claims to reveal a real place — so the failure mode is not a
+        // stale label but a control that lies about a directory that is gone.
+        // A themed symbol is a label, and a label naming a directory that has
+        // been deleted is merely out of date until the next poll.
+        titlebarPath.layoutAttribute = .leading
+        window.addTitlebarAccessoryViewController(titlebarPath)
 
         // Assigning a contentViewController makes the window adopt the content's
         // fitting size and discard the contentRect above, so the size is set

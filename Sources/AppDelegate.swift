@@ -510,11 +510,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // glass view is chrome. Under flat this window keeps the system
             // titlebar `78aadfe` shipped. See
             // ``WorkspaceWindowController/resolvedChrome``.
-            resolvedChrome: configuration.resolvedChrome
-            // `theme` and `backgroundOpacity` were passed here until 2026-08-08,
-            // for the titlebar wash and nothing else. The wash retired on the
-            // owner's naked-glass ruling and they went with it; the band is the
-            // untinted material now, which no palette feeds.
+            resolvedChrome: configuration.resolvedChrome,
+            // **`theme` is back, for a different surface than the one it left.**
+            // It was passed here until 2026-08-08 for the titlebar *wash*, which
+            // retired on the owner's naked-glass ruling; the band's material is
+            // still untinted and no palette feeds it. What needs the theme now is
+            // the icon and path the 2026-08-13 ruling put in the band — glyph and
+            // text drawn in ``PaneTheme/inkFaint``, not a fill. Passed at
+            // construction rather than assigned after, so a new window never
+            // shows one frame in the wrong ink.
+            theme: configuration.paneTheme
         )
         // Which fill the titlebar band's glass is tinted with, nil with nothing
         // dialled and live-followed by `settingsDidChange()`. See ``SurfaceFill``.
@@ -1126,8 +1131,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 project: project,
                 budget: TabTitle.Budget.forTabCount(siblings)
             )
+            // **Still the joined grammar, and the band no longer draws it.** The
+            // 2026-08-13 ruling took the folder name out of the *titlebar*, and
+            // `WorkspaceWindowController` does that with `titleVisibility`
+            // rather than by emptying this string, because the native tab bar
+            // labels each tab from `window.title` and blanking it here would
+            // leave a bar of unlabelled tabs. The comment on that flag carries
+            // the probe. So this line is unchanged: the name still reaches the
+            // tab bar, the Window menu and the switcher, and only the band stops
+            // showing it.
             controller.window.title = TabTitle.windowTitle(waitingProjects: waiting, tab: tab)
+
+            // The subtitle goes with it — `titleVisibility` hides both — so the
+            // path is written to the accessory that replaced it. Left assigned
+            // as well rather than dropped: it is what the Window menu and the
+            // accessibility string read for a window nobody is looking at, which
+            // is the same reason the announcement is in the title at all.
             controller.window.subtitle = controller.tree.windowTitle.subtitle
+            controller.titlebarPath.path = controller.tree.windowTitle.subtitle
         }
     }
 
@@ -1154,6 +1175,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // beside them wearing the values the window was built with, until it
             // was closed and opened again.
             controller.sidebar.theme = configuration.paneTheme
+            // And the titlebar's icon and path, which are inked from the same
+            // theme and were the surface this loop did not reach — the bug the
+            // sidebar line above was added to fix, one surface further up.
+            controller.titlebarPath.theme = configuration.paneTheme
             // Composed, not committed: the design panel writes through
             // `designOverrides`, which fires exactly this handler, so a read of
             // `settings` here would take the dial's redraw and paint the value

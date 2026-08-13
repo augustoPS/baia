@@ -241,4 +241,60 @@ import Testing
         // for one idea is one the reader has to learn separately.
         #expect(TabTitle.windowTitle(waitingProjects: ["vault"], tab: "baia").hasPrefix("!"))
     }
+
+    // MARK: - The announcement alone
+
+    @Test func aQuietWindowAnnouncesNothingAtAll() {
+        // The owner's 2026-08-13 ruling removes the folder name from the
+        // titlebar, and the name was the *entire* content of a quiet window's
+        // title: `windowTitle(waitingProjects:tab:)` returns `tab` unchanged when
+        // nothing is waiting. With the name gone there is nothing left to say, so
+        // the title is empty rather than holding a placeholder.
+        //
+        // Empty rather than the path, which is the tempting substitution and the
+        // wrong one: the path is the *subtitle*, and promoting it here would draw
+        // it twice in one band.
+        #expect(TabTitle.announcement(waitingProjects: []) == "")
+    }
+
+    @Test func theWaitingAnnouncementSurvivesTheNameLeaving() {
+        // The half that must not die with the folder name.
+        // `AttentionNotifier` documents the window title as the *primary*
+        // carrier for "a pane is asking" — not a fallback — because
+        // `NSApp.dockTile.badgeLabel` does nothing in this app, so the Window
+        // menu, Mission Control and the window switcher are the only places a
+        // background window can speak. Removing the name must not take the
+        // announcement with it.
+        #expect(TabTitle.announcement(waitingProjects: ["vault"]) == "! vault")
+        #expect(TabTitle.announcement(waitingProjects: ["vault", "admin"]) == "! vault, admin")
+    }
+
+    @Test func theAnnouncementKeepsTheNameAndCountRuleItAlwaysHad() {
+        // The naming-versus-counting threshold is unchanged by the name leaving:
+        // it was never about the window's own name, only about the width two
+        // project names are worth against three.
+        #expect(TabTitle.announcement(waitingProjects: ["vault", "admin", "shop"]) == "! 3 waiting")
+        #expect(TabTitle.announcement(waitingProjects: ["a", "b", "c", "d"]) == "! 4 waiting")
+    }
+
+    @Test func theAnnouncementNoLongerCarriesTheSeparatorThatJoinedItToTheName() {
+        // The ` · ` existed only to join the announcement to the tab name behind
+        // it. With nothing behind it, a trailing separator would be a dangling
+        // piece of punctuation in the Window menu. A `hasSuffix` check rather
+        // than equality, so this fails for a trailing space too.
+        let announced = TabTitle.announcement(waitingProjects: ["vault"])
+        #expect(!announced.contains("\u{00B7}"))
+        #expect(announced == announced.trimmingCharacters(in: .whitespaces))
+    }
+
+    @Test func theAnnouncementAgreesWithTheTitleItReplaces() {
+        // The two spellings must not drift. Whatever `windowTitle` puts before
+        // its separator is exactly what `announcement` now says on its own, so
+        // the glyph, the joiner and the counting threshold stay one rule rather
+        // than becoming two that are free to disagree.
+        for projects in [["vault"], ["vault", "admin"], ["a", "b", "c"]] {
+            let joined = TabTitle.windowTitle(waitingProjects: projects, tab: "baia")
+            #expect(joined == "\(TabTitle.announcement(waitingProjects: projects))  \u{00B7}  baia")
+        }
+    }
 }

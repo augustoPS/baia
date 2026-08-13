@@ -192,12 +192,58 @@ public enum TabTitle {
     /// `!` rather than a filled circle, because it is the glyph the capsule and
     /// the git markers already use for "act now", and a second symbol for the
     /// same idea is one the reader has to learn separately.
+    ///
+    /// **Not what the workspace window uses since 2026-08-13.** The owner's
+    /// ruling removed the folder name from the titlebar, so `AppDelegate` writes
+    /// ``announcement(waitingProjects:)`` alone and there is no `tab` to join.
+    /// This stays because the joined grammar is still the correct answer wherever
+    /// a window *does* have a name to carry — and because it is the definition
+    /// ``announcement(waitingProjects:)`` is kept honest against by
+    /// `theAnnouncementAgreesWithTheTitleItReplaces`.
     public static func windowTitle(waitingProjects: [String], tab: String) -> String {
-        guard !waitingProjects.isEmpty else { return tab }
+        let announced = announcement(waitingProjects: waitingProjects)
+        guard !announced.isEmpty else { return tab }
+        return "\(announced)  \u{00B7}  \(tab)"
+    }
+
+    /// The waiting half on its own: what a window says when it has no name to
+    /// say it *after*.
+    ///
+    /// **The owner's 2026-08-13 ruling took the folder name out of the titlebar,
+    /// and the name was the whole of a quiet window's title.** The band now
+    /// carries a folder icon and the path, and the path is the *subtitle*
+    /// (``TerminalPaneController/windowTitle``), which leaves the title line with
+    /// nothing to hold at rest. So it holds nothing: empty, rather than a
+    /// placeholder or the path promoted up a line, which would draw one
+    /// directory twice in one 40 pt band.
+    ///
+    /// **What must not leave with the name is the announcement**, and it is the
+    /// reason this is a separate entry point rather than a call to
+    /// ``windowTitle(waitingProjects:tab:)`` with an empty `tab`. That spelling
+    /// would return `"! vault  ·  "` — the joiner is there to attach the
+    /// announcement to a name, and with no name it is a dangling `·` in the
+    /// Window menu. `AttentionNotifier` records why the announcement itself is
+    /// not negotiable: `NSApp.dockTile.badgeLabel` does nothing in this app, so
+    /// the window title is the **primary** carrier for "a pane is asking" and not
+    /// a fallback, and it is the only thing macOS shows for a window nobody is
+    /// looking at.
+    ///
+    /// ``windowTitle(waitingProjects:tab:)`` is now composed from this, so the
+    /// glyph, the joiner between names, and the two-name threshold are one rule
+    /// in one place. Written twice they would be two rules free to disagree,
+    /// which is the shape of duplication the 2026-08-12 capsule ruling spent a
+    /// commit removing from this very file.
+    public static func announcement(waitingProjects: [String]) -> String {
+        guard !waitingProjects.isEmpty else { return "" }
+        // Names rather than a count, up to two: a count answers "how many",
+        // which nobody asked, and a name answers "which", which is the entire
+        // reason the marker exists. Three or more is where naming stops paying
+        // for its width. Unchanged by the name leaving, because this threshold
+        // was never about the window's own name.
         let subject = waitingProjects.count <= 2
             ? waitingProjects.joined(separator: ", ")
             : "\(waitingProjects.count) waiting"
-        return "! \(subject)  \u{00B7}  \(tab)"
+        return "! \(subject)"
     }
 
     private static let agentPrefix = "agent-"
