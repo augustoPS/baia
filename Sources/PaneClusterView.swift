@@ -691,22 +691,23 @@ final class PaneClusterView: PaneOverlayView {
             NSBezierPath(roundedRect: wash, xRadius: 4, yRadius: 4).fill()
         }
 
-        // The inset stroke, in the same ink as the footer's focus frame and
-        // at its width, inset by half so the stroke lands inside the pill's
-        // edge rather than straddling it — the radius comes down with it,
-        // keeping the stroke concentric.
+        // The inset stroke, inset by half so it lands inside the pill's edge
+        // rather than straddling it — the radius comes down with it, keeping
+        // the stroke concentric.
         //
-        // Full alpha in both chrome modes, unlike the footer, and the
-        // difference is the surface. `PaneStatusBarView.glassFrameAlpha`
-        // (0.55) exists because the footer's glass path paints no fill, so
-        // an opaque stroke there was ink laid straight onto naked glass,
-        // reading as a sticker on the window. This stroke never touches
-        // naked glass: it lands inside the pill's own thick fill, the
-        // tinted surface the step above just painted, which is exactly the
-        // kind of composited backing the footer's flat case keeps its full
-        // alpha for.
+        // `focusFrameWidth` was the footer's constant and is now this view's
+        // only reader, which is why it lives in `PaneChromeMetrics` rather
+        // than in anything named for a status bar. The pill inherited both the
+        // width and the ink when the footer stopped drawing focus.
+        //
+        // Full alpha in both chrome modes, which the footer could not do. Its
+        // `glassFrameAlpha` (0.55) existed because the footer's glass path
+        // painted no fill, so an opaque stroke was ink laid straight onto
+        // naked glass, reading as a sticker on the window. This stroke never
+        // touches naked glass: it lands inside the pill's own thick fill, the
+        // tinted surface the step above just painted.
         if framesForFocus {
-            let width = PaneStatusBarMetrics.focusFrameWidth
+            let width = PaneChromeMetrics.focusFrameWidth
             let inner = NSBezierPath(
                 roundedRect: bounds.insetBy(dx: width / 2, dy: width / 2),
                 xRadius: (bounds.height - width) / 2,

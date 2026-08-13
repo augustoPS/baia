@@ -59,7 +59,7 @@ are asserted rather than tabulated:
 
 | Arm | Arrangement |
 |---|---|
-| `shipped-absorb` | The shipped types, compiled verbatim: `PaneGlassPlaneView` + `PaneGlassWashView` at pane size wearing the real `WindowCorner.cgPath` mask, hosted as `TerminalPaneController.installGlassPlane()` hosts them, with a real `PaneStatusBarView` (`resolvedChrome = .glass`) over the bottom `PaneStatusBarMetrics.height` points. **Asserts no seam** at the footer's top edge |
+| `shipped-absorb` | The shipped types, compiled verbatim: `PaneGlassPlaneView` + `PaneGlassWashView` at pane size wearing the real `WindowCorner.cgPath` mask, hosted as `TerminalPaneController.installGlassPlane()` hosts them, with a real `PaneStatusBarView` (`resolvedChrome = .glass`) over the bottom `PaneChromeMetrics.paneBarHeight` points. **Asserts no seam** at the footer's top edge |
 | `shipped-violation` | The negative control: `shipped-absorb` with the deleted footer glass put back, one bare `NSGlassEffectView` hand-stacked under the bar region. **Asserts the seam returns.** Inverted by `run.sh` — this arm passing its own check is what the run needs; a control that stops failing makes the shipped arm's PASS meaningless, and fails the run |
 
 ## The mock, and how faithful it is
@@ -67,7 +67,7 @@ are asserted rather than tabulated:
 Each arm is a 720x200 pt borderless non-opaque window: untinted `regular`
 glass, `cornerRadius = 0`, a `CAShapeLayer` squircle mask — the exact settings
 `PaneStatusBarView.applyResolvedChrome()` and `updateGlassMask()` write, with
-the footer strip at the real `PaneStatusBarMetrics.height` read off `PaneChrome`
+the footer strip at the real `PaneChromeMetrics.paneBarHeight` read off `PaneChrome`
 at run time. Content (terminal rows, the drawn capsule, the footer segments) is
 drawn as siblings *above* the glass, which is the shipped hierarchy (content
 never goes through `contentView`), and is identical across arms, so any band

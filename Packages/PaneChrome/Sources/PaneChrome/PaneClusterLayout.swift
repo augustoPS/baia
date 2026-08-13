@@ -1,10 +1,16 @@
 import Foundation
 
-/// Fixed geometry of the capsule, the ``PaneStatusBarMetrics`` restraint
-/// applied to the pill: constants only, nothing here may branch on focus, and
-/// the capsule never touches the grid. Focus changes the fill and the stroke
-/// (the view's business), never a dimension, so looking at a pane cannot
-/// resize what the pane is showing.
+/// Fixed geometry of the capsule: constants only, nothing here may branch on
+/// focus, and the capsule never touches the grid. Focus changes the fill and
+/// the stroke (the view's business), never a dimension, so looking at a pane
+/// cannot resize what the pane is showing.
+///
+/// The restraint is inherited from the footer's metrics, which held it because
+/// a focus-dependent *height* reflowed the ghostty grid and `SIGWINCH`'d the
+/// pane's child process. The pill cannot do that — it is an overlay and takes
+/// no height from any terminal view — so the rule survives here as discipline
+/// rather than as a hazard. See ``PaneChromeMetrics`` for the measurement that
+/// outlived the bar.
 public enum PaneClusterMetrics {
     /// Sized for the same 11 pt segment text the footer draws, plus the
     /// pill's vertical breathing room.

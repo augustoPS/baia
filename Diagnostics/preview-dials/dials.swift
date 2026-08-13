@@ -76,9 +76,10 @@ import PaneChrome
 ///
 /// **This is the geometry the swap did *not* change, which is the point.** The
 /// pane's height came from the column's `fillEqually` stack before the swap and
-/// comes from it after; `PaneStatusBarMetrics.reservedHeight(focused:)` only
-/// ever decided how much of that height the *surface* got, not how much the pane
-/// had.
+/// comes from it after; the footer's reserved height only ever decided how much
+/// of that height the *surface* got, not how much the pane had. (That accessor
+/// was `PaneStatusBarMetrics.reservedHeight(focused:)`, deleted with its type on
+/// 2026-08-13; the 22 pt survives as `PaneChromeMetrics.paneBarHeight`.)
 let paneSize = NSSize(width: 238, height: 302)
 
 /// The capsule's frame inside the pane, as `SettingsPreviewPane` pins it: top

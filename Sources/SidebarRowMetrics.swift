@@ -40,7 +40,7 @@ enum SidebarRowMetrics {
 
     /// Where a row's text starts, so that its baseline lands on ``rowBaseline``.
     ///
-    /// The same rule the footer follows with `PaneStatusBarMetrics.baselineFromTop`:
+    /// The same rule the footer followed with `PaneChromeMetrics.paneBarBaselineFromTop`:
     /// one baseline for everything on the line, rather than each string placed by
     /// its own idea of centre. Two strings centred independently sit a fraction of
     /// a point apart, which does not read as a difference, it reads as a mistake.

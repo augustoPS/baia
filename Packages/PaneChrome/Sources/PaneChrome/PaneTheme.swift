@@ -501,8 +501,8 @@ public struct PaneTheme: Sendable, Equatable {
     /// test. Here the fallback is asserted.
     ///
     /// **Colour only.** The dot's diameter, gap and advance stay constants at
-    /// the drawing site and are not offered here. They feed
-    /// ``PaneStatusBarMetrics``' bar layout, and the whole override layer
+    /// the drawing site and are not offered here. They fed the footer's bar
+    /// layout and now feed the pill's, and the whole override layer
     /// structurally lacks geometry — see ``BaiaSettings/DesignOverrides``' own
     /// header on the SIGWINCH wall.
     ///

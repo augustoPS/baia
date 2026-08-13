@@ -28,7 +28,7 @@ cd "$ROOT"
 build_packages "$LIB" BaiaSettings GitWorkspace PaneChrome
 
 # Links `PaneChrome` only for values: the bar geometry
-# (`PaneStatusBarMetrics`) and the shipped fill (`MaterialSet.dark.fillChrome`)
+# (`PaneChromeMetrics`) and the shipped fill (`MaterialSet.dark.fillChrome`)
 # are read off the package at run time rather than transcribed, so the
 # hand-managed control cannot grade against numbers that have since moved.
 #

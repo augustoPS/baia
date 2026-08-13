@@ -62,7 +62,7 @@ public struct RGBA: Sendable, Equatable {
 ///
 /// CSS's `box-shadow` takes an arbitrary list of layers; this type only names
 /// the two shapes this package's tokens actually use rather than modelling the
-/// general syntax, the same restraint ``PaneStatusBarMetrics`` takes with
+/// general syntax, the same restraint ``PaneChromeMetrics`` takes with
 /// geometry it will never need to generalise. A shadow this package starts
 /// using with a third layer earns its own case rather than a variadic array
 /// every existing call site would have to thread `nil` through.

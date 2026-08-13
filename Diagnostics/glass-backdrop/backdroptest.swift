@@ -271,7 +271,7 @@ final class ProbeWindow: NSWindow {
 
         surface.opacity = wellOpacity
 
-        let barHeight = PaneStatusBarMetrics.height
+        let barHeight = PaneChromeMetrics.paneBarHeight
 
         // The one layout difference between (A) and (B), and the whole reason the
         // grid question exists: under arm 3 the surface view's frame runs to the
@@ -392,15 +392,15 @@ final class BarContentView: NSView {
     override func hitTest(_: NSPoint) -> NSView? { nil }
 
     override func draw(_: NSRect) {
-        let inset = PaneStatusBarMetrics.horizontalInset
-        let baseline = PaneStatusBarMetrics.baselineFromTop
+        let inset = PaneChromeMetrics.paneBarHorizontalInset
+        let baseline = PaneChromeMetrics.paneBarBaselineFromTop
 
         // The attention capsule, drawn rather than glassed. Which of the two it
         // should be is the second question this probe carries (glass-in-container
         // versus drawn-on-glass), and drawing it here is the *baseline*: the
         // captures show what a drawn capsule on a bar's glass looks like, and the
         // container arm below shows the alternative in the same window.
-        let capsule = PaneStatusBarMetrics.attentionCapsuleFrame(glyphWidth: 7)
+        let capsule = PaneChromeMetrics.attentionCapsuleFrame(glyphWidth: 7)
         let capsuleRect = NSRect(
             x: capsule.x, y: capsule.y, width: capsule.width, height: capsule.height
         )
@@ -421,7 +421,7 @@ final class BarContentView: NSView {
             .font: NSFont.systemFont(ofSize: 11, weight: .medium),
             .foregroundColor: NSColor(white: 0.92, alpha: 1),
         ]
-        let x = inset + capsule.width + PaneStatusBarMetrics.capsuleGap
+        let x = inset + capsule.width + PaneChromeMetrics.capsuleGap
         let line = "baia · main ↑1↓2*3 · claude · ~/Projects/baia"
         line.draw(
             at: NSPoint(x: x, y: baseline - 11),
@@ -459,7 +459,7 @@ final class CapsuleWindow: NSWindow {
         content.wantsLayer = true
         window.contentView = content
 
-        let barHeight = PaneStatusBarMetrics.height
+        let barHeight = PaneChromeMetrics.paneBarHeight
         let surface = SurfaceStandIn()
         surface.frame = NSRect(
             x: 0,
@@ -497,7 +497,7 @@ final class CapsuleWindow: NSWindow {
 
         // The capsule, tinted, as the one prominent element. `cornerRadius = 999`
         // is Apple's own sample's spelling for a capsule.
-        let capsuleFrame = PaneStatusBarMetrics.attentionCapsuleFrame(glyphWidth: 7)
+        let capsuleFrame = PaneChromeMetrics.attentionCapsuleFrame(glyphWidth: 7)
         let capsuleGlass = NSGlassEffectView(frame: NSRect(
             x: capsuleFrame.x,
             y: capsuleFrame.y,
@@ -628,7 +628,7 @@ final class SidebarContentView: NSView {
     /// survives that correction and is strengthened by it; the absolute did
     /// not. Reading the ink off `PaneChrome` is what stops the arm claiming to
     /// reproduce a surface it was only approximating — the same rule the four
-    /// render arms already follow for `PaneStatusBarMetrics.height`.
+    /// render arms already follow for `PaneChromeMetrics.paneBarHeight`.
     private let theme = PaneTheme.darkPastel
 
     /// The backdrop the shipping header grades itself against under glass,
@@ -1021,7 +1021,7 @@ func recordSampled(
 
 // The bar band, as a fraction of the pane window's height: the bottom 22 pt of
 // 320. Sampled either side of the seam, which is the window's midline.
-let barBandY = 1.0 - Double(PaneStatusBarMetrics.height) / Double(paneHeight) / 2
+let barBandY = 1.0 - Double(PaneChromeMetrics.paneBarHeight) / Double(paneHeight) / 2
 
 for arm in Arm.allCases {
     let window = ProbeWindow(arm: arm, contentRect: paneFrame)

@@ -28,7 +28,7 @@ continue beneath the bar's strip).
 Four windows, side by side, same content: a dark theme-background document of
 monospaced rows (drawn at the terminal's 11.5 pt scale) scrolling slowly under a
 22 pt bar. The bar's segments and geometry are read off `PaneChrome`
-(`PaneStatusBarMetrics`, `MaterialSet.dark`) rather than transcribed.
+(`PaneChromeMetrics`, `MaterialSet.dark`) rather than transcribed.
 
 | Arm | Bar construction | Edge effect |
 |---|---|---|

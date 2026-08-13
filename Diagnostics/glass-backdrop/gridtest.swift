@@ -7,8 +7,9 @@ import GhosttyTerminal
 // grid keeps its inset via ghostty padding") is only viable if extending the
 // surface does not cost the terminal a row. A grid change is a `SIGWINCH` to
 // whatever is running in the pane, and in a pane driving a coding agent that
-// reflows the agent's output: `PaneStatusBarMetrics`' own doc comment is built
-// entirely around never letting the bar's height reach the grid.
+// reflows the agent's output. `PaneChromeMetrics`' own doc comment is built
+// entirely around that hazard — and records that the footer's deletion closed
+// it, leaving this measurement as the reason the 22 pt is still written down.
 //
 // So this binary does what the four-arm capture binary cannot. It spawns a real
 // ghostty surface on a real PTY and reads `terminalDidResize(columns:rows:)`,

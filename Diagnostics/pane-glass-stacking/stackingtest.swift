@@ -218,7 +218,7 @@ final class TerminalTextView: FlippedView {
 /// (y 0.9875–0.9979 of the pane), and it is identical across arms anyway.
 final class FooterTextView: FlippedView {
     override func draw(_: NSRect) {
-        let capsule = PaneStatusBarMetrics.attentionCapsuleFrame(glyphWidth: 7)
+        let capsule = PaneChromeMetrics.attentionCapsuleFrame(glyphWidth: 7)
         let capsuleRect = NSRect(
             x: capsule.x, y: capsule.y, width: capsule.width, height: capsule.height
         )
@@ -242,10 +242,10 @@ final class FooterTextView: FlippedView {
             .font: NSFont.systemFont(ofSize: 11, weight: .medium),
             .foregroundColor: NSColor(white: 0.92, alpha: 1),
         ]
-        let x = PaneStatusBarMetrics.horizontalInset + capsule.width
-            + PaneStatusBarMetrics.capsuleGap
+        let x = PaneChromeMetrics.paneBarHorizontalInset + capsule.width
+            + PaneChromeMetrics.capsuleGap
         "baia · main ↑1↓2*3 · claude · ~/Projects/baia".draw(
-            at: NSPoint(x: x, y: PaneStatusBarMetrics.baselineFromTop - 11),
+            at: NSPoint(x: x, y: PaneChromeMetrics.paneBarBaselineFromTop - 11),
             withAttributes: text
         )
     }
@@ -335,7 +335,7 @@ final class PaneWindow: NSWindow {
         root.wantsLayer = true
         window.contentView = root
 
-        let barHeight = PaneStatusBarMetrics.height
+        let barHeight = PaneChromeMetrics.paneBarHeight
         let paneBounds = NSRect(origin: .zero, size: size)
         let footerFrame = NSRect(
             x: 0,
@@ -545,7 +545,7 @@ let screenFrame = screen.frame
 // its right — the same local backdrop for all of them, which is what makes the
 // arm-to-arm band deltas mean something. 200 pt per pane rather than a pane's
 // realistic height, so four arms fit a 900 pt laptop screen; the footer strip
-// is still the real 22 pt read off `PaneStatusBarMetrics`.
+// is still the real 22 pt read off `PaneChromeMetrics`.
 let arms = Arm.allCases
 let paneWidth: CGFloat = 720
 let paneHeight: CGFloat = 200

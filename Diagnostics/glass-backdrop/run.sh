@@ -32,7 +32,7 @@ build_packages "$LIB" BaiaSettings GitWorkspace PaneChrome
 
 # --- the four render arms ----------------------------------------------------
 #
-# Links `PaneChrome` only. The arms read `PaneStatusBarMetrics.height` and
+# Links `PaneChrome` only. The arms read `PaneChromeMetrics.paneBarHeight` and
 # `MaterialSet.dark.fillChrome` off the package at run time rather than
 # transcribing them, so the arm that claims to reproduce the shipped footer
 # cannot grade against numbers that have since moved.

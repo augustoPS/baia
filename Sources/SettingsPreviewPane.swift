@@ -129,8 +129,8 @@ final class SettingsPreviewPane: NSViewController {
             desktopStandIn.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             desktopStandIn.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             // The surface is now the whole pane rect. Under the footer it stopped
-            // 22 pt short, because `PaneStatusBarMetrics.reservedHeight(focused:)`
-            // pinned a bar across the bottom and the surface took what was left.
+            // 22 pt short, because the bar reserved `PaneChromeMetrics.paneBarHeight`
+            // across the bottom and the surface took what was left.
             // Nothing replaces that as a *height input*, and nothing should: the
             // capsule is an overlay, and a real pane runs its surface to the
             // view's own bottom edge for exactly this reason (see the

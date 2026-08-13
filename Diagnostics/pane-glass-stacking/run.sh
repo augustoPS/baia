@@ -162,7 +162,7 @@ echo
 # run).
 #
 # Both arms measured a band 2 pt either side of pane y 178 — the footer's top
-# edge, 200 minus `PaneStatusBarMetrics.height`. The footer was deleted on
+# edge, 200 minus `PaneChromeMetrics.paneBarHeight`. The footer was deleted on
 # 2026-08-13, so that edge does not exist and the band would read plane above
 # and plane below: a step of zero, PASS, measuring nothing. That is the exact
 # failure this probe's inverted-control discipline exists to catch, so the

@@ -58,7 +58,7 @@ the drawn fill and the sibling-above-glass content placement; arms 2-3 use
 should use. Grading the shipped bar through `contentView` would have measured
 AppKit legibility treatments the shipped path never receives.
 
-The values are read off `PaneChrome` at run time (`PaneStatusBarMetrics.height`,
+The values are read off `PaneChrome` at run time (`PaneChromeMetrics.paneBarHeight`,
 `MaterialSet.dark.fillChrome`) rather than transcribed, so the arm claiming to
 reproduce the shipped footer cannot grade against numbers that have moved.
 
@@ -332,7 +332,7 @@ hard-coded `NSColor(white: 0.62)` (`#9e9e9e`) and the table above reports that a
 "CHANGED header `#9e9e9e`". **The shipping header never drew `#9e9e9e`.** It draws
 `theme.inkFaint`, which on `.darkPastel` derives to `#898989` — darker than the
 stand-in, so the real ink was *worse* than the published number, not better. The
-four render arms already read `PaneStatusBarMetrics.height` off the package at run
+four render arms already read `PaneChromeMetrics.paneBarHeight` off the package at run
 time for exactly this reason; the sidebar arm was transcribing instead, and now
 reads `PaneChrome` too.
 
@@ -418,7 +418,7 @@ for both axes.
 **The residual cost is not zero.** Arm C spends 11 pt of padding at the *top* that
 the shipped arrangement does not, so the first text row sits 11 pt lower. The row
 *count* is preserved, which is what closes the `SIGWINCH` hazard
-`PaneStatusBarMetrics` is built around; the top inset is a visual change for Task
+`PaneChromeMetrics` is built around; the top inset is a visual change for Task
 2 to weigh, not a correctness problem.
 
 ## What "inactive" means here, honestly

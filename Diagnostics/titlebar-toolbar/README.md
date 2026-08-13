@@ -240,7 +240,7 @@ The premise it was proposed on is false and worth correcting: `window-padding-y`
 is **not** restricted to one symmetric value. Ghostty 1.3.1 documents
 `window-padding-y = top,bottom` (`ghostty +show-config --default --docs`), and
 `TerminalConfigCommand.custom` can emit any string, so an asymmetric top
-compensation is expressible. `PaneStatusBarMetrics.glassWindowPaddingBump`'s
+compensation is expressible. `PaneChromeMetrics.glassWindowPaddingBump`'s
 doc comment says "`window-padding-y` is symmetric", which is true of how baia
 *emits* it today and not of the key. The arithmetic therefore does not rule (B)
 out: a 40 pt titlebar wants `+40` on top, and `window-padding-y = 40+p,p` says

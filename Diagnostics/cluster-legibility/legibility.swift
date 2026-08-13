@@ -174,7 +174,7 @@ let gapPoint = NSPoint(
 
 /// The glyph band for a text segment: the segment's own width, held to the
 /// middle 40% of the pill's height. The vertical clamp keeps the focused arm's
-/// inset stroke (`PaneStatusBarMetrics.focusFrameWidth`, 2 pt at each edge)
+/// inset stroke (`PaneChromeMetrics.focusFrameWidth`, 2 pt at each edge)
 /// out of the ink search, so a bright `inkFocus` ring cannot pose as glyph
 /// ink — the ink-contamination lesson pointed the other way.
 func glyphBand(_ placement: PaneClusterLayout.Placed) -> NSRect {

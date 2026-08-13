@@ -392,7 +392,7 @@ final class ConfigurationCenter {
 
     // **`glassCompensatedTerminalConfiguration` stood here until 2026-08-13.**
     // It was `terminalConfiguration` with `window-padding-y` raised by
-    // `PaneStatusBarMetrics.glassWindowPaddingBump` — arrangement (B) from the
+    // `PaneChromeMetrics.glassWindowPaddingBump` — arrangement (B) from the
     // glass-backdrop spike — for a glass pane whose surface extended under the
     // footer bar, so the grid kept its inset while the bar floated over the
     // surface's last points. It was reached from exactly one place, the
@@ -406,9 +406,12 @@ final class ConfigurationCenter {
     // gone there is no bar floating over a surface for a bump to clear, so
     // nothing will want this again in its current form.
     //
-    // **This was `PaneStatusBarMetrics.glassWindowPaddingBump`'s last
-    // consumer.** The constant is left standing deliberately; it belongs to
-    // `PaneStatusBarMetrics`, which is its own deletion step.
+    // **This was `glassWindowPaddingBump`'s last consumer in shipping code.**
+    // The constant survived that deletion step and now lives on
+    // `PaneChromeMetrics`, because `Diagnostics/glass-backdrop` still measures
+    // its arithmetic against a real PTY on every run: the +11 that holds a grid
+    // at 82x23 where the naive +22 costs a row. Nothing adds it to a live
+    // pane's padding today.
 
     /// A glass pane's `background-opacity` zeroing, with no padding bump: the
     /// one configuration a glass pane is handed now that no footer floats over

@@ -21,7 +21,7 @@ import PaneChrome
 
 // MARK: - shared drawing
 
-let barHeight = CGFloat(PaneStatusBarMetrics.height)
+let barHeight = CGFloat(PaneChromeMetrics.paneBarHeight)
 
 let themeBackground = NSColor(srgbRed: 18.0 / 255, green: 20.0 / 255, blue: 24.0 / 255, alpha: 1)
 
@@ -36,7 +36,7 @@ func nsColor(_ rgba: RGBA) -> NSColor {
 
 /// The bar's segments, drawn the way `PaneStatusBarView` groups them: the
 /// repository group, the agent, the working directory, each gap read off
-/// `PaneStatusBarMetrics` rather than transcribed. The baseline is the shipped
+/// `PaneChromeMetrics` rather than transcribed. The baseline is the shipped
 /// `baselineFromTop`, converted for an unflipped view.
 ///
 /// What is deliberately not reproduced: the PIN, the capsule, the focus frame
@@ -55,9 +55,9 @@ func drawSegments(in bounds: NSRect) {
     // `baselineFromTop` is measured down from the bar's top edge; `draw(at:)`
     // in an unflipped view takes the glyph origin up from the bottom, and the
     // origin sits `font.descender` below the baseline.
-    let y = bounds.height - CGFloat(PaneStatusBarMetrics.baselineFromTop) + font.descender
+    let y = bounds.height - CGFloat(PaneChromeMetrics.paneBarBaselineFromTop) + font.descender
 
-    var x = CGFloat(PaneStatusBarMetrics.horizontalInset)
+    var x = CGFloat(PaneChromeMetrics.paneBarHorizontalInset)
     let groups: [(String, [NSAttributedString.Key: Any])] = [
         ("baia", ink),
         ("main \u{2191}1*?3", ink),
@@ -69,7 +69,7 @@ func drawSegments(in bounds: NSRect) {
         text.draw(at: NSPoint(x: x, y: y), withAttributes: group.1)
         x += text.size(withAttributes: group.1).width
         if index < groups.count - 1 {
-            x += CGFloat(PaneStatusBarMetrics.spacingBetweenGroups)
+            x += CGFloat(PaneChromeMetrics.paneBarSpacingBetweenGroups)
         }
     }
 }
@@ -113,7 +113,7 @@ final class BarContentView: NSView {
             NSRect(
                 x: 0, y: 0,
                 width: bounds.width,
-                height: CGFloat(PaneStatusBarMetrics.hairlineHeight)
+                height: CGFloat(PaneChromeMetrics.paneBarHairlineHeight)
             ).fill()
         }
         drawSegments(in: bounds)
