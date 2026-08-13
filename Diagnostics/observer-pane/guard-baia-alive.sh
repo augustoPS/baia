@@ -181,9 +181,18 @@ fi
 # measurement. Either way the probe writes only into `TMPDIR` and drives no
 # terminal the owner is sitting in.
 #
+# **`footer-status-store` qualifies on `cluster-notice`'s ground, and is if anything
+# milder.** It compiles the shipped `PaneStatusBarView` verbatim and renders it
+# through `cacheDisplay(in:to:)` into an offscreen bitmap: no `NSWindow` is ordered
+# on screen at all, no `NSApplication` activation policy is set, nothing is launched
+# and nothing is quit. Two of its four arms never render anything — they read a
+# `CALayer`'s opacity and animation keys back after a property write — and the other
+# two read bytes out of a bitmap. Nothing reaches a compositor, so there is no focus
+# to take.
+#
 # Every probe named must be safe, so a command pairing a safe one with a real
 # driver is still denied.
-SAFE_PROBES='^(cluster-legibility|cluster-notice|theme-catalog|app-icon|clip-layout|theme-refresh|pane-resize|glass-backdrop|override-wires|cluster-wires|footer-accessory|titlebar-merge)$'
+SAFE_PROBES='^(cluster-legibility|cluster-notice|theme-catalog|app-icon|clip-layout|theme-refresh|pane-resize|glass-backdrop|override-wires|cluster-wires|footer-accessory|titlebar-merge|footer-status-store)$'
 probes=$(printf '%s' "$COMMAND" | grep -oE 'Diagnostics/[a-zA-Z0-9_-]+/run\.sh' | sed -E 's|Diagnostics/([^/]+)/run\.sh|\1|')
 if [ -n "$probes" ]; then
   unsafe=0
@@ -193,7 +202,7 @@ if [ -n "$probes" ]; then
 $probes
 EOF
   if [ "$unsafe" = "1" ]; then
-    emit_deny "Blocked: this Diagnostics probe takes over the screen. footer-corners and fullscreen-strip open a key window and activate, and fullscreen-strip runs an event loop driving it in and out of full screen, so either would pull focus off this pane mid-run. Others quit any running baia and launch their own. Use 'make test' for package work, or theme-catalog, app-icon, clip-layout, theme-refresh, pane-resize, glass-backdrop, override-wires, cluster-wires, cluster-legibility, cluster-notice, footer-accessory and titlebar-merge, which take no focus. (glass-backdrop does put windows on screen for about fifteen seconds; it never takes the keyboard.)"
+    emit_deny "Blocked: this Diagnostics probe takes over the screen. footer-corners and fullscreen-strip open a key window and activate, and fullscreen-strip runs an event loop driving it in and out of full screen, so either would pull focus off this pane mid-run. Others quit any running baia and launch their own. Use 'make test' for package work, or theme-catalog, app-icon, clip-layout, theme-refresh, pane-resize, glass-backdrop, override-wires, cluster-wires, cluster-legibility, cluster-notice, footer-accessory, titlebar-merge and footer-status-store, which take no focus. (glass-backdrop does put windows on screen for about fifteen seconds; it never takes the keyboard.)"
   fi
 fi
 

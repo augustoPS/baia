@@ -50,13 +50,31 @@ private final class PaneStatusContentView: NSView {
 /// view loop and be reachable by tab. The pin chip looks like a button and is a
 /// stroked rectangle for exactly this reason.
 final class PaneStatusBarView: NSView {
-    /// Set by the pane controller whenever the anchor, git state, or agent state
-    /// moves. Redraws only on a real change, because the anchor tracker polls
-    /// once a second and an unconditional `needsDisplay` would repaint the footer
-    /// of every pane every second for nothing.
+    /// What this bar draws, handed down by the pane controller whenever the
+    /// anchor, git state, or agent state moves. Redraws only on a real change,
+    /// because the anchor tracker polls once a second and an unconditional
+    /// `needsDisplay` would repaint the footer of every pane every second for
+    /// nothing.
+    ///
+    /// **Handed in, not owned (2026-08-13).** This was the pane's canonical
+    /// `PaneStatus` store until the footer was scheduled for deletion: five
+    /// non-footer readers — the window title, the capsule's segments, the
+    /// approval card, `tabPath`, `tabTitle` — reached *through* the footer for a
+    /// value that was never the footer's to hold, so a retired view could not be
+    /// removed without taking the pane's state with it. The store is now
+    /// ``TerminalPaneController/status`` and this is a pure input.
+    ///
+    /// The `didSet` stayed here, because every line of it is a drawing concern:
+    /// what to repaint, whether to repaint at all, and when the wash's
+    /// animations come off. Moving the store up and the behaviour with it would
+    /// have put layer bookkeeping in the controller and left this view unable to
+    /// keep its own invariants.
     var status: PaneStatus? {
-        didSet {
-            guard status != oldValue else { return }
+        get { storedStatus }
+        set {
+            let oldValue = storedStatus
+            storedStatus = newValue
+            guard storedStatus != oldValue else { return }
             // Read before the redraw, so the arrival pulse is decided by the
             // transition rather than by the state. A pane that repaints while it
             // is still waiting must not blink again.
@@ -73,6 +91,18 @@ final class PaneStatusBarView: NSView {
             // unaffected by the reordering above.
             if became != .asking, attention == .asking { runArrivalPulse() }
         }
+    }
+
+    /// ``status``'s backing. Split out from a `didSet` only so the strip arm's
+    /// negative control can move the value without the observer's ordering —
+    /// see ``applyStatusWithoutStrippingForTesting(_:)``. The setter above is
+    /// otherwise the `didSet` verbatim.
+    private var storedStatus: PaneStatus?
+
+    /// Moves the store with no observer at all, for the one control that has to
+    /// reproduce a different ordering around it.
+    func setStatusBypassingObserverForTesting(_ next: PaneStatus?) {
+        storedStatus = next
     }
 
     var theme: PaneTheme = .darkPastel {
@@ -317,6 +347,71 @@ final class PaneStatusBarView: NSView {
         // now: the only setter was `fillMaterial`, retired with
         // `chrome.surfaces.footer`, and the glass view it wrote to went with
         // ABSORB the same day. This bar owns no glass to tint.
+    }
+
+    // MARK: - Probe hooks
+
+    // The three windows `Diagnostics/footer-status-store` reads the `didSet`'s
+    // invariants through. They exist because those invariants are statements
+    // about a `CALayer` and a `needsDisplay` flag, which no package test can
+    // reach; the alternative was a probe that retyped the view and therefore
+    // graded a copy. Read-only but for the last, which reproduces one specific
+    // historical ordering and is never called by the app.
+
+    /// Writes a value into the wash's opacity that `invalidate()` cannot leave
+    /// standing, so that "did the repaint run?" becomes something a probe can
+    /// read back.
+    ///
+    /// **`needsDisplay` measures nothing here and this is what replaces it.**
+    /// The obvious instrument for the change-gate is the dirty flag, and it was
+    /// tried first: detached it never latches, in an unordered window it never
+    /// clears, an explicit `needsDisplay = false` does not stick while the
+    /// window has display pending, and `displayIfNeeded` reports the parent and
+    /// all three subviews clean whether the write was redundant or real. Every
+    /// one of those reads the *same* for a gated write and an ungated one — a
+    /// test built on it would have passed because nothing in the harness ever
+    /// redraws, which is precisely the worthless shape this repo keeps getting
+    /// burned by.
+    ///
+    /// The wash's opacity is not a flag AppKit is free to coalesce: `invalidate`
+    /// writes it unconditionally whenever no animation is running. Poison it,
+    /// perform the write under test, and the value is the answer — still 0.5
+    /// means the gate held, overwritten means the repaint ran.
+    func poisonWashForTesting() {
+        attentionWash.layer?.opacity = Self.washPoisonForTesting
+    }
+
+    /// Neither 0 nor 1, so it can never be mistaken for a value `invalidate()`
+    /// or the pulse would legitimately write.
+    static let washPoisonForTesting: Float = 0.5
+
+    /// The keys of whatever is animating on the alert wash, which is the arrival
+    /// pulse and nothing else.
+    var pulseAnimationKeysForTesting: [String] {
+        attentionWash.layer?.animationKeys() ?? []
+    }
+
+    /// The wash's model opacity — the value the strip-ordering bug froze at 1.
+    var washOpacityForTesting: Float {
+        attentionWash.layer?.opacity ?? 0
+    }
+
+    /// The `didSet`'s body with the animation strip omitted and nothing else
+    /// changed: the ordering that shipped before 2026-08-09, when the wash's
+    /// animations came off *after* the repaint instead of before.
+    ///
+    /// The strip arm's negative control. Without it that arm would grade the
+    /// shipped ordering against nothing, and "the wash ended at 0" would pass
+    /// whether or not the ordering had anything to do with it. Never called by
+    /// the app; it exists so the fix can be measured against the bug.
+    func applyStatusWithoutStrippingForTesting(_ next: PaneStatus?) {
+        let became = status?.attention ?? .none
+        // The store moves without the `didSet`'s strip, then the repaint runs
+        // with the pulse still on the layer — which is what made `invalidate`
+        // skip its opacity write and leave the band solid.
+        setStatusBypassingObserverForTesting(next)
+        invalidate()
+        if became != .asking, attention == .asking { runArrivalPulse() }
     }
 
     // MARK: - Chrome material

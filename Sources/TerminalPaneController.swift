@@ -1086,7 +1086,7 @@ final class TerminalPaneController: NSViewController {
 
     /// What the pane header says is running here, for the channel's read verbs.
     ///
-    /// Read off the tracker rather than off `statusBar.status`, which is nil until
+    /// Read off the tracker rather than off ``status``, which is nil until
     /// the anchor first resolves: a pane whose `baia whoami` ran in that window
     /// would otherwise report no activity for a pane that had some.
     /// What is running here, for `PaneRecord.activity` and for the channel's
@@ -1361,8 +1361,8 @@ final class TerminalPaneController: NSViewController {
             guard let self else { return }
             // `agent · repo`, or the bare repo name when nothing is running
             // under this pane to give the popover an agent half of the title.
-            let anchorName = statusBar.status?.anchorName ?? "baia"
-            let agentLabel = statusBar.status?.agent?.label
+            let anchorName = status?.anchorName ?? "baia"
+            let agentLabel = status?.agent?.label
             let title = agentLabel.map { "\($0) · \(anchorName)" } ?? anchorName
             onApprovalRequested?(ApprovalRequest(
                 capsuleFrame: approvalPopoverAnchor(footerCapsule: capsuleFrame),
@@ -1417,7 +1417,7 @@ final class TerminalPaneController: NSViewController {
             // re-posted the banner on every poll of a pane that was merely
             // compiling. Only a real transition of the attention state escapes.
             //
-            // Read from the tracker rather than from `statusBar.status`, which is
+            // Read from the tracker rather than from ``status``, which is
             // nil until the anchor first resolves. A bell arriving in that window
             // used to leave the level at `.none`, and since `refreshStatus` does
             // not re-enter this block, an idle pane that rang once could sit there
@@ -1436,6 +1436,25 @@ final class TerminalPaneController: NSViewController {
     /// Readable so the channel's read verbs report the same level the footer
     /// draws, and settable only here.
     private(set) var lastAttention: PaneStatus.Attention = .none
+
+    /// Everything this pane currently says about itself: anchor, git, agent,
+    /// and any notice taking the chrome over. Nil until the anchor first
+    /// resolves.
+    ///
+    /// **The pane's store, not a view's (2026-08-13).** This lived on
+    /// `statusBar.status` until the footer was scheduled for deletion, which
+    /// made a retired view the source of truth for five readers that have
+    /// nothing to do with drawing a footer: the window title and subtitle, the
+    /// capsule's segments, the approval card's title, ``tabPath`` and
+    /// ``tabTitle(project:budget:)``. `chrome.cluster.mode: cluster` already
+    /// hides the bar, so those readers were reaching into a view the owner had
+    /// switched off, and deleting the file would have deleted the pane's state
+    /// with it.
+    ///
+    /// Written at exactly one point, ``refreshStatus()``, which then hands the
+    /// value to both surfaces. `private(set)` so that stays true: a second
+    /// writer is how the footer and the capsule would start disagreeing.
+    private(set) var status: PaneStatus?
 
     /// The last values published to the control channel, held apart from
     /// `lastAttention`.
@@ -1501,11 +1520,17 @@ final class TerminalPaneController: NSViewController {
         (ControlEventKind, String?, String?, ControlEventSource?) -> Void
     )?
 
-    /// Rebuilds the footer's value from the anchor. Git and agent state are left
-    /// nil until their subsystems are wired, and `PaneStatusSegments` already
-    /// suppresses those segments rather than rendering placeholders.
+    /// Rebuilds this pane's ``status`` from the anchor, then hands it to every
+    /// surface that draws from it. Git and agent state are left nil until their
+    /// subsystems are wired, and `PaneStatusSegments` already suppresses those
+    /// segments rather than rendering placeholders.
+    ///
+    /// **The one write.** ``status`` is `private(set)` and this is the only
+    /// place it moves, which is what lets the footer and the capsule be two
+    /// renderings of one value rather than two constructions that agree today.
     private func refreshStatus() {
         guard let anchor = anchorTracker.anchor else {
+            status = nil
             statusBar.status = nil
             clusterView.segments = []
             return
@@ -1520,7 +1545,7 @@ final class TerminalPaneController: NSViewController {
                 home: home
             )
         }
-        statusBar.status = PaneStatus(
+        let rebuilt = PaneStatus(
             anchorName: anchor.displayName,
             anchorIsRepository: anchor.kind == .repository,
             isPinned: anchor.source == .pinned,
@@ -1529,13 +1554,15 @@ final class TerminalPaneController: NSViewController {
             agent: activityTracker.agent,
             notice: notice
         )
-        // The capsule's segments, rebuilt at the one point the footer's value
-        // moves, from the same `PaneStatus`, so the two surfaces cannot drift.
-        // Read back off the bar rather than built from a second construction,
-        // which is the same value and one fewer place for the two to part.
-        if let status = statusBar.status {
-            clusterView.segments = PaneClusterSegments.build(from: status)
-        }
+        status = rebuilt
+        // Both surfaces from the one value that was just built, never from a
+        // second construction: the same value and one fewer place for the two to
+        // part. This used to read back off `statusBar.status` to get that
+        // property, which worked but bought it by making the footer the store;
+        // the local is the same guarantee without the view in the middle, and it
+        // survives the footer's deletion.
+        statusBar.status = rebuilt
+        clusterView.segments = PaneClusterSegments.build(from: rebuilt)
     }
 
     // MARK: - Cluster cards
@@ -1837,7 +1864,6 @@ final class TerminalPaneController: NSViewController {
     private func presentAttentionCard(
         _ role: PaneClusterSegmentRole, anchoredTo anchor: NSRect, in window: NSWindow
     ) {
-        let status = statusBar.status
         let agent = status?.agent
         let attention = status?.attention ?? .none
 
@@ -1910,7 +1936,7 @@ final class TerminalPaneController: NSViewController {
     /// The sentence the footer is showing instead of its segments, and nil the
     /// rest of the time.
     ///
-    /// Held here rather than written straight into `statusBar.status`, because
+    /// Held here rather than written straight into ``status``, because
     /// the anchor tracker rebuilds that once a second: a notice written directly
     /// would survive for up to one poll and no longer, which is both too short to
     /// read and impossible to predict.
@@ -2096,7 +2122,7 @@ final class TerminalPaneController: NSViewController {
         guard let anchor = anchorTracker.anchor else { return "baia" }
         let title = TabTitle.title(
             anchorName: anchor.displayName,
-            isWorktree: statusBar.status?.git?.isLinkedWorktree ?? false
+            isWorktree: status?.git?.isLinkedWorktree ?? false
         )
         let parent = anchor.url.deletingLastPathComponent().path(percentEncoded: false)
         return parent.isEmpty ? title : parent + "/" + title
@@ -2108,7 +2134,6 @@ final class TerminalPaneController: NSViewController {
     ///   of every window can compute, since disambiguating needs to see the
     ///   others.
     func tabTitle(project: String, budget: TabTitle.Budget) -> String {
-        let status = statusBar.status
         let git = status?.git
         let markers = status
             .map { PaneStatusSegments.build(from: $0) }?
