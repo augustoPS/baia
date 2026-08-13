@@ -169,6 +169,22 @@ final class FilesSurface: NSObject, WorkspaceSurface {
         set { rows.onSelect = newValue }
     }
 
+    /// Called when the no-repository state's action is clicked.
+    ///
+    /// The owner's 2026-08-12 ruling, option E: kero offers Initialize Repository
+    /// rather than naming a dead end, so this state stops being one. What the
+    /// handler does with it is the app's business and deliberately not this
+    /// surface's — the same split ``onSelect`` already has, where the column
+    /// knows a row was clicked and `PromptPath` decides what may be sent.
+    ///
+    /// The "not a repository" and "no changes" distinction design v3 made is
+    /// untouched: this action belongs to the absent state alone, and the empty
+    /// state keeps its own message in its own ink with nothing added.
+    var onInitialise: (() -> Void)? {
+        get { rows.onInitialise }
+        set { rows.onInitialise = newValue }
+    }
+
     private let scrollView = NSScrollView()
     private let rows = FileTreeRowsView()
 
@@ -289,8 +305,22 @@ final class FileTreeRowsView: NSView {
     override func draw(_ dirty: NSRect) {
         // No fill of its own: the scroll view behind it is the column's material.
         guard hasRoot else {
-            return SurfaceMessage.drawAbsent(path: anchorPath, in: self, theme: theme)
+            // **The rect is recorded from the draw, never computed twice.** The
+            // message centres itself in the visible rect, so the only arithmetic
+            // that knows where the button is is the arithmetic that put it there.
+            // A click is tested against what was actually drawn, which is what
+            // makes it impossible to click a control that is somewhere else.
+            initButton = SurfaceMessage.drawAbsent(
+                path: anchorPath,
+                action: initAction,
+                in: self,
+                theme: theme
+            )
+            return
         }
+        // Nothing to click once there is a root: a stale rect would leave a live
+        // target over the first rows of a tree that has since appeared.
+        initButton = nil
         guard !rows.isEmpty else {
             return SurfaceMessage.drawEmpty("no files", in: self, theme: theme)
         }
@@ -468,6 +498,31 @@ final class FileTreeRowsView: NSView {
 
     var onSelect: ((RepositoryPath) -> Bool)?
 
+    /// Asks for the no-repository state to be resolved, for the anchor the
+    /// message is naming.
+    ///
+    /// **Nothing here runs git.** The owner's 2026-08-12 ruling (option E) asks
+    /// this state for an action that resolves it rather than a message naming a
+    /// dead end, and what the handler does is put `git init` on the focused
+    /// pane's prompt without a newline, exactly as clicking a file row puts a
+    /// path there. See `AppDelegate.offerInit(of:)`.
+    var onInitialise: (() -> Void)?
+
+    /// Where the action was last drawn, and the only geometry a click is tested
+    /// against. Nil whenever it was not drawn: outside the no-repository state,
+    /// and at column widths too narrow to hold the caption.
+    private var initButton: NSRect?
+
+    /// How the action is being pointed at. Drawn from here rather than through
+    /// ``RowFeedback``, whose fills and fades are keyed on row indices in a list
+    /// this state does not have.
+    private var initAction: SurfaceMessage.ActionState = .none {
+        didSet {
+            guard initAction != oldValue, let initButton else { return }
+            setNeedsDisplay(initButton)
+        }
+    }
+
     private lazy var feedback = RowFeedback { [weak self] row in
         self?.redraw(row)
     }
@@ -488,17 +543,39 @@ final class FileTreeRowsView: NSView {
     /// **Held rather than fired on the way down**, so the press is a state the eye
     /// can see and a drag off the row cancels. Design v3 §2.3.
     override func mouseDown(with event: NSEvent) {
+        // **Press and release, both on the button, or nothing happens.** The same
+        // rule the rows below follow, and here it is the whole of why the action
+        // cannot fire on a stray click: a `mouseDown` that lands elsewhere never
+        // arms it, and a press that drags off it disarms. `git init` writes to
+        // the owner's filesystem, so the gesture that offers it is deliberate by
+        // construction rather than by warning.
+        if hitsInitButton(event) {
+            initAction = .pressed
+            return
+        }
         let row = self.row(at: event)
         guard rows.indices.contains(row) else { return }
         feedback.pressed = row
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if initAction == .pressed {
+            initAction = hitsInitButton(event) ? .pressed : .none
+            return
+        }
         guard let pressed = feedback.pressed else { return }
         feedback.pressed = row(at: event) == pressed ? pressed : nil
     }
 
     override func mouseUp(with event: NSEvent) {
+        if initAction == .pressed {
+            initAction = .none
+            // Released outside is a cancel, which is what a press that can be
+            // dragged off is for.
+            guard hitsInitButton(event) else { return }
+            onInitialise?()
+            return
+        }
         guard let index = feedback.pressed else { return }
         feedback.pressed = nil
         guard rows.indices.contains(index), row(at: event) == index else { return }
@@ -524,6 +601,18 @@ final class FileTreeRowsView: NSView {
 
     private func row(at event: NSEvent) -> Int {
         Int(convert(event.locationInWindow, from: nil).y / Self.rowHeight)
+    }
+
+    /// Whether a click is on the no-repository action, tested against the rect
+    /// the last draw actually placed it at.
+    ///
+    /// False whenever there is no such rect, which covers both the ordinary case
+    /// (there is a repository, so there are rows here instead) and the narrow
+    /// column that drew no button. A nil rect is the statement that there is
+    /// nothing to hit.
+    private func hitsInitButton(_ event: NSEvent) -> Bool {
+        guard let initButton, !hasRoot else { return false }
+        return initButton.contains(convert(event.locationInWindow, from: nil))
     }
 
     private func redraw(_ row: Int) {
@@ -576,10 +665,27 @@ final class FileTreeRowsView: NSView {
             in: self,
             owner: self
         ) { addTrackingArea(area) }
+        // One area for the action, carrying no row index, which is how the two
+        // handlers below tell it from a row: `RowFeedback.row(of:)` answers nil
+        // for it by construction rather than by a flag this view has to keep.
+        if let initButton, !hasRoot {
+            addTrackingArea(NSTrackingArea(
+                rect: initButton,
+                options: [.mouseEnteredAndExited, .activeInKeyWindow],
+                owner: self,
+                userInfo: nil
+            ))
+        }
     }
 
     override func mouseEntered(with event: NSEvent) {
-        feedback.hovered = RowFeedback.row(of: event)
+        guard let row = RowFeedback.row(of: event) else {
+            // The action's own area. A press already in flight outranks a hover:
+            // re-entering under a held button must not drop it back to hover.
+            if initAction != .pressed { initAction = .hover }
+            return
+        }
+        feedback.hovered = row
         updateHoverGuide()
     }
 
@@ -587,7 +693,13 @@ final class FileTreeRowsView: NSView {
     /// so moving down a list delivers the next row's enter before this row's exit,
     /// and clearing unconditionally would drop the hover that had just arrived.
     override func mouseExited(with event: NSEvent) {
-        guard feedback.hovered == RowFeedback.row(of: event) else { return }
+        guard let row = RowFeedback.row(of: event) else {
+            // Leaving while held is handled by `mouseDragged`, which is what
+            // tracks a press off its target; this only clears a plain hover.
+            if initAction == .hover { initAction = .none }
+            return
+        }
+        guard feedback.hovered == row else { return }
         feedback.hovered = nil
         updateHoverGuide()
     }
@@ -618,6 +730,12 @@ final class FileTreeRowsView: NSView {
             NSRect(x: 0, y: 0, width: bounds.width, height: Double(rows.count) * Self.rowHeight),
             cursor: .pointingHand
         )
+        // The action gets the same pointer the rows get, so the one clickable
+        // thing in an otherwise inert state says it is clickable before it is
+        // clicked. Nil outside the no-repository state, where there is no button.
+        if let initButton, !hasRoot {
+            addCursorRect(initButton, cursor: .pointingHand)
+        }
     }
 
     private func nsColor(_ rgb: RGB) -> NSColor {

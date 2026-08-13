@@ -85,7 +85,21 @@ enum SurfaceMessage {
         ).draw(at: NSPoint(x: SidebarRowMetrics.inset, y: SidebarRowMetrics.textOrigin))
     }
 
-    /// A pane that is not in a repository at all, with where it is instead.
+    /// A pane that is not in a repository at all, with where it is instead, and
+    /// since the owner's 2026-08-12 ruling (option E) with something to do about
+    /// it.
+    ///
+    /// The action is kero's Initialize Repository rather than a message that
+    /// names a dead end. It offers `git init` and never runs it: the click puts
+    /// the command on the focused pane's prompt with no newline, so the owner
+    /// reads it and presses Return, or clears the line. See
+    /// `AppDelegate.offerInit(of:)` for why that is the safe shape and
+    /// ``initCaption`` for why the caption is the command itself.
+    ///
+    /// **The distinction design v3 drew is untouched.** "not a repository" and
+    /// "no changes" remain different answers in different positions and different
+    /// inks; only this one gains an action, because only this one is a state the
+    /// owner can resolve. A clean tree is not a problem and gets nothing to press.
     ///
     /// Centred in what the clip view can show rather than in the document view,
     /// which is as tall as its rows and would put the message off screen in a
@@ -107,7 +121,27 @@ enum SurfaceMessage {
     /// character and trades a horizontal clip for a vertical one, and the string
     /// it would break is the path: a deep one needs 360 pt of vertical run against
     /// a section whose own floor is 48 pt.
-    static func drawAbsent(path: String?, in view: NSView, theme: PaneTheme) {
+    /// **Returns the rect it drew the action in, or nil when there was no room.**
+    ///
+    /// The one function that knows where the button is, because it is the one
+    /// function that placed it: the message is centred in the *visible* rect and
+    /// therefore moves with the clip view, so a hit test written against any
+    /// other arithmetic is a second copy of this centring that goes stale the
+    /// first time either changes. The caller stores what this returns and tests
+    /// clicks against that, which is why it can never be drawn in one place and
+    /// clicked in another.
+    ///
+    /// Nil rather than a clamped rect at narrow widths: `SidebarHost.minimumWidth`
+    /// is 120 and the caption does not fit there, and a button drawn as three
+    /// ellipsis characters is a control nobody can identify. The state then reads
+    /// exactly as it did before this ruling, which is a message and a path.
+    @discardableResult
+    static func drawAbsent(
+        path: String?,
+        action: ActionState = .none,
+        in view: NSView,
+        theme: PaneTheme
+    ) -> NSRect? {
         let visible = view.visibleRect
         let available = max(0, visible.width - SidebarRowMetrics.inset * 2)
 
@@ -146,11 +180,27 @@ enum SurfaceMessage {
         let pathHeight = pathString == nil ? 0 : SidebarRowMetrics.font.ascender
             - SidebarRowMetrics.font.descender + 2
 
+        // The action's caption, measured before anything is placed so the whole
+        // group can be centred as one. `nil` when the column is too narrow to
+        // hold it, which drops the button rather than shrinking it: see the
+        // return value's note.
+        let caption = NSAttributedString(
+            string: initCaption,
+            attributes: [
+                .font: Self.actionFont,
+                .foregroundColor: SidebarRowMetrics.nsColor(theme.inkContext),
+                .paragraphStyle: centred,
+            ]
+        )
+        let captionWidth = caption.size().width
+        let fits = captionWidth + Self.actionPadding * 2 <= available
+        let actionHeight = fits ? Self.actionHeight + Self.actionGap : 0
+
         // These views are flipped, so y grows downward and the message takes the
         // smaller y. Getting this backwards puts the path above the message,
         // which reads as a heading over an explanation rather than the other way
         // round, and it renders without complaint.
-        let total = messageHeight + pathHeight
+        let total = messageHeight + pathHeight + actionHeight
         let top = visible.midY - total / 2
 
         message.draw(with: NSRect(
@@ -160,14 +210,89 @@ enum SurfaceMessage {
             height: messageHeight
         ), options: [.usesLineFragmentOrigin])
 
-        guard let pathString else { return }
-        pathString.draw(with: NSRect(
-            x: visible.minX + SidebarRowMetrics.inset,
-            y: top + messageHeight,
-            width: available,
-            height: pathHeight
+        if let pathString {
+            pathString.draw(with: NSRect(
+                x: visible.minX + SidebarRowMetrics.inset,
+                y: top + messageHeight,
+                width: available,
+                height: pathHeight
+            ), options: [.usesLineFragmentOrigin])
+        }
+
+        guard fits else { return nil }
+
+        // Below the path, which is the order the reading takes: what this is not,
+        // where it is instead, and only then what can be done about it. An action
+        // above the explanation would be a control offering to change something
+        // the owner has not yet been told about.
+        let width = min(available, captionWidth + Self.actionPadding * 2)
+        let button = NSRect(
+            x: visible.midX - width / 2,
+            y: top + messageHeight + pathHeight + Self.actionGap,
+            width: width,
+            height: Self.actionHeight
+        )
+
+        // The same row-selection surface the tree's own rows draw on press and
+        // hover, at the same radius, so this reads as something in this column
+        // rather than as an `NSButton` dropped into it. Rest draws an outline
+        // only: a filled control in an empty state pulls the eye to the one thing
+        // on screen that is not information.
+        let border = NSBezierPath(
+            roundedRect: button.insetBy(dx: 0.5, dy: 0.5),
+            xRadius: SidebarRowMetrics.rowRadius,
+            yRadius: SidebarRowMetrics.rowRadius
+        )
+        switch action {
+        case .none:
+            break
+        case .hover:
+            SidebarRowMetrics.nsColor(theme.selectedRowBackground).setFill()
+            border.fill()
+        case .pressed:
+            SidebarRowMetrics.nsColor(
+                theme.background.blended(with: theme.inkFocus, fraction: 0.16)
+            ).setFill()
+            border.fill()
+        }
+        SidebarRowMetrics.nsColor(theme.divider).setStroke()
+        border.lineWidth = 1
+        border.stroke()
+
+        caption.draw(with: NSRect(
+            x: button.minX,
+            y: button.midY - Self.actionFont.ascender / 2 - 1,
+            width: button.width,
+            height: Self.actionHeight
         ), options: [.usesLineFragmentOrigin])
+
+        return button
     }
+
+    /// How the no-repository action is being pointed at.
+    ///
+    /// The tree's rows carry this through ``RowFeedback``, whose whole apparatus
+    /// is keyed on row indices; the empty state has no rows, so it carries the
+    /// three states directly rather than inventing an index for a control that
+    /// is not in a list.
+    enum ActionState { case none, hover, pressed }
+
+    /// What the no-repository action says, and it says exactly what it will do.
+    ///
+    /// **The command itself is the caption, which is the safety argument made
+    /// visible.** kero offers "Initialize Repository", a sentence about an effect;
+    /// this offers the literal `git init` that will be put on the prompt, so what
+    /// the owner reads before clicking and what they read after clicking are the
+    /// same eight characters. A caption that named the effect instead would be a
+    /// promise the owner has to trust; this one is a quotation they can check.
+    static let initCaption = "git init"
+
+    private static let actionFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+    private static let actionHeight: Double = 22
+    private static let actionPadding: Double = 10
+    /// Between the path and the button, so the action reads as a separate offer
+    /// rather than as a third line of the explanation.
+    private static let actionGap: Double = 10
 }
 
 /// A section heading, in the treatment the sidebar's column used to draw above

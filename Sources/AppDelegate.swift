@@ -460,6 +460,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self, let tree else { return false }
             return sendToPrompt(path, of: tree)
         }
+        files.onInitialise = { [weak self, weak tree] in
+            guard let self, let tree else { return }
+            offerInit(of: tree)
+        }
         switch content {
         case .files: return [files]
         // Off is an empty column rather than a missing one. The host stays the
@@ -978,6 +982,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSSound.beep()
             return false
         }
+    }
+
+    /// Puts `git init` on the focused pane's prompt, for the owner to run or to
+    /// clear.
+    ///
+    /// The owner's 2026-08-12 ruling, option E: the no-repository state gets an
+    /// action that resolves it rather than a message naming a dead end, the way
+    /// kero offers Initialize Repository.
+    ///
+    /// **It does not run git, and that is the design rather than a shortcut.**
+    /// `git init` writes a `.git` directory into a real directory on the owner's
+    /// filesystem, so the question is not whether the app *can* spawn it but what
+    /// happens when the click was a mistake. Three properties make this safe, and
+    /// they are the ones the sidebar already had rather than a new mechanism:
+    ///
+    /// 1. **No newline is ever sent.** `PromptPath` established the rule for the
+    ///    file rows — a newline executes whatever is on the prompt line, so a
+    ///    click would run a command nobody read — and this obeys it. The command
+    ///    lands on the line, the cursor sits after it, and the owner presses
+    ///    Return or `⌃C`. The gesture that mutates the filesystem is the owner's
+    ///    keystroke, which is exactly where it was before this button existed.
+    /// 2. **The caption is the command.** ``SurfaceMessage/initCaption`` draws the
+    ///    literal `git init`, so what is read before the click and what appears
+    ///    after it are the same string. Nothing is composed out of sight.
+    /// 3. **Where it runs is the pane's own working directory**, which the prompt
+    ///    line already shows and the footer already names. No path is
+    ///    interpolated here — the command carries none — so there is no spelling
+    ///    of a directory for this to get wrong, which is the whole class of bug
+    ///    `sendToPrompt` needs its symlink resolution for.
+    ///
+    /// Nothing is spawned at draw time either: this runs from a `mouseUp` on the
+    /// button and from nowhere else.
+    ///
+    /// Silent with no focused pane, like `sendToPrompt`'s own no-pane case: there
+    /// is no prompt to write on, and there is no row here to flash a refusal.
+    private func offerInit(of tree: PaneTreeController) {
+        guard let pane = tree.focusedPane else { return }
+        pane.send(Array(SurfaceMessage.initCaption.utf8))
     }
 
     /// Every repository's file tree, once read.
