@@ -253,14 +253,18 @@ final class FilesSurface: NSObject, WorkspaceSurface {
         offer.onPress = { [weak self] in self?.rows.onInitialise?() }
         layOutOffer()
 
-        // **The strip's rect has to follow the column, and nothing else here
+        // **The offer's rect has to follow the column, and nothing else here
         // delivers a layout pass.** `FilesSurface` is an `NSObject` rather than a
         // view, so `SidebarHost` reframing `surface.view` on a divider drag or a
         // window resize reaches the scroll view and never this object. Without
-        // this the strip would keep the rect the column opened at, which is the
+        // this the button would keep the rect the column opened at, which is the
         // derived-from-a-stale-size shape `Diagnostics/clip-layout` exists for,
-        // and here it is both axes: the wrong width *and* a bottom edge that is
-        // no longer the bottom.
+        // and here it is both axes: an x that is no longer against the trailing
+        // edge *and* a bottom edge that is no longer the bottom. A floating pill
+        // makes this worse rather than better than the strip did: a full-width
+        // strip at a stale width was merely too short, while a pill pinned to a
+        // trailing edge that moved is a control sitting in the middle of the
+        // column or off it entirely.
         //
         // The scroll view's own frame and not the clip's. The clip is what
         // `FileTreeRowsView` watches, because what the rows care about is the
@@ -279,10 +283,10 @@ final class FilesSurface: NSObject, WorkspaceSurface {
 
     private var frameObserver: (any NSObjectProtocol)?
 
-    /// Pins the offer along the bottom of the column and tells the rows to leave
-    /// it that much room.
+    /// Floats the offer at the bottom of the column, sized to its caption, and
+    /// tells the rows how much air to leave under the last one.
     ///
-    /// **`NSScrollView` is flipped, which is why the bottom is `height - strip`
+    /// **`NSScrollView` is flipped, which is why the bottom is `height - …`
     /// and not `0`.** Measured rather than assumed: `isFlipped` reports true, and
     /// a strip framed at `y: 0` converted to the *top* of the window. It drew
     /// there, over the first rows, which is exactly the "drawn in one place"
@@ -298,20 +302,49 @@ final class FilesSurface: NSObject, WorkspaceSurface {
     /// the rows view already computes its own minimum height from the clip, and
     /// this is the one number that computation was missing.
     ///
-    /// Bottom rather than top. The tree runs to the top of the column since the
-    /// FILES heading retired, so the first row is the column's first line, and a
-    /// strip above it would put a control where the content starts and push every
-    /// name down. At the bottom it reads the way the reading goes: here are the
-    /// files, and here is what this directory is not yet.
+    /// **The rows still reserve, and the ruling is what changed about it.** The
+    /// footer reserved its own full height because it was a plane the list ended
+    /// above. A floating button reserves for a different reason and a smaller
+    /// amount: nothing is ended, but the last row of a long directory would come
+    /// to rest under the pill, and a file the owner can see and cannot read is
+    /// worse than one scrolled past. Letting it float truly free was the
+    /// alternative and it loses on the case that motivated the reservation in the
+    /// first place — a directory of any length, scrolled to the end, where the
+    /// occluded row is the *last* one and there is nothing below it to scroll up
+    /// into view. So the reservation stays and shrinks to the pill's own
+    /// footprint plus the air under it (``InitOfferView/reserved``), where the
+    /// footer took a full row height plus a rule. What that buys is the whole
+    /// visible difference: the tree fills the column, its last row clears the
+    /// pill by the same margin the pill clears the column's edge, and the button
+    /// sits over the tree's own plane rather than over a plane of its own.
+    ///
+    /// Trailing rather than leading. A pill at the leading edge starts where every
+    /// row's text starts and reads as an odd row; against the trailing edge it is
+    /// off the text column entirely, which is where nothing in this list ever
+    /// begins.
+    ///
+    /// **Too narrow now hides the view rather than emptying it.** The strip spanned
+    /// the column and dropped its caption below `SidebarHost.minimumWidth`; the
+    /// pill is *sized from* that caption, so the same condition is a pill that
+    /// cannot fit between the margins, and what it leaves behind is nothing at all
+    /// rather than a blank capsule floating over the files. Same threshold, same
+    /// reason, and one less thing drawn that cannot be identified. The offer
+    /// returns intact when the column widens, because nothing here is remembered.
     private func layOutOffer() {
-        let showing = listing == .directory
+        let wanted = offer.fittingWidth()
+        let available = scrollView.bounds.width - InitOfferView.margin * 2
+        let showing = listing == .directory && wanted <= available
         offer.isHidden = !showing
-        rows.reservedBottom = showing ? InitOfferView.height : 0
+        // Reserved on the listing alone and not on `showing`: a column narrowed
+        // past the caption hides the button, and the air it leaves behind is the
+        // air the tree already had. Keying the reservation on visibility would
+        // reflow every row in the column on a divider drag across the threshold.
+        rows.reservedBottom = listing == .directory ? InitOfferView.reserved : 0
         guard showing else { return }
         offer.frame = NSRect(
-            x: 0,
-            y: scrollView.bounds.height - InitOfferView.height,
-            width: scrollView.bounds.width,
+            x: scrollView.bounds.width - InitOfferView.margin - wanted,
+            y: scrollView.bounds.height - InitOfferView.margin - InitOfferView.height,
+            width: wanted,
             height: InitOfferView.height
         )
     }
@@ -328,7 +361,7 @@ final class FileTreeRowsView: NSView {
 
     /// Where the rows came from. See ``FilesSurface/Listing``: the rows view reads
     /// it only to tell the absent state from a list, and the offer that keys on
-    /// ``FilesSurface/Listing/directory`` is a strip outside this view.
+    /// ``FilesSurface/Listing/directory`` is a button floating outside this view.
     var listing: FilesSurface.Listing = .repository { didSet { needsDisplay = true } }
 
     /// Where the pane is anchored, for the absent state to name. Nil while the
@@ -398,17 +431,27 @@ final class FileTreeRowsView: NSView {
         updateTrackingAreas()
     }
 
-    /// How much of the bottom of the column belongs to something else, which is
-    /// `InitOfferView.height` on a walked directory and 0 everywhere else.
+    /// How much of the bottom of the column the last row has to clear, which is
+    /// ``InitOfferView/reserved`` on a walked directory and 0 everywhere else.
     ///
     /// **The floor below is the whole reason this exists.** A tree shorter than
     /// its column is stretched to the column's full height so the empty region
     /// below the last row still belongs to this view, and the offer floats over
     /// exactly that region. Without this the last file of a three-file directory
-    /// would be laid out under the strip: drawn behind it, and still hit-testable
+    /// would be laid out under the button: drawn behind it, and still hit-testable
     /// through it. `contentInsets` was tried for this first and measured to
     /// change nothing (see ``FilesSurface/layOutOffer()``), so the number is
     /// carried here, where the height is actually decided.
+    ///
+    /// The number shrank when the offer stopped being a footer: the pill's own
+    /// footprint and its margin, rather than a full row and the rule that used to
+    /// sit above it. The *mechanism* had to grow, and that was found live rather
+    /// than reasoned — see ``resize()``. A footer's reservation only ever had to
+    /// hold a short tree off the bottom, because the strip was opaque and a long
+    /// tree scrolling under it showed nothing. The pill is floated over a list
+    /// that runs full height, so the long tree is exactly where occlusion shows,
+    /// and the reservation has to reach the document's height and not only its
+    /// floor.
     var reservedBottom: Double = 0 {
         didSet {
             guard reservedBottom != oldValue else { return }
@@ -418,13 +461,35 @@ final class FileTreeRowsView: NSView {
 
     /// The equality guard is what makes calling this from `layout()` safe:
     /// assigning `frame` marks the view for layout again.
+    ///
+    /// **The reservation is added to the rows and not only to the floor**, and
+    /// the difference is the whole of what the live check caught on 2026-08-12.
+    /// The first version of this subtracted the reservation from the clip's
+    /// height to get a floor and stopped there, which is correct for a tree
+    /// *shorter* than its column and does nothing at all for one longer than it:
+    /// past that point `rows.count * rowHeight` wins the `max`, so a 60-file
+    /// directory scrolled to its end put the last row under the button with the
+    /// name reading through the caption. That is the exact occlusion the
+    /// reservation exists to prevent, surviving in the one case that motivated
+    /// it, because the number was spent on the wrong term.
+    ///
+    /// So the rows carry it instead: the document view is as tall as its rows
+    /// plus the air the button needs, which is what lets the last row scroll
+    /// clear of it. The clip's own height stays the other term of the `max` and
+    /// keeps its old meaning unreduced — a tree shorter than its column is still
+    /// stretched to the full column, so the empty region below the last row
+    /// belongs to this view and the button floats over this view's own plane
+    /// rather than over the scroll view's background. Subtracting the
+    /// reservation from *that* term was the first repair attempted here and it
+    /// is wrong in the opposite direction: it shrinks a short tree's document
+    /// below its clip, which un-owns the very region the button sits in.
     private func resize() {
-        let floor = max(0, (superview?.bounds.height ?? 0) - reservedBottom)
+        let clip = superview?.bounds.height ?? 0
         let wanted = NSRect(
             x: 0,
             y: 0,
             width: max(superview?.bounds.width ?? 0, 1),
-            height: max(Double(rows.count) * Self.rowHeight, floor)
+            height: max(Double(rows.count) * Self.rowHeight + reservedBottom, clip)
         )
         guard frame != wanted else { return }
         frame = wanted
@@ -628,9 +693,9 @@ final class FileTreeRowsView: NSView {
     /// pane's prompt without a newline.
     ///
     /// **Nothing here runs git**, and the click that reaches this does not happen
-    /// in this view: the offer is `InitOfferView`, a strip floating over the
+    /// in this view: the offer is `InitOfferView`, a button floating over the
     /// bottom of the clip. It is held here because ``FilesSurface`` wires the
-    /// strip's press to it, so the surface has one handler to expose rather than
+    /// button's press to it, so the surface has one handler to expose rather than
     /// two. See `AppDelegate.offerInit(of:)`.
     var onInitialise: (() -> Void)?
 
@@ -828,8 +893,8 @@ final class FileTreeRowsView: NSView {
     private static let statusColumn: Double = 14
 }
 
-/// The offer to make a walked directory into a repository, as a strip along the
-/// bottom of the column.
+/// The offer to make a walked directory into a repository, as a button floating
+/// over the bottom of the column.
 ///
 /// **The owner's 2026-08-12 ruling put it here.** kero shows a directory's files
 /// and offers to initialize it, and the first version of this offer keyed on a
@@ -838,14 +903,26 @@ final class FileTreeRowsView: NSView {
 /// is a pane sitting in a real directory, which has rows, so the offer needed a
 /// place to sit that is not the centred empty-state treatment.
 ///
-/// **A strip and not a last row, which is the part that had to be argued.** The
+/// **A floating button and not a footer**, the owner's second ruling the same
+/// day: "make the git init button float at the bottom of the sidebar, no footer".
+/// The version before this one was a full-width strip in an opaque
+/// `theme.background` with a hairline above it, and those two things together are
+/// what a footer is: a plane bolted across the bottom of the column, ruled off
+/// from the list as a different surface. All four of its footer signals are gone.
+/// It no longer spans the column, it is sized to its caption and inset from both
+/// edges; it carries no rule, because a rule is the statement that two planes
+/// meet and this one floats over a single plane rather than terminating it; it
+/// paints a pill rather than a rectangle, so its shape is a control's and not a
+/// region's; and the rows now run the full height of the column underneath it.
+///
+/// **A button and not a last row, which is the part that had to be argued.** The
 /// tree's rows are files and directories, and a click on one puts a path on the
 /// prompt. An action drawn in that list at that row height reads as another
 /// entry, and the hand reaching for the last file in a directory would find it.
-/// So this is unmistakably not a row: it does not scroll with them, it is
-/// separated from them by the divider the column already draws between planes,
-/// it spans the full width where a row is indented, and its caption is a command
-/// in the mono face rather than a filename.
+/// So this is unmistakably not a row: it does not scroll with them, it is a pill
+/// where a row is a full-width band, it is inset from the trailing edge where a
+/// row runs to it, and its caption is a command in the mono face rather than a
+/// filename.
 ///
 /// Every safety property the first version established is kept, and none of them
 /// were about where it sat:
@@ -867,9 +944,10 @@ final class FileTreeRowsView: NSView {
 /// 5. **It never takes first responder**, the constraint the whole column is
 ///    built under. ``acceptsFirstResponder`` is false, as on the rows view.
 ///
-/// Nothing takes the keyboard and no `NSButton` is involved: the fills are the
-/// column's own row-selection surface at the column's own row radius, so the
-/// offer reads as part of the sidebar.
+/// Nothing takes the keyboard and no `NSButton` is involved: the pill is drawn
+/// from the column's own row metrics and the pane capsule's own backing, so the
+/// offer reads as something this app already draws rather than a control dropped
+/// into it.
 @MainActor
 final class InitOfferView: NSView {
     var theme: PaneTheme = .darkPastel { didSet { needsDisplay = true } }
@@ -882,68 +960,123 @@ final class InitOfferView: NSView {
 
     override var isFlipped: Bool { true }
 
-    /// One row's height plus the rule above it, so the strip is the same weight as
-    /// the rows it sits under rather than a panel bolted to the bottom.
-    static let height: Double = SidebarRowMetrics.rowHeight + InitOfferView.rule
+    /// One row's height. The pill is a row's weight because it sits in a column of
+    /// rows and a control heavier than the content it offers to act on reads as a
+    /// panel; the rule that used to be added on top of this went with the footer.
+    static let height: Double = SidebarRowMetrics.rowHeight
 
-    /// The line that says the strip is a different plane from the list. The same
-    /// hairline the column draws between panes, which is what the tree's own
-    /// depth guides are drawn in.
-    private static let rule: Double = 1
+    /// The gap between the pill and the column's edges, on all three sides it has
+    /// one. Half the row inset, which is what makes it read as floating *over* the
+    /// column: a control at the full inset lines its leading edge up with the
+    /// row text above it and reads as another row, and a control at zero is a
+    /// footer again. At 6 it clears the text column visibly without drifting into
+    /// the middle of the panel.
+    static let margin: Double = SidebarRowMetrics.inset / 2
+
+    /// What the rows leave clear at the bottom, which is the pill and the air
+    /// under it. See ``FilesSurface/layOutOffer()`` for why the reservation
+    /// survived the footer that used to justify it.
+    static let reserved: Double = InitOfferView.height + InitOfferView.margin
 
     private var isPressed = false { didSet { needsDisplay = true } }
     private var isHovered = false { didSet { needsDisplay = true } }
 
-    override func draw(_: NSRect) {
-        // Opaque, unlike the rows: the list scrolls underneath this, so anything
-        // translucent would show a file sliding behind the offer.
-        SidebarRowMetrics.nsColor(theme.background).setFill()
-        bounds.fill()
-
-        SidebarRowMetrics.nsColor(theme.divider).setFill()
-        NSRect(x: 0, y: 0, width: bounds.width, height: Self.rule).fill()
-
-        let row = NSRect(
-            x: SidebarRowMetrics.inset / 2,
-            y: Self.rule,
-            width: bounds.width - SidebarRowMetrics.inset,
-            height: SidebarRowMetrics.rowHeight
-        )
-        // The same three states a row has, in the same fills, so pointing at this
-        // answers the way pointing at a file answers.
-        if isPressed || isHovered {
-            SidebarRowMetrics.nsColor(
-                isPressed
-                    ? theme.background.blended(with: theme.inkFocus, fraction: 0.16)
-                    : theme.selectedRowBackground
-            ).setFill()
-            NSBezierPath(
-                roundedRect: row,
-                xRadius: SidebarRowMetrics.rowRadius,
-                yRadius: SidebarRowMetrics.rowRadius
-            ).fill()
-        }
-
-        // `+` and then the command. The glyph is what marks this as an offer to
-        // add something rather than a file called `git init`, and it is drawn in
-        // the same faint tier the tree's disclosure chevron uses so it reads as a
-        // mark on the line rather than a second word.
-        let caption = NSAttributedString(
+    /// The caption, `+` and then the command, measured in one place because both
+    /// the draw and ``fittingWidth`` need the same number and a second copy of it
+    /// is a second chance to disagree.
+    ///
+    /// The glyph is what marks this as an offer to add something rather than a
+    /// file called `git init`. ``SurfaceMessage/initCaption`` is the literal
+    /// command and the same string that lands on the prompt.
+    private func caption() -> NSAttributedString {
+        NSAttributedString(
             string: "+  " + SurfaceMessage.initCaption,
             attributes: [
                 .font: SidebarRowMetrics.font,
                 .foregroundColor: SidebarRowMetrics.nsColor(theme.inkContext),
             ]
         )
+    }
+
+    /// How wide the pill wants to be: its caption plus a row inset of padding at
+    /// each end, so the text sits in the pill the way a row's text sits in a row.
+    ///
+    /// **This is what replaces the full-column width**, and it is why the offer
+    /// now needs a width of its own at all. ``FilesSurface/layOutOffer()`` asks
+    /// for it and frames the view at exactly this, so the view's `bounds` is the
+    /// pill and the pill is the view: the hit-test stays `bounds` and there is
+    /// still no second copy of any geometry to go stale.
+    func fittingWidth() -> Double {
+        caption().size().width + SidebarRowMetrics.inset * 2
+    }
+
+    override func draw(_: NSRect) {
+        // The pill, at half its height, so the ends are full semicircles — the
+        // pane capsule's own shape rule, for the same reason: a control that is
+        // not a region should not have a region's corners.
+        let radius = bounds.height / 2
+        let pill = NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius)
+
+        // **The backing, and the whole legibility argument for floating at all.**
+        // With the footer's opaque plane gone, the rows run the full height of the
+        // column and a file name scrolls under this pill, so the offer has to
+        // carry its own material or the caption reads over a filename. This is the
+        // answer `PaneClusterView` reached on the owner's other 2026-08-12 ruling
+        // (e468a01, "the pill stops letting text read through"), cited rather than
+        // re-derived and deliberately not a second vocabulary: the shape's own
+        // fill in `theme.background` at ``ChromeMaterials/PaneWash``'s floor,
+        // whose doc carries the measured bound (`alpha >= (B - 75) / (B - 20)`,
+        // 0.4712 on the brightest backdrop this repo has measured) that makes 0.5
+        // a legibility floor rather than a taste.
+        //
+        // The floor and then the same colour again, which is opaque where the
+        // capsule's stack is translucent, and the difference is what is beneath.
+        // The capsule floats over live terminal output that the owner is meant to
+        // keep seeing, so it stops at the floor and lets the material carry the
+        // rest. Beneath this is a file list the offer is *not* about, and a name
+        // ghosting through the command would be the "drawn in one place" failure
+        // in a second form. So the floor is where this starts and not where it
+        // stops: it is stated as the floor it is, and the second fill takes it the
+        // rest of the way, so a future translucent treatment thins toward 0.5 and
+        // can never go under it.
+        SidebarRowMetrics.nsColor(theme.background, alpha: ChromeMaterials.PaneWash.floor).setFill()
+        pill.fill()
+        SidebarRowMetrics.nsColor(theme.background).setFill()
+        pill.fill()
+
+        // Hover and press take the capsule's vocabulary rather than the rows',
+        // which is the one place this stops borrowing from the list. A row's
+        // feedback is a fill appearing behind text that had no fill: it says
+        // "this line of the list is the one you are pointing at". This is not a
+        // line of the list, and it always has a fill, so the same treatment would
+        // read as a row lighting up at the bottom of the column. What a floating
+        // control has instead is its own surface to brighten, so the states are a
+        // wash over the pill's own fill, at the capsule's active-segment alpha
+        // and doubled under the press — the same white-over-fill step the capsule
+        // makes, in the same shape as the thing it is washing.
+        if isPressed || isHovered {
+            NSColor(white: 1, alpha: isPressed ? 0.28 : 0.14).setFill()
+            pill.fill()
+        }
+
         // Dropped rather than truncated when the column cannot hold it, the rule
         // the heading's own trailing half follows: `SidebarHost.minimumWidth` is
         // 120, and a command clipped to `git in` is a control nobody can identify
-        // and a string nobody should trust. The strip still draws, so the plane is
-        // there and nothing jumps when the column widens again.
+        // and a string nobody should trust.
+        //
+        // **What "too narrow" means moved with the width**, and it is now decided
+        // one step earlier. The strip was always the column's width and dropped
+        // its own caption; the pill is sized *from* the caption, so a pill that
+        // cannot hold its text is a pill that should not be there at all, and
+        // ``FilesSurface/layOutOffer()`` hides the view rather than drawing an
+        // empty capsule over the files. The guard stays here regardless: it is
+        // cheap, and a view drawn at a width its caption does not fit is exactly
+        // the disagreement this feature is written against.
+        let caption = self.caption()
         guard caption.size().width + SidebarRowMetrics.inset * 2 <= bounds.width else { return }
         caption.draw(at: NSPoint(
             x: SidebarRowMetrics.inset,
-            y: Self.rule + SidebarRowMetrics.textOrigin
+            y: SidebarRowMetrics.textOrigin
         ))
     }
 
@@ -953,7 +1086,7 @@ final class InitOfferView: NSView {
         isPressed = true
     }
 
-    /// A press that leaves the strip disarms, and re-entering while held arms it
+    /// A press that leaves the pill disarms, and re-entering while held arms it
     /// again. The rows do exactly this, and here it is the whole of why a stray
     /// click cannot take the offer.
     override func mouseDragged(with event: NSEvent) {
