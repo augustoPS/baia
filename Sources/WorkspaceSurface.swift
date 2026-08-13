@@ -1,4 +1,5 @@
 import AppKit
+import BaiaSettings
 import PaneChrome
 
 /// Something a host can put on screen.
@@ -62,6 +63,17 @@ protocol WorkspaceSurface: AnyObject {
     /// (a theme or opacity edit has to reach the screen), even though flat
     /// and glass now paint identically.
     var resolvedChrome: ResolvedChrome { get set }
+
+    /// Which of the four fill roles this column's glass is tinted with, or nil
+    /// for untinted.
+    ///
+    /// **Added on the owner's 2026-08-12 tinted-glass ruling, and it is a
+    /// pass-through rather than a new decision.** `SidebarHost.fillMaterial`
+    /// already holds `chrome.surfaces.sidebar` for the column's own plane; this
+    /// is how a surface that owns glass of its own — today `FilesSurface`'s
+    /// floating `git init` pill, which is the ruling — reads the *same* value
+    /// instead of inventing an override key. A surface with no glass ignores it.
+    var fillMaterial: DesignOverrides.Chrome.Material? { get set }
 }
 
 /// What a section draws when it has no rows.

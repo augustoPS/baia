@@ -55,9 +55,13 @@ A probe that got either wrong would be green and would be measuring nothing, whi
 is why both are spelled out in `Host` rather than left to read as boilerplate.
 
 `Sources/FilesSurface.swift`, `Sources/SidebarRowMetrics.swift`,
-`Sources/WorkspaceSurface.swift`, `Sources/RowFeedback.swift` and
-`Sources/DividerGrabView.swift` are compiled verbatim by `run.sh`, not sliced and
-not retyped. `DividerGrabView` was the last hundred lines of `SurfaceHosts.swift`
+`Sources/WorkspaceSurface.swift`, `Sources/RowFeedback.swift`,
+`Sources/DividerGrabView.swift` and `Sources/SurfaceFill.swift` are compiled
+verbatim by `run.sh`, not sliced and not retyped. `SurfaceFill` joined the list on
+2026-08-12, when the owner's tinted-glass ruling gave `InitOfferView` a real
+`NSGlassEffectView` that resolves its tint through it; nothing this probe measures
+changed, and the arms and controls read exactly as they did before.
+`DividerGrabView` was the last hundred lines of `SurfaceHosts.swift`
 until this probe existed: `SurfaceTitleView` names `DividerGrabView.Touch`, so
 `WorkspaceSurface.swift` could not be compiled by anything that was not the whole
 app, and neither could the sidebar surface beside it. Moving it to its own file is

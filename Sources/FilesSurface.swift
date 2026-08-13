@@ -1,4 +1,5 @@
 import AppKit
+import BaiaSettings
 import GitWorkspace
 import PaneChrome
 
@@ -40,10 +41,40 @@ final class FilesSurface: NSObject, WorkspaceSurface {
     }
 
     /// Flat or glass, per Task 5. See ``WorkspaceSurface/resolvedChrome``.
+    ///
+    /// Reaches the floating offer as well as the scroll background since the
+    /// owner's 2026-08-12 tinted-glass ruling: the pill owns a real
+    /// `NSGlassEffectView` now, and it is built and torn down on exactly the
+    /// transitions the column's own plane is. See ``InitOfferView/resolvedChrome``.
     var resolvedChrome: ResolvedChrome = .flat {
         didSet {
             guard resolvedChrome != oldValue else { return }
+            offer.resolvedChrome = resolvedChrome
+            // The pill's width is measured from its caption, and the caption's
+            // ink is now chrome-dependent (``InitOfferView/captionInk(theme:
+            // chrome:)``). The metrics do not actually move — the font and the
+            // string are the same in both chromes and only the colour differs —
+            // but `fittingWidth()` reads `resolvedChrome` now, so the layout
+            // recomputes on the transition rather than relying on that identity
+            // holding forever. This is the pill's own frame; nothing in the tree
+            // reflows.
+            layOutOffer()
             fill()
+        }
+    }
+
+    /// Which fill role tints the glass in this column, or nil for untinted.
+    ///
+    /// The one consumer is the floating offer, and the ruling is why it is here
+    /// rather than a key of its own: the pill reads `chrome.surfaces.sidebar`,
+    /// the same value `SidebarHost.fillMaterial` puts on the column's plane, so
+    /// the pill follows the plane it floats over. `SidebarHost` pushes it down
+    /// alongside ``resolvedChrome``, which is the only way this surface can see a
+    /// value the host resolves.
+    var fillMaterial: DesignOverrides.Chrome.Material? {
+        didSet {
+            guard fillMaterial != oldValue else { return }
+            offer.fillMaterial = fillMaterial
         }
     }
 
@@ -950,7 +981,43 @@ final class FileTreeRowsView: NSView {
 /// into it.
 @MainActor
 final class InitOfferView: NSView {
-    var theme: PaneTheme = .darkPastel { didSet { needsDisplay = true } }
+    var theme: PaneTheme = .darkPastel {
+        didSet {
+            face.theme = theme
+            // The glass carries no theme colour of its own — its tint is a
+            // material role, not a palette entry — but the wash above it is
+            // `theme.background`, so the flip has to reach ``face``.
+            needsDisplay = true
+        }
+    }
+
+    /// Flat or glass, pushed down by ``FilesSurface`` from the same
+    /// `resolvedChrome` the column's own plane is built on.
+    ///
+    /// **Lifecycle parity with `SidebarHost.glassBacking` is the point**, and it
+    /// is why this is a property on the pill rather than something read once at
+    /// construction: the host tears its plane down and rebuilds it on every
+    /// transition (a theme flip, a Reduce Transparency change, an appearance
+    /// change), and a pill that kept a glass view across a flip to flat would be
+    /// the one glass surface in the window under a chrome that has none.
+    var resolvedChrome: ResolvedChrome = .flat {
+        didSet {
+            guard resolvedChrome != oldValue else { return }
+            applyResolvedChrome()
+        }
+    }
+
+    /// Which fill role tints the glass, or nil for untinted.
+    ///
+    /// The ruling's first specific: this is `chrome.surfaces.sidebar`, the
+    /// column's own key, so the pill follows the plane it floats over and no new
+    /// override key exists to disagree with it. See ``updateGlassTint()``.
+    var fillMaterial: DesignOverrides.Chrome.Material? {
+        didSet {
+            guard fillMaterial != oldValue else { return }
+            updateGlassTint()
+        }
+    }
 
     /// Fired on a completed press-and-release inside this view, and by nothing
     /// else. ``FilesSurface`` wires it to the tree's `onInitialise`.
@@ -959,6 +1026,24 @@ final class InitOfferView: NSView {
     override var acceptsFirstResponder: Bool { false }
 
     override var isFlipped: Bool { true }
+
+    /// The glass, or nil under flat. Created and torn down by
+    /// ``applyResolvedChrome()``, never hidden.
+    private var glassBacking: InitOfferGlassBacking?
+
+    /// The wash, the states and the caption, above the glass and never inside
+    /// it.
+    private let face = InitOfferFaceView()
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        addSubview(face)
+        face.theme = theme
+        applyResolvedChrome()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not from a nib") }
 
     /// One row's height. The pill is a row's weight because it sits in a column of
     /// rows and a control heavier than the content it offers to act on reads as a
@@ -978,8 +1063,12 @@ final class InitOfferView: NSView {
     /// survived the footer that used to justify it.
     static let reserved: Double = InitOfferView.height + InitOfferView.margin
 
-    private var isPressed = false { didSet { needsDisplay = true } }
-    private var isHovered = false { didSet { needsDisplay = true } }
+    // The two states live on this view and are *drawn* by ``face``, because the
+    // events land here: the tracking area and all three mouse handlers are this
+    // view's, hit-tested against this view's `bounds`, which is safety property 4
+    // and the one thing the layering was not allowed to move.
+    private var isPressed = false { didSet { face.isPressed = isPressed } }
+    private var isHovered = false { didSet { face.isHovered = isHovered } }
 
     /// The caption, `+` and then the command, measured in one place because both
     /// the draw and ``fittingWidth`` need the same number and a second copy of it
@@ -988,15 +1077,133 @@ final class InitOfferView: NSView {
     /// The glyph is what marks this as an offer to add something rather than a
     /// file called `git init`. ``SurfaceMessage/initCaption`` is the literal
     /// command and the same string that lands on the prompt.
-    private func caption() -> NSAttributedString {
+    ///
+    /// Static and theme-taking since the layering, so the container's
+    /// ``fittingWidth()`` and ``InitOfferFaceView``'s draw still read one
+    /// function rather than two copies that can drift — the property this was
+    /// written for in the first place, now spanning two views.
+    ///
+    /// Chrome-taking for the same reason it is theme-taking, and the reason is
+    /// measured. The ink is tier 4, ``PaneTheme/inkContext``, which is what a
+    /// caption on an *opaque* pill wants: 6.78:1 over `theme.background`, quiet
+    /// against the filenames above it, which is the hierarchy the offer is meant
+    /// to sit in. Over a *translucent* pill it is the wrong tier. See
+    /// ``captionInk(theme:chrome:)``, which is where that is judged.
+    static func caption(theme: PaneTheme, chrome: ResolvedChrome) -> NSAttributedString {
         NSAttributedString(
             string: "+  " + SurfaceMessage.initCaption,
             attributes: [
                 .font: SidebarRowMetrics.font,
-                .foregroundColor: SidebarRowMetrics.nsColor(theme.inkContext),
+                .foregroundColor: SidebarRowMetrics.nsColor(captionInk(theme: theme, chrome: chrome)),
             ]
         )
     }
+
+    /// The caption's ink, judged against the worst face the pill can present.
+    ///
+    /// **A tier-4 ink on a translucent pill fails the floor, and it was measured
+    /// rather than argued.** `Diagnostics/cluster-legibility`'s `offer-glass` arm
+    /// grades the caption over the pill's own two-layer face on the brightest
+    /// backdrop this repo has measured (`#7c7c7c`, glass-backdrop finding 6b).
+    /// Undecided, ``PaneTheme/inkContext`` reads **4.41:1** there, under
+    /// ``PaneTheme/minimumTextContrast``. The pill did not have this problem
+    /// while its fill was opaque, because an opaque fill is `theme.background`
+    /// whatever is beneath it and tier 4 clears that with room.
+    ///
+    /// **So the ink is repaired rather than reassigned**, through
+    /// ``PaneTheme/readable(_:on:minimumRatio:)`` — the package's own chain,
+    /// which pushes a candidate away from the backdrop by a third, by two
+    /// thirds, and finally the whole way, and which every footer tier already
+    /// goes through for exactly this reason: a colour judged against the theme's
+    /// background can be a whole ratio point off what it scores where it is
+    /// drawn. Reassigning the caption to `theme.foreground` would have cleared
+    /// the same bound (6.28:1, the capsule's own number) and it is the wrong
+    /// instrument: it states a new tier for this control by hand, on every
+    /// theme, whether or not that theme needed one, where the repair moves only
+    /// the themes that fail and moves them only as far as the floor.
+    ///
+    /// **The backdrop it is graded on is the pill's worst face and not its
+    /// likely one**, which is the one honest choice available: under glass the
+    /// real backdrop is whatever the compositor sampled, and the pill cannot
+    /// know it at draw time. What it does know is the paint it lays down, so it
+    /// grades against those layers over the brightest backdrop the repo has
+    /// measured — the same bound the wash's own floor is derived from. Ink that
+    /// clears that clears everything darker, which is every other case.
+    ///
+    /// Flat is judged too, and answers `inkContext` unchanged: its pill is
+    /// opaque `theme.background`, so the grade is the 6.78:1 the tier was chosen
+    /// at and the repair chain returns its first link. Same function, both
+    /// chromes, so there is no branch that can disagree about what the caption
+    /// is drawn in.
+    static func captionInk(theme: PaneTheme, chrome: ResolvedChrome) -> RGB {
+        theme.readable(
+            theme.inkContext,
+            on: worstFace(theme: theme, chrome: chrome),
+            minimumRatio: PaneTheme.minimumTextContrast
+        )
+    }
+
+    /// The brightest face ``InitOfferFaceView`` can present, which is what the
+    /// caption has to survive.
+    ///
+    /// `RGBA.composited(over:)` is the package's sRGB flatten, the same layer
+    /// stack `Diagnostics/cluster-legibility` predicts its measured band with,
+    /// applied over ``brightestMeasuredBackdrop``.
+    ///
+    /// **The flatten is nominal and the screen is brighter, so this grades on
+    /// the screen's number.** The probe's own README records the divergence and
+    /// this is the first draw path to be caught by it: AppKit composites in the
+    /// bitmap rep's space (Generic RGB, gamma 1.8) and the package flattens in
+    /// sRGB bytes. The two agree to sub-byte in the dark regime — which is where
+    /// every pin in this app lived until the bright bound joined — and diverge
+    /// at the bright end, where the flatten lands about 6 bytes *dark* of the
+    /// measurement: `#303132` predicted against `#363638` measured, 4.79:1
+    /// against the 4.41:1 the probe reads. Graded on the flatten alone the
+    /// repair chain does not fire and the caption ships under the floor on a
+    /// face this app can put on screen, which is the failure mode the floor
+    /// exists to catch.
+    ///
+    /// So the flatten's result is lifted by ``compositingHeadroom`` before it is
+    /// graded. That is a correction toward the measurement rather than a safety
+    /// margin invented for comfort: 6 bytes is what the probe measures the gap
+    /// to be at this bound, and it is applied in the one direction that can
+    /// only ever make the grade stricter. Should the two spaces ever be
+    /// reconciled the constant goes to zero and nothing else here moves.
+    static func worstFace(theme: PaneTheme, chrome: ResolvedChrome) -> RGB {
+        switch chrome {
+        case let .glass(set):
+            let washed = RGBA(rgb: theme.background, alpha: ChromeMaterials.PaneWash.floor)
+                .composited(over: Self.brightestMeasuredBackdrop)
+            let face = set.fillChrome.composited(over: washed)
+            return RGB(
+                red: min(1, face.red + Self.compositingHeadroom),
+                green: min(1, face.green + Self.compositingHeadroom),
+                blue: min(1, face.blue + Self.compositingHeadroom)
+            )
+        case .flat:
+            // Opaque, so whatever is beneath composites away entirely and there
+            // is no space divergence to correct: the face is a literal colour
+            // this app sets, not a blend AppKit performs.
+            return theme.background
+        }
+    }
+
+    /// `#7c7c7c`, `glass-backdrop`'s finding 6b: the brightest backdrop this
+    /// repo has measured a glass surface composite to. The same bound
+    /// ``ChromeMaterials/PaneWash``'s floor is derived from, cited here rather
+    /// than re-derived so the two cannot drift apart.
+    static let brightestMeasuredBackdrop = RGB(
+        red: 124.0 / 255, green: 124.0 / 255, blue: 124.0 / 255
+    )
+
+    /// Six bytes: how far AppKit's own compositing lands *bright* of the
+    /// package's sRGB flatten at the bright bound.
+    ///
+    /// Measured, not chosen: `Diagnostics/cluster-legibility` predicts `#303132`
+    /// where it reads `#363638`. See ``worstFace(theme:chrome:)`` for why the
+    /// correction is applied to the backdrop the ink is graded on rather than to
+    /// the paint the pill lays down.
+    static let compositingHeadroom = 6.0 / 255
 
     /// How wide the pill wants to be: its caption plus a row inset of padding at
     /// each end, so the text sits in the pill the way a row's text sits in a row.
@@ -1007,77 +1214,88 @@ final class InitOfferView: NSView {
     /// pill and the pill is the view: the hit-test stays `bounds` and there is
     /// still no second copy of any geometry to go stale.
     func fittingWidth() -> Double {
-        caption().size().width + SidebarRowMetrics.inset * 2
+        Self.caption(theme: theme, chrome: resolvedChrome).size().width + SidebarRowMetrics.inset * 2
     }
 
-    override func draw(_: NSRect) {
-        // The pill, at half its height, so the ends are full semicircles — the
-        // pane capsule's own shape rule, for the same reason: a control that is
-        // not a region should not have a region's corners.
-        let radius = bounds.height / 2
-        let pill = NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius)
+    // **The pill draws nothing itself any more, and that is what "a real glass
+    // view" costs.** Painting happened in this view's own `draw(_:)` until the
+    // owner's 2026-08-12 tinted-glass ruling; an `NSGlassEffectView` is a *view*,
+    // so it goes in the hierarchy, and AppKit composites every subview above its
+    // parent's `draw(_:)`. A caption drawn here would therefore be under the
+    // glass, blurred and vibrancy-shifted rather than read. So this view is a
+    // container from here down: ``glassBacking`` at the back, ``face`` above it
+    // carrying the wash, the states and the caption, and this class keeping the
+    // one thing that must not move — the geometry the click is hit-tested
+    // against, which is still this view's own `bounds`.
 
-        // **The backing, and the whole legibility argument for floating at all.**
-        // With the footer's opaque plane gone, the rows run the full height of the
-        // column and a file name scrolls under this pill, so the offer has to
-        // carry its own material or the caption reads over a filename. This is the
-        // answer `PaneClusterView` reached on the owner's other 2026-08-12 ruling
-        // (e468a01, "the pill stops letting text read through"), cited rather than
-        // re-derived and deliberately not a second vocabulary: the shape's own
-        // fill in `theme.background` at ``ChromeMaterials/PaneWash``'s floor,
-        // whose doc carries the measured bound (`alpha >= (B - 75) / (B - 20)`,
-        // 0.4712 on the brightest backdrop this repo has measured) that makes 0.5
-        // a legibility floor rather than a taste.
-        //
-        // The floor and then the same colour again, which is opaque where the
-        // capsule's stack is translucent, and the difference is what is beneath.
-        // The capsule floats over live terminal output that the owner is meant to
-        // keep seeing, so it stops at the floor and lets the material carry the
-        // rest. Beneath this is a file list the offer is *not* about, and a name
-        // ghosting through the command would be the "drawn in one place" failure
-        // in a second form. So the floor is where this starts and not where it
-        // stops: it is stated as the floor it is, and the second fill takes it the
-        // rest of the way, so a future translucent treatment thins toward 0.5 and
-        // can never go under it.
-        SidebarRowMetrics.nsColor(theme.background, alpha: ChromeMaterials.PaneWash.floor).setFill()
-        pill.fill()
-        SidebarRowMetrics.nsColor(theme.background).setFill()
-        pill.fill()
-
-        // Hover and press take the capsule's vocabulary rather than the rows',
-        // which is the one place this stops borrowing from the list. A row's
-        // feedback is a fill appearing behind text that had no fill: it says
-        // "this line of the list is the one you are pointing at". This is not a
-        // line of the list, and it always has a fill, so the same treatment would
-        // read as a row lighting up at the bottom of the column. What a floating
-        // control has instead is its own surface to brighten, so the states are a
-        // wash over the pill's own fill, at the capsule's active-segment alpha
-        // and doubled under the press — the same white-over-fill step the capsule
-        // makes, in the same shape as the thing it is washing.
-        if isPressed || isHovered {
-            NSColor(white: 1, alpha: isPressed ? 0.28 : 0.14).setFill()
-            pill.fill()
+    /// Creates or tears down ``glassBacking`` to match ``resolvedChrome``, and
+    /// keeps ``face`` told what it is drawing over.
+    ///
+    /// **The same shape `SidebarHost.applyResolvedChrome()` takes for the
+    /// column's own plane, deliberately**, since the ruling is that this pill
+    /// follows that plane: flat removes the view rather than hiding it, because a
+    /// hidden `NSGlassEffectView` still costs the compositing pass macOS runs
+    /// whether or not it draws, and glass creates one only when none exists, so a
+    /// glass-flat-glass round trip does not rebuild a view that did not move. The
+    /// tint is written by ``updateGlassTint()`` on every pass rather than at
+    /// creation, for the reason the host's own comment gives: a material dialled
+    /// while the column is open reaches an existing backing through the early
+    /// return.
+    private func applyResolvedChrome() {
+        switch resolvedChrome {
+        case .flat:
+            glassBacking?.removeFromSuperview()
+            glassBacking = nil
+        case .glass:
+            if glassBacking == nil {
+                let backing = InitOfferGlassBacking(frame: bounds)
+                backing.style = .regular
+                backing.wantsLayer = true
+                // The pill's own shape, at half the height, so the ends are full
+                // semicircles: the pane capsule's rule, now carried by the glass
+                // view's own corner radius rather than by a bezier path this view
+                // fills. `cornerRadius` is what makes the *material* pill-shaped —
+                // a rectangle of glass with a pill painted on it would show its
+                // own corners through the paint.
+                backing.cornerRadius = bounds.height / 2
+                // Behind `face`, which is the whole arrangement: the wash and the
+                // caption are siblings ABOVE the glass and never its
+                // `contentView`, the rule `PaneGlassWashView`'s doc records —
+                // a glass view composites its content before its own material,
+                // so anything handed over that way is blurred by the material
+                // it was meant to sit on top of.
+                addSubview(backing, positioned: .below, relativeTo: face)
+                glassBacking = backing
+            }
+            updateGlassTint()
         }
+        face.resolvedChrome = resolvedChrome
+        layOutLayers()
+    }
 
-        // Dropped rather than truncated when the column cannot hold it, the rule
-        // the heading's own trailing half follows: `SidebarHost.minimumWidth` is
-        // 120, and a command clipped to `git in` is a control nobody can identify
-        // and a string nobody should trust.
-        //
-        // **What "too narrow" means moved with the width**, and it is now decided
-        // one step earlier. The strip was always the column's width and dropped
-        // its own caption; the pill is sized *from* the caption, so a pill that
-        // cannot hold its text is a pill that should not be there at all, and
-        // ``FilesSurface/layOutOffer()`` hides the view rather than drawing an
-        // empty capsule over the files. The guard stays here regardless: it is
-        // cheap, and a view drawn at a width its caption does not fit is exactly
-        // the disagreement this feature is written against.
-        let caption = self.caption()
-        guard caption.size().width + SidebarRowMetrics.inset * 2 <= bounds.width else { return }
-        caption.draw(at: NSPoint(
-            x: SidebarRowMetrics.inset,
-            y: SidebarRowMetrics.textOrigin
-        ))
+    /// Writes the sidebar's own fill onto the glass, which is the ruling's first
+    /// specific: no override key of this pill's own.
+    ///
+    /// ``fillMaterial`` is `chrome.surfaces.sidebar`, the same value
+    /// `SidebarHost.fillMaterial` resolves for the column's plane, routed through
+    /// the same ``SurfaceFill/colour(_:in:)``. So a material dialled in the design
+    /// panel moves the pill and the plane it floats over together, and with
+    /// nothing dialled — which is everything Release can be — both are untinted
+    /// `regular` glass, the shipped look since 2026-08-08.
+    private func updateGlassTint() {
+        guard case let .glass(set) = resolvedChrome else { return }
+        glassBacking?.tintColor = SurfaceFill.colour(fillMaterial, in: set)
+    }
+
+    private func layOutLayers() {
+        face.frame = bounds
+        glassBacking?.frame = bounds
+        glassBacking?.cornerRadius = bounds.height / 2
+    }
+
+    override func layout() {
+        super.layout()
+        layOutLayers()
     }
 
     // MARK: - Pointing
@@ -1129,5 +1347,168 @@ final class InitOfferView: NSView {
 
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .pointingHand)
+    }
+}
+
+/// The offer's own `NSGlassEffectView`, with the same three refusals every other
+/// glass backing in this app makes.
+///
+/// **A real glass view rather than a painted approximation, which is design v6's
+/// ruling 1 (use the platform mechanism where one exists) applied by the owner to
+/// this pill on 2026-08-12.** What stood here was `theme.background` at the
+/// `PaneWash` floor and then the same colour again, opaque — glass-coloured paint
+/// that could not sample, could not adapt to the desktop behind the window, and
+/// could not tint with the column it sits on.
+///
+/// The refusals are `SidebarGlassBacking`'s, for the same reason and one sharper:
+/// this glass lies inside a control whose whole safety argument is that the click
+/// is hit-tested against ``InitOfferView``'s own `bounds`. A subview that
+/// hit-tests itself would take `mouseDown` before the container sees it, and the
+/// press-and-release-both-on-the-control property (safety property 3) would be
+/// answered by a view that has no `onPress`.
+private final class InitOfferGlassBacking: NSGlassEffectView {
+    override var acceptsFirstResponder: Bool { false }
+
+    override var canBecomeKeyView: Bool { false }
+
+    override func hitTest(_: NSPoint) -> NSView? { nil }
+}
+
+/// Everything above the glass: the legibility wash, the hover and press states,
+/// and the caption.
+///
+/// **A sibling above the glass, never its `contentView`**, which is the rule
+/// ``PaneGlassWashView``'s doc records and the reason the pill needed two views
+/// instead of one: an `NSGlassEffectView` composites its content *before* its own
+/// material, so a caption handed over as content is blurred and vibrancy-shifted
+/// by the material it was supposed to sit on. Everything this draws has to land
+/// on the composited result, which means above it in the hierarchy.
+@MainActor
+private final class InitOfferFaceView: NSView {
+    var theme: PaneTheme = .darkPastel { didSet { needsDisplay = true } }
+
+    var resolvedChrome: ResolvedChrome = .flat {
+        didSet {
+            guard resolvedChrome != oldValue else { return }
+            needsDisplay = true
+        }
+    }
+
+    var isPressed = false { didSet { needsDisplay = true } }
+    var isHovered = false { didSet { needsDisplay = true } }
+
+    override var isFlipped: Bool { true }
+
+    override var acceptsFirstResponder: Bool { false }
+
+    override var canBecomeKeyView: Bool { false }
+
+    /// Transparent to the pointer, so every event reaches ``InitOfferView`` and
+    /// is hit-tested against the one rect that was ever allowed to decide.
+    override func hitTest(_: NSPoint) -> NSView? { nil }
+
+    override func draw(_: NSRect) {
+        let radius = bounds.height / 2
+        let pill = NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius)
+
+        switch resolvedChrome {
+        case let .glass(set):
+            // **The capsule's own two-layer stack, and the measurement is why
+            // there are two layers rather than one.** The glass underneath is
+            // translucent by construction and beneath *this* pill is a scrolling
+            // list of filenames the offer is not about, which is the exact
+            // read-through the retired opaque fill existed to stop. So the wash
+            // goes down first: ``ChromeMaterials/PaneWash``'s floor, the
+            // construction and the constant `PaneClusterView` reached on the
+            // owner's other 2026-08-12 ruling (e468a01), cited rather than
+            // re-derived, whose doc carries the measured bound
+            // (`alpha >= (B - 75) / (B - 20)`, 0.4712 on the brightest backdrop
+            // this repo has measured) that makes 0.5 a legibility floor and not a
+            // taste.
+            //
+            // **The wash alone was tried first and it fails, measured.**
+            // `Diagnostics/cluster-legibility`'s `offer-glass` arm graded the
+            // caption over wash-and-nothing-else at the bright bound `#7c7c7c`
+            // (glass-backdrop finding 6b) and read **3.11:1**, under
+            // `PaneTheme.minimumTextContrast`. The capsule clears the same
+            // backdrop at 6.26:1 because it does not stop at the wash: it puts
+            // the material set's own `fillChrome` over it, 0.44 of vitreous dark
+            // paint. This does the same, off the resolved set so it stays correct
+            // when the appearance flips, and grades **5.75:1** at that bound.
+            //
+            // Raising the wash instead was the other route and it loses on the
+            // ruling. `PaneWash`'s doc names 0.8 as where the wash erases the
+            // glass, and a pill thick enough to carry the caption on paint alone
+            // is the painted rectangle the owner ruled against. `fillChrome` is
+            // the vitreous token for exactly this surface, so the pill reaches
+            // its floor with the material vocabulary rather than by thickening
+            // toward opacity.
+            //
+            // None of it stops the pill being glass. Under both layers is a real
+            // `NSGlassEffectView` that samples the desktop, adapts to it, and
+            // carries the sidebar's tint; what these add is 0.5 and then 0.44 of
+            // dark paint between that material and a filename, which is what the
+            // number says is needed.
+            SidebarRowMetrics.nsColor(theme.background, alpha: ChromeMaterials.PaneWash.floor).setFill()
+            pill.fill()
+            SidebarRowMetrics.nsColor(set.fillChrome.rgb, alpha: set.fillChrome.alpha).setFill()
+            pill.fill()
+        case .flat:
+            // **Flat has no glass at all**, the absence-is-the-contract rule the
+            // column's plane and the pane's both keep, so under flat the pill
+            // must still be a visible, legible surface on its own. What it draws
+            // is exactly what the pill drew before this task: the floor and then
+            // `theme.background` again at full alpha, opaque. That is the same
+            // two-fill stack, stated as a floor and then taken the rest of the
+            // way, so the flat pill can never be thinner than the glass one.
+            SidebarRowMetrics.nsColor(theme.background, alpha: ChromeMaterials.PaneWash.floor).setFill()
+            pill.fill()
+            SidebarRowMetrics.nsColor(theme.background).setFill()
+            pill.fill()
+        }
+
+        // Hover and press take the capsule's vocabulary rather than the rows',
+        // which is the one place this stops borrowing from the list. A row's
+        // feedback is a fill appearing behind text that had no fill: it says
+        // "this line of the list is the one you are pointing at". This is not a
+        // line of the list, and it always has a surface, so the same treatment
+        // would read as a row lighting up at the bottom of the column. What a
+        // floating control has instead is its own surface to brighten, so the
+        // states are a wash over the pill, at the capsule's active-segment alpha
+        // and doubled under the press.
+        //
+        // **Unchanged over glass, on purpose, and the alternative was to thin
+        // them.** White at 0.14/0.28 was chosen against the old opaque fill, and
+        // the temptation under glass is to reach for smaller numbers because the
+        // surface beneath is now live. It reads the other way: what these wash is
+        // no longer an opaque plate but a wash-over-material stack that is darker
+        // than the plate was, so the same white step is if anything a *quieter*
+        // relative brightening than it was before. They also land above the wash
+        // rather than beneath it, so a brightened pill is brightened all the way
+        // to the eye and cannot be diluted by the layer that exists for the
+        // caption's sake. Same numbers, same shape, both chromes: the state is a
+        // property of the control, and a pill that answered the pointer
+        // differently under two chromes would be two controls.
+        if isPressed || isHovered {
+            NSColor(white: 1, alpha: isPressed ? 0.28 : 0.14).setFill()
+            pill.fill()
+        }
+
+        // Dropped rather than truncated when the column cannot hold it, the rule
+        // the heading's own trailing half follows: `SidebarHost.minimumWidth` is
+        // 120, and a command clipped to `git in` is a control nobody can identify
+        // and a string nobody should trust.
+        //
+        // **What "too narrow" means is decided one step earlier**, in
+        // ``FilesSurface/layOutOffer()``, which hides the whole view rather than
+        // drawing an empty capsule over the files. The guard stays here
+        // regardless: it is cheap, and a view drawn at a width its caption does
+        // not fit is exactly the disagreement this feature is written against.
+        let caption = InitOfferView.caption(theme: theme, chrome: resolvedChrome)
+        guard caption.size().width + SidebarRowMetrics.inset * 2 <= bounds.width else { return }
+        caption.draw(at: NSPoint(
+            x: SidebarRowMetrics.inset,
+            y: SidebarRowMetrics.textOrigin
+        ))
     }
 }

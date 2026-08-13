@@ -1,10 +1,17 @@
 # Capsule legibility
 
-`./run.sh` from anywhere. Three arms — resting, focused, dot — each over two
-backdrops, each followed by its inverted control; exits non-zero if any arm
-misses its floor, if any control loses its teeth, or if the measured fill band
-stops matching the composite prediction. Needs only `swiftc`; no app build, no
-capture, no `python3`.
+`./run.sh` from anywhere. Five arms — resting, focused, dot, offer-glass,
+offer-flat — each over two backdrops, each followed by its inverted control;
+exits non-zero if any arm misses its floor, if any control loses its teeth, or
+if the measured fill band stops matching the composite prediction. Needs only
+`swiftc`; no app build, no capture, no `python3`.
+
+**This probe graded one pill until 2026-08-12 and now grades two.** The owner's
+tinted-glass ruling that day gave the sidebar's floating `git init` offer a real
+`NSGlassEffectView`, which put a second translucent pill over content it is not
+about — the same question this probe was built for, so it is asked here rather
+than in a probe of its own. The offer arms are documented in their own section
+below; everything above it is the capsule's and unchanged.
 
 **Safe from anywhere, including inside a baia pane.** The probe opens no window,
 takes no focus, launches nothing and quits nothing: every arm renders the
@@ -155,6 +162,91 @@ adaptation, which glass-backdrop measured as helping ink, not hurting it. A
 live capture of the pill over real glass belongs to a
 `pane-glass-legibility`-shaped windowed probe, not this one.
 
+## The offer arms
+
+The sidebar's floating `git init` pill (`InitOfferView`), added 2026-08-12 with
+the owner's tinted-glass ruling. Same grading, same floor, same two backdrops;
+what differs is the view, its layer stack, and the shape of its control.
+
+### What the glass contributes offscreen: nothing, and it is measured
+
+`NSGlassEffectView` is composited by the window server. Through
+`cacheDisplay(in:to:)` there is no compositor in the path, and the view lays
+down **zero pixels**: a bare glass view over `#7c7c7c` reads back `#7c7c7c` at
+every sample, checked directly before these arms were written.
+
+That is what makes the glass arm possible rather than impossible, and it fixes
+what it means. The arm grades the caption over **the pill's own paint with the
+material counted as fully transparent** — a lower bound on the live pill, not a
+model of it. `glass-backdrop` has the material adding its own dark paint and
+adapting to what it samples, so every byte the compositor contributes moves the
+band away from the caption, never toward it. **A pass here is a pass live.** The
+flat arm needs no such caveat: flat draws no glass at all, so the offscreen
+render is the whole drawing route, exactly as the capsule's arms are.
+
+### What the arms found, and what changed because of them
+
+Run of record: 2026-08-12.
+
+| arm | backdrop | face (measured) | ink (measured) | contrast | floor | headroom |
+|---|---|---|---|---|---|---|
+| offer (glass) | `#141414` | `#141415` | `#bfbfbf` | **10.08:1** | 4.5:1 | 5.58 |
+| offer (glass) | `#7c7c7c` | `#363638` | `#bfbfbf` | **6.56:1** | 4.5:1 | 2.06 |
+| offer (flat) | `#141414` | `#141414` | `#9d9d9d` | **6.78:1** | 4.5:1 | 2.28 |
+| offer (flat) | `#7c7c7c` | `#141414` | `#9d9d9d` | **6.78:1** | 4.5:1 | 2.28 |
+
+The flat rows are identical across backdrops by construction: that pill is
+opaque, so what is beneath it composites away entirely. Both rows are the
+number the caption's tier was originally chosen at.
+
+**Two things failed on the way to these numbers and both are the point of
+running the arm.**
+
+1. **The wash alone is not enough.** The pill's first glass draft laid down
+   `PaneWash.floor` and left the rest to the material. That reads **3.11:1** at
+   the bright bound, under the floor. The fix is the capsule's own stack, cited
+   rather than invented: the wash *and then* `fillChrome` over it, 0.44 of
+   vitreous dark paint. Raising the wash instead was rejected on the ruling —
+   `PaneWash`'s doc names 0.8 as where the wash erases the glass, and a pill
+   thick enough to carry the caption on paint alone is the painted rectangle
+   the owner ruled against.
+
+2. **A tier-4 ink fails on a translucent pill.** With both layers down,
+   `inkContext` still read **4.41:1** at the bright bound. The pill did not have
+   this problem while its fill was opaque. The fix is
+   `PaneTheme.readable(_:on:minimumRatio:)` — the package's own repair chain,
+   which every footer tier already goes through — graded against the worst face
+   the pill can present. It fires only where a theme needs it; the flat arm
+   shows it returning `inkContext` untouched.
+
+### The space divergence, and the first draw path caught by it
+
+`InitOfferView.worstFace` grades on the package's sRGB flatten **lifted by six
+bytes**, and this section is why. AppKit composites in the bitmap rep's space
+(Generic RGB, gamma 1.8); the package flattens in sRGB bytes. The two agree to
+sub-byte in the dark regime — where every pin in this app lived until the
+bright bound joined — and diverge at the bright end: the flatten predicts
+`#303132` where this probe measures `#363638`, 4.79:1 against 4.41:1. Graded on
+the flatten alone the repair chain does not fire and the caption ships under
+the floor on a face the app can put on screen. The correction is toward the
+measurement and only ever makes the grade stricter.
+
+### The offer arms' controls are a different shape, deliberately
+
+Every other arm here draws in a colour the theme states, so setting that colour
+to the fill is a caption the eye cannot find. **The offer's caption is repaired**,
+and `readable`'s last resort is the best of foreground, white and black — so no
+theme colour handed to it survives as an unreadable one. Both damage routes were
+tried (`foreground` alone, then `foreground` and `background` collapsed together)
+and the arm passed at 6.07:1 each time, because the repair worked. A control that
+cannot fail is not a control.
+
+So these two controls damage the drawn **pixel** rather than the theme entry
+behind it: the grade runs on a caption the colour of its own pill, which no
+repair can rescue because the repair is upstream of it. Everything under it —
+theme, render, sampling, band — is the arm's own, so a probe reading the wrong
+pixels still fails here. Both controls read 1.00:1.
+
 ## Files
 
 ```
@@ -163,6 +255,11 @@ run.sh           builds the packages (via lib/build-packages.sh), compiles the
 legibility.swift the probe: fixtures, offscreen render over an opaque backdrop,
                  sampling, grading, and the inverted controls
 ```
+
+The offer arms add `FilesSurface.swift`, `WorkspaceSurface.swift`,
+`SidebarRowMetrics.swift`, `SurfaceFill.swift`, `RowFeedback.swift` and
+`DividerGrabView.swift` to that compile line, the set `clip-layout` already
+compiles for the same surface, plus `SurfaceFill` for the glass backing's tint.
 
 Nothing is written into the repo; the binary and libraries land under
 `$TMPDIR/baia-cluster-legibility-probe`.

@@ -33,18 +33,28 @@ build_packages "$LIB" BaiaSettings GitWorkspace PaneControl PaneChrome Workspace
 # -default-isolation MainActor matches the app target's
 # SWIFT_DEFAULT_ACTOR_ISOLATION, so they compile under the rules they ship
 # under.
+#
+# The offer arms add the sidebar's own files: `FilesSurface.swift` carries
+# `InitOfferView`, `WorkspaceSurface.swift` its caption constant and the surface
+# protocol, `SidebarRowMetrics.swift` the row metrics both the pill and the
+# caption are measured from, and `SurfaceFill.swift` the tint vocabulary the
+# glass backing resolves through. `GitWorkspace` joins the link line with them,
+# because the file tree the surface draws is that package's type.
 swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/legibility" \
-  -I "$LIB" -L "$LIB" -lBaiaSettings -lPaneChrome -lWorkspaceLayout \
+  -I "$LIB" -L "$LIB" -lBaiaSettings -lGitWorkspace -lPaneChrome -lWorkspaceLayout \
   -Xlinker -rpath -Xlinker "$LIB" \
   "$HERE/legibility.swift" "$ROOT/Sources/WindowCorner.swift" \
-  "$ROOT/Sources/PaneOverlayView.swift" "$ROOT/Sources/PaneClusterView.swift"
+  "$ROOT/Sources/PaneOverlayView.swift" "$ROOT/Sources/PaneClusterView.swift" \
+  "$ROOT/Sources/FilesSurface.swift" "$ROOT/Sources/WorkspaceSurface.swift" \
+  "$ROOT/Sources/SidebarRowMetrics.swift" "$ROOT/Sources/SurfaceFill.swift" \
+  "$ROOT/Sources/RowFeedback.swift" "$ROOT/Sources/DividerGrabView.swift"
 
 # One arm per process, each followed by its negative control: the graded ink
 # set to the composited fill colour, which must fail the threshold. `set -e`
 # makes the passing arms the test; the controls are inverted, so a control
 # that stops failing fails the run just as loudly as an arm that stops
 # passing — the same discipline `override-wires` runs under.
-ARMS="resting focused dot"
+ARMS="resting focused dot offer-glass offer-flat"
 COUNT=0
 for arm in $ARMS; do
   "$OUT/legibility" "$arm"

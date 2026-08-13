@@ -41,7 +41,8 @@ swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/cliptest" \
   "$ROOT/Sources/SidebarRowMetrics.swift" \
   "$ROOT/Sources/WorkspaceSurface.swift" \
   "$ROOT/Sources/RowFeedback.swift" \
-  "$ROOT/Sources/DividerGrabView.swift"
+  "$ROOT/Sources/DividerGrabView.swift" \
+  "$ROOT/Sources/SurfaceFill.swift"
 
 # One arm per process, each followed by its negative control. `set -e` makes the
 # passing arms the test; the controls are inverted, so a control that stops

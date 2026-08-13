@@ -399,6 +399,176 @@ func armDot() {
     }
 }
 
+// MARK: - the offer pill
+
+/// The sidebar's floating `git init` offer, in the chrome under test.
+///
+/// The shipped ``InitOfferView``, compiled verbatim like the capsule, framed at
+/// exactly the rect `FilesSurface.layOutOffer()` gives it: `fittingWidth()` by
+/// `InitOfferView.height`. The frame matters — the pill's radius, its glass
+/// backing's `cornerRadius` and its caption's fit guard are all read off
+/// `bounds`, so a probe that invented a size would grade a shape the column
+/// never draws.
+@MainActor func makeOffer(theme: PaneTheme, chrome: ResolvedChrome) -> InitOfferView {
+    let view = InitOfferView()
+    view.theme = theme
+    view.resolvedChrome = chrome
+    view.frame = NSRect(
+        x: 0, y: 0,
+        width: view.fittingWidth(),
+        height: InitOfferView.height
+    )
+    view.layoutSubtreeIfNeeded()
+    return view
+}
+
+/// Renders the offer over an opaque backdrop, as bytes.
+///
+/// ``renderOverBackdrop(_:backdrop:)`` for a different view type; the same
+/// `cacheDisplay(in:to:)` route with no window in the path.
+@MainActor func renderOffer(_ view: InitOfferView, backdrop: RGB) -> NSBitmapImageRep {
+    let container = BackdropView(frame: view.bounds)
+    container.colour = nsSRGB(backdrop)
+    container.addSubview(view)
+    container.layoutSubtreeIfNeeded()
+    guard let rep = container.bitmapImageRepForCachingDisplay(in: container.bounds) else {
+        fatalError("no bitmap rep for the offer's backdrop container")
+    }
+    container.cacheDisplay(in: container.bounds, to: rep)
+    return rep
+}
+
+/// What the offer's face composites to under each chrome, before any caption.
+///
+/// **Glass contributes nothing to an offscreen render, measured rather than
+/// assumed**, and that fact is what makes this arm honest rather than
+/// impossible. `NSGlassEffectView` is composited by the window server; through
+/// `cacheDisplay(in:to:)` there is no compositor in the path and the view lays
+/// down zero pixels — a bare glass view over `#7c7c7c` reads back `#7c7c7c` at
+/// every sample. So the glass arm here grades the caption over **wash over
+/// backdrop with the material counted as fully transparent**, which is a lower
+/// bound on the live pill rather than a model of it: `glass-backdrop`'s findings
+/// have the material adding its own dark paint and adapting to what it samples,
+/// so every byte the compositor contributes moves the band *away* from the
+/// caption's colour, never toward it. A pass here is a pass live; the README
+/// says so in the same breath as the number.
+///
+/// The flat arm needs no such caveat. Flat draws no glass at all, so the
+/// offscreen render is the whole drawing route, the way the capsule's is.
+func predictedFace(chrome: ResolvedChrome, over backdrop: RGB) -> RGB {
+    let washed = nsSRGB(backdrop).blended(
+        withFraction: ChromeMaterials.PaneWash.floor,
+        of: nsSRGB(PaneTheme.darkPastel.background)
+    )!
+    switch chrome {
+    case let .glass(set):
+        // The wash and then the material fill over it, the capsule's own stack.
+        // The glass view itself sits below both and contributes nothing
+        // offscreen (see this function's doc), so what is predicted here is the
+        // paint the pill's face lays down and nothing else.
+        return asRGB(washed.blended(
+            withFraction: set.fillChrome.alpha, of: nsSRGB(set.fillChrome.rgb)
+        )!)
+    case .flat:
+        // The wash and then `theme.background` again at full alpha, which is
+        // opaque and therefore the document colour exactly, whatever is beneath.
+        return PaneTheme.darkPastel.background
+    }
+}
+
+/// One offer arm: the caption graded over the pill's own composited face, in
+/// one chrome, over both backdrops.
+///
+/// Sampled the way the capsule's arms sample. The fill band is read from a
+/// point inside the pill that no glyph reaches — the pill's trailing inset,
+/// half a `SidebarRowMetrics.inset` in from the right edge, which is inside the
+/// shape and outside the caption by construction, since the caption is placed at
+/// `inset` from the leading edge and the width is exactly `caption + inset * 2`.
+/// The ink is the brightest pixel in the caption's own band, clamped to the
+/// middle 50% of the pill's height so the pill's antialiased top and bottom
+/// edges cannot pose as glyph ink — the capsule's ink-contamination lesson,
+/// inherited.
+@MainActor func gradeOffer(chromeName: String, chrome: ResolvedChrome) {
+    let base = PaneTheme.darkPastel
+
+    for backdrop in backdrops {
+        let predicted = predictedFace(chrome: chrome, over: backdrop.colour)
+
+        let theme = base
+
+        let offer = makeOffer(theme: theme, chrome: chrome)
+        let size = offer.bounds.size
+        let rep = renderOffer(offer, backdrop: backdrop.colour)
+
+        let bandPoint = NSPoint(
+            x: size.width - SidebarRowMetrics.inset / 2,
+            y: size.height / 2
+        )
+        let band = sample(at: bandPoint, in: rep, size: size)
+        check(
+            within(band, predicted, bytes: 1),
+            "the \(chromeName) face \(band.hexString) is the predicted composite over "
+                + "\(backdrop.name) (predicted \(predicted.hexString), ±1 byte)"
+        )
+
+        let inkBand = NSRect(
+            x: SidebarRowMetrics.inset,
+            y: size.height * 0.25,
+            width: size.width - SidebarRowMetrics.inset * 2,
+            height: size.height * 0.5
+        )
+        // The drawn ink on the real run; on the control, the pill's own face,
+        // which is a caption painted in the colour it sits on.
+        //
+        // **The control had to change shape for these two arms and the reason is
+        // worth stating.** Every other arm here draws in a colour the theme
+        // states, so setting that colour to the fill is a caption that cannot be
+        // seen. This caption is *repaired*: `readable`'s last resort is the best
+        // of foreground, white and black, so no theme colour handed in survives
+        // as an unreadable one. Both damage routes were tried — `foreground`
+        // alone, then `foreground` and `background` collapsed together — and the
+        // arm passed at 6.07:1 each time, because the repair worked. So the
+        // control damages the drawn *pixel* rather than the theme entry behind
+        // it: the grade is run on a caption the colour of its own pill, which no
+        // repair can rescue because the repair is upstream of it. The pipeline
+        // under it — theme, render, sampling, band — is the arm's own, so a
+        // probe reading the wrong pixels still fails here.
+        let ink = broken ? band : brightest(in: inkBand, rep: rep, size: size)
+        let ratio = ink.contrastRatio(against: band)
+        print(String(
+            format: "       caption ink %@ over %@ -> %.2f:1%@",
+            ink.hexString, band.hexString, ratio, broken ? "  (control: ink set to the pill's own face)" : ""
+        ))
+        // On the real run the drawn ink must be the repair's own answer, not
+        // some pixel that happened to be bright: without this the arm could pass
+        // on an antialiased edge and never notice the caption had gone.
+        if !broken {
+            let expected = InitOfferView.captionInk(theme: theme, chrome: chrome)
+            check(
+                within(ink, expected, bytes: 2),
+                "the drawn caption \(ink.hexString) is captionInk's answer \(expected.hexString) (±2 bytes)"
+            )
+        }
+        check(
+            ratio >= textFloor,
+            String(
+                format: "the caption reads %.2f:1 >= %.1f:1 (PaneTheme.minimumTextContrast) on the %@ pill over %@",
+                ratio, textFloor, chromeName, backdrop.name
+            )
+        )
+    }
+}
+
+func armOfferGlass() {
+    print("== offer (glass): the git init caption over the wash, material counted as transparent")
+    gradeOffer(chromeName: "glass", chrome: .glass(.dark))
+}
+
+func armOfferFlat() {
+    print("== offer (flat): the git init caption over the opaque pill")
+    gradeOffer(chromeName: "flat", chrome: .flat)
+}
+
 // MARK: - main
 
 @main
@@ -413,6 +583,14 @@ enum Probe {
             "resting": armResting,
             "focused": armFocused,
             "dot": armDot,
+            // The sidebar's floating offer, added 2026-08-12 with the owner's
+            // tinted-glass ruling. Same probe rather than a new one because the
+            // question is identical — is ink legible over a translucent pill
+            // floating over content it is not about — and the answer has to be
+            // graded against the same floor by the same method, or the two pills
+            // in this app would be judged by two standards.
+            "offer-glass": armOfferGlass,
+            "offer-flat": armOfferFlat,
         ]
 
         State.broken = CommandLine.arguments.contains("break")

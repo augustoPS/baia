@@ -398,6 +398,14 @@ final class SidebarHost: NSViewController {
         didSet {
             guard fillMaterial != oldValue else { return }
             updateGlassTint()
+            // **And down into the sections, since 2026-08-12.** A surface used to
+            // own no glass, so this key stopped at the column's own plane. The
+            // owner's tinted-glass ruling gave `FilesSurface`'s floating `git
+            // init` pill a real `NSGlassEffectView`, and ruled that it follows
+            // the sidebar's tint rather than taking a key of its own — so the
+            // same value reaches both, from one property, and the pill cannot
+            // disagree with the plane it floats over.
+            for section in sections { section.surface.fillMaterial = fillMaterial }
         }
     }
 
@@ -550,6 +558,12 @@ final class SidebarHost: NSViewController {
             section.surface.theme = theme
             section.surface.backgroundOpacity = backgroundOpacity
             section.surface.resolvedChrome = resolvedChrome
+            // Alongside the three above rather than only in the `didSet`, for the
+            // reason each of them is here: `show(_:)` installs surfaces that were
+            // constructed at their own defaults, and a section that missed this
+            // would carry an untinted pill under a dialled column until the next
+            // time the dial moved.
+            section.surface.fillMaterial = fillMaterial
             view.addSubview(section.surface.view)
         }
         raiseGrabStrips()
