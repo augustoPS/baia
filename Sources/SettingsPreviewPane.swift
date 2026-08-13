@@ -3,19 +3,46 @@ import BaiaSettings
 import GhosttyTerminal
 import PaneChrome
 
-/// One miniature pane in the settings preview: a sample terminal with a real
-/// status bar under it.
+/// One miniature pane in the settings preview: a sample terminal wearing the
+/// real capsule in its top-right corner.
 ///
-/// The footer is `PaneStatusBarView` itself, not a drawing of one. It is already
-/// a passive view driven entirely by settable properties, the same way a real
+/// The capsule is `PaneClusterView` itself, not a drawing of one. It is a
+/// passive view driven entirely by settable properties, the same way a real
 /// pane drives it, so the preview cannot disagree with the panes about what
-/// `focusAccent`, `attentionStyle`, `attentionAccent` or `alertBehavior` look
-/// like. Those four keys touch nothing else, so without this footer three of them
-/// had no visible effect in the window at all.
+/// `focusAccent`, `attentionAccent` or `alertBehavior` look like. Those keys
+/// touch nothing else, so without a real chrome view here they would have no
+/// visible effect in this window at all.
+///
+/// **It was `PaneStatusBarView` until 2026-08-13, and the swap is a correction
+/// rather than a refresh.** The footer is retired: `chrome.cluster.mode`
+/// defaults to `.cluster`, where `TerminalPaneController.applyClusterMode()`
+/// hides the bar outright and the capsule is the only chrome a pane wears. This
+/// preview instantiated the footer *outside* that dial, so it went on showing a
+/// surface the owner's panes no longer have — a settings window previewing
+/// chrome that is not on screen anywhere else, which is worse than previewing
+/// nothing. The capsule is the surface these dials now actually reach.
+///
+/// **`attentionStyle` is the one of the four this preview cannot show, and it is
+/// deliberate rather than overlooked.** That key never reached the capsule: in a
+/// real pane it gates `TerminalPaneController.drawsAttentionFrame`, the 2 pt
+/// `PaneEdgeFrameView` stroke around the whole pane, and `PaneClusterView` has no
+/// `attentionStyle` property to hand it to. ``attentionFrame`` below is that
+/// view, installed here for exactly that reason; see its own doc.
 @MainActor
 final class SettingsPreviewPane: NSViewController {
     private let surface = SettingsSampleSurface()
-    private let footer = PaneStatusBarView()
+    private let capsule = PaneClusterView(frame: .zero)
+
+    /// The pane-edge attention stroke, the same `PaneEdgeFrameView` a real pane
+    /// wears, and the only carrier `attentionStyle` has.
+    ///
+    /// A second real view rather than a second drawing, on this file's standing
+    /// rule: the dial is `loud` versus `quiet`, `TerminalPaneController` spells
+    /// that as `lastAttention == .asking && attentionStyle == .loud`, and the same
+    /// conjunction is recomputed in ``apply(_:theme:chrome:settings:)`` rather
+    /// than approximated. Invisible on the calm pane at every setting, which is
+    /// correct: `loud` is a statement about a pane that is asking.
+    private let attentionFrame = PaneEdgeFrameView(frame: .zero)
 
     /// Whether this pane is shown as the focused one.
     ///
@@ -73,41 +100,80 @@ final class SettingsPreviewPane: NSViewController {
         super.viewDidLoad()
         addChild(surface)
         surface.view.translatesAutoresizingMaskIntoConstraints = false
-        footer.translatesAutoresizingMaskIntoConstraints = false
+        capsule.translatesAutoresizingMaskIntoConstraints = false
+        attentionFrame.translatesAutoresizingMaskIntoConstraints = false
         desktopStandIn.translatesAutoresizingMaskIntoConstraints = false
-        // Behind both, so the surface's translucent background composites onto
-        // it exactly as a pane's composites onto the desktop.
+        // Behind everything, so the surface's translucent background composites
+        // onto it exactly as a pane's composites onto the desktop.
         view.addSubview(desktopStandIn)
         view.addSubview(surface.view)
-        view.addSubview(footer)
+        // Over the surface, both of them, which is the pane's own stacking: the
+        // capsule floats on the terminal and the attention stroke is drawn just
+        // inside the pane's edge over whatever is there.
+        view.addSubview(attentionFrame)
+        view.addSubview(capsule)
 
-        footer.status = status
-        footer.isFocused = isFocused
-        footer.isWindowActive = true
+        // The same feed a real pane gives the capsule: the segments built from
+        // this pane's sample status, and the two halves of the focus gate. The
+        // preview window is never inactive as far as this pane is concerned —
+        // `isWindowActive` false would scrim every column at once and say
+        // nothing about a setting — so the fixed `isFocused` is the whole of it,
+        // exactly as the footer's pair was.
+        capsule.segments = PaneClusterSegments.build(from: status)
+        capsule.isPaneFocused = isFocused
+        capsule.isWindowActive = true
 
         NSLayoutConstraint.activate([
             desktopStandIn.topAnchor.constraint(equalTo: view.topAnchor),
             desktopStandIn.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             desktopStandIn.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             desktopStandIn.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            // The surface is now the whole pane rect. Under the footer it stopped
+            // 22 pt short, because `PaneStatusBarMetrics.reservedHeight(focused:)`
+            // pinned a bar across the bottom and the surface took what was left.
+            // Nothing replaces that as a *height input*, and nothing should: the
+            // capsule is an overlay, and a real pane at `.cluster` runs its
+            // surface to the view's own bottom edge for exactly this reason
+            // (`PaneClusterMetrics.bottomArrangement(clusterOnly:underGlass:)`
+            // answers `.fullHeightClear`). So the pane's height is unchanged —
+            // it was always the column's stack view, `fillEqually` over two
+            // panes — and the surface simply gains the 22 pt the bar used to
+            // hold. The preview grows a little more terminal, which is what the
+            // real pane did when the footer left it.
             surface.view.topAnchor.constraint(equalTo: view.topAnchor),
+            surface.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             surface.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             surface.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            footer.topAnchor.constraint(equalTo: surface.view.bottomAnchor),
-            footer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            footer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            footer.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            footer.heightAnchor.constraint(
-                equalToConstant: PaneStatusBarMetrics.reservedHeight(focused: isFocused)
+            attentionFrame.topAnchor.constraint(equalTo: view.topAnchor),
+            attentionFrame.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            attentionFrame.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            attentionFrame.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            // Pinned exactly the way it ships: top and trailing only, at the
+            // corner inset, with width and height coming from the view's own
+            // `intrinsicContentSize`. `TerminalPaneController.installClusterView()`
+            // is the shape being matched, down to the two anchors it uses and
+            // the two it deliberately does not.
+            capsule.topAnchor.constraint(
+                equalTo: view.topAnchor,
+                constant: PaneClusterMetrics.cornerInset
+            ),
+            view.trailingAnchor.constraint(
+                equalTo: capsule.trailingAnchor,
+                constant: PaneClusterMetrics.cornerInset
             ),
         ])
     }
 
-    /// Re-themes the terminal and the footer together.
+    /// Re-themes the terminal and the chrome together.
     ///
-    /// Both halves come from the one `Settings` the column was handed, so the
-    /// footer can never be showing one theme while the surface above it shows
+    /// Every half comes from the one `Settings` the column was handed, so the
+    /// capsule can never be showing one theme while the surface under it shows
     /// another.
+    ///
+    /// `focusAccent` is absent from the writes below and still applies: it is
+    /// baked into the `PaneTheme` by `SettingsDerivations.paneTheme(from:)`, and
+    /// the capsule draws its focus stroke in `theme.inkFocus`. Assigning it here
+    /// as well would be a second resolution of one setting.
     func apply(
         _ configuration: TerminalConfiguration,
         theme: TerminalTheme,
@@ -115,9 +181,19 @@ final class SettingsPreviewPane: NSViewController {
         settings: BaiaSettings.Settings
     ) {
         surface.apply(configuration, theme: theme)
-        footer.theme = chrome
-        footer.attentionStyle = settings.attentionStyle
-        footer.attentionAccent = settings.attentionAccent
-        footer.alertBehavior = settings.alertBehavior
+        capsule.theme = chrome
+        capsule.attentionAccent = settings.attentionAccent
+        capsule.alertBehavior = settings.alertBehavior
+        // `TerminalPaneController.applyPresentation()`'s two lines for this view,
+        // recomputed rather than approximated: one colour resolved from the same
+        // call the capsule's dot uses, so the stroke around the pane and the dot
+        // inside it cannot end up two colours, and the volume gate. The asking
+        // pane is the only one that can be `.asking`, so `quiet` takes the frame
+        // off exactly one of the two panes and leaves the dot on both.
+        attentionFrame.colour = chrome.attentionColour(
+            settings.attentionAccent,
+            behavior: settings.alertBehavior
+        )
+        attentionFrame.isVisible = status.attention.wearsFrame(under: settings.attentionStyle)
     }
 }

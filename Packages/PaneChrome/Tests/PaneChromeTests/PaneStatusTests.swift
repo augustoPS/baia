@@ -1,3 +1,4 @@
+import BaiaSettings
 import Foundation
 import Testing
 
@@ -160,5 +161,51 @@ import Testing
 
     @Test func doneHasAWireName() {
         #expect(PaneStatus.Attention.name(of: .done) == "done")
+    }
+
+    // MARK: - the attention frame
+
+    @Test func onlyAnUnacknowledgedAskWearsTheFrameAndOnlyWhenLoud() {
+        // Both halves of the conjunction, every level against every style, so
+        // neither term can be dropped without a failure here. `asking` + `loud`
+        // is the one true cell; the other seven are what the two views must
+        // agree to leave bare.
+        for level in PaneStatus.Attention.allCases {
+            for style in AttentionStyle.allCases {
+                let expected = level == .asking && style == .loud
+                #expect(
+                    level.wearsFrame(under: style) == expected,
+                    "\(level) under \(style)"
+                )
+            }
+        }
+    }
+
+    @Test func acknowledgingAnAskTakesTheFrameOffWithoutTouchingTheStyle() {
+        // The level moves, the style does not, and the frame comes off. This is
+        // what `acknowledged` means — the owner has been in the pane, so the
+        // cross-window carrier has done its job — and it is the case a predicate
+        // written as `attention != .none` would get wrong while still passing a
+        // test that only ever checked `.asking` and `.none`.
+        let asking = PaneStatus.Attention(
+            PaneStatus.Agent(label: "claude", wantsAttention: true, isAcknowledged: false)
+        )
+        let acknowledged = PaneStatus.Attention(
+            PaneStatus.Agent(label: "claude", wantsAttention: true, isAcknowledged: true)
+        )
+        #expect(asking.wearsFrame(under: .loud))
+        #expect(!acknowledged.wearsFrame(under: .loud))
+    }
+
+    @Test func quietTakesTheFrameOffTheOnePaneThatWouldHaveWornIt() {
+        // The settings preview's whole reason for installing a `PaneEdgeFrameView`:
+        // `attentionStyle` reaches nothing on the capsule, so this predicate is
+        // the entire visible difference between the two values, and it has to
+        // move on exactly the asking pane and no other.
+        let asking = PaneStatus.Attention.asking
+        #expect(asking.wearsFrame(under: .loud) != asking.wearsFrame(under: .quiet))
+        for calm in [PaneStatus.Attention.none, .acknowledged, .done] {
+            #expect(calm.wearsFrame(under: .loud) == calm.wearsFrame(under: .quiet))
+        }
     }
 }

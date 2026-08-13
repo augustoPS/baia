@@ -1,3 +1,4 @@
+import BaiaSettings
 import Foundation
 
 /// Everything one pane's status bar shows, already reduced to display values.
@@ -145,6 +146,33 @@ public struct PaneStatus: Sendable, Equatable {
             } else {
                 self = .none
             }
+        }
+
+        /// Whether a pane at this level wears the 2 pt `PaneEdgeFrameView`
+        /// stroke around its whole compartment.
+        ///
+        /// **The one copy of the rule, here for the reason ``init(_:)`` above is
+        /// here.** It was spelled in `TerminalPaneController.drawsAttentionFrame`
+        /// and nowhere else while the pane was the only thing that drew a frame.
+        /// `SettingsPreviewPane` became the second drawer on 2026-08-13, when it
+        /// swapped its chrome from the retired footer to the capsule and found
+        /// that `attentionStyle` is the one of the four signal keys the capsule
+        /// carries nothing of — `PaneClusterView` has no `attentionStyle`
+        /// property, and the frame is the key's only expression. Two sites
+        /// drawing one frame from two copies of one conjunction is precisely the
+        /// arrangement the app target has no test target to catch.
+        ///
+        /// Not gated on window activation, unlike focus, and
+        /// `TerminalPaneController`'s own doc carries why: focus is a statement
+        /// about a window that has the keyboard, while an unanswered agent in a
+        /// background window is exactly the thing worth finding.
+        ///
+        /// `acknowledged` does not qualify and that is the level's whole
+        /// meaning: the owner has been in the pane since it started asking, so
+        /// the cross-window carrier has done its job and comes off. `done` does
+        /// not either — a finish is a notification rather than a request.
+        public func wearsFrame(under style: AttentionStyle) -> Bool {
+            self == .asking && style == .loud
         }
 
         /// This level, spelled for a reader. Nil for `none`, so a pane that is

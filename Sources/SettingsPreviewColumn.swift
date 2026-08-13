@@ -12,6 +12,12 @@ import PaneChrome
 /// four signal keys with nothing to look at, which is what this column exists to
 /// fix.
 ///
+/// The chrome each pane wears is the capsule (``SettingsPreviewPane`` swapped
+/// off the retired footer on 2026-08-13), so the sample statuses below feed
+/// `PaneClusterSegments.build(from:)` rather than the bar's own builder. They are
+/// unchanged by the swap: both surfaces derive from one `PaneStatus`, which is
+/// the property that made the swap a change of view and not of fixture.
+///
 /// The heading is a `SurfaceTitleView`, the same view the real sidebar draws, so
 /// the one part carrying theme colour into the sidebar is shared rather than
 /// reimplemented. `SidebarHost` itself is not reused: its initialiser takes a

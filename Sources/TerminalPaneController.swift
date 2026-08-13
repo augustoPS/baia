@@ -717,8 +717,14 @@ final class TerminalPaneController: NSViewController {
     /// The volume term is what `AttentionStyle` still owns: both volumes draw the
     /// footer's capsule (`PaneStatusBarView.showsCapsuleFill` is asking-only and
     /// style-blind), and `loud` adds this frame on top as the cross-window carrier.
+    ///
+    /// The conjunction moved to ``PaneChrome/PaneStatus/Attention/wearsFrame(under:)``
+    /// on 2026-08-13, when `SettingsPreviewPane` became the second view to draw
+    /// this frame and this file stopped being the only place the rule could
+    /// live. What remains here is which facts to ask it about, which is the part
+    /// only a pane knows.
     private var drawsAttentionFrame: Bool {
-        lastAttention == .asking && attentionStyle == .loud
+        lastAttention.wearsFrame(under: attentionStyle)
     }
 
     /// Raised when this pane's git read produced something new.
