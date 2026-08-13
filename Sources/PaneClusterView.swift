@@ -25,6 +25,10 @@ final class PaneClusterView: PaneOverlayView {
     var segments: [PaneClusterSegment] = [] {
         didSet {
             guard segments != oldValue else { return }
+            // Before the measure, so the re-measure the observation may trigger
+            // cannot land on a stale placement, and after the guard, so a
+            // repeated identical status does not churn an observer.
+            updatePaneWidthObservation()
             remeasure()
         }
     }
@@ -130,9 +134,78 @@ final class PaneClusterView: PaneOverlayView {
     /// nearer.
     var onSegmentClick: ((PaneClusterSegmentRole, NSRect) -> Void)?
 
+    /// The pane inset the pill is pinned at, written by the controller from
+    /// its own ``TerminalPaneController/resolvedClusterInset`` whenever that
+    /// moves (install, and every `chrome.cluster.cornerInset` edit).
+    ///
+    /// Held rather than read from ``PaneClusterMetrics/cornerInset``, because
+    /// the constant is only the *default* the dial falls back to. The notice
+    /// budget is the one derivation that cares: it reserves the inset at both
+    /// ends of the pane, and reserving 6 while the constraints hold 40
+    /// over-allows by 68 pt and runs the pill off the pane's leading edge.
+    /// Re-measures on change for the same reason the pane width does — the
+    /// budget moved, so what the sentence may claim moved with it.
+    var cornerInset: Double = PaneClusterMetrics.cornerInset {
+        didSet {
+            guard cornerInset != oldValue,
+                  segments.contains(where: { $0.role == .notice })
+            else { return }
+            remeasure()
+        }
+    }
+
     /// The solved placement, cached at measure time rather than re-solved per
     /// draw or per click, so what is drawn and what is hit cannot disagree.
     private var placed: [PaneClusterLayout.Placed] = []
+
+    /// Where the attention dot sat in the last placement that had one, as a
+    /// distance from the pill's **trailing** edge rather than as a rect.
+    ///
+    /// **This is what a notice does not take away.** A notice takes the pill
+    /// alone (``PaneChrome/PaneClusterSegments/build(from:)``), so for its three
+    /// seconds `placed` holds no attention segment and
+    /// ``segmentRect(for:)`` would answer nil — which the approval popover's
+    /// anchor turns into the whole pill, and during a notice the whole pill is
+    /// a full-width sentence. Anchoring a popover to that lands it visibly
+    /// displaced, and three seconds later the pill shrinks out from under it.
+    ///
+    /// The dot is displaced by the notice, not deleted by it: it comes back
+    /// where it was as soon as the sentence clears. So the honest answer to
+    /// "where is the attention dot" during a notice is where it *will* be, and
+    /// that is what this reserves. Both orderings are covered by the one fact —
+    /// a request arriving mid-notice anchors to the returning dot, and a notice
+    /// firing under an already-anchored popover leaves that popover over the
+    /// place the dot comes back to.
+    ///
+    /// Measured from the trailing edge because that edge is the one the pill is
+    /// pinned by: the view's leading edge moves when the width changes (a
+    /// notice makes it hundreds of points wider) while the trailing edge does
+    /// not, so a leading-relative x would point somewhere else entirely the
+    /// moment the notice arrives. Nil until attention has been placed once,
+    /// which is the genuinely unknown case the fallback below is for.
+    private var reservedAttentionTrailingOffset: Double?
+
+    /// The notice's text as it was cut and measured, so ``draw(_:)`` paints the
+    /// string the pill's width was solved from rather than re-deriving it. Nil
+    /// whenever the segments carry no notice.
+    private var noticeCut: String?
+
+    /// The pane-frame observation, live only while a notice is up. See
+    /// ``updatePaneWidthObservation()``.
+    private var paneWidthObserver: (any NSObjectProtocol)?
+
+    /// The pane width the current placement was measured against, so a resize
+    /// that changes what a notice may claim can re-measure and one that does
+    /// not can stay quiet.
+    ///
+    /// Only the notice's width depends on the pane (see
+    /// ``PaneChrome/PaneClusterLayout/noticeTextBudget(paneWidth:cornerInset:)``);
+    /// every resting segment measures the same at every pane width. So this is
+    /// consulted in ``paneWidthChanged()``, which is only ever subscribed while
+    /// a notice is up, and a pane dragged narrower with a branch name on its
+    /// pill re-measures nothing — the common case, and the one that must not
+    /// thrash.
+    private var measuredPaneWidth: Double?
 
     /// One font for measuring and drawing both, because a width measured in
     /// any other font is a pill the text does not fit.
@@ -170,9 +243,17 @@ final class PaneClusterView: PaneOverlayView {
     /// and `acceptsFirstResponder` staying false is what keeps it from moving
     /// the keyboard: AppKit does not make a view first responder for merely
     /// implementing `mouseDown`.
+    ///
+    /// A click on the notice resolves to a segment and then stops, on
+    /// ``PaneChrome/PaneClusterSegmentRole/opensCard``: the sentence is already
+    /// the whole answer, and a card would take the keyboard off the terminal to
+    /// say it again for three seconds. The event is still consumed, which is
+    /// what keeps a click aimed at a pill that has briefly become a notice from
+    /// landing in the terminal underneath it.
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         guard let segment = PaneClusterLayout.segment(at: Double(point.x), in: placed),
+              segment.role.opensCard,
               let rect = segmentRect(for: segment.role)
         else { return }
         onSegmentClick?(segment.role, rect)
@@ -190,21 +271,231 @@ final class PaneClusterView: PaneOverlayView {
         return NSRect(x: hit.x, y: 0, width: hit.width, height: bounds.height)
     }
 
+    /// Where the approval popover should anchor: the attention dot's rect if it
+    /// is placed, otherwise the rect it will occupy when the notice covering it
+    /// clears, otherwise nil.
+    ///
+    /// Separate from ``segmentRect(for:)`` rather than folded into it, because
+    /// the two answer different questions and only one of them may lie. A click
+    /// resolving to a segment, and the wash drawn behind an active one, must see
+    /// exactly what is on screen right now — `segmentRect` is the cache `draw`
+    /// paints from and answering a rect for a segment that is not there would
+    /// wash empty pill. An anchor is a promise about where a thing is *for the
+    /// life of the popover*, which outlives a three-second notice, so it is
+    /// allowed to name the returning dot. Two callers, two contracts, two
+    /// functions.
+    ///
+    /// Nil only when attention has never been placed on this pill — a request
+    /// arriving before the first status poll adds the segment. That is the case
+    /// the caller's whole-capsule fallback was written for, and it is a fine
+    /// stand-in there: with no notice up the pill is its resting width, a few
+    /// dozen points, so a popover under it lands where the dot is about to
+    /// appear anyway.
+    func approvalAnchorRect() -> NSRect? {
+        if let live = segmentRect(for: .attention) { return live }
+        guard let offset = reservedAttentionTrailingOffset else { return nil }
+        // The offset was taken from the trailing edge of the pill it was
+        // measured on and is applied to the trailing edge of the pill there is
+        // now, and those are the same point of the pane even though the pill
+        // changed width under them.
+        //
+        // **`bounds.maxX` is not itself fixed — it is the view's width, 60-odd
+        // points at rest and up to 500 under a notice.** What is fixed is where
+        // that edge lands in the window, and it is fixed by cancellation rather
+        // than by nothing moving. The capsule is pinned trailing
+        // (`TerminalPaneController` constrains `view.trailingAnchor` to
+        // `clusterView.trailingAnchor` plus the resolved inset), so a pill that
+        // grows by Δ moves `frame.origin.x` by exactly −Δ; converting out with
+        // `convert(_:to: nil)` adds `frame.origin` back, so the two deltas
+        // cancel and the trailing edge converts to the same window point at
+        // every width. The leading edge is the one that moves, which is why the
+        // reserve is stored trailing-relative in the first place.
+        //
+        // **The offset is invariant, not merely stable, and that is stronger
+        // than this reserve needs.** `PaneClusterSegments.build` always appends
+        // `.attention` last, and `pillWidth` is `last.x + last.width +
+        // horizontalInset`, so for the placement that has a dot
+        // `pillWidth - dot.x` is `dotDiameter + horizontalInset` — 14 at the
+        // shipped metrics, whatever resting segments are present and however
+        // long the branch name is. Stored anyway rather than written as that
+        // constant: the stored value stays correct if the dot ever stops being
+        // the last segment, and a constant here would silently point at
+        // whatever took its place. `theReservedDotOffsetIsTheSameWhicheverRestingSegmentsArePresent`
+        // in `PaneClusterLayoutTests` pins the invariance so the claim above is
+        // checkable.
+        return NSRect(
+            x: bounds.maxX - offset,
+            y: 0,
+            width: PaneClusterMetrics.dotDiameter,
+            height: bounds.height
+        )
+    }
+
     /// Measures every segment with the drawing font, solves the placement,
     /// and republishes the intrinsic size. The attention segment's text is
     /// empty by contract (``PaneClusterSegment/text``'s own doc); its width
     /// is the dot's.
+    ///
+    /// The notice is the one segment measured against a budget rather than
+    /// measured freely — see ``noticeText`` — because it is the one segment
+    /// that is a sentence. Everything else is a label the pane was always wide
+    /// enough for.
     private func remeasure() {
         var widths: [PaneClusterSegmentRole: Double] = [:]
+        var noticeCut: String?
         for segment in segments {
-            widths[segment.role] = segment.role == .attention
-                ? PaneClusterMetrics.dotDiameter
-                : Double(attributed(segment.text, ink: theme.foreground).size().width)
+            switch segment.role {
+            case .attention:
+                widths[segment.role] = PaneClusterMetrics.dotDiameter
+            case .notice:
+                // Cut once, here, and kept for `draw` to paint. The old shape
+                // re-cut inside `draw` "so the drawn string and the measured
+                // one are the same string"; they are the same string because
+                // they are now literally one value, and the cut no longer runs
+                // on every `needsDisplay` — a theme edit, a focus change or a
+                // window activation used to pay for the whole loop.
+                let cut = noticeText(segment.text)
+                noticeCut = cut
+                widths[segment.role] = Double(
+                    attributed(cut, ink: theme.foreground).size().width
+                )
+            default:
+                widths[segment.role] = Double(
+                    attributed(segment.text, ink: theme.foreground).size().width
+                )
+            }
         }
+        self.noticeCut = noticeCut
         placed = PaneClusterLayout.solve(segments: segments, widths: widths)
+        measuredPaneWidth = superview.map { Double($0.bounds.width) }
+
+        // The attention dot's distance from the pill's trailing edge, kept for
+        // ``approvalAnchorRect()`` to hand back while a notice has taken the
+        // pill. Written only when attention is actually placed, so a notice —
+        // which places nothing else — leaves the last resting value standing,
+        // which is the whole point: it is the offset the dot returns to.
+        if let dot = placed.first(where: { $0.segment.role == .attention }) {
+            reservedAttentionTrailingOffset =
+                PaneClusterLayout.pillWidth(for: placed) - dot.x
+        }
+
         isHidden = placed.isEmpty
         invalidateIntrinsicContentSize()
         needsDisplay = true
+    }
+
+    /// Re-measures a notice whose pane has changed width under it.
+    ///
+    /// A notice lives three seconds and a divider drag takes longer than that,
+    /// so a pane narrowed mid-notice is reachable: without this the pill keeps
+    /// the width it was measured at and runs off the pane it belongs to, which
+    /// is the exact failure the budget exists to prevent. Widening has the
+    /// milder version — a sentence stays cut shorter than it needed to be —
+    /// and the same call fixes it.
+    ///
+    /// **Driven off the superview's frame, and it has to be, because this view
+    /// has no reason of its own to lay out when the pane resizes.** The capsule
+    /// is pinned top and trailing with its width coming from
+    /// ``intrinsicContentSize``: dragging the divider narrower moves the
+    /// superview's width and this view's own bounds do not follow, so AppKit
+    /// calls `layout()` on the pane, not on the pill. The previous version of
+    /// this re-measure hung off `layout()` and could not fire on the one path
+    /// it was written for — and it was circular besides, since the intrinsic
+    /// size only moves when `remeasure()` runs and `remeasure()` only ran from
+    /// `layout()`.
+    ///
+    /// `NSView.frameDidChangeNotification` on the superview is what actually
+    /// observes the resize: AppKit posts it whenever the pane's frame is set,
+    /// which is exactly what a divider drag does on every mouse-moved event,
+    /// and `postsFrameChangedNotifications` defaults to true (nothing in this
+    /// app turns it off on a pane's container, which is a plain `NSView` from
+    /// `TerminalPaneController.loadView()`).
+    ///
+    /// Both halves measured rather than assumed, on this exact arrangement — a
+    /// child pinned top and trailing, width from `intrinsicContentSize`, inside
+    /// a superview narrowed from 800 to 300 and laid out: the child's `layout()`
+    /// fired **zero** times, and the superview posted **one** frame
+    /// notification. The old mechanism could not fire on the path it was written
+    /// for; this one does.
+    ///
+    /// The observation is registered only while a notice is up
+    /// (``updatePaneWidthObservation()``, from ``segments``' setter) and torn
+    /// down the moment the sentence clears, so the resting capsule — every pane
+    /// for the whole time no click is being refused — carries no observer, no
+    /// notification traffic and no per-resize work at all.
+    private func paneWidthChanged() {
+        guard segments.contains(where: { $0.role == .notice }),
+              let paneWidth = superview.map({ Double($0.bounds.width) }),
+              paneWidth != measuredPaneWidth
+        else { return }
+        remeasure()
+    }
+
+    /// Starts or stops watching the pane's frame, keyed off whether a notice is
+    /// up. Called from ``segments``' setter, which is the one place a notice
+    /// arrives and the one place it leaves.
+    ///
+    /// Also re-registered when the superview changes (``viewDidMoveToSuperview``),
+    /// because an observation is against a specific object and a capsule
+    /// reinstalled by the `chrome.cluster.mode` dial gets a different pane view
+    /// — or none.
+    private func updatePaneWidthObservation() {
+        if let paneWidthObserver {
+            NotificationCenter.default.removeObserver(paneWidthObserver)
+            self.paneWidthObserver = nil
+        }
+        guard segments.contains(where: { $0.role == .notice }),
+              let pane = superview
+        else { return }
+        paneWidthObserver = NotificationCenter.default.addObserver(
+            forName: NSView.frameDidChangeNotification,
+            object: pane,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.paneWidthChanged() }
+        }
+    }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        updatePaneWidthObservation()
+    }
+
+    // No `deinit` removing `paneWidthObserver`, and the reason is the one
+    // `PaneGitStatus.stopPolling()` states for its own missing deinit: a
+    // nonisolated deinit may not touch main-actor state, and this view is
+    // `@MainActor` with everything it holds. The teardown lives on the
+    // lifecycle path instead, which reaches every way this observation can end.
+    // `viewDidMoveToSuperview` fires on removal as well as on install
+    // (`applyClusterMode()` removes the capsule at `.footer`, and a closing pane
+    // takes its whole hierarchy down), and `updatePaneWidthObservation()` finds
+    // no superview there and unregisters. The block captures `self` weakly
+    // besides, so the worst an unregistered observer could do is a no-op.
+
+    /// The notice as it will be drawn: the sentence, tail-cut to whatever
+    /// ``PaneChrome/PaneClusterLayout/noticeTextBudget(paneWidth:cornerInset:)``
+    /// says this pane can hold.
+    ///
+    /// The AppKit half of the decision only. Where the sentence stops is
+    /// ``PaneChrome/PaneClusterLayout/noticeCut(_:budget:measure:)``'s, in the
+    /// package where the tests can reach it; what remains here is the one thing
+    /// that genuinely needs a window's frameworks, measuring a string in a font.
+    ///
+    /// `superview` and not `window`: the budget is about the pane the pill
+    /// floats over, which is the view this one is installed in
+    /// (`TerminalPaneController.installClusterView()`). With no superview there
+    /// is no pane to fit and the text passes through unbudgeted, which only
+    /// happens before installation, when nothing is on screen to overflow.
+    private func noticeText(_ text: String) -> String {
+        guard let paneWidth = superview?.bounds.width else { return text }
+        return PaneClusterLayout.noticeCut(
+            text,
+            budget: PaneClusterLayout.noticeTextBudget(
+                paneWidth: Double(paneWidth),
+                cornerInset: cornerInset
+            ),
+            measure: { Double(self.attributed($0, ink: self.theme.foreground).size().width) }
+        )
     }
 
     private func attributed(_ text: String, ink: RGB) -> NSAttributedString {
@@ -316,7 +607,8 @@ final class PaneClusterView: PaneOverlayView {
         // judges its own ink against.
         let attentionColour = theme.attentionColour(attentionAccent, behavior: alertBehavior)
         for placement in placed {
-            if placement.segment.role == .attention {
+            switch placement.segment.role {
+            case .attention:
                 let dot = NSRect(
                     x: placement.x,
                     y: (bounds.height - PaneClusterMetrics.dotDiameter) / 2,
@@ -325,7 +617,37 @@ final class PaneClusterView: PaneOverlayView {
                 )
                 nsColor(attentionColour).setFill()
                 NSBezierPath(ovalIn: dot).fill()
-            } else {
+            case .notice:
+                // The one segment whose ink is graded rather than taken
+                // ungraded from the theme, and the exception has a reason the
+                // paragraph above states in the other direction. The resting
+                // segments are theme foreground on a surface the footer already
+                // judges its own ink against, so grading them would be repairing
+                // a colour that measures 9.62:1 (`cluster-legibility`'s resting
+                // arm). The notice is `theme.alert` — a hue, not a luminance
+                // tier — and nothing has measured *it* on this pill, so it goes
+                // through the package's own chain. See
+                // ``PaneChrome/PaneClusterInk/noticeInk(theme:chrome:)``.
+                //
+                // The cut string cached at measure time, not re-cut here. It
+                // was re-cut per draw until the fifth review, on the reasoning
+                // that calling the same function again keeps the drawn string
+                // and the pill's width the same string — which is true, and
+                // cheaper as one stored value: `needsDisplay` is raised by a
+                // theme edit, a focus change and a window activation, none of
+                // which move the cut, and each was paying for the whole loop.
+                // `?? text` cannot be reached (the cut is written in the same
+                // pass that places this segment) and draws the uncut sentence
+                // rather than nothing if it ever is.
+                let string = attributed(
+                    noticeCut ?? placement.segment.text,
+                    ink: PaneClusterInk.noticeInk(theme: theme, chrome: resolvedChrome)
+                )
+                string.draw(at: NSPoint(
+                    x: placement.x,
+                    y: (bounds.height - string.size().height) / 2
+                ))
+            default:
                 let string = attributed(placement.segment.text, ink: theme.foreground)
                 string.draw(at: NSPoint(
                     x: placement.x,

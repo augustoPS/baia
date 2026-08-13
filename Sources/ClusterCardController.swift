@@ -39,9 +39,26 @@ final class ClusterCardController {
     /// the card must not be kept alive by it.
     private weak var hostWindow: NSWindow?
 
-    /// Exposed so the caller can make a second click on the same segment
-    /// dismiss instead of reopen. The toggle itself is the caller's — this
-    /// controller cannot know which segment summoned the card that is up.
+    /// Whether the panel is on screen, as AppKit sees it right now.
+    ///
+    /// **Not what the app target should ask, and it no longer does.** This said
+    /// it was "exposed so the caller can make a second click on the same segment
+    /// dismiss instead of reopen" — the one use that has since been taken away
+    /// from it. ``TerminalPaneController/clusterCardIsShowing`` answers that
+    /// question off ``TerminalPaneController/clusterCardRole`` instead, for two
+    /// reasons stated in full at that property: reading this one *builds* the
+    /// lazy controller, so every pane that has never opened a card would pay for
+    /// a floating panel to be told there is no card; and `hidesOnDeactivate`
+    /// lets AppKit order the panel out with no dismissal path run, so
+    /// `isVisible` can go false under a card the pane still believes is up.
+    ///
+    /// It survives because `Diagnostics/cluster-card-key` compiles this file
+    /// verbatim and needs exactly the reading the app target must not take: the
+    /// probe's subject is the key discipline, so "is the panel actually on
+    /// screen" has to come from the panel rather than from a controller flag
+    /// agreeing with itself. That probe owns no `TerminalPaneController` and has
+    /// no role to read. A new app-target caller wanting "is a card up" wants
+    /// `clusterCardIsShowing`.
     var isShowing: Bool { panel.isVisible }
 
     /// Whether this card's window-level appearance is dark.
@@ -123,7 +140,12 @@ final class ClusterCardController {
         in host: NSWindow,
         onDismiss: (() -> Void)? = nil
     ) {
-        if panel.isVisible { dismiss() }
+        // Unconditional, not `if panel.isVisible`: an outgoing card whose panel
+        // AppKit already hid (`hidesOnDeactivate`) still has an `onDismiss`
+        // holding its subscriptions and the capsule's wash, and the visibility
+        // test skipped exactly that teardown. `dismiss()` guards its own window
+        // work and returns having called nothing when there was no card.
+        dismiss()
         self.onDismiss = onDismiss
 
         hostWindow = host
@@ -167,20 +189,42 @@ final class ClusterCardController {
         }
     }
 
+    /// Takes the card down and runs its `onDismiss`.
+    ///
+    /// **The visible-panel guard is on the window work, not on the teardown,
+    /// and moving it there is the fix for a card whose caller outlived it.**
+    /// `hidesOnDeactivate` is set, so AppKit may order this panel out with no
+    /// dismissal path run at all — the owner clicks another application and the
+    /// card is simply gone. The resign-key observer above does call `dismiss()`
+    /// for that case, but the notification is delivered a turn late (the fact
+    /// the observer's own guard leans on), and by then `isVisible` is already
+    /// false: the old `guard panel.isVisible else { return }` at the top
+    /// returned before `onDismiss`, so `TerminalPaneController.clusterCardRole`
+    /// and the capsule's hot wash survived the card that owned them. The pill
+    /// then wore a wash behind a segment with nothing open, and the segment's
+    /// toggle read as already-showing and refused to reopen it.
+    ///
+    /// Idempotent either way: the handler is nil'd before it is called, so a
+    /// second `dismiss()` — the toggle's, the resign observer's, `showNotice`'s
+    /// — runs the window work against an already-hidden panel (all no-ops) and
+    /// calls nothing.
     func dismiss() {
-        guard panel.isVisible else { return }
-        // Read before ordering out, and honoured only when the card itself
-        // still held the keyboard — ``ApprovalPopoverController/dismiss()``
-        // explains the one-turn-late resign-key notification this guards
-        // against.
-        let hadKey = panel.isKeyWindow
-        panel.orderOut(nil)
+        if panel.isVisible {
+            // Read before ordering out, and honoured only when the card itself
+            // still held the keyboard — ``ApprovalPopoverController/dismiss()``
+            // explains the one-turn-late resign-key notification this guards
+            // against.
+            let hadKey = panel.isKeyWindow
+            panel.orderOut(nil)
+            if hadKey { hostWindow?.makeKey() }
+        }
         // Unlike the approval popover, which owns its view for the process's
         // life, the card view belongs to the caller and only visits: it is
-        // released here so a dismissed card's view (and whatever it holds)
-        // does not outlive its card behind an empty stand-in.
+        // released here so a dismissed card's view (and whatever it holds) does
+        // not outlive its card behind an empty stand-in. Outside the visibility
+        // branch on purpose — an AppKit-hidden panel still holds the card view,
+        // and that is exactly the leak this releases.
         panel.contentView = NSView()
-        if hadKey { hostWindow?.makeKey() }
         let handler = onDismiss
         onDismiss = nil
         handler?()

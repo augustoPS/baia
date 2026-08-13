@@ -162,6 +162,12 @@ final class TerminalPaneController: NSViewController {
             for constraint in clusterEdgeConstraints {
                 constraint.constant = resolvedClusterInset
             }
+            // And onto the pill, because the notice budget reserves this inset
+            // at both ends of the pane. The constraints and the budget must
+            // read one value or the pill is pinned at one number and bounded
+            // by another: at a dialled 40 the budget was over-allowing by 68 pt
+            // and the sentence ran off the pane's leading edge.
+            clusterView.cornerInset = resolvedClusterInset
         }
     }
 
@@ -206,7 +212,41 @@ final class TerminalPaneController: NSViewController {
     /// but cannot know whose, so this is what turns a second click on the
     /// same segment into a dismissal. Cleared in the card's `onDismiss`, so
     /// every exit (⎋, resign-key, switch, toggle) clears it once.
+    ///
+    /// **Also the one answer to "is a card up", through
+    /// ``clusterCardIsShowing``.** Two call sites used to ask that question two
+    /// ways — `showNotice` off `clusterCardRole != nil`, the toggle off the
+    /// conjunction `clusterCards.isShowing && clusterCardRole == role` — and the
+    /// two can disagree. `ClusterCardController`'s panel sets
+    /// `hidesOnDeactivate`, so AppKit can order it out with no dismissal path
+    /// run at all: `isShowing` false while this role is still set. The
+    /// resign-key observer normally catches that and calls `dismiss()`, but
+    /// `dismiss()` opens `guard panel.isVisible` and returns on an
+    /// already-hidden panel without firing `onDismiss`, so the role survives its
+    /// own card. Read one way, that stale role only costs a redundant no-op
+    /// `dismiss()`; read the other way, the toggle's conjunction went false and
+    /// a click on the same segment re-showed a card the owner had just lost, and
+    /// `showNotice`'s dismissal could be skipped for a card AppKit had merely
+    /// hidden rather than closed.
     private var clusterCardRole: PaneClusterSegmentRole?
+
+    /// Whether a card is up over this pane's capsule, in one place.
+    ///
+    /// This and not ``ClusterCardController/isShowing``, for the reason
+    /// ``applyClusterMode()`` gives for its own superview check: reading the
+    /// lazy controller *builds* it, and building a floating panel for every pane
+    /// that has never opened a card — every pane under `.footer`, and most panes
+    /// under `.cluster` — is the cost that laziness exists to avoid. The role is
+    /// written when a card is shown and cleared from its `onDismiss`, so it
+    /// answers the same question without touching the panel.
+    ///
+    /// Where it can drift from the panel it is the *safe* direction, which is
+    /// what makes it the one to keep: it can be set with the panel hidden (see
+    /// ``clusterCardRole``), never clear with the panel visible, because every
+    /// path that shows a card sets it first. So a caller acting on this either
+    /// dismisses a card that is up, or calls a `dismiss()` that guards itself
+    /// and returns.
+    private var clusterCardIsShowing: Bool { clusterCardRole != nil }
 
     /// The changes card currently presented, weak so a dismissed card dies
     /// with its panel: the background read below lands through this, and a
@@ -551,6 +591,12 @@ final class TerminalPaneController: NSViewController {
     /// self-sizing arrangement Auto Layout already runs the rest of this
     /// hierarchy on.
     private func installClusterView() {
+        // Seeded here as well as from the dial's setter, for the case the
+        // setter cannot cover: a pane spawning with `cornerInset` already
+        // dialled writes the property before the capsule exists, and the
+        // constraints below then pin at a value the pill's budget had never
+        // heard. One line, at the one point the two pins are created.
+        clusterView.cornerInset = resolvedClusterInset
         clusterView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(clusterView, positioned: .below, relativeTo: scrim)
         let edges = [
@@ -578,14 +624,37 @@ final class TerminalPaneController: NSViewController {
     /// the anchor, converted exactly as before. Under `.cluster` the footer
     /// is hidden, so a rect on it would anchor the popover to an invisible
     /// bar; the anchor moves to the chrome that now carries attention, the
-    /// cluster capsule's attention-segment rect. The dot may not be in the
-    /// capsule's placement yet — a request can arrive before the status poll
-    /// adds the segment — and then the capsule's whole frame stands in. If
+    /// cluster capsule's attention-segment rect. If
     /// the capsule is not installed at all (unreachable under `.cluster`,
     /// where ``applyClusterMode()`` installs it, but a nil-window `convert`
     /// would answer garbage rather than fail) the pane's top-right corner —
     /// where the capsule would sit — keeps the popover on the pane it speaks
     /// for instead of anchored at a zero rect.
+    ///
+    /// **``PaneClusterView/approvalAnchorRect()`` and not
+    /// ``PaneClusterView/segmentRect(for:)``, and the difference is a notice.**
+    /// The dot's absence from the placement has two causes that want two
+    /// answers. It may never have been placed — a request arriving before the
+    /// status poll adds the segment — and then nothing knows where it goes and
+    /// the capsule's whole frame stands in, which is a fine stand-in because a
+    /// resting pill is a few dozen points wide and the dot is about to appear
+    /// inside it. Or a notice has taken the pill for three seconds, and then the
+    /// whole frame is a *sentence*, up to the pane's full width: the popover
+    /// would anchor to a rect hundreds of points wide, land visibly displaced,
+    /// and be left hanging over empty pane when the sentence cleared and the
+    /// pill shrank. `approvalAnchorRect()` separates the two by reserving where
+    /// the dot returns to, and that one fact also covers the reverse ordering —
+    /// a notice firing under a popover already anchored to the dot leaves that
+    /// popover over the place the dot comes back to, three seconds later, with
+    /// nothing needing to re-anchor.
+    ///
+    /// Re-anchoring is what this deliberately does not do. ``ApprovalRequest``
+    /// is one-way by design (see ``onApprovalRequested``): a pane names where
+    /// the popover should go and the app delegate owns the panel, so a pane
+    /// cannot move or dismiss one. Nor should a refused sidebar click dismiss
+    /// an approval the owner is mid-answering — the notice explains a click
+    /// that did nothing, and taking away a prompt over it would be the larger
+    /// surprise. Naming the returning dot needs no wire and no dismissal.
     private func approvalPopoverAnchor(footerCapsule: NSRect) -> NSRect {
         guard clusterMode == .cluster else {
             return statusBar.convert(footerCapsule, to: nil)
@@ -596,7 +665,7 @@ final class TerminalPaneController: NSViewController {
                 to: nil
             )
         }
-        let rect = clusterView.segmentRect(for: .attention) ?? clusterView.bounds
+        let rect = clusterView.approvalAnchorRect() ?? clusterView.bounds
         return clusterView.convert(rect, to: nil)
     }
 
@@ -1471,10 +1540,27 @@ final class TerminalPaneController: NSViewController {
     private func clusterSegmentClicked(
         _ role: PaneClusterSegmentRole, segmentRect: NSRect
     ) {
+        // The notice opens nothing, on the role's own
+        // ``PaneClusterSegmentRole/opensCard``. `PaneClusterView.mouseDown`
+        // already stops before raising it, so this is unreachable today and
+        // deliberately kept: the predicate lives in one place, and a future
+        // caller that raises a click by some other route (a keyboard path, a
+        // probe driving the handler directly) meets the same rule here instead
+        // of presenting a card anchored to a segment that will vanish in three
+        // seconds. Before the toggle, because a notice that arrived while a
+        // card was up has already dismissed that card (`showNotice(_:)`).
+        guard role.opensCard else { return }
+
         // The toggle: a second click on the segment whose card is up
         // dismisses instead of reopening. Any other segment falls through and
         // `show` swaps the card, which is the controller's own contract.
-        if clusterCards.isShowing, clusterCardRole == role {
+        //
+        // The role alone, through ``clusterCardIsShowing``, and not the old
+        // conjunction with `clusterCards.isShowing`: see that property for why
+        // the two could disagree and why this is the half to keep. The
+        // conjunction also touched the lazy panel on every click of every
+        // segment, which is the build this pane's laziness exists to defer.
+        if clusterCardIsShowing, clusterCardRole == role {
             clusterCards.dismiss()
             return
         }
@@ -1495,6 +1581,10 @@ final class TerminalPaneController: NSViewController {
         case .place: presentPlaceCard(anchoredTo: anchor, in: window)
         case .changes: presentChangesCard(anchoredTo: anchor, in: window)
         case .agent, .attention: presentAttentionCard(role, anchoredTo: anchor, in: window)
+        // Unreachable past the `opensCard` guard above, and spelled out rather
+        // than swept into a `default`: a role added later gets a compiler error
+        // here demanding a card, which is the question worth being asked.
+        case .notice: break
         }
     }
 
@@ -1767,15 +1857,42 @@ final class TerminalPaneController: NSViewController {
     /// restarts the clock rather than inheriting the remains of the first one.
     private var noticeDismissal: DispatchWorkItem?
 
-    /// Shows a sentence in the footer for a few seconds, then puts the bar back.
+    /// Shows a sentence in this pane's chrome for a few seconds, then puts the
+    /// resting facts back.
     ///
     /// **Three seconds, and the number is the only arbitrary thing here.** Long
     /// enough to read eleven words without hurrying, short enough that a bar
     /// showing stale text is never what the owner is looking at. Two refusals in
     /// a row restart it rather than queueing, since the second is the one being
     /// asked about.
+    ///
+    /// **Both chromes, through one path, and nothing here knows which is up.**
+    /// The notice is written into ``PaneStatus/notice`` and ``refreshStatus()``
+    /// rebuilds the footer's segments and the capsule's from that one value, so
+    /// the takeover happens on whichever surface the `chrome.cluster.mode` dial
+    /// has installed — `PaneStatusSegments.build(from:)` and
+    /// `PaneClusterSegments.build(from:)` each return the notice alone, for the
+    /// same reason, stated in each. Under `.both` it happens on both, which is
+    /// what that mode means.
+    ///
+    /// A card open over this pane's capsule is dismissed first. The notice
+    /// takes the pill alone, so the segment a card was anchored to stops
+    /// existing for those three seconds: left up, the card would hang beside a
+    /// pill that no longer says what it is about, and its own dismissal path
+    /// (a click elsewhere, ⎋) is the only thing that would ever take it down.
+    /// Dismissing is also what clears `clusterCardRole` and the pill's active
+    /// wash through the card's `onDismiss`, so the wash cannot outlive the
+    /// segment it was highlighting.
+    ///
+    /// ``clusterCardIsShowing`` is the one derivation of "is a card up", and
+    /// that property carries why it is the role and not `clusterCards.isShowing`
+    /// — laziness, and the direction the two drift in when they part. This call
+    /// site and the toggle in ``clusterSegmentClicked(_:segmentRect:)`` now ask
+    /// it the same way; they did not, and the pair of answers was a card the
+    /// notice could skip dismissing.
     func showNotice(_ text: String) {
         noticeDismissal?.cancel()
+        if clusterCardIsShowing { clusterCards.dismiss() }
         notice = text
         refreshStatus()
 

@@ -966,8 +966,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @discardableResult
     private func sendToPrompt(_ path: RepositoryPath, of tree: PaneTreeController) -> Bool {
         guard let pane = tree.focusedPane else { return false }
-        let anchor = pane.anchorTracker.anchor
-        guard anchor?.kind == .repository, let root = anchor?.url else { return false }
+        // **Resolved against any anchor, sent only from a repository.** The two
+        // roots and the argument for keeping them apart live in
+        // ``ProjectAnchor/Anchor/refusalRoot(of:)``, where a test can reach them.
+        // This guard read `kind == .repository` until 2026-08-13 and returned
+        // *before* ``PromptPath/resolve`` ran, so a row a shell could not hold was
+        // refused with no reason and `showNotice` was never asked for. Resolving
+        // first is what recovers the reason; `promptRoot` below is what keeps a
+        // bare shell pane send-inert, which is the owner's ruling and not a
+        // consequence of where the guard sits.
+        guard let root = Anchor.refusalRoot(of: pane.anchorTracker.anchor) else {
+            return false
+        }
 
         // **Both directories through the same resolution, or they never match.**
         // `ProcessWorkingDirectory` asks the kernel, which answers with a fully
@@ -984,6 +994,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 .resolvingSymlinksInPath().path(percentEncoded: false)
         ) {
         case let .send(bytes):
+            // **The pane's affordance, asked after the path is known to be
+            // sendable.** A bare shell pane resolves its rows so a refusal can name
+            // itself, and stops here: nothing reaches its prompt. The row still
+            // flashes, because the click was declined either way.
+            guard Anchor.promptRoot(of: pane.anchorTracker.anchor) != nil else {
+                return false
+            }
             pane.send(bytes)
             return true
         case let .refuse(reason):

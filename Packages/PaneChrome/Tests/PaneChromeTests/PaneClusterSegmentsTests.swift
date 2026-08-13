@@ -62,6 +62,77 @@ import Testing
         #expect(changes?.text == "↑1*?3")
     }
 
+    // MARK: - The notice
+
+    /// A notice takes the pill alone, and the segments it displaces are the
+    /// ones that would otherwise be on it. Asserted against the same status
+    /// without the notice, so this cannot pass by the status happening to carry
+    /// nothing.
+    @Test func aNoticeTakesThePillAlone() {
+        let git = Sample.git(ahead: 1, dirty: true)
+        let agent = PaneStatus.Agent(label: "claude", wantsAttention: true)
+
+        let resting = Sample.status(git: git, agent: agent)
+        #expect(roles(resting) == [.place, .changes, .agent, .attention])
+
+        let noticed = Sample.status(
+            git: git,
+            agent: agent,
+            notice: "name is not valid UTF-8, so the shell cannot hold it: rename the file"
+        )
+        #expect(roles(noticed) == [.notice])
+        #expect(
+            segment(.notice, in: noticed)?.text
+                == "name is not valid UTF-8, so the shell cannot hold it: rename the file"
+        )
+    }
+
+    /// The capsule and the footer take a notice on the same input and say the
+    /// same sentence. Asserted against the footer's own built segment rather
+    /// than a copy of the string, the `changesTextReusesFooterMarkers` shape:
+    /// the two surfaces answer one `PaneStatus`, and a refusal explained
+    /// differently on each is a refusal explained on neither.
+    @Test func theNoticeMatchesTheFootersOwnSentence() {
+        let reason = "name holds a control character the shell would act on: rename the file"
+        let status = Sample.status(git: Sample.git(dirty: true), notice: reason)
+        let footer = PaneStatusSegments.build(from: status).first { $0.role == .notice }
+        #expect(segment(.notice, in: status)?.text == footer?.text)
+        #expect(footer?.text == reason)
+
+        // Both surfaces take it *alone*, which is the half a text comparison
+        // cannot see: a capsule that appended the notice beside the branch
+        // would still match the footer's string here.
+        #expect(roles(status) == [.notice])
+        #expect(PaneStatusSegments.build(from: status).map(\.role) == [.notice])
+    }
+
+    /// An empty string is not a notice, the footer's own rule
+    /// (`PaneStatusSegmentsTests.anEmptyNoticeIsNotANotice`). A caller clearing
+    /// one by writing `""` rather than nil must get the resting pill back, not
+    /// a pill wearing an empty segment that has eaten every fact.
+    @Test func anEmptyNoticeLeavesTheRestingPill() {
+        let status = Sample.status(git: Sample.git(dirty: true), notice: "")
+        #expect(roles(status) == [.place, .changes])
+    }
+
+    /// A notice on a pane with nothing else to say still wears a pill. The
+    /// resting capsule vanishes when it has no facts (`bareShellPaneWearsNoCapsule`),
+    /// and a refusal in a bare shell pane is exactly when the owner most needs
+    /// the reason: the beep is the only other thing that happened.
+    @Test func aNoticeGivesABareShellPaneACapsule() {
+        #expect(roles(Sample.status(git: nil, agent: nil)) == [])
+        #expect(roles(Sample.status(git: nil, agent: nil, notice: "nothing to send")) == [.notice])
+    }
+
+    /// Only the notice declines a card. Written over `allCases` rather than as
+    /// four literals so a role added later has to answer the question rather
+    /// than inherit an answer.
+    @Test func everyRoleButTheNoticeOpensACard() {
+        for role in PaneClusterSegmentRole.allCases {
+            #expect(role.opensCard == (role != .notice))
+        }
+    }
+
     @Test func aFinishedAgentStillEarnsTheAttentionDot() {
         // The footer draws a mark for every attention level except `.none`
         // (`PaneStatusBarView.capsuleGlyph(ink:)`), and `done` is a level. A

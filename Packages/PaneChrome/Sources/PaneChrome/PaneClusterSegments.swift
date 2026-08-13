@@ -4,6 +4,29 @@ import Foundation
 /// the capsule wears them: place, changes, agent, attention.
 public enum PaneClusterSegmentRole: Sendable, Equatable, CaseIterable {
     case place, changes, agent, attention
+
+    /// A transient sentence answering a click the pane refused, and the only
+    /// role that takes the pill alone rather than sharing it. See
+    /// ``PaneStatus/notice`` and ``PaneClusterSegments/build(from:)``.
+    case notice
+}
+
+public extension PaneClusterSegmentRole {
+    /// Whether this role opens a card when clicked.
+    ///
+    /// Every resting role does; ``notice`` does not, and that is the one
+    /// asymmetry in the capsule's click contract. The notice *is* the whole
+    /// answer — a sentence naming the fix — so there is nothing a card could
+    /// add, and a card is a key window (``ClusterCardController``'s panel takes
+    /// first responder), which would pull the keyboard off the terminal for a
+    /// message that clears itself three seconds later. The refusal came from a
+    /// sidebar click; taking the keyboard in response would be a second,
+    /// larger surprise than the one being explained.
+    ///
+    /// Derived here rather than branched at the call site, so the view's hit
+    /// resolution and the controller's routing cannot disagree about which
+    /// roles are clickable.
+    var opensCard: Bool { self != .notice }
 }
 
 /// One piece of the capsule's resting state.
@@ -26,6 +49,33 @@ public struct PaneClusterSegment: Sendable, Equatable {
 /// the footer's vanish discipline, moved.
 public enum PaneClusterSegments {
     public static func build(from status: PaneStatus) -> [PaneClusterSegment] {
+        // A notice takes the pill alone and returns before anything else is
+        // built — ``PaneStatusSegments/build(from:)``'s first clause, moved to
+        // the surface that now carries the facts, and moved rather than copied
+        // because the footer's argument for it survives the move intact.
+        //
+        // **The takeover, and why it is still the right shape on a pill.** On
+        // the bar the alternative was a segment competing for width with the
+        // branch and the markers, which width pressure would drop on exactly
+        // the narrow pane where an unexplained refusal confuses most. The pill
+        // sizes to its content rather than solving against a fixed bar, so it
+        // would not *drop* the notice — it would grow to hold a sixty-six
+        // character sentence, roughly 435 pt of monospace, and a pill anchored
+        // to the pane's top-right corner that wide either eats the pane's whole
+        // top edge or runs off its leading side. Both are worse than the three
+        // seconds of takeover the footer settled on, and the takeover is what
+        // the owner already read on the bar, so it costs no new vocabulary.
+        //
+        // The transience is what makes it affordable, and it is the reason this
+        // may take the pill when nothing else may: ``PaneStatus/notice`` is
+        // written by `TerminalPaneController.showNotice(_:)` and cleared three
+        // seconds later, so the resting facts are gone for one glance rather
+        // than for a session. Everything else on the capsule is persistent and
+        // shares.
+        if let notice = status.notice, !notice.isEmpty {
+            return [PaneClusterSegment(role: .notice, text: notice)]
+        }
+
         var segments: [PaneClusterSegment] = []
 
         // The footer's stale-facts rule, kept: a plain directory emits no git

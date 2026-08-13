@@ -56,4 +56,48 @@ public struct Anchor: Equatable, Sendable {
         guard let anchor, anchor.kind == .repository else { return nil }
         return anchor.url
     }
+
+    /// The root a clicked sidebar row's path is resolved against when the click is
+    /// allowed to reach the prompt, or nil where nothing may be sent.
+    ///
+    /// **A repository and nothing else, which is what parts it from
+    /// ``refusalRoot(of:)``.** A bare shell pane stays send-inert: the owner ruled
+    /// on 2026-08-13 that a walked tree lists rows to *look* at, and that putting a
+    /// path on the prompt stays a repository's affordance. The tree under a
+    /// `.plain` anchor exists because `AppDelegate.refreshSidebar(of:)` gives it
+    /// `listing = .directory` and walks it with `DirectoryTree`; that makes the
+    /// rows real, not clickable-to-send.
+    public static func promptRoot(of anchor: Anchor?) -> URL? {
+        repositoryRoot(of: anchor)
+    }
+
+    /// The root a clicked row is resolved against **for the purpose of explaining a
+    /// refusal**, or nil where there is no anchor at all.
+    ///
+    /// **Any anchor with a root, and that is the whole difference from
+    /// ``promptRoot(of:)``.** Whether a path may be *sent* is a question about the
+    /// pane; whether a path is *unholdable by a shell* is a question about the
+    /// bytes, and it has the same answer under either kind of anchor.
+    /// `PanePrompt.PromptPath.resolve` is lexical with no notion of git, so a plain
+    /// directory resolves exactly as a repository root does.
+    ///
+    /// **Written after a silent refusal, on 2026-08-13.** `sendToPrompt` guarded on
+    /// `kind == .repository`, left over from when only repositories had trees, and
+    /// returned before `PromptPath.resolve` ran. A row whose name the shell cannot
+    /// hold was refused with no reason given: the row drew its red flash off the
+    /// `false` return, the beep sounded, and `showNotice` — the whole path that
+    /// puts the reason on the pane's capsule — was never reached. The defect read
+    /// as "the notice does not render", and the notice was never asked for.
+    ///
+    /// Keeping the two roots separate is what lets a bare pane stay send-inert
+    /// *and* still say why a name is impossible, rather than trading one silence
+    /// for another.
+    ///
+    /// Here rather than at the call site for this package's own rule: it is
+    /// decidable without a window, and the app target has no test target, so a
+    /// predicate living there is one nothing can grade. That is exactly how the
+    /// original guard survived.
+    public static func refusalRoot(of anchor: Anchor?) -> URL? {
+        anchor?.url
+    }
 }

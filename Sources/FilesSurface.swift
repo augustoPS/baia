@@ -1146,64 +1146,30 @@ final class InitOfferView: NSView {
     /// The brightest face ``InitOfferFaceView`` can present, which is what the
     /// caption has to survive.
     ///
-    /// `RGBA.composited(over:)` is the package's sRGB flatten, the same layer
-    /// stack `Diagnostics/cluster-legibility` predicts its measured band with,
-    /// applied over ``brightestMeasuredBackdrop``.
-    ///
-    /// **The flatten is nominal and the screen is brighter, so this grades on
-    /// the screen's number.** The probe's own README records the divergence and
-    /// this is the first draw path to be caught by it: AppKit composites in the
-    /// bitmap rep's space (Generic RGB, gamma 1.8) and the package flattens in
-    /// sRGB bytes. The two agree to sub-byte in the dark regime — which is where
-    /// every pin in this app lived until the bright bound joined — and diverge
-    /// at the bright end, where the flatten lands about 6 bytes *dark* of the
-    /// measurement: `#303132` predicted against `#363638` measured, 4.79:1
-    /// against the 4.41:1 the probe reads. Graded on the flatten alone the
-    /// repair chain does not fire and the caption ships under the floor on a
-    /// face this app can put on screen, which is the failure mode the floor
-    /// exists to catch.
-    ///
-    /// So the flatten's result is lifted by ``compositingHeadroom`` before it is
-    /// graded. That is a correction toward the measurement rather than a safety
-    /// margin invented for comfort: 6 bytes is what the probe measures the gap
-    /// to be at this bound, and it is applied in the one direction that can
-    /// only ever make the grade stricter. Should the two spaces ever be
-    /// reconciled the constant goes to zero and nothing else here moves.
+    /// **Moved to the package and read back through here**, along with the two
+    /// measured constants below. The derivation had been written at this call
+    /// site because the offer was the first surface to need it, and its own doc
+    /// comment already said it was copying the capsule's layer stack rather
+    /// than inventing one. When the capsule's notice needed the same face to
+    /// grade its ink against, the copy became the third — so the pill's face
+    /// now has one home, ``PaneChrome/PaneClusterInk/worstFace(theme:chrome:)``,
+    /// which carries the full argument for the layers, the bright bound and the
+    /// compositing correction, and is where the package tests reach it. What is
+    /// left here is the name this file and `Diagnostics/cluster-legibility`'s
+    /// offer arms already call it by.
     static func worstFace(theme: PaneTheme, chrome: ResolvedChrome) -> RGB {
-        switch chrome {
-        case let .glass(set):
-            let washed = RGBA(rgb: theme.background, alpha: ChromeMaterials.PaneWash.floor)
-                .composited(over: Self.brightestMeasuredBackdrop)
-            let face = set.fillChrome.composited(over: washed)
-            return RGB(
-                red: min(1, face.red + Self.compositingHeadroom),
-                green: min(1, face.green + Self.compositingHeadroom),
-                blue: min(1, face.blue + Self.compositingHeadroom)
-            )
-        case .flat:
-            // Opaque, so whatever is beneath composites away entirely and there
-            // is no space divergence to correct: the face is a literal colour
-            // this app sets, not a blend AppKit performs.
-            return theme.background
-        }
+        PaneClusterInk.worstFace(theme: theme, chrome: chrome)
     }
 
     /// `#7c7c7c`, `glass-backdrop`'s finding 6b: the brightest backdrop this
-    /// repo has measured a glass surface composite to. The same bound
-    /// ``ChromeMaterials/PaneWash``'s floor is derived from, cited here rather
-    /// than re-derived so the two cannot drift apart.
-    static let brightestMeasuredBackdrop = RGB(
-        red: 124.0 / 255, green: 124.0 / 255, blue: 124.0 / 255
-    )
+    /// repo has measured a glass surface composite to. See
+    /// ``PaneChrome/PaneClusterInk/brightestMeasuredBackdrop``.
+    static let brightestMeasuredBackdrop = PaneClusterInk.brightestMeasuredBackdrop
 
     /// Six bytes: how far AppKit's own compositing lands *bright* of the
-    /// package's sRGB flatten at the bright bound.
-    ///
-    /// Measured, not chosen: `Diagnostics/cluster-legibility` predicts `#303132`
-    /// where it reads `#363638`. See ``worstFace(theme:chrome:)`` for why the
-    /// correction is applied to the backdrop the ink is graded on rather than to
-    /// the paint the pill lays down.
-    static let compositingHeadroom = 6.0 / 255
+    /// package's sRGB flatten at the bright bound. See
+    /// ``PaneChrome/PaneClusterInk/compositingHeadroom``.
+    static let compositingHeadroom = PaneClusterInk.compositingHeadroom
 
     /// How wide the pill wants to be: its caption plus a row inset of padding at
     /// each end, so the text sits in the pill the way a row's text sits in a row.
