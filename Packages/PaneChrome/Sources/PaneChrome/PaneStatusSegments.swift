@@ -29,10 +29,11 @@ public enum PaneStatusSegments {
     /// An ASCII label rather than a pin glyph. The bar is drawn in the terminal
     /// font, and a glyph outside that font's coverage is composed from a
     /// fallback face, which changes the run's metrics halfway along the string
-    /// and puts the measured width the app hands to
-    /// ``PaneStatusLayout/solve(segments:widths:availableWidth:)`` out of step
-    /// with what gets drawn. `↑` and `↓` are kept because the owner's statusline
-    /// already proves they render in this font.
+    /// and puts a measured width out of step with what gets drawn. `↑` and `↓`
+    /// are kept because the owner's statusline already proves they render in
+    /// this font. The width solver this guarded was `PaneStatusLayout.solve`,
+    /// deleted with the footer on 2026-08-13; the hazard survives it, because
+    /// the capsule measures these same runs to size its pill.
     private static let pinMarker = "PIN"
 
     /// Marks a linked worktree on the branch segment, and sits in front of the
@@ -41,10 +42,11 @@ public enum PaneStatusSegments {
     /// worktree, down to the fixture directory name in ProjectAnchor's tests.
     private static let worktreePrefix = "wt:"
 
-    /// Builds the bar's segments in placement order: leading segments left to
-    /// right, then the trailing ones, which
-    /// ``PaneStatusLayout/solve(segments:widths:availableWidth:)`` measures from
-    /// the right edge leftwards while keeping this order on screen.
+    /// Builds the segments in placement order: leading segments left to right,
+    /// then the trailing ones. The order was the footer solver's contract, and
+    /// it outlived the solver: the two callers left take one role each, the tab
+    /// title the indicators and the palette the branch beside them, so what this
+    /// answers now is a filtered list rather than a bar's placement.
     public static func build(from status: PaneStatus) -> [PaneStatusSegment] {
         // A notice takes the bar alone and returns before anything else is
         // built, rather than being appended and left to the layout solver. See

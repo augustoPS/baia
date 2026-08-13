@@ -277,10 +277,10 @@ public struct PaneStatus: Sendable, Equatable {
     ///
     /// **It replaces the bar rather than joining it**, which is the one design
     /// decision here worth defending. The alternative is a segment competing for
-    /// width with the branch and the markers, and under width pressure
-    /// ``PaneStatusLayout`` would drop either the notice, which makes the feature
+    /// width with the branch and the markers, and under width pressure the
+    /// footer's solver would drop either the notice, which makes the feature
     /// pointless on a narrow pane, or the git markers, which are the thing the
-    /// bar exists for. A notice is rare, brief, and caused by something the owner
+    /// bar existed for. A notice is rare, brief, and caused by something the owner
     /// did a moment ago, so taking the bar for three seconds costs less than
     /// either.
     ///
