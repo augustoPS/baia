@@ -891,7 +891,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // drawing, not a second list of changed files.
         for section in controller.sidebar.sections {
             if let files = section.surface as? FilesSurface {
-                files.hasRoot = anchor != nil
                 // Inside a repository git lists the files; outside one the
                 // directory is walked. The mode follows the anchor rather than a
                 // control, because repo-or-local has one right answer at any
@@ -899,6 +898,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 //
                 // `Anchor.Kind` has said as much all along: a plain anchor exists
                 // "so a file tree always has a root". Until now this discarded it.
+                //
+                // **And the column was told a boolean that discarded it too**,
+                // which is the bug the owner's 2026-08-12 ruling on the `git init`
+                // offer exposed. `files.hasRoot = anchor != nil` was assigned
+                // here, and a plain directory resolves an anchor perfectly well,
+                // so the surface could not tell a walked tree from a listed one:
+                // the offer keyed on that boolean appeared only when nothing
+                // resolved at all. The three cases this branch already
+                // distinguishes are now the three cases the surface is told, so
+                // the state the column draws from is the state this decides.
+                switch anchor?.kind {
+                case .repository: files.listing = .repository
+                case .plain: files.listing = .directory
+                case nil: files.listing = .absent
+                }
                 if let root {
                     // Optional because the cache can miss: the read is async and a
                     // first refresh arrives before it lands.

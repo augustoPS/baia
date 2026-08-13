@@ -221,7 +221,7 @@ func shipped() -> Subject {
         scroll: scroll,
         document: document,
         setRows: { count in
-            surface.hasRoot = true
+            surface.listing = .repository
             // Flat and long-named, for the reason the changes rows were: an arm
             // measures whether a name was fitted to the width the column ended
             // at, so every row has to want more column than it has. Files rather
@@ -239,7 +239,7 @@ func shipped() -> Subject {
         },
         setAbsent: {
             surface.tree = []
-            surface.hasRoot = false
+            surface.listing = .absent
             surface.anchorPath = "/Users/somebody/Projects/a/deep/enough/path/to/truncate"
         }
     )

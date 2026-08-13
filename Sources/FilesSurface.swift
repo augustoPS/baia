@@ -30,6 +30,7 @@ final class FilesSurface: NSObject, WorkspaceSurface {
     var theme: PaneTheme = .darkPastel {
         didSet {
             rows.theme = theme
+            offer.theme = theme
             fill()
         }
     }
@@ -88,14 +89,48 @@ final class FilesSurface: NSObject, WorkspaceSurface {
         }
     }
 
-    /// Whether there is a root to list at all.
+    /// Where this tree's rows came from, which is the one thing the column needs
+    /// to know that a row count cannot tell it.
     ///
-    /// Not "is this a repository", which is what it used to be and what the name
-    /// still said after a plain anchor gained a tree of its own. Files lists a
-    /// repository through `git ls-files` and a plain directory through a walk, so
-    /// the only state with nothing to draw is a pane with no anchor.
-    var hasRoot = true {
-        didSet { rows.hasRoot = hasRoot }
+    /// **This replaced a `hasRoot` boolean on the owner's 2026-08-12 ruling about
+    /// where the `git init` offer belongs, and the replacement is the whole fix.**
+    /// That boolean was assigned `anchor != nil`, and a plain non-repository
+    /// directory resolves an anchor perfectly well, so it answered `true` for a
+    /// walked tree and the no-repository state fired only when the anchor could
+    /// not resolve at all — a working directory deleted underneath the shell.
+    /// The offer was therefore correct and nearly unreachable, and it was missing
+    /// from the case the ruling was about.
+    ///
+    /// The question has three answers and the boolean had two, which is why one
+    /// more flag beside it would have been the wrong shape: a surface holding
+    /// `hasRoot` and `isRepository` can be set to a combination that means
+    /// nothing (no root, but a repository), and every reader would then have to
+    /// know which of the four pairs are real. Three cases can only ever be in one
+    /// of the three states the column actually has.
+    ///
+    /// Nothing here is a new fact. ``Listing`` is `Anchor.Kind` plus the no-anchor
+    /// case, which is exactly what `refreshSidebar(of:)` already branches on to
+    /// decide between `git ls-files` and a directory walk. The surface is told the
+    /// same thing that call site already knows rather than re-deriving it, and it
+    /// is spelled here rather than imported so this file keeps its package list.
+    enum Listing: Equatable {
+        /// A repository, listed by git. No offer: it is already one.
+        case repository
+        /// A plain directory, walked. Its rows are real files and it gets the
+        /// offer, which is the ruling.
+        case directory
+        /// No anchor at all, so there is nothing to list and nothing to walk.
+        /// The absent state, which is the only one that draws a message instead
+        /// of rows.
+        case absent
+    }
+
+    var listing: Listing = .repository {
+        didSet {
+            rows.listing = listing
+            guard listing != oldValue else { return }
+            layOutOffer()
+        }
     }
 
     /// Where the pane is anchored, which the absent state names beneath its
@@ -187,6 +222,7 @@ final class FilesSurface: NSObject, WorkspaceSurface {
 
     private let scrollView = NSScrollView()
     private let rows = FileTreeRowsView()
+    private let offer = InitOfferView()
 
     override init() {
         super.init()
@@ -196,6 +232,88 @@ final class FilesSurface: NSObject, WorkspaceSurface {
         scrollView.borderType = .noBorder
         scrollView.documentView = rows
         rows.theme = theme
+
+        // **A floating subview, which is what makes the offer survive scrolling
+        // without any of the tree's arithmetic moving.**
+        //
+        // The offer sits over a *walked tree*, so unlike the absent state it has
+        // rows above it, and a control that scrolled away with them would be
+        // reachable only by scrolling to the end of a directory of any size. The
+        // two placements that do not scroll are a floating subview and a sibling
+        // of the scroll view, and the sibling loses: `SidebarHost.layoutSections`
+        // frames `surface.view` directly, so a container would change what
+        // ``view`` is, and `Diagnostics/clip-layout` reads that view as an
+        // `NSScrollView` to drive the tree. This keeps the surface's shape
+        // exactly as it was.
+        //
+        // The other rejected placement is a last row in the list. Beyond
+        // scrolling away, a row-shaped action in a list of files is the one thing
+        // the ruling forbids: it would be pressed by someone reaching for a file.
+        scrollView.addFloatingSubview(offer, for: .vertical)
+        offer.onPress = { [weak self] in self?.rows.onInitialise?() }
+        layOutOffer()
+
+        // **The strip's rect has to follow the column, and nothing else here
+        // delivers a layout pass.** `FilesSurface` is an `NSObject` rather than a
+        // view, so `SidebarHost` reframing `surface.view` on a divider drag or a
+        // window resize reaches the scroll view and never this object. Without
+        // this the strip would keep the rect the column opened at, which is the
+        // derived-from-a-stale-size shape `Diagnostics/clip-layout` exists for,
+        // and here it is both axes: the wrong width *and* a bottom edge that is
+        // no longer the bottom.
+        //
+        // The scroll view's own frame and not the clip's. The clip is what
+        // `FileTreeRowsView` watches, because what the rows care about is the
+        // region they are seen through; what this cares about is the surface's
+        // outer rect, since ``layOutOffer()`` measures the bottom from
+        // `scrollView.bounds`.
+        scrollView.postsFrameChangedNotifications = true
+        frameObserver = NotificationCenter.default.addObserver(
+            forName: NSView.frameDidChangeNotification,
+            object: scrollView,
+            queue: nil
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.layOutOffer() }
+        }
+    }
+
+    private var frameObserver: (any NSObjectProtocol)?
+
+    /// Pins the offer along the bottom of the column and tells the rows to leave
+    /// it that much room.
+    ///
+    /// **`NSScrollView` is flipped, which is why the bottom is `height - strip`
+    /// and not `0`.** Measured rather than assumed: `isFlipped` reports true, and
+    /// a strip framed at `y: 0` converted to the *top* of the window. It drew
+    /// there, over the first rows, which is exactly the "drawn in one place"
+    /// failure this whole feature is written against, and only a live check
+    /// caught it.
+    ///
+    /// **`contentInsets` was the first mechanism here and it does nothing**, also
+    /// measured: with the scroll view configured the way this surface configures
+    /// it, setting `contentInsets.bottom` left `contentSize`, the clip's frame and
+    /// its bounds all at full height, so the rows would have sized themselves
+    /// under the strip and the last file in a short directory would have sat
+    /// behind it. ``FileTreeRowsView/reservedBottom`` is the mechanism that works:
+    /// the rows view already computes its own minimum height from the clip, and
+    /// this is the one number that computation was missing.
+    ///
+    /// Bottom rather than top. The tree runs to the top of the column since the
+    /// FILES heading retired, so the first row is the column's first line, and a
+    /// strip above it would put a control where the content starts and push every
+    /// name down. At the bottom it reads the way the reading goes: here are the
+    /// files, and here is what this directory is not yet.
+    private func layOutOffer() {
+        let showing = listing == .directory
+        offer.isHidden = !showing
+        rows.reservedBottom = showing ? InitOfferView.height : 0
+        guard showing else { return }
+        offer.frame = NSRect(
+            x: 0,
+            y: scrollView.bounds.height - InitOfferView.height,
+            width: scrollView.bounds.width,
+            height: InitOfferView.height
+        )
     }
 }
 
@@ -208,7 +326,10 @@ final class FilesSurface: NSObject, WorkspaceSurface {
 final class FileTreeRowsView: NSView {
     var theme: PaneTheme = .darkPastel { didSet { needsDisplay = true } }
 
-    var hasRoot = true { didSet { needsDisplay = true } }
+    /// Where the rows came from. See ``FilesSurface/Listing``: the rows view reads
+    /// it only to tell the absent state from a list, and the offer that keys on
+    /// ``FilesSurface/Listing/directory`` is a strip outside this view.
+    var listing: FilesSurface.Listing = .repository { didSet { needsDisplay = true } }
 
     /// Where the pane is anchored, for the absent state to name. Nil while the
     /// anchor is a repository, where it is never drawn.
@@ -277,14 +398,33 @@ final class FileTreeRowsView: NSView {
         updateTrackingAreas()
     }
 
+    /// How much of the bottom of the column belongs to something else, which is
+    /// `InitOfferView.height` on a walked directory and 0 everywhere else.
+    ///
+    /// **The floor below is the whole reason this exists.** A tree shorter than
+    /// its column is stretched to the column's full height so the empty region
+    /// below the last row still belongs to this view, and the offer floats over
+    /// exactly that region. Without this the last file of a three-file directory
+    /// would be laid out under the strip: drawn behind it, and still hit-testable
+    /// through it. `contentInsets` was tried for this first and measured to
+    /// change nothing (see ``FilesSurface/layOutOffer()``), so the number is
+    /// carried here, where the height is actually decided.
+    var reservedBottom: Double = 0 {
+        didSet {
+            guard reservedBottom != oldValue else { return }
+            resize()
+        }
+    }
+
     /// The equality guard is what makes calling this from `layout()` safe:
     /// assigning `frame` marks the view for layout again.
     private func resize() {
+        let floor = max(0, (superview?.bounds.height ?? 0) - reservedBottom)
         let wanted = NSRect(
             x: 0,
             y: 0,
             width: max(superview?.bounds.width ?? 0, 1),
-            height: max(Double(rows.count) * Self.rowHeight, superview?.bounds.height ?? 0)
+            height: max(Double(rows.count) * Self.rowHeight, floor)
         )
         guard frame != wanted else { return }
         frame = wanted
@@ -304,23 +444,9 @@ final class FileTreeRowsView: NSView {
 
     override func draw(_ dirty: NSRect) {
         // No fill of its own: the scroll view behind it is the column's material.
-        guard hasRoot else {
-            // **The rect is recorded from the draw, never computed twice.** The
-            // message centres itself in the visible rect, so the only arithmetic
-            // that knows where the button is is the arithmetic that put it there.
-            // A click is tested against what was actually drawn, which is what
-            // makes it impossible to click a control that is somewhere else.
-            initButton = SurfaceMessage.drawAbsent(
-                path: anchorPath,
-                action: initAction,
-                in: self,
-                theme: theme
-            )
-            return
+        guard listing != .absent else {
+            return SurfaceMessage.drawAbsent(path: anchorPath, in: self, theme: theme)
         }
-        // Nothing to click once there is a root: a stale rect would leave a live
-        // target over the first rows of a tree that has since appeared.
-        initButton = nil
         guard !rows.isEmpty else {
             return SurfaceMessage.drawEmpty("no files", in: self, theme: theme)
         }
@@ -498,30 +624,15 @@ final class FileTreeRowsView: NSView {
 
     var onSelect: ((RepositoryPath) -> Bool)?
 
-    /// Asks for the no-repository state to be resolved, for the anchor the
-    /// message is naming.
+    /// Asks for the offer to be taken, which puts `git init` on the focused
+    /// pane's prompt without a newline.
     ///
-    /// **Nothing here runs git.** The owner's 2026-08-12 ruling (option E) asks
-    /// this state for an action that resolves it rather than a message naming a
-    /// dead end, and what the handler does is put `git init` on the focused
-    /// pane's prompt without a newline, exactly as clicking a file row puts a
-    /// path there. See `AppDelegate.offerInit(of:)`.
+    /// **Nothing here runs git**, and the click that reaches this does not happen
+    /// in this view: the offer is `InitOfferView`, a strip floating over the
+    /// bottom of the clip. It is held here because ``FilesSurface`` wires the
+    /// strip's press to it, so the surface has one handler to expose rather than
+    /// two. See `AppDelegate.offerInit(of:)`.
     var onInitialise: (() -> Void)?
-
-    /// Where the action was last drawn, and the only geometry a click is tested
-    /// against. Nil whenever it was not drawn: outside the no-repository state,
-    /// and at column widths too narrow to hold the caption.
-    private var initButton: NSRect?
-
-    /// How the action is being pointed at. Drawn from here rather than through
-    /// ``RowFeedback``, whose fills and fades are keyed on row indices in a list
-    /// this state does not have.
-    private var initAction: SurfaceMessage.ActionState = .none {
-        didSet {
-            guard initAction != oldValue, let initButton else { return }
-            setNeedsDisplay(initButton)
-        }
-    }
 
     private lazy var feedback = RowFeedback { [weak self] row in
         self?.redraw(row)
@@ -543,39 +654,17 @@ final class FileTreeRowsView: NSView {
     /// **Held rather than fired on the way down**, so the press is a state the eye
     /// can see and a drag off the row cancels. Design v3 §2.3.
     override func mouseDown(with event: NSEvent) {
-        // **Press and release, both on the button, or nothing happens.** The same
-        // rule the rows below follow, and here it is the whole of why the action
-        // cannot fire on a stray click: a `mouseDown` that lands elsewhere never
-        // arms it, and a press that drags off it disarms. `git init` writes to
-        // the owner's filesystem, so the gesture that offers it is deliberate by
-        // construction rather than by warning.
-        if hitsInitButton(event) {
-            initAction = .pressed
-            return
-        }
         let row = self.row(at: event)
         guard rows.indices.contains(row) else { return }
         feedback.pressed = row
     }
 
     override func mouseDragged(with event: NSEvent) {
-        if initAction == .pressed {
-            initAction = hitsInitButton(event) ? .pressed : .none
-            return
-        }
         guard let pressed = feedback.pressed else { return }
         feedback.pressed = row(at: event) == pressed ? pressed : nil
     }
 
     override func mouseUp(with event: NSEvent) {
-        if initAction == .pressed {
-            initAction = .none
-            // Released outside is a cancel, which is what a press that can be
-            // dragged off is for.
-            guard hitsInitButton(event) else { return }
-            onInitialise?()
-            return
-        }
         guard let index = feedback.pressed else { return }
         feedback.pressed = nil
         guard rows.indices.contains(index), row(at: event) == index else { return }
@@ -601,18 +690,6 @@ final class FileTreeRowsView: NSView {
 
     private func row(at event: NSEvent) -> Int {
         Int(convert(event.locationInWindow, from: nil).y / Self.rowHeight)
-    }
-
-    /// Whether a click is on the no-repository action, tested against the rect
-    /// the last draw actually placed it at.
-    ///
-    /// False whenever there is no such rect, which covers both the ordinary case
-    /// (there is a repository, so there are rows here instead) and the narrow
-    /// column that drew no button. A nil rect is the statement that there is
-    /// nothing to hit.
-    private func hitsInitButton(_ event: NSEvent) -> Bool {
-        guard let initButton, !hasRoot else { return false }
-        return initButton.contains(convert(event.locationInWindow, from: nil))
     }
 
     private func redraw(_ row: Int) {
@@ -665,26 +742,10 @@ final class FileTreeRowsView: NSView {
             in: self,
             owner: self
         ) { addTrackingArea(area) }
-        // One area for the action, carrying no row index, which is how the two
-        // handlers below tell it from a row: `RowFeedback.row(of:)` answers nil
-        // for it by construction rather than by a flag this view has to keep.
-        if let initButton, !hasRoot {
-            addTrackingArea(NSTrackingArea(
-                rect: initButton,
-                options: [.mouseEnteredAndExited, .activeInKeyWindow],
-                owner: self,
-                userInfo: nil
-            ))
-        }
     }
 
     override func mouseEntered(with event: NSEvent) {
-        guard let row = RowFeedback.row(of: event) else {
-            // The action's own area. A press already in flight outranks a hover:
-            // re-entering under a held button must not drop it back to hover.
-            if initAction != .pressed { initAction = .hover }
-            return
-        }
+        guard let row = RowFeedback.row(of: event) else { return }
         feedback.hovered = row
         updateHoverGuide()
     }
@@ -693,12 +754,7 @@ final class FileTreeRowsView: NSView {
     /// so moving down a list delivers the next row's enter before this row's exit,
     /// and clearing unconditionally would drop the hover that had just arrived.
     override func mouseExited(with event: NSEvent) {
-        guard let row = RowFeedback.row(of: event) else {
-            // Leaving while held is handled by `mouseDragged`, which is what
-            // tracks a press off its target; this only clears a plain hover.
-            if initAction == .hover { initAction = .none }
-            return
-        }
+        guard let row = RowFeedback.row(of: event) else { return }
         guard feedback.hovered == row else { return }
         feedback.hovered = nil
         updateHoverGuide()
@@ -730,12 +786,6 @@ final class FileTreeRowsView: NSView {
             NSRect(x: 0, y: 0, width: bounds.width, height: Double(rows.count) * Self.rowHeight),
             cursor: .pointingHand
         )
-        // The action gets the same pointer the rows get, so the one clickable
-        // thing in an otherwise inert state says it is clickable before it is
-        // clicked. Nil outside the no-repository state, where there is no button.
-        if let initButton, !hasRoot {
-            addCursorRect(initButton, cursor: .pointingHand)
-        }
     }
 
     private func nsColor(_ rgb: RGB) -> NSColor {
@@ -776,4 +826,175 @@ final class FileTreeRowsView: NSView {
     private static let guideInset: Double = 5
     /// One glyph and the gap before it, trailing. §5.2.
     private static let statusColumn: Double = 14
+}
+
+/// The offer to make a walked directory into a repository, as a strip along the
+/// bottom of the column.
+///
+/// **The owner's 2026-08-12 ruling put it here.** kero shows a directory's files
+/// and offers to initialize it, and the first version of this offer keyed on a
+/// `hasRoot` boolean that a plain directory answered `true` for, so it appeared
+/// only when the anchor could not resolve at all. The state the ruling was about
+/// is a pane sitting in a real directory, which has rows, so the offer needed a
+/// place to sit that is not the centred empty-state treatment.
+///
+/// **A strip and not a last row, which is the part that had to be argued.** The
+/// tree's rows are files and directories, and a click on one puts a path on the
+/// prompt. An action drawn in that list at that row height reads as another
+/// entry, and the hand reaching for the last file in a directory would find it.
+/// So this is unmistakably not a row: it does not scroll with them, it is
+/// separated from them by the divider the column already draws between planes,
+/// it spans the full width where a row is indented, and its caption is a command
+/// in the mono face rather than a filename.
+///
+/// Every safety property the first version established is kept, and none of them
+/// were about where it sat:
+///
+/// 1. **The caption is the literal command.** ``SurfaceMessage/initCaption`` is
+///    the same eight characters that land on the prompt, so what is read before
+///    the click and what appears after it are the same string.
+/// 2. **Nothing runs at draw time.** ``onPress`` fires from `mouseUp` and from
+///    nowhere else, and what it reaches puts the command on the prompt line with
+///    no newline: the keystroke that writes a `.git` directory is still the
+///    owner's.
+/// 3. **Press and release must both land on it.** A `mouseDown` elsewhere never
+///    arms it and a press dragged off disarms, exactly as the rows behave.
+/// 4. **It is hit-tested against the rect it was drawn in**, which here is
+///    `bounds`: a view has one rect, it is the rect AppKit routed the click
+///    through, and there is no second copy of any centring to go stale. This is
+///    the property the first version needed a returned rect for, and giving the
+///    offer its own view is what makes it structural instead.
+/// 5. **It never takes first responder**, the constraint the whole column is
+///    built under. ``acceptsFirstResponder`` is false, as on the rows view.
+///
+/// Nothing takes the keyboard and no `NSButton` is involved: the fills are the
+/// column's own row-selection surface at the column's own row radius, so the
+/// offer reads as part of the sidebar.
+@MainActor
+final class InitOfferView: NSView {
+    var theme: PaneTheme = .darkPastel { didSet { needsDisplay = true } }
+
+    /// Fired on a completed press-and-release inside this view, and by nothing
+    /// else. ``FilesSurface`` wires it to the tree's `onInitialise`.
+    var onPress: (() -> Void)?
+
+    override var acceptsFirstResponder: Bool { false }
+
+    override var isFlipped: Bool { true }
+
+    /// One row's height plus the rule above it, so the strip is the same weight as
+    /// the rows it sits under rather than a panel bolted to the bottom.
+    static let height: Double = SidebarRowMetrics.rowHeight + InitOfferView.rule
+
+    /// The line that says the strip is a different plane from the list. The same
+    /// hairline the column draws between panes, which is what the tree's own
+    /// depth guides are drawn in.
+    private static let rule: Double = 1
+
+    private var isPressed = false { didSet { needsDisplay = true } }
+    private var isHovered = false { didSet { needsDisplay = true } }
+
+    override func draw(_: NSRect) {
+        // Opaque, unlike the rows: the list scrolls underneath this, so anything
+        // translucent would show a file sliding behind the offer.
+        SidebarRowMetrics.nsColor(theme.background).setFill()
+        bounds.fill()
+
+        SidebarRowMetrics.nsColor(theme.divider).setFill()
+        NSRect(x: 0, y: 0, width: bounds.width, height: Self.rule).fill()
+
+        let row = NSRect(
+            x: SidebarRowMetrics.inset / 2,
+            y: Self.rule,
+            width: bounds.width - SidebarRowMetrics.inset,
+            height: SidebarRowMetrics.rowHeight
+        )
+        // The same three states a row has, in the same fills, so pointing at this
+        // answers the way pointing at a file answers.
+        if isPressed || isHovered {
+            SidebarRowMetrics.nsColor(
+                isPressed
+                    ? theme.background.blended(with: theme.inkFocus, fraction: 0.16)
+                    : theme.selectedRowBackground
+            ).setFill()
+            NSBezierPath(
+                roundedRect: row,
+                xRadius: SidebarRowMetrics.rowRadius,
+                yRadius: SidebarRowMetrics.rowRadius
+            ).fill()
+        }
+
+        // `+` and then the command. The glyph is what marks this as an offer to
+        // add something rather than a file called `git init`, and it is drawn in
+        // the same faint tier the tree's disclosure chevron uses so it reads as a
+        // mark on the line rather than a second word.
+        let caption = NSAttributedString(
+            string: "+  " + SurfaceMessage.initCaption,
+            attributes: [
+                .font: SidebarRowMetrics.font,
+                .foregroundColor: SidebarRowMetrics.nsColor(theme.inkContext),
+            ]
+        )
+        // Dropped rather than truncated when the column cannot hold it, the rule
+        // the heading's own trailing half follows: `SidebarHost.minimumWidth` is
+        // 120, and a command clipped to `git in` is a control nobody can identify
+        // and a string nobody should trust. The strip still draws, so the plane is
+        // there and nothing jumps when the column widens again.
+        guard caption.size().width + SidebarRowMetrics.inset * 2 <= bounds.width else { return }
+        caption.draw(at: NSPoint(
+            x: SidebarRowMetrics.inset,
+            y: Self.rule + SidebarRowMetrics.textOrigin
+        ))
+    }
+
+    // MARK: - Pointing
+
+    override func mouseDown(with _: NSEvent) {
+        isPressed = true
+    }
+
+    /// A press that leaves the strip disarms, and re-entering while held arms it
+    /// again. The rows do exactly this, and here it is the whole of why a stray
+    /// click cannot take the offer.
+    override func mouseDragged(with event: NSEvent) {
+        guard isPressed || hits(event) else { return }
+        isPressed = hits(event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        defer { isPressed = false }
+        // Released outside is a cancel, which is what a press that can be dragged
+        // off is for.
+        guard isPressed, hits(event) else { return }
+        onPress?()
+    }
+
+    /// Against `bounds`, which is the rect this view was drawn in and the rect the
+    /// click was routed through. There is no second arithmetic to disagree with.
+    private func hits(_ event: NSEvent) -> Bool {
+        bounds.contains(convert(event.locationInWindow, from: nil))
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow],
+            owner: self,
+            userInfo: nil
+        ))
+    }
+
+    override func mouseEntered(with _: NSEvent) {
+        isHovered = true
+    }
+
+    override func mouseExited(with _: NSEvent) {
+        isHovered = false
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
 }
