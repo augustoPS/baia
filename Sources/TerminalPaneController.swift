@@ -129,27 +129,26 @@ final class TerminalPaneController: NSViewController {
 
     let statusBar = PaneStatusBarView(frame: .zero)
 
-    /// Which chrome carries this pane's facts, resolved by
-    /// `ConfigurationCenter.apply(to:)` from the `chrome.cluster.mode` dial
-    /// through `Cluster.resolvedMode` (nil resolves to `.cluster` since the
-    /// 2026-08-12 flip, so this holds a total value and in Release can hold
-    /// nothing but `.cluster`). This replaced the hard-coded
-    /// `clusterEnabled = false` that gated the capsule until the dial existed.
+    /// Whether the capsule carries this pane's facts. Always true, and a
+    /// constant rather than a dial since 2026-08-13.
     ///
-    /// `.cluster`, what ships, installs the capsule and hides the footer.
-    /// `.footer`, the pre-flip rendering kept dialable, never adds the
-    /// capsule to the hierarchy (not added-and-hidden), so that mode
-    /// carries no extra view, no extra constraint, and nothing the
-    /// compositor could touch. `.both` shows the two together. The footer
-    /// hides rather than being removed because on a footer-wearing spawn its
-    /// constraints hold the terminal's bottom edge: see
-    /// ``applyClusterMode()``.
-    var clusterMode: DesignOverrides.Chrome.Cluster.Mode = .cluster {
-        didSet {
-            guard clusterMode != oldValue else { return }
-            applyClusterMode()
-        }
-    }
+    /// **This was `clusterMode`, a `DesignOverrides.Chrome.Cluster.Mode`
+    /// assigned by `ConfigurationCenter.apply(to:)` from `chrome.cluster.mode`,
+    /// with a `didSet` re-running ``applyClusterMode()`` on every live flip.**
+    /// The dial resolved to `.cluster` from the 2026-08-12 default flip
+    /// onwards, so in Release it could already hold nothing else; what the
+    /// three spellings bought was the owner's ability to put the retired
+    /// footer back from the design panel. He retired that, and the key is
+    /// refused by name now (`DesignOverridesText`), which is what makes
+    /// `PaneStatusBarView` unreachable rather than merely unused.
+    ///
+    /// Kept as a named constant rather than folded into its readers, because
+    /// the three sites that branch on it — ``applyClusterMode()``, the popover
+    /// anchor, and the spawn arrangement — are each their own deletion with
+    /// its own argument to make, and a constant is what lets them be made one
+    /// at a time against a compiling tree. Every branch it now decides is
+    /// decided the same way on every pane.
+    let clusterCarriesTheFacts = true
 
     /// `chrome.cluster.cornerInset`, nil for the `PaneClusterMetrics.cornerInset`
     /// constant. Re-pins the installed capsule's two constraints in place, the
@@ -542,31 +541,30 @@ final class TerminalPaneController: NSViewController {
         updateGlassWashColour()
     }
 
-    /// Installs or removes the capsule and shows or hides the footer to match
-    /// ``clusterMode``, from `viewDidLoad` and from every later change the
-    /// design panel pushes.
+    /// Installs the capsule and hides the footer, from `viewDidLoad`.
     ///
-    /// `.footer` removes the capsule outright rather than hiding it, the same
-    /// absence-is-the-contract the glass plane's teardown keeps: that mode
-    /// carries no extra view and nothing the compositor could touch.
+    /// **Called from every live mode change too, until 2026-08-13.** The dial
+    /// that pushed those changes retired, so this now runs exactly once per
+    /// pane and both branches below resolve the same way on every one. Left
+    /// branching rather than straightened here: the removal path is the
+    /// footer's teardown, which comes out with the view itself, and
+    /// collapsing it in the same step as retiring the dial would mix a
+    /// deletion into a retirement.
     ///
-    /// The footer goes the other way — hidden, never removed — and the
-    /// asymmetry is the SIGWINCH wall. Under a flat footer spawn
-    /// (`.insetAboveBar`) `terminalView`'s
-    /// bottom is pinned to `statusBar.topAnchor`, so removing the bar (or
-    /// collapsing its height) would resize the surface and signal whatever is
-    /// running in the pane. A hidden view keeps its constraints and its
-    /// frame, so the grid never hears about the mode at all.
+    /// The footer hides rather than being removed, and the asymmetry is the
+    /// SIGWINCH wall. Under a flat footer spawn (`.insetAboveBar`)
+    /// `terminalView`'s bottom is pinned to `statusBar.topAnchor`, so removing
+    /// the bar (or collapsing its height) would resize the surface and signal
+    /// whatever is running in the pane. A hidden view keeps its constraints
+    /// and its frame, so the grid never hears about it at all.
     private func applyClusterMode() {
         guard isViewLoaded else { return }
-        if clusterMode == .footer {
-            // A mode flip can arrive from the watched overrides file while a
-            // card floats over this capsule; removing the anchor under a
-            // still-key card leaves it orphaned until the user dismisses it
-            // by hand. The superview check keeps the lazy controller unforced
-            // for panes whose capsule never existed (a `.footer` dial from
-            // spawn), which is what keeps that mode free of the panel
-            // entirely.
+        if !clusterCarriesTheFacts {
+            // Unreachable since the dial retired, and it was the footer-only
+            // rendering's teardown: a card floating over a capsule about to
+            // be removed had to come down with it, and the superview check
+            // kept the lazy controller unforced for panes whose capsule never
+            // existed at all.
             if clusterView.superview != nil {
                 clusterCards.dismiss()
             }
@@ -575,11 +573,10 @@ final class TerminalPaneController: NSViewController {
         } else if clusterView.superview == nil {
             installClusterView()
         }
-        // The footer's visibility keys off the same mode as the capsule's
+        // The footer's visibility keys off the same constant as the capsule's
         // membership, so the two cannot disagree about which chrome is
-        // carrying the facts. Hidden only at `.cluster`; `.both` is exactly
-        // both.
-        statusBar.isHidden = clusterMode == .cluster
+        // carrying the facts.
+        statusBar.isHidden = clusterCarriesTheFacts
     }
 
     /// Adds the capsule below the scrim, deliberately: the inactive-window
@@ -618,18 +615,17 @@ final class TerminalPaneController: NSViewController {
     /// `ApprovalPopoverController.origin(forAnchor:size:in:)` hands to
     /// `convertToScreen`.
     ///
-    /// One rule, keyed off ``clusterMode``'s own semantics. Under `.footer`
-    /// and `.both` the footer shows, and its capsule — the rect the click
-    /// handed up, the one thing the bar drew and the click resolved — stays
-    /// the anchor, converted exactly as before. Under `.cluster` the footer
+    /// One rule, keyed off ``clusterCarriesTheFacts``, which is constant since
+    /// 2026-08-13 — so the footer-capsule branch below is now unreachable and
+    /// stays only until the bar it converts a rect on is deleted. The footer
     /// is hidden, so a rect on it would anchor the popover to an invisible
-    /// bar; the anchor moves to the chrome that now carries attention, the
-    /// cluster capsule's attention-segment rect. If
-    /// the capsule is not installed at all (unreachable under `.cluster`,
-    /// where ``applyClusterMode()`` installs it, but a nil-window `convert`
-    /// would answer garbage rather than fail) the pane's top-right corner —
-    /// where the capsule would sit — keeps the popover on the pane it speaks
-    /// for instead of anchored at a zero rect.
+    /// bar; the anchor is the chrome that carries attention, the cluster
+    /// capsule's attention-segment rect. If the capsule is not installed at
+    /// all (unreachable, since ``applyClusterMode()`` installs it on every
+    /// pane, but a nil-window `convert` would answer garbage rather than
+    /// fail) the pane's top-right corner — where the capsule would sit —
+    /// keeps the popover on the pane it speaks for instead of anchored at a
+    /// zero rect.
     ///
     /// **``PaneClusterView/approvalAnchorRect()`` and not
     /// ``PaneClusterView/segmentRect(for:)``, and the difference is a notice.**
@@ -656,7 +652,7 @@ final class TerminalPaneController: NSViewController {
     /// that did nothing, and taking away a prompt over it would be the larger
     /// surprise. Naming the returning dot needs no wire and no dismissal.
     private func approvalPopoverAnchor(footerCapsule: NSRect) -> NSRect {
-        guard clusterMode == .cluster else {
+        guard clusterCarriesTheFacts else {
             return statusBar.convert(footerCapsule, to: nil)
         }
         guard clusterView.superview != nil else {
@@ -939,16 +935,19 @@ final class TerminalPaneController: NSViewController {
 
     /// The ``PaneBottomArrangement`` this pane spawned with: the second
     /// spawn-frozen fact, beside ``spawnedUnderGlass`` and frozen at the same
-    /// moment, from the pane's mode and chrome as
-    /// `ConfigurationCenter.apply(to:)` first resolved them. `lazy` for
-    /// ``spawnedUnderGlass``'s whole argument: every one of the three answers
-    /// names a bottom anchor and a padding, so moving a running pane between
-    /// them is the live grid resize (`SIGWINCH`) that property's doc comment
-    /// closes off. A mode flip after spawn changes the arrangement of the
-    /// next pane opened, never this one's.
+    /// moment, from the pane's chrome as `ConfigurationCenter.apply(to:)`
+    /// first resolved it. `lazy` for ``spawnedUnderGlass``'s whole argument:
+    /// every one of the three answers names a bottom anchor and a padding, so
+    /// moving a running pane between them is the live grid resize (`SIGWINCH`)
+    /// that property's doc comment closes off.
+    ///
+    /// It took the pane's mode as well until 2026-08-13. With the dial retired
+    /// `clusterOnly` is constant, so the freeze now only holds the glass
+    /// answer still — which is the half that could ever move under a live
+    /// toggle anyway.
     private lazy var spawnedBottomArrangement: PaneBottomArrangement =
         PaneClusterMetrics.bottomArrangement(
-            clusterOnly: clusterMode == .cluster,
+            clusterOnly: clusterCarriesTheFacts,
             underGlass: spawnedUnderGlass
         )
 
@@ -1233,14 +1232,14 @@ final class TerminalPaneController: NSViewController {
             view.addSubview(overlay)
         }
 
-        // The capsule's install runs behind the mode — see ``clusterMode``:
-        // absent at `.footer`, not hidden, is what keeps that dialled
-        // rendering free of the capsule. `ConfigurationCenter.apply(to:)` set the
-        // mode at registration, before this view loaded, so its `didSet`
-        // bailed on the `isViewLoaded` guard inside ``applyClusterMode()``
-        // and this is the application site for a pane spawned with the dial
-        // already turned — the same arrangement `applyResolvedGlassPlane()`
-        // is called below for.
+        // The capsule's install. This was the application site for a pane
+        // spawned with the mode dial already turned — the dial was assigned at
+        // registration, before this view loaded, so its `didSet` bailed on the
+        // `isViewLoaded` guard inside ``applyClusterMode()`` and the work
+        // landed here instead. Since the dial retired (2026-08-13) it is the
+        // only call site there is, which changes nothing about where it goes:
+        // the install still needs a loaded view, the same arrangement
+        // `applyResolvedGlassPlane()` is called below for.
         applyClusterMode()
 
         // Edge pinning alone leaves the hierarchy with no size of its own.
@@ -1265,8 +1264,7 @@ final class TerminalPaneController: NSViewController {
 
         // Arrangement (B) from the glass-backdrop spike's verdict, read from
         // ``spawnedBottomArrangement`` — frozen at this pane's first chrome
-        // resolution — rather than live from ``resolvedChrome`` or
-        // ``clusterMode``.
+        // resolution — rather than live from ``resolvedChrome``.
         //
         // `resolvedChrome`'s own `didSet` deliberately does not touch this
         // constraint, and this is the only place the constraint is built at
@@ -1377,16 +1375,17 @@ final class TerminalPaneController: NSViewController {
             ))
         }
 
-        // Inert while ``clusterMode`` is `.footer`: the closure is assigned,
-        // but the only view that raises it is never added to the hierarchy,
-        // so nothing here runs under that dial.
+        // Assigned unconditionally, and live on every pane since the mode dial
+        // retired (2026-08-13). It was inert under `.footer`, where the only
+        // view that raises it was never added to the hierarchy; no pane can
+        // be in that state now.
         clusterView.onSegmentClick = { [weak self] role, segmentRect in
             self?.clusterSegmentClicked(role, segmentRect: segmentRect)
         }
 
         // A card outlives neither the segment it is anchored to nor the pill it
-        // hangs off. Inert under `.footer` with `onSegmentClick` above, and for
-        // the same reason: no capsule in the hierarchy, nothing to re-measure.
+        // hangs off. Live on every pane with `onSegmentClick` above, and for
+        // the same reason: the capsule is in every hierarchy now.
         clusterView.onSegmentsVanished = { [weak self] roles in
             self?.clusterSegmentsVanished(roles)
         }
@@ -1452,10 +1451,11 @@ final class TerminalPaneController: NSViewController {
     /// made a retired view the source of truth for five readers that have
     /// nothing to do with drawing a footer: the window title and subtitle, the
     /// capsule's segments, the approval card's title, ``tabPath`` and
-    /// ``tabTitle(project:budget:)``. `chrome.cluster.mode: cluster` already
-    /// hides the bar, so those readers were reaching into a view the owner had
-    /// switched off, and deleting the file would have deleted the pane's state
-    /// with it.
+    /// ``tabTitle(project:budget:)``. The bar was already hidden on every pane
+    /// (by `chrome.cluster.mode`'s default, and unconditionally since that key
+    /// retired the next day), so those readers were reaching into a view the
+    /// owner had switched off, and deleting the file would have deleted the
+    /// pane's state with it.
     ///
     /// Written at exactly one point, ``refreshStatus()``, which then hands the
     /// value to both surfaces. `private(set)` so that stays true: a second
@@ -1963,12 +1963,13 @@ final class TerminalPaneController: NSViewController {
     ///
     /// **Both chromes, through one path, and nothing here knows which is up.**
     /// The notice is written into ``PaneStatus/notice`` and ``refreshStatus()``
-    /// rebuilds the footer's segments and the capsule's from that one value, so
-    /// the takeover happens on whichever surface the `chrome.cluster.mode` dial
-    /// has installed — `PaneStatusSegments.build(from:)` and
-    /// `PaneClusterSegments.build(from:)` each return the notice alone, for the
-    /// same reason, stated in each. Under `.both` it happens on both, which is
-    /// what that mode means.
+    /// rebuilds the footer's segments and the capsule's from that one value —
+    /// `PaneStatusSegments.build(from:)` and `PaneClusterSegments.build(from:)`
+    /// each return the notice alone, for the same reason, stated in each. The
+    /// takeover used to happen on whichever surface `chrome.cluster.mode` had
+    /// installed; since that dial retired (2026-08-13) the capsule is the only
+    /// surface on screen, and this path stays ignorant of that rather than
+    /// learning it, because the footer's own rebuild goes with the footer.
     ///
     /// A card open over this pane's capsule comes down with the segment it was
     /// anchored to, but **not from here** — see

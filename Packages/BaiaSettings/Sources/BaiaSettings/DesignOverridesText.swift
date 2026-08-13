@@ -175,8 +175,9 @@
             _ cluster: DesignOverrides.Chrome.Cluster, into lines: inout [String]
         ) {
             var group: [String] = []
-            append(&group, "chrome.cluster.mode", cluster.mode?.rawValue,
-                   note: "footer | cluster | both; nil is cluster, today's rendering (flipped 2026-08-12)")
+            // `chrome.cluster.mode` was emitted here until 2026-08-13, retired
+            // with the gate itself ahead of the `PaneStatusBarView` deletes;
+            // see `DesignOverrides.Chrome.Cluster`.
             append(&group, "chrome.cluster.cornerInset", cluster.cornerInset,
                    note: "PaneClusterMetrics.cornerInset, today 6 pt (an overlay pin, not a cell metric)")
             append(&group, "chrome.cluster.opacity", cluster.opacity,
@@ -354,7 +355,6 @@
             case "chrome.surfaces.popover": return rawValue(value, key, &overrides.chrome.surfaces.popover)
             case "chrome.surfaces.titlebar": return rawValue(value, key, &overrides.chrome.surfaces.titlebar)
 
-            case "chrome.cluster.mode": return rawValue(value, key, &overrides.chrome.cluster.mode)
             case "chrome.cluster.cornerInset":
                 return double(value, key, &overrides.chrome.cluster.cornerInset)
             case "chrome.cluster.opacity": return double(value, key, &overrides.chrome.cluster.opacity)
@@ -369,11 +369,22 @@
             // that removed the sidebar's session header took the only site they
             // reached, and `chrome.inks.actionRowMinimumRatio` and
             // `chrome.inks.actionRowHex` later the same day, when the ruling
-            // that removed the "New session" row took theirs. All seven now fall
+            // that removed the "New session" row took theirs, and
+            // `chrome.cluster.mode` until 2026-08-13, when the gate itself
+            // retired ahead of the `PaneStatusBarView` deletes and left the
+            // capsule as the only chrome a pane can wear. All eight now fall
             // through to `default`, which is the right answer rather than a gap:
             // an overrides file still carrying one is naming a knob this build
             // genuinely does not have, and the owner is told so by name instead
             // of having it silently ignored.
+            //
+            // The eighth is the one this refusal was written for. The other
+            // seven retired with a visual their file had to pre-date, while
+            // `chrome.cluster.mode` sat in a group whose other two keys still
+            // parse, so a correctly-spelled `"footer"` beside two working
+            // cluster lines is exactly the shape that would read as a dead
+            // knob rather than a removed one. Being named is what tells the
+            // owner the footer is gone rather than broken.
             default:
                 return ParseError(message: "`\(key)` is not a knob baia dials")
             }

@@ -142,21 +142,21 @@ func armNilCluster() {
     // The untouched view is never assigned `fillOpacity` at all, so this
     // compares the property's *default* against what `ConfigurationCenter`
     // assigns from a `DesignOverrides()` whose cluster group has nothing
-    // dialled. Of the group's three fields, `opacity` is the only one that
-    // reaches this view: `mode` gates installation and `cornerInset` moves
-    // constraints, both in `TerminalPaneController`, neither a byte here.
+    // dialled. Of the group's two fields, `opacity` is the only one that
+    // reaches this view: `cornerInset` moves constraints in
+    // `TerminalPaneController`, not a byte here.
     //
-    // Since the 2026-08-12 default flip, the baseline these comparisons
-    // render (the capsule, on) is the shipped chrome itself rather than a
-    // dialled preview: an undialled mode resolves to `.cluster`. The
-    // resolution is package arithmetic (`Cluster.resolvedMode`, pinned in
-    // `DesignOverridesTests`); asserted here too so this arm's own framing,
-    // undialled means what ships, cannot drift from it silently.
+    // **The group had a third field, `mode`, and this arm asserted its nil
+    // resolution until 2026-08-13.** That check was added with the
+    // 2026-08-12 default flip so the arm's framing — undialled means what
+    // ships — could not drift from the package arithmetic behind it. The
+    // dial has since retired outright, so the framing is now true by
+    // construction: there is no mode to resolve, every pane wears the
+    // capsule, and the baseline rendered below is the shipped chrome with
+    // nothing left that could select another. The assertion is deleted
+    // rather than re-pointed, because an arm that cannot fail is not
+    // evidence.
     let overrides = DesignOverrides()
-    check(
-        overrides.chrome.cluster.resolvedMode == .cluster,
-        "an undialled mode resolves to cluster: the capsule is what ships (flipped 2026-08-12)"
-    )
 
     for (name, chrome) in [("flat", ResolvedChrome.flat), ("glass", .glass(.dark))] {
         let untouched = makeCapsule(chrome: chrome)

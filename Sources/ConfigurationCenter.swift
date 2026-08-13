@@ -573,20 +573,18 @@ final class ConfigurationCenter {
         // neither can move a live grid the way a padding change would.
         pane.backgroundOpacity = effectiveSettings.backgroundOpacity
         pane.paneWashFloor = chromeOverrides.paneWashFloor
-        // The pane cluster's gate and its two dials (`chrome.cluster.*`).
-        // The mode's nil resolves in `Cluster.resolvedMode`, the one
-        // resolution site: nil is `.cluster` since the 2026-08-12 flip,
-        // today's rendering. So the pane holds a total value, and in
-        // Release, where `chromeOverrides` is always empty, it can hold
-        // nothing but `.cluster`. All
-        // three are appearance-only on a running pane: the capsule is an
-        // overlay pinned over the surface, and the footer hides rather than
-        // being removed, so no live mode change touches the grid (the pane's
-        // `applyClusterMode()` carries the SIGWINCH argument). At spawn the
-        // mode does one more thing: it feeds the pane's frozen
-        // `bottomArrangementAtSpawn`, read below to pick the configuration,
-        // which is why this assignment stays ahead of that read.
-        pane.clusterMode = chromeOverrides.cluster.resolvedMode
+        // The pane cluster's two dials (`chrome.cluster.*`). Both are
+        // appearance-only on a running pane: the capsule is an overlay pinned
+        // over the surface, so neither reaches the grid.
+        //
+        // **A third assignment stood here until 2026-08-13:
+        // `pane.clusterMode = chromeOverrides.cluster.resolvedMode`.** The
+        // dial behind it retired with the gate, so the pane's `clusterMode`
+        // is now a constant the property initialises itself to and this
+        // method has nothing to feed it. What that assignment did at spawn
+        // beyond gating the capsule — freezing `bottomArrangementAtSpawn`,
+        // read below to pick the configuration — it did by being in place
+        // before that read, and a constant is in place earlier still.
         pane.clusterCornerInset = chromeOverrides.cluster.cornerInset
         pane.clusterOpacity = chromeOverrides.cluster.opacity
         // The footer's glass tint was assigned here until 2026-08-09, from
@@ -600,7 +598,7 @@ final class ConfigurationCenter {
         //
         // **Which configuration, not just whether one applies.** Reading
         // `pane.bottomArrangementAtSpawn` here rather than branching on the
-        // live `resolvedChrome` and `clusterMode` just assigned above is
+        // live `resolvedChrome` assigned above is
         // deliberate: that property is frozen at this pane's first
         // configuration (see `spawnedUnderGlass`'s doc comment), so a pane
         // spawned under flat keeps taking `terminalConfiguration` even after
@@ -612,15 +610,14 @@ final class ConfigurationCenter {
         // hazard arrangement (B) was built to avoid, not to relocate to a
         // settings reload.
         //
-        // The cluster case rides the same freeze: a pane spawned at
-        // `.cluster` has no footer, so it takes the bump-free arrangement
-        // (`.fullHeightClear`), still zeroed under glass because the plane
-        // and the wash own the well whatever the mode. A mode flip after
-        // spawn changes the arrangement of the next pane opened, never the
-        // padding of one already running. This is also the first read of the
-        // frozen pair, and it runs at registration — after `clusterMode` and
-        // `resolvedChrome` are assigned above, before the view loads — which
-        // is what "at spawn" means concretely.
+        // The cluster case rode the same freeze while the mode was dialable,
+        // and since 2026-08-13 it is no longer a case: every pane wears the
+        // capsule and none wears a footer, so `clusterOnly` is constant and
+        // the arrangement is `.fullHeightClear` unless the pane spawned under
+        // glass. The freeze stays because `resolvedChrome` still moves under
+        // a live toggle. This is also the first read of the frozen pair, and
+        // it runs at registration — after `resolvedChrome` is assigned above,
+        // before the view loads — which is what "at spawn" means concretely.
         let spawnConfiguration: TerminalConfiguration = switch pane.bottomArrangementAtSpawn {
         case .insetAboveBar: terminalConfiguration
         case .fullHeightWithBump: glassCompensatedTerminalConfiguration

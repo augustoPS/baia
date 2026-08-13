@@ -557,22 +557,19 @@
             )
         }
 
-        /// The pane cluster's gate and its two dials.
+        /// The pane cluster's two dials.
         ///
-        /// The mode is the panel's enum idiom, a popup off `Mode.allCases` with
-        /// the leading nil row, for `buildMaterials`' reason: the cases come
-        /// from the type, so a fourth mode cannot reach this popup without the
-        /// pane's gate learning it first. Nil is `cluster` since the
-        /// 2026-08-12 flip: undialled means the capsule, today's rendering,
-        /// and `footer` and `both` remain dialable, so the retired bar-only
-        /// chrome stays one dial away (the reversibility contract).
+        /// **A "Mode" popup led this group until 2026-08-13**, the panel's
+        /// enum idiom over `Cluster.Mode.allCases`, offering `footer`,
+        /// `cluster` and `both`. It was the one control in the panel that
+        /// selected a *chrome* rather than dialling one, and it existed to
+        /// keep the pre-2026-08-12 bar-only rendering reachable after the
+        /// default flipped to the capsule. The owner retired that
+        /// reversibility along with the key behind it, so there is no field
+        /// left for the row to bind to; the two below dial the capsule and
+        /// were never a choice between renderings.
         private func buildCluster(into stack: NSStackView) {
             stack.addArrangedSubview(makeHeader("Cluster"))
-            addChoice(
-                to: stack, label: "Mode", cases: DesignOverrides.Chrome.Cluster.Mode.allCases,
-                get: { $0.chrome.cluster.mode }, set: { $0.chrome.cluster.mode = $1 },
-                help: "cluster is today's rendering (nil's resolution since 2026-08-12): capsule installed, footer hidden (hidden, never removed, so the grid cannot resize). footer restores the retired bar-only chrome. both shows the two together for A/B-ing against the same live session."
-            )
             addSlider(
                 to: stack, label: "Corner inset", range: 0 ... 24, step: 0.5,
                 get: { $0.chrome.cluster.cornerInset },

@@ -243,7 +243,8 @@ import Testing
         #expect(extras.surfaces.palette == nil)
         #expect(extras.surfaces.popover == nil)
         #expect(extras.surfaces.titlebar == nil)
-        #expect(extras.cluster.mode == nil)
+        // `cluster.mode` was asserted here until 2026-08-13, when the gate
+        // retired ahead of the `PaneStatusBarView` deletes.
         #expect(extras.cluster.cornerInset == nil)
         #expect(extras.cluster.opacity == nil)
     }
@@ -366,57 +367,51 @@ import Testing
         #expect(first != second)
     }
 
-    // MARK: - The cluster gate and its two dials
+    // MARK: - The cluster's two dials
+
+    // **Three arms about `mode` stood here until 2026-08-13, and the gate they
+    // guarded is gone.**
+    //
+    // They held that the field started nil, that nil resolved to `.cluster`
+    // after the 2026-08-12 flip while `footer` and `both` still passed
+    // through, and that the three spellings were exactly what the pane's gate
+    // switched on. The middle one stated the reversibility contract outright:
+    // the retired bar-only rendering remains one dial away rather than
+    // deleted.
+    //
+    // That contract is what the owner retired. A dial kept so a shipped-past
+    // rendering stays selectable is a second rendering path maintained for a
+    // look already ruled against, the `bareGlass` judgement applied to a view
+    // instead of a wash — and while a live spelling reached
+    // `PaneStatusBarView`, that file could not be called dead. So these are a
+    // tombstone rather than a rewrite: there is no `Mode` type left to
+    // enumerate and no resolution left to pin, and re-pointing the arms at
+    // `cornerInset` would keep their names while testing something else.
+    //
+    // What the retirement itself is worth is held from the parser's side, by
+    // `DesignOverridesTextTests.theRetiredClusterModeKeyFailsTheWholeParseAndNamesIt`:
+    // a file naming the key is refused by name. That is the arm that can fail,
+    // and it is deliberately not here, because a deleted field cannot be
+    // asserted about in the type that no longer carries it.
 
     @Test func theClusterStartsUndialled() {
-        // The stored fields still start nil after the 2026-08-12 default
-        // flip: undialled means what ships, and a field that defaulted to a
-        // named case would pin the chrome the moment the panel existed,
-        // which is the exact failure the type's doc comment names. What nil
-        // *resolves* to is `resolvedMode`'s business, pinned below; until
-        // the flip it resolved to `footer`.
+        // A field that defaulted to a number would pin the capsule's geometry
+        // and its fill the moment the panel existed, which is the exact
+        // failure the type's doc comment names.
         let cluster = DesignOverrides().chrome.cluster
-        #expect(cluster.mode == nil)
         #expect(cluster.cornerInset == nil)
         #expect(cluster.opacity == nil)
     }
 
-    @Test func nilModeResolvesToClusterAndADialledModePassesThrough() {
-        // The flip, 2026-08-12: undialled means cluster, the capsule is what
-        // ships. `footer` and `both` stay dialable spellings, so the retired
-        // bar-only rendering remains one dial away rather than deleted; that
-        // reversibility is the contract, and this is where it is pinned.
-        #expect(DesignOverrides().chrome.cluster.resolvedMode == .cluster)
-
-        var overrides = DesignOverrides()
-        overrides.chrome.cluster.mode = .footer
-        #expect(overrides.chrome.cluster.resolvedMode == .footer)
-        overrides.chrome.cluster.mode = .both
-        #expect(overrides.chrome.cluster.resolvedMode == .both)
-    }
-
-    @Test func theThreeModeSpellingsAreWhatThePaneGateReads() {
-        // Spelled out by name, the `Material` rule: these strings are what the
-        // owner types into the overrides file and what the pane's gate switches
-        // on. A rename that looked harmless here would silently stop resolving
-        // there. The count is pinned so a fourth mode has to be a deliberate,
-        // reviewed diff.
-        #expect(DesignOverrides.Chrome.Cluster.Mode.allCases.count == 3)
-        #expect(Set(DesignOverrides.Chrome.Cluster.Mode.allCases.map(\.rawValue))
-            == ["footer", "cluster", "both"])
-    }
-
     @Test func aClusterDialReachesNoSettingsField() {
-        // Extras, like the rest of `Chrome`: the gate and both dials map to no
-        // `Settings` field and must survive composition by being carried past
-        // it rather than folded in.
+        // Extras, like the rest of `Chrome`: both dials map to no `Settings`
+        // field and must survive composition by being carried past it rather
+        // than folded in.
         var overrides = DesignOverrides()
-        overrides.chrome.cluster.mode = .cluster
         overrides.chrome.cluster.cornerInset = 10
         overrides.chrome.cluster.opacity = 0.7
 
         #expect(Settings.defaultSettings.applying(overrides) == Settings.defaultSettings)
-        #expect(overrides.chrome.cluster.mode == .cluster)
         #expect(overrides.chrome.cluster.cornerInset == 10)
         #expect(overrides.chrome.cluster.opacity == 0.7)
     }
@@ -425,16 +420,16 @@ import Testing
         // `ConfigurationCenter` skips a re-derivation when a dial lands back
         // where it was, so equality has to reach this group like every other.
         var first = DesignOverrides()
-        first.chrome.cluster.mode = .both
+        first.chrome.cluster.cornerInset = 10
         var second = DesignOverrides()
-        second.chrome.cluster.mode = .both
+        second.chrome.cluster.cornerInset = 10
         #expect(first == second)
 
         second.chrome.cluster.opacity = 0.5
         #expect(first != second)
 
         second.chrome.cluster.opacity = nil
-        second.chrome.cluster.mode = nil
+        second.chrome.cluster.cornerInset = nil
         #expect(first != second)
     }
 

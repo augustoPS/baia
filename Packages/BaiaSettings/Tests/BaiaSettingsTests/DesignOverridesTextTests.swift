@@ -7,7 +7,7 @@
 
     /// What `DesignOverridesText` emits, pinned from the side that can drift.
     ///
-    /// The emitter carries twenty-nine field paths and twenty-nine
+    /// The emitter carries twenty-eight field paths and twenty-eight
     /// hand-written notes naming the constants they stand in for. A renamed field breaks the
     /// compile and needs no test; the two failures that compile cleanly are what
     /// these hold:
@@ -127,8 +127,13 @@
             // The pane cluster's gate and its two dials, new on 2026-08-12,
             // 30 -> 33: which chrome carries the pane's facts, the capsule's
             // corner pin, and the multiplier on its pill fill alpha.
-            "chrome.cluster.mode", "chrome.cluster.cornerInset",
-            "chrome.cluster.opacity",
+            //
+            // The gate, `chrome.cluster.mode`, led this line until 2026-08-13
+            // and retired with itself rather than with a visual: the owner had
+            // already flipped nil to the capsule, and keeping the key meant
+            // keeping the footer reachable. 29 -> 28. The two that remain dial
+            // the capsule and never selected a chrome.
+            "chrome.cluster.cornerInset", "chrome.cluster.opacity",
 
             // `chrome.sidebarWashFloor` and `chrome.bareGlass` sat beside these
             // until 2026-08-08. Both retired with the glass washes they dialled,
@@ -142,10 +147,10 @@
             "chrome.barLift", "chrome.paneWashFloor",
         ]
 
-        /// Twenty-nine, which is the count `DesignOverrides` carries: seven
+        /// Twenty-eight, which is the count `DesignOverrides` carries: seven
         /// settings shadows, nine lift, two rim, two inks, four surfaces,
-        /// three cluster, two window.
-        static let expectedKeyCount = 29
+        /// two cluster, two window.
+        static let expectedKeyCount = 28
 
         // MARK: - JSON shapes
 
@@ -155,8 +160,12 @@
             #expect(text.contains("\"backgroundBlur\": true,"))
             #expect(text.contains("\"chromeStyle\": \"glass\","))
             #expect(text.contains("\"chrome.inks.busyDotHex\": \"#00ff00\","))
+            // `chrome.cluster.mode` was the fifth line asserted here, a second
+            // enum beside the surface material. It retired on 2026-08-13 with
+            // the gate; the string-enum shape it stood for is still held by
+            // the four above, which is why this is a deletion rather than a
+            // re-pointing at a surviving key.
             #expect(text.contains("\"chrome.surfaces.sidebar\": \"thick\","))
-            #expect(text.contains("\"chrome.cluster.mode\": \"both\","))
         }
 
         @Test func theOutputIsBracedAndEveryLineIsIndented() {
@@ -407,6 +416,37 @@
             #expect(error.message.contains("chrome.surfaces.footer"))
         }
 
+        @Test func theRetiredClusterModeKeyFailsTheWholeParseAndNamesIt() {
+            // `chrome.cluster.mode` joined the retired list on 2026-08-13, and it
+            // is the one retirement that needs its own arm rather than a line in
+            // the sweep above. The other seven retired with the thing they
+            // dialled, so an overrides file still naming one is a file that
+            // pre-dates a visual change. This key retired with the *dial* while
+            // its two neighbours (`cornerInset`, `opacity`) stayed, so the
+            // group it belongs to is still live and still spelled the same way:
+            // an owner reaching for the footer would type it correctly into a
+            // file whose other cluster lines all work, and the whole point of
+            // the retirement is that he is told the mode is gone rather than
+            // watching a correct-looking key do nothing.
+            //
+            // A live value is used deliberately. `"footer"` was the mode this
+            // key existed to reach, so if a `Mode` enum ever came back this arm
+            // would parse rather than fail, and the failure is what says the
+            // footer is unreachable from config.
+            let result = DesignOverridesText.parse("""
+            {
+              "chrome.cluster.mode": "footer"
+            }
+            """)
+
+            guard case let .failure(error) = result else {
+                Issue.record("the retired cluster mode key parsed")
+                return
+            }
+            #expect(error.message.contains("chrome.cluster.mode"))
+            #expect(error.message.contains("is not a knob baia dials"))
+        }
+
         @Test func aDocumentThatIsNotAnObjectFails() {
             for text in ["[]", "0.31", "{", "{ \"chrome.barLift\": }", ""] {
                 guard case .failure = DesignOverridesText.parse(text) else {
@@ -477,7 +517,6 @@
             "chrome.surfaces.popover": "\"menu\"",
             "chrome.surfaces.titlebar": "\"chrome\"",
 
-            "chrome.cluster.mode": "\"cluster\"",
             "chrome.cluster.cornerInset": "6.0",
             "chrome.cluster.opacity": "0.85",
 
@@ -487,7 +526,7 @@
 
         // MARK: - Fixture
 
-        /// Every one of the twenty-nine knobs dialled to something, so a test
+        /// Every one of the twenty-eight knobs dialled to something, so a test
         /// can assert over the complete output.
         private func everythingDialled() -> DesignOverrides {
             var overrides = DesignOverrides()
@@ -520,7 +559,6 @@
             overrides.chrome.surfaces.popover = .menu
             overrides.chrome.surfaces.titlebar = .chrome
 
-            overrides.chrome.cluster.mode = .both
             overrides.chrome.cluster.cornerInset = 6
             overrides.chrome.cluster.opacity = 0.85
 

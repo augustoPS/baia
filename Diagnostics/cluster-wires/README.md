@@ -41,7 +41,7 @@ from reading as evidence.
 
 | arm | what it says |
 |---|---|
-| `nil-cluster` | A capsule never assigned `fillOpacity` renders the same bytes as one handed `DesignOverrides().chrome.cluster.opacity` — the explicitly-nil group, applied the way `ConfigurationCenter.apply(to:)` applies it. Checked under flat and glass both. This is the byte-stability half of the dial's contract: the panel's mere existence moves nothing. Since 2026-08-12 the arm also asserts `Cluster.resolvedMode` at nil is `.cluster`, because the baseline it renders became the shipped chrome (see below) |
+| `nil-cluster` | A capsule never assigned `fillOpacity` renders the same bytes as one handed `DesignOverrides().chrome.cluster.opacity` — the explicitly-nil group, applied the way `ConfigurationCenter.apply(to:)` applies it. Checked under flat and glass both. This is the byte-stability half of the dial's contract: the panel's mere existence moves nothing. It also asserted `Cluster.resolvedMode` at nil between 2026-08-12 and 2026-08-13, until the mode retired (see below) |
 | `opacity` | `0.35` moves the rendering under flat and glass, moves more than 200 pixels (a surface, not an edge — the fill is the whole pill), and leaves the attention dot's centre pixel carrying its own ink. That last check is the "fill only" clause of the dial's doc measured at the one ornament pixel whose coverage is total; glyph edges antialias against the fill, so text pixels are deliberately not asserted |
 | `focus` | Focused and unfocused render differently under glass, and a *fill-only* pixel (mid-gap between segments, clear of the inset stroke and every glyph) moved — so the `fillChrome` → `fillThick` step exists as a fill step, not just as the stroke appearing. Then the gate: focused-but-deactivated renders byte-identically to unfocused, `framesForFocus`' conjunction measured directly, since offscreen `isWindowActive` is a plain property with no window feeding it |
 
@@ -62,23 +62,22 @@ of a dialled inset is owed to the owner's eye through the panel — recorded as
 owed rather than claimed, the same entry `override-wires` keeps for its surface
 fills. This probe deliberately covers draw wires only.
 
-**`chrome.cluster.mode` has no arm for the same reason, stated so its absence
-reads as a decision.** The gate is `TerminalPaneController.applyClusterMode()`:
-`.footer` never adds the capsule to the hierarchy, `.cluster` installs it and
-hides the footer, `.both` shows both. Installation is a fact about a pane's view
-tree, not about the capsule's own `draw(_:)`, so it lives behind the same
-app-target wall as the inset. The absence claim `.footer` makes — no
-extra view, nothing the compositor could touch — is a hierarchy claim asserted
-in the controller's own doc, not a rendering this probe could compare.
+**`chrome.cluster.mode` had no arm for the same reason, and on 2026-08-13 it
+stopped having a subject.** The gate lived in
+`TerminalPaneController.applyClusterMode()`, and installation is a fact about a
+pane's view tree rather than about the capsule's own `draw(_:)`, so it sat
+behind the same app-target wall as the inset and this probe never covered it.
 
-**The default flipped on 2026-08-12.** Undialled `chrome.cluster.mode` resolved
-to `.footer` when this probe was written; it now resolves to `.cluster`
-(`Cluster.resolvedMode` in BaiaSettings, the one resolution site). Undialled
-still means what ships, and what ships changed by design: the capsule on, the
-footer hidden. The `nil-cluster` arm re-baselined with the flip, which cost it
-nothing pixel-wise (it always rendered the capsule directly) and gained it the
-resolution assertion above; `.footer` and `.both` stay dialable, so the
-pre-flip rendering remains reachable from the panel for comparison.
+The dial has now retired outright: the key is refused by name
+(`DesignOverridesText`), the enum is gone from `BaiaSettings`, and every pane
+wears the capsule with no spelling that could select otherwise. The
+`nil-cluster` arm carried one assertion about it — that an undialled mode
+resolved to `.cluster`, added with the 2026-08-12 default flip so the arm's
+framing could not drift from the package arithmetic — and that assertion went
+with the field rather than being re-pointed at a survivor, an arm with nothing
+left to disagree with being a tautology rather than evidence. What the arm
+still renders is unchanged: it always drew the capsule directly, so the
+baseline was never the dial's to move.
 
 **The segments' text and placement are not re-tested here.** `PaneClusterLayout`
 and `PaneClusterSegments` are package code with their own suites

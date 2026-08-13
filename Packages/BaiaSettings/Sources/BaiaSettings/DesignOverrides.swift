@@ -132,7 +132,7 @@ public extension DesignOverrides {
         /// Which fill each glass surface draws with. See ``Surfaces``.
         public var surfaces = Surfaces()
 
-        /// The pane cluster's gate and its two dials. See ``Cluster``.
+        /// The pane cluster's two dials. See ``Cluster``.
         public var cluster = Cluster()
 
         /// Stands in for `PaneTheme.barLift`, today 0.08: how far the footer's
@@ -337,59 +337,35 @@ public extension DesignOverrides.Chrome {
         public init() {}
     }
 
-    /// The pane cluster's gate and its two dials, new on 2026-08-12 and the
-    /// stroke that took the inventory 30 to 33.
+    /// The pane cluster's two dials, new on 2026-08-12 and the stroke that
+    /// took the inventory 30 to 33.
     ///
     /// The capsule (design v6) is the footer's facts moved to the pane's
     /// top-right, built behind a hard-coded `false` until this group replaced
-    /// the flag. Which chrome carries the facts is a question the owner
-    /// answers by looking at real sessions, which is what this layer exists
-    /// for, so the gate is a dial here rather than a config key: a mode that
-    /// survives the afternoon is folded into shipped behaviour, not saved.
-    /// That fold happened the same day: nil resolves to ``Mode/cluster``
-    /// since 2026-08-12, and the footer became the dialled state.
+    /// the flag.
+    ///
+    /// **It carried a third field, `mode`, and a `Mode` enum with it, until
+    /// 2026-08-13. The inventory is twenty-eight, not twenty-nine.**
+    ///
+    /// `mode` was the gate: which chrome carried the pane's facts, spelled
+    /// `footer`, `cluster` or `both`. Which chrome is a question the owner
+    /// answers by looking at real sessions, which is why the gate was a dial
+    /// here rather than a config key, and on 2026-08-12 he answered it — nil
+    /// flipped to resolve to the capsule, and the footer became the dialled
+    /// state rather than the shipped one.
+    ///
+    /// The doc that stood here then committed to the reverse being one dial
+    /// away, and that promise is what retires now. A knob kept so a retired
+    /// rendering stays reachable is a second rendering path maintained for a
+    /// look nobody chose, the same judgement `bareGlass` retired under, and it
+    /// is the reason `PaneStatusBarView` could not be deleted while this field
+    /// existed: a live spelling reaching a view is a view in use. The gate
+    /// goes first so the footer is provably dead rather than merely unused,
+    /// and the deletion follows behind it.
+    ///
+    /// The two survivors are dials on the capsule itself and neither ever
+    /// selected a chrome, so they are untouched by that ruling.
     struct Cluster: Sendable, Equatable {
-        /// Which chrome carries the pane's facts.
-        ///
-        /// **These three spellings are what the owner types and what the
-        /// pane's gate switches on**, the same both-ends contract
-        /// ``Material`` keeps with its drawing sites.
-        public enum Mode: String, Sendable, Equatable, CaseIterable {
-            /// The bar-only rendering that shipped before 2026-08-12, kept
-            /// dialable: footer only, the capsule never added to the
-            /// hierarchy. Absent, not hidden, so this mode carries no extra
-            /// view and nothing the compositor could touch.
-            case footer
-
-            /// The capsule alone, and nil's resolution since 2026-08-12:
-            /// what ships. The footer hides rather than being removed: on a
-            /// pane spawned wearing it, its constraints keep holding the
-            /// terminal's bottom edge, so hiding it moves no cell metric and
-            /// sends no SIGWINCH, which is the whole ``DesignOverrides``
-            /// no-geometry contract applied to a view instead of a key.
-            case cluster
-
-            /// Capsule and footer together, for judging the two against the
-            /// same live session.
-            case both
-        }
-
-        /// nil is ``Mode/cluster`` since the 2026-08-12 flip: undialled
-        /// means the capsule installed and the footer hidden, exactly what
-        /// ships. The flip is reversible by dialling rather than by
-        /// reverting code: ``Mode/footer`` and ``Mode/both`` stay live
-        /// spellings, so the retired bar-only rendering is one dial away,
-        /// and that reversibility is the contract this group keeps.
-        public var mode: Mode?
-
-        /// The gate's total answer: ``mode``, with nil resolving to
-        /// ``Mode/cluster``. The one resolution site, which is why the pane
-        /// gate (`ConfigurationCenter.apply(to:)`) reads this rather than
-        /// re-spelling the default beside a `??`. nil resolved to
-        /// ``Mode/footer`` until 2026-08-12, when the capsule became what
-        /// ships.
-        public var resolvedMode: Mode { mode ?? .cluster }
-
         /// Stands in for `PaneClusterMetrics.cornerInset`, today 6 points:
         /// how far the capsule's top-right corner sits off the pane's.
         ///
