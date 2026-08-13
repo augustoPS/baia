@@ -56,6 +56,12 @@ check 0 './Diagnostics/glass-backdrop/run.sh'
 check 0 './Diagnostics/override-wires/run.sh'
 check 0 './Diagnostics/cluster-wires/run.sh'
 check 0 './Diagnostics/cluster-legibility/run.sh'
+# `cluster-notice` is `cluster-legibility`'s harness on a third question: the
+# same offscreen `cacheDisplay(in:to:)` route through the same shipped
+# `PaneClusterView`, so it qualifies on the same ground and is pinned here for
+# the reason the note above gives — a SAFE_PROBES addition with no check here is
+# invisible to this file.
+check 0 './Diagnostics/cluster-notice/run.sh'
 check 0 './Diagnostics/footer-accessory/run.sh'
 # `titlebar-merge` is `glass-backdrop`'s closest sibling: real windows on screen over
 # a controlled backdrop, `.accessory`, `canBecomeKey` false everywhere, no
