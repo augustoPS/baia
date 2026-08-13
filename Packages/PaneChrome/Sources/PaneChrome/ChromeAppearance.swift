@@ -14,7 +14,7 @@ import Foundation
 ///
 /// **This type answers only "how should the chrome render." It must never
 /// reach a place that decides what colour theme ink is.** `PaneTheme`'s colour
-/// derivations, `PaneStatusSegments`, and the attention pipeline resolve every
+/// derivations, `PaneGitRuns`, and the attention pipeline resolve every
 /// colour from the terminal theme and the `Settings` the owner wrote, and
 /// reading system appearance there would let macOS's light/dark switch repaint
 /// panes ghostty was never told to change, which is the mismatch `PaneTheme`'s

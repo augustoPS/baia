@@ -74,7 +74,7 @@ picker, the same run and the neighbouring row, so check 2 means the refusal.
 
 **The footer is by eye on purpose.** It is chrome rather than terminal text, so
 the control channel's `read` cannot reach it: that verb returns what the pty
-holds and the bar is drawn by the app. `PaneStatusSegmentsTests` grades the rule
+holds and the bar is drawn by the app. `PaneClusterSegmentsTests` grades the rule
 that a notice takes the bar alone, and `PromptPathTests` grades which refusal
 this row produces. What no test can see is the sentence arriving on screen.
 

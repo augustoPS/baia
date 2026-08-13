@@ -1465,7 +1465,7 @@ final class TerminalPaneController: NSViewController {
 
     /// Rebuilds this pane's ``status`` from the anchor, then hands it to every
     /// surface that draws from it. Git and agent state are left nil until their
-    /// subsystems are wired, and `PaneStatusSegments` already suppresses those
+    /// subsystems are wired, and `PaneClusterSegments` already suppresses those
     /// segments rather than rendering placeholders.
     ///
     /// **The one write.** ``status`` is `private(set)` and this is the only
@@ -1638,8 +1638,8 @@ final class TerminalPaneController: NSViewController {
             }
         }
 
-        // `head ↑a↓b`, the footer's indicator spelling exactly: the counts
-        // joined unspaced the way `PaneStatusSegments.markerText` joins its
+        // `head ↑a↓b`, the marker spelling exactly: the counts joined unspaced
+        // the way `PaneGitRuns.markerText` joins its
         // runs, one space between the head and the group, and the same
         // no-upstream suppression, because stale counts against a branch
         // with nowhere to push are worse than none.
@@ -1902,15 +1902,15 @@ final class TerminalPaneController: NSViewController {
     /// a row restart it rather than queueing, since the second is the one being
     /// asked about.
     ///
-    /// **Both chromes, through one path, and nothing here knows which is up.**
-    /// The notice is written into ``PaneStatus/notice`` and ``refreshStatus()``
-    /// rebuilds the footer's segments and the capsule's from that one value —
-    /// `PaneStatusSegments.build(from:)` and `PaneClusterSegments.build(from:)`
-    /// each return the notice alone, for the same reason, stated in each. The
-    /// takeover used to happen on whichever surface `chrome.cluster.mode` had
-    /// installed; since that dial retired (2026-08-13) the capsule is the only
-    /// surface on screen, and this path stays ignorant of that rather than
-    /// learning it, because the footer's own rebuild goes with the footer.
+    /// **One path, and nothing here knows what is on the other end of it.** The
+    /// notice is written into ``PaneStatus/notice`` and ``refreshStatus()``
+    /// rebuilds the capsule's segments from that one value —
+    /// `PaneClusterSegments.build(from:)` returns the notice alone, for the
+    /// reason stated there. The takeover used to happen on whichever surface
+    /// `chrome.cluster.mode` had installed; since that dial retired
+    /// (2026-08-13) the capsule is the only surface on screen, and this path
+    /// stays ignorant of that rather than learning it, because a writer that
+    /// knows its readers is a writer that has to be edited when they change.
     ///
     /// A card open over this pane's capsule comes down with the segment it was
     /// anchored to, but **not from here** — see
@@ -2082,11 +2082,15 @@ final class TerminalPaneController: NSViewController {
     ///   of every window can compute, since disambiguating needs to see the
     ///   others.
     func tabTitle(project: String, budget: TabTitle.Budget) -> String {
-        let git = status?.git
-        let markers = status
-            .map { PaneStatusSegments.build(from: $0) }?
-            .first { $0.role == .indicators }?
-            .text ?? ""
+        // The stale-facts guard, asked here rather than inherited. Until
+        // 2026-08-13 this built the footer's whole segment table and picked the
+        // `.indicators` row out of it, which meant the table's own
+        // `anchorIsRepository` check suppressed the markers for free on a pane
+        // that had `cd`-ed out of a repository while still holding its git
+        // facts. The table is gone, so the check is spelled: a marker string on
+        // a directory that has no branch is a fact the owner would act on.
+        let git = status.flatMap { $0.anchorIsRepository ? $0.git : nil }
+        let markers = git.map(PaneGitRuns.markerText(for:)) ?? ""
         return TabTitle.tab(
             project: project,
             branch: git?.head,

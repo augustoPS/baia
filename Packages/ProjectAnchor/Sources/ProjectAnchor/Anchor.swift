@@ -50,7 +50,7 @@ public struct Anchor: Equatable, Sendable {
     /// so does no anchor at all, which is why this takes the optional rather than
     /// being a property: a caller writing `anchor?.repositoryRoot` would get a
     /// doubly-optional URL and have to flatten it, and the two nils mean the same
-    /// thing here. `PaneStatusSegments` then emits no git segments at all rather
+    /// thing here. `PaneClusterSegments` then emits no git segments at all rather
     /// than a branch-shaped blank.
     public static func repositoryRoot(of anchor: Anchor?) -> URL? {
         guard let anchor, anchor.kind == .repository else { return nil }

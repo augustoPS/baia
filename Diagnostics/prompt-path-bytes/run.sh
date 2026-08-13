@@ -164,7 +164,7 @@ cat <<EOF
 
   That one is by eye on purpose. The footer is chrome rather than terminal text,
   so the control channel's \`read\` cannot reach it: it returns what the pty
-  holds, and the bar is drawn by the app. \`PaneStatusSegmentsTests\` grades the
+  holds, and the bar is drawn by the app. \`PaneClusterSegmentsTests\` grades the
   rule that a notice takes the bar alone, and \`PromptPathTests\` grades which
   refusal this row produces; what no test can see is the sentence actually
   arriving on screen, which is what the capture is for.

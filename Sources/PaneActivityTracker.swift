@@ -269,7 +269,7 @@ final class PaneActivityTracker {
     /// `waiting` rather than `!`: the capsule now carries the glyph, and a bar
     /// reading `! !` said the same thing twice (v5 §3 names the status word).
     /// A finish names nothing, deliberately: `PaneAttention.done` carries no
-    /// message, and the empty label makes `PaneStatusSegments` skip the agent
+    /// message, and the empty label makes `PaneClusterSegments` skip the agent
     /// segment while the ✓ still draws from the level itself.
     private var attentionLabel: String {
         if resolvedAttention.isDone { return "" }

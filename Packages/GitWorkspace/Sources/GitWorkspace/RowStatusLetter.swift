@@ -6,8 +6,8 @@ import Foundation
 /// since the owner's 2026-08-12 ruling (option B) the sidebar's file rows. The
 /// sidebar's own CHANGED rows were the third reader until that same day's ruling
 /// removed the section. One assembly and two surfaces, the shape
-/// ``PaneChrome/PaneStatusSegments/markerText(for:)`` already has between the
-/// footer and the capsule: the alternative is deriving letters a second time in
+/// ``PaneChrome/PaneGitRuns/markerText(for:)`` already has between the tab
+/// title and the capsule: the alternative is deriving letters a second time in
 /// the tree and getting a vocabulary that drifts.
 ///
 /// Design v5 §5. A different vocabulary from ``FileChangeMark``, which the file

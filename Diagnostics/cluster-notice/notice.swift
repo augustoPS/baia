@@ -224,7 +224,7 @@ let repositoryStatus = PaneStatus(
     anchorIsRepository: true,
     isPinned: false,
     workingDirectory: "/Users/x/Projects/baia",
-    // `↑1*?3` at the pill, which is `PaneStatusSegments.markerText`'s rendering
+    // `↑1*?3` at the pill, which is `PaneGitRuns.markerText`'s rendering
     // of these numbers — the same marker string `cluster-legibility` hand-feeds
     // its fixture, produced here through the shipped derivation instead.
     git: PaneStatus.Git(

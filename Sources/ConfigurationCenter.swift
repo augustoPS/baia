@@ -288,7 +288,7 @@ final class ConfigurationCenter {
     /// Transparency lives there and keeps its authority to force `.flat`, which
     /// no theme may override.
     ///
-    /// State ink never reads this: grep `PaneStatusSegments.swift`,
+    /// State ink never reads this: grep `PaneGitRuns.swift`,
     /// `PaneTheme.swift`, and `PaneTheme+Palette.swift` for `ChromeAppearance`
     /// or `resolvedChrome` and find nothing, the same acceptance
     /// `SettingsDerivations.paneTheme` holds for `focusAccent`.

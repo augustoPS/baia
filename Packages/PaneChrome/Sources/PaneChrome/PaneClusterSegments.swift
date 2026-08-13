@@ -43,16 +43,17 @@ public struct PaneClusterSegment: Sendable, Equatable {
     }
 }
 
-/// The capsule's resting segments, derived from the same ``PaneStatus`` the
-/// footer consumes. Order is fixed and right-anchored: operation, place,
-/// changes, agent, attention. A segment with nothing to say is absent, never
-/// empty, which is the footer's vanish discipline, moved.
+/// The capsule's resting segments, derived from a ``PaneStatus``. Order is fixed
+/// and right-anchored: operation, place, changes, agent, attention. A segment
+/// with nothing to say is absent, never empty, which is the footer's vanish
+/// discipline, inherited from the surface this replaced.
 public enum PaneClusterSegments {
     public static func build(from status: PaneStatus) -> [PaneClusterSegment] {
         // A notice takes the pill alone and returns before anything else is
-        // built — ``PaneStatusSegments/build(from:)``'s first clause, moved to
-        // the surface that now carries the facts, and moved rather than copied
-        // because the footer's argument for it survives the move intact.
+        // built — the footer's own first clause, moved to the surface that now
+        // carries the facts, and moved rather than copied because the footer's
+        // argument for it survives the move intact. The footer itself was
+        // deleted on 2026-08-13, so this is the only place the clause lives.
         //
         // **The takeover, and why it is still the right shape on a pill.** On
         // the bar the alternative was a segment competing for width with the
@@ -84,9 +85,9 @@ public enum PaneClusterSegments {
         // a directory that has no branch is a lie the owner would act on.
         if status.anchorIsRepository, let git = status.git {
             // The operation leads, which is the footer's own order
-            // (``PaneStatusSegments/append(_:to:)``: "the operation comes first
-            // because a half-finished rebase changes what every other fact on
-            // the bar means") and it survives the move for a reason the pill
+            // (its git group led with the operation "because a half-finished
+            // rebase changes what every other fact on the bar means") and it
+            // survives the move for a reason the pill
             // makes sharper than the bar did. Mid-rebase, git detaches HEAD, so
             // ``GitWorkspace/RepositoryStatus/displayHead`` answers `(a1b2c3d)`
             // and the place segment stops naming a branch at all. The operation
@@ -165,7 +166,7 @@ public enum PaneClusterSegments {
             // footer's own marker text, so the two surfaces cannot disagree
             // about what `↑1*?3` says. Absent when empty, since a clean
             // repository is the common case.
-            let markers = PaneStatusSegments.markerText(for: git)
+            let markers = PaneGitRuns.markerText(for: git)
             if !markers.isEmpty {
                 segments.append(PaneClusterSegment(role: .changes, text: markers))
             }

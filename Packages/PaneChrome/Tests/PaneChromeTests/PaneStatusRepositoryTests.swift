@@ -145,33 +145,31 @@ import Testing
         }
     }
 
-    // MARK: - The palette and the footer share this mapping
+    // MARK: - Every surface reads the dirty rule through this mapping
 
-    /// The command palette builds its runs from the same mapping the footer
-    /// uses. This is the duplicate the move collapsed: the two agreed by luck
-    /// for as long as nobody corrected one of them.
-    @Test func thePaletteSeesTheSameDirtyAnswerTheFooterWould() {
+    /// The palette's line and the marker assembly reach the same dirty answer,
+    /// because both reach it through this one mapping. It is the duplicate the
+    /// move collapsed: two copies agreed by luck for as long as nobody corrected
+    /// one of them.
+    ///
+    /// The second surface was the footer's indicators segment until 2026-08-13.
+    /// `PaneGitRuns.markers(for:)` took over as the assembly the tab title and
+    /// the capsule both read, so it is the one compared against now — the same
+    /// test with the surviving reader in the dead one's place.
+    @Test func thePaletteSeesTheSameDirtyAnswerTheMarkersDo() {
         // Conflicted alone. It is the count whose membership in the dirty rule is
         // a judgement rather than an obvious fact, so it is the one a second copy
         // of the rule would have got wrong.
         let conflicted = status(conflicted: 1)
-        let runs = PaneStatusSegments.runs(for: conflicted)
         let fromMapping = PaneStatus.Git(conflicted, operation: nil, isLinkedWorktree: false)
         #expect(fromMapping.dirty)
-        #expect(!runs.isEmpty)
 
-        let viaSegments = PaneStatusSegments.build(from: PaneStatus(
-            anchorName: "",
-            anchorIsRepository: true,
-            isPinned: false,
-            workingDirectory: nil,
-            git: fromMapping,
-            agent: nil
-        ))
-        let indicators = viaSegments.first { $0.role == .indicators }
-        #expect(indicators != nil)
-        // The palette's runs carry the indicator segment's own runs, so the two
-        // render the same marker text for the same status.
-        #expect(runs.map(\.text).joined().contains(indicators?.text ?? "\u{0}"))
+        let markers = PaneGitRuns.markerText(for: fromMapping)
+        #expect(markers.contains("*"))
+
+        // The palette's line carries those same markers rather than assembling
+        // its own, so the two render identically for one status.
+        let runs = PaneGitRuns.runs(for: conflicted)
+        #expect(runs.map(\.text).joined().contains(markers))
     }
 }

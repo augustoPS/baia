@@ -1,7 +1,7 @@
 import BaiaSettings
 import Foundation
 
-/// Everything one pane's status bar shows, already reduced to display values.
+/// Everything one pane's chrome shows, already reduced to display values.
 ///
 /// Nothing here is read from disk or from a process. The git counts arrive
 /// computed, the operation label arrives formatted, and the working directory
@@ -11,7 +11,7 @@ public struct PaneStatus: Sendable, Equatable {
     /// A pane's git facts, in the vocabulary of the owner's own statusline
     /// (`claude-dotfiles/statusline/ps1-style.sh`): `↑` ahead, `↓` behind, `*`
     /// dirty, `?` untracked. Reusing that vocabulary rather than inventing one
-    /// means the bar reads the same as the prompt he already scans.
+    /// means the chrome reads the same as the prompt he already scans.
     public struct Git: Sendable, Equatable {
         /// The branch name, or whatever the caller decided to show for a
         /// detached HEAD. The statusline shows a parenthesised short SHA there,
@@ -19,7 +19,7 @@ public struct PaneStatus: Sendable, Equatable {
         public var head: String
 
         /// False for a detached HEAD and for a branch whose upstream was
-        /// deleted. ``PaneStatusSegments`` then drops ``ahead`` and ``behind``,
+        /// deleted. ``PaneGitRuns`` then drops ``ahead`` and ``behind``,
         /// because with no upstream to count against they are stale numbers
         /// rather than zeroes.
         public var hasUpstream: Bool
@@ -29,8 +29,8 @@ public struct PaneStatus: Sendable, Equatable {
         public var dirty: Bool
         public var untracked: Int
 
-        /// Unmerged paths. Non-zero forces the indicators segment to
-        /// ``PaneStatusEmphasis/alert``, since a conflicted tree is the one git
+        /// Unmerged paths. Non-zero puts an ``PaneStatusEmphasis/alert`` run in
+        /// ``PaneGitRuns/markers(for:)``, since a conflicted tree is the one git
         /// state where running the next command makes things worse.
         public var conflicted: Int
 
@@ -77,24 +77,28 @@ public struct PaneStatus: Sendable, Equatable {
         /// to show. **The one predicate, for every surface that draws this
         /// fact.**
         ///
-        /// Three surfaces read the operation — the footer's segment
-        /// (``PaneStatusSegments/build(from:)``), the capsule's pill segment
-        /// (``PaneClusterSegments/build(from:)``) and the place card's row
-        /// (`ClusterPlaceCardView.Model.operation`, assembled in
+        /// Three surfaces read the operation — the footer's segment, the
+        /// capsule's pill segment (``PaneClusterSegments/build(from:)``) and the
+        /// place card's row (`ClusterPlaceCardView.Model.operation`, assembled in
         /// `TerminalPaneController.presentPlaceCard`) — and until 2026-08-13 they
         /// shared the *input* while each spelled its own *test*. Two applied
-        /// ``PaneStatusSegments/isBlank(_:)``; the card applied `if let` alone,
-        /// so `git.operation == "   "` drew no pill segment and grew a card row
+        /// ``PaneGitRuns/isBlank(_:)``; the card applied `if let` alone, so
+        /// `git.operation == "   "` drew no pill segment and grew a card row
         /// captioned `operation` with a blank value beside it. That is exactly
         /// the empty box `isBlank` exists to prevent, reintroduced on the one
         /// surface that had not been given the predicate.
+        ///
+        /// The footer was deleted later the same day, which leaves two readers
+        /// rather than three and takes nothing away from the argument: the two
+        /// that remain are still two, and the card is still the one that got it
+        /// wrong.
         ///
         /// A shared input is not a shared derivation. This is the derivation, and
         /// nil is the whole answer to "should this be drawn": a caller that
         /// unwraps this cannot construct the blank case, because the blank case
         /// is already nil here.
         public var displayableOperation: String? {
-            guard let operation, !PaneStatusSegments.isBlank(operation) else { return nil }
+            guard let operation, !PaneGitRuns.isBlank(operation) else { return nil }
             return operation
         }
     }

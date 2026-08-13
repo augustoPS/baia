@@ -15,14 +15,15 @@ public enum PaletteRowKind: Sendable, Equatable, CaseIterable {
 
 /// One row of the project palette, reduced to coloured runs.
 ///
-/// Pure and AppKit-free, for the same reason ``PaneStatusSegments`` is: what a
-/// row says and how it is tiered is decidable without a window, and the whole
-/// suite runs in milliseconds because of it.
+/// Pure and AppKit-free, for the same reason ``PaneGitRuns`` is: what a row says
+/// and how it is tiered is decidable without a window, and the whole suite runs
+/// in milliseconds because of it.
 ///
-/// The row reuses ``PaneStatusRun`` and the footer's own emphasis tiers rather
-/// than inventing a palette vocabulary. That is deliberate. The palette and the
-/// footer are the same person's two views of the same workspace, and a project
-/// that reads `website/` + `shop` in one should read the same way in the other.
+/// The row reuses ``PaneStatusRun`` and the pane chrome's own emphasis tiers
+/// rather than inventing a palette vocabulary. That is deliberate. The palette
+/// and the pane are the same person's two views of the same workspace, and a
+/// project that reads `website/` + `shop` in one should read the same way in the
+/// other.
 public struct PaletteRow: Sendable, Equatable {
     /// Everything up to and including the last slash, for example `website/`.
     /// Empty for a project sitting directly under a root.

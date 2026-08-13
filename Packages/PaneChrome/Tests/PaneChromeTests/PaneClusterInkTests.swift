@@ -163,12 +163,14 @@ import Testing
         #expect(PaneClusterInk.noticeInk(theme: theme, chrome: .flat) == theme.alert)
     }
 
-    @Test func theNoticeInkIsTheFootersAlertTierAskedOnThePillsFace() {
+    @Test func theNoticeInkIsTheAlertTierAskedOnThePillsFace() {
         // One derivation of a tier's colour, not a second red picked here. The
-        // footer builds its notice segment at `.alert`
-        // (`PaneStatusSegmentsTests.aNoticeIsAnAlertItNeverElides`) and asks
+        // footer built its notice segment at `.alert` and asked
         // `theme.color(for:focused:on:)` for the ink; the capsule asks the same
         // function the same question, differing only in the surface it names.
+        // The footer was deleted on 2026-08-13 and the tier stayed, because
+        // `.alert` is the tier reserved for "act now" and a refusal is the
+        // loudest thing a pane says.
         // A hand-picked colour here would pass every floor check above and
         // still fail this.
         for theme in everyTheme {
@@ -362,12 +364,15 @@ import Testing
         }
     }
 
-    @Test func theOperationInkIsTheFootersWarnTierAskedOnThePillsFace() {
+    @Test func theOperationInkIsTheWarnTierAskedOnThePillsFace() {
         // One derivation of a tier's colour, not a second yellow picked here.
-        // The footer builds its operation segment at `.warn`
-        // (`PaneStatusSegments.append`) and asks
+        // The footer built its operation segment at `.warn` and asked
         // `theme.color(for:focused:on:)` for the ink; the capsule asks the same
         // function the same question, differing only in the surface it names.
+        // The tier survives the footer's deletion on its own argument: a
+        // half-finished rebase changes what every other fact means, which is a
+        // warning, while `.alert` stays reserved for conflicts and for an agent
+        // asking, so that one colour means "act now".
         for theme in everyTheme + [warnIsNearTheFace] {
             for chrome in [ResolvedChrome.flat, glass] {
                 let face = PaneClusterInk.worstFace(theme: theme, chrome: chrome)

@@ -685,7 +685,7 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
             let status = GitCommand().status(ofRepositoryRoot: root)
             await MainActor.run { [weak self] in
                 guard let self, generation == gitGeneration else { return }
-                listView.selectedGitRuns = status.map(PaneStatusSegments.runs(for:)) ?? []
+                listView.selectedGitRuns = status.map(PaneGitRuns.runs(for:)) ?? []
             }
         }
     }

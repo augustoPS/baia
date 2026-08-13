@@ -96,10 +96,12 @@ public enum PaneClusterInk {
     /// **``PaneStatusEmphasis/alert``, because that is what the footer said it
     /// in**, and the emphasis rather than a hand-picked red because
     /// ``PaneTheme/color(for:focused:on:)`` is the one derivation of a tier's
-    /// colour in this app. `PaneStatusSegments.build(from:)` gives its notice
-    /// segment `.alert`; the capsule's notice asks the same theme the same
-    /// question, so a theme that restates its alert colour moves both surfaces
-    /// and neither can answer for the other.
+    /// colour in this app. The footer gave its notice segment `.alert` and the
+    /// capsule asked the same theme the same question, which is what kept the
+    /// two from answering for each other; the footer was deleted on 2026-08-13
+    /// and the tier stayed, because a refusal is the loudest thing a pane says
+    /// and `.alert` is the tier reserved for "act now". A theme that restates
+    /// its alert colour still moves this for free.
     ///
     /// **Focus is passed as false, always, and that is a decision rather than
     /// an omission.** `focused` reaches ``PaneTheme/color(for:focused:on:)``

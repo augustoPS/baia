@@ -378,9 +378,12 @@ public enum PaneClusterLayout {
 
     /// The longest prefix of `text` whose measured width fits `budget`.
     ///
-    /// **Cut rather than elided, which is `PaneStatusSegments`' own choice for
-    /// this role** (`truncation: .none`, and the reason stated there): a
-    /// half-read reason still names the problem, an ellipsis does not. There is
+    /// **Cut rather than elided, which the footer ruled first and this inherited
+    /// on its merits.** Its notice segment took `truncation: .none` while every
+    /// other segment elided, on the argument that a half-read reason still names
+    /// the problem where an ellipsis does not. The footer was deleted on
+    /// 2026-08-13; the argument is about reading a refusal rather than about a
+    /// bar, so it moved here with the notice. There is
     /// no `…` appended for the same reason — the glyph would cost the width of
     /// another word of the reason to say something the cut already implies.
     ///

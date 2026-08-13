@@ -4,7 +4,7 @@ import GitWorkspace
 ///
 /// It lived twice before this file: once in the app target, where the poller
 /// built it and nothing could test it, and once inside
-/// ``PaneStatusSegments/runs(for:)``, which needed the same eight fields for the
+/// ``PaneGitRuns/runs(for:)``, which needed the same eight fields for the
 /// command palette and wrote them out again. The two agreed, which is luck
 /// rather than a guarantee: the dirty rule below is a judgement, and a judgement
 /// held in two places drifts the first time one of them is corrected.

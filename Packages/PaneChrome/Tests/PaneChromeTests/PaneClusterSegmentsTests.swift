@@ -49,17 +49,20 @@ import Testing
         #expect(segment(.attention, in: status)?.text == "")
     }
 
-    @Test func changesTextReusesFooterMarkers() {
-        // Asserted against the footer's own built segment, not a copy of its
-        // vocabulary: if the footer's marker assembly changes and the capsule's
-        // does not follow, this fails. The literal pins both against drifting
-        // together away from the owner's statusline prefix.
+    @Test func changesTextReusesTheSharedMarkerAssembly() {
+        // Asserted against ``PaneGitRuns``' own answer rather than a copy of the
+        // vocabulary: if the marker assembly changes and the capsule does not
+        // follow, this fails. The literal pins both against drifting together
+        // away from the owner's statusline prefix.
+        //
+        // This compared against the footer's `.indicators` segment until
+        // 2026-08-13. The footer is gone and `PaneGitRuns.markerText` is the one
+        // assembly the tab title and the capsule now share, so the comparison
+        // moved to it rather than dying with the surface that used to hold it.
         let git = Sample.git(ahead: 1, dirty: true, untracked: 3)
         let status = Sample.status(git: git)
-        let footer = PaneStatusSegments.build(from: status).first { $0.role == .indicators }
         let changes = segment(.changes, in: status)
-        #expect(changes?.text == footer?.text)
-        #expect(changes?.text == PaneStatusSegments.markerText(for: git))
+        #expect(changes?.text == PaneGitRuns.markerText(for: git))
         #expect(changes?.text == "↑1*?3")
     }
 
@@ -78,32 +81,10 @@ import Testing
         #expect(segment(.operation, in: status)?.text == "REBASE")
     }
 
-    /// The capsule's order is the footer's order. Asserted by comparing the two
-    /// surfaces' *relative* placement of the same two facts rather than by
-    /// restating either table, so the two cannot be reordered apart: if a later
-    /// task moves the operation behind the branch on one surface only, this
-    /// fails even though both surfaces still carry both facts.
-    @Test func theCapsulePutsTheOperationBeforeTheBranchJustAsTheFooterDoes() {
-        let status = Sample.status(git: Sample.git(dirty: true, operation: "MERGE"))
-
-        let capsule = roles(status)
-        let footer = PaneStatusSegments.build(from: status).map(\.role)
-        guard let capsuleOperation = capsule.firstIndex(of: .operation),
-              let capsulePlace = capsule.firstIndex(of: .place),
-              let footerOperation = footer.firstIndex(of: .operation),
-              let footerBranch = footer.firstIndex(of: .branch)
-        else {
-            Issue.record("both surfaces must carry an operation and a branch here")
-            return
-        }
-        #expect(capsuleOperation < capsulePlace)
-        #expect(footerOperation < footerBranch)
-    }
-
-    /// The label is the footer's, through one derivation. `GitWorkspace`'s
-    /// vocabulary reaches both surfaces via
+    /// The label reaches the pill through one derivation. `GitWorkspace`'s
+    /// vocabulary reaches every surface that draws an operation via
     /// `PaneStatus.Git.operationLabel(for:)`, so a renamed state (`CHERRY-PICK`
-    /// becoming `CHERRY PICK`, say) moves both or fails here.
+    /// becoming `CHERRY PICK`, say) moves them all or fails here.
     ///
     /// **This no longer claims to catch a new `InProgress` case, because it never
     /// could.** It walked `InProgress.allCases` and recorded an issue on a nil
@@ -116,11 +97,19 @@ import Testing
     /// the compiler already guarantees. The conformance went with it
     /// (``GitWorkspace/RepositoryStatus/InProgress`` carries the reasoning).
     ///
-    /// What is left is the part no compiler checks: that the *string* reaching
-    /// the pill is the *string* reaching the footer. The cases are named
-    /// explicitly, which is honest about the enumeration being a hand-kept list
-    /// rather than a derived one, and costs nothing the loop was buying.
-    @Test func everyOperationReachesThePillUnderItsFooterLabel() {
+    /// What is left is the part no compiler checks: that the *string* the
+    /// derivation produces is the *string* the pill draws, unreformatted. The
+    /// cases are named explicitly, which is honest about the enumeration being a
+    /// hand-kept list rather than a derived one, and costs nothing the loop was
+    /// buying.
+    ///
+    /// The second half of this compared the pill's string against the footer's
+    /// until 2026-08-13. The footer is gone, and with it the last surface that
+    /// could disagree here inside this package: `TerminalPaneController`'s place
+    /// card is the only other reader, and it reads
+    /// ``PaneStatus/Git/displayableOperation`` — the same field, past the same
+    /// predicate.
+    @Test func everyOperationReachesThePillUnderItsDerivedLabel() {
         for operation in [
             RepositoryStatus.InProgress.rebase, .merge, .cherryPick, .revert, .bisect
         ] {
@@ -130,10 +119,6 @@ import Testing
 
             let status = Sample.status(git: Sample.git(operation: label))
             #expect(segment(.operation, in: status)?.text == label)
-
-            // And the footer says the identical string for the identical input.
-            let footer = PaneStatusSegments.build(from: status).first { $0.role == .operation }
-            #expect(segment(.operation, in: status)?.text == footer?.text)
         }
     }
 
@@ -164,17 +149,20 @@ import Testing
         #expect(roles(noticed) == [.notice])
     }
 
-    /// A blank label is not an operation, the footer's own rule. A poller that
-    /// formatted one from an empty git file hands over `" "`, which `isEmpty`
-    /// calls content: the pill would pay a segment gap to draw nothing in it.
+    /// A blank label is not an operation. A poller that formatted one from an
+    /// empty git file hands over `" "`, which `isEmpty` calls content: the pill
+    /// would pay a segment gap to draw nothing in it.
     @Test func aBlankOperationEarnsNoSegment() {
         #expect(roles(Sample.status(git: Sample.git(operation: " "))) == [.place])
         #expect(roles(Sample.status(git: Sample.git(operation: ""))) == [.place])
 
-        // The footer refuses the same string, which is the shared predicate
-        // being shared rather than two rules that happen to agree today.
-        let blank = Sample.status(git: Sample.git(operation: " "))
-        #expect(!PaneStatusSegments.build(from: blank).contains { $0.role == .operation })
+        // The predicate the pill reached this answer through, asserted directly.
+        // The second arm used to be "and the footer refuses the same string",
+        // which is what made the rule *shared* rather than two rules agreeing by
+        // luck; the footer is gone, so the sharing is now pinned at the predicate
+        // itself, which is where every surface still meets.
+        #expect(Sample.git(operation: " ").displayableOperation == nil)
+        #expect(Sample.git(operation: "REBASE 1/3").displayableOperation == "REBASE 1/3")
     }
 
     /// **The place card's row and the pill's segment agree, blanks included.**
@@ -301,27 +289,29 @@ import Testing
         )
     }
 
-    /// The capsule and the footer take a notice on the same input and say the
-    /// same sentence. Asserted against the footer's own built segment rather
-    /// than a copy of the string, the `changesTextReusesFooterMarkers` shape:
-    /// the two surfaces answer one `PaneStatus`, and a refusal explained
-    /// differently on each is a refusal explained on neither.
-    @Test func theNoticeMatchesTheFootersOwnSentence() {
+    /// The notice reaches the pill verbatim, and it takes the pill alone.
+    ///
+    /// This compared the capsule's sentence against the footer's until
+    /// 2026-08-13, when the footer was deleted and the capsule became the only
+    /// surface that draws a notice. The comparison went with it; what stayed is
+    /// the half that never depended on a second surface, and is the half a text
+    /// comparison could not see anyway: a capsule that appended the notice
+    /// *beside* the branch would have matched the footer's string here and still
+    /// been wrong. `PaneStatus.notice` is written by
+    /// `TerminalPaneController.showNotice(_:)` and cleared three seconds later,
+    /// and the takeover is only affordable because of that transience.
+    @Test func theNoticeTakesThePillAloneAndVerbatim() {
         let reason = "name holds a control character the shell would act on: rename the file"
         let status = Sample.status(git: Sample.git(dirty: true), notice: reason)
-        let footer = PaneStatusSegments.build(from: status).first { $0.role == .notice }
-        #expect(segment(.notice, in: status)?.text == footer?.text)
-        #expect(footer?.text == reason)
+        #expect(segment(.notice, in: status)?.text == reason)
 
-        // Both surfaces take it *alone*, which is the half a text comparison
-        // cannot see: a capsule that appended the notice beside the branch
-        // would still match the footer's string here.
+        // The status carries a branch and markers, so `[.notice]` is a takeover
+        // rather than a status that happened to have nothing else to say.
         #expect(roles(status) == [.notice])
-        #expect(PaneStatusSegments.build(from: status).map(\.role) == [.notice])
+        #expect(roles(Sample.status(git: Sample.git(dirty: true))) == [.place, .changes])
     }
 
-    /// An empty string is not a notice, the footer's own rule
-    /// (`PaneStatusSegmentsTests.anEmptyNoticeIsNotANotice`). A caller clearing
+    /// An empty string is not a notice. A caller clearing
     /// one by writing `""` rather than nil must get the resting pill back, not
     /// a pill wearing an empty segment that has eaten every fact.
     @Test func anEmptyNoticeLeavesTheRestingPill() {
