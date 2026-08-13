@@ -1,12 +1,25 @@
 # Pane-glass-stacking probe
 
-`./run.sh [output-directory]` from anywhere. Puts a controlled backdrop and six
-pane-shaped windows on screen for ~25 seconds, writes seven captures with their
+> **It stopped being a test on 2026-08-13.** The two arms that asserted
+> anything — `shipped-absorb` and `shipped-violation` — compiled
+> `Sources/PaneStatusBarView.swift` verbatim and measured the seam at the
+> footer's top edge. The footer was deleted that day, so the edge they measured
+> does not exist and both arms were removed. The four mock arms below are
+> unchanged and still tabulate, but nothing in `run.sh` now fails when a number
+> moves, and nothing ties any finding here to the code that ships.
+>
+> Re-aiming is open work and is not a rename. The bands are calibrated to a
+> 22 pt footer strip at the pane's bottom; the surviving glass sibling worth
+> asserting on is the capsule in the pane's top-right, and a band pointed there
+> without re-derivation would measure background and pass vacuously. See the
+> removed-assertion block in `run.sh` for the thresholds it had.
+
+`./run.sh [output-directory]` from anywhere. Puts a controlled backdrop and four
+pane-shaped windows on screen for ~25 seconds, writes the captures with their
 `-screen.png` companions, and prints the band means and corner probes the
 findings below cite. Captures land outside the repo (default
-`$TMPDIR/baia-pane-glass-stacking`). Exits non-zero if a capture fails, a glass
-view never samples, the shipped arm shows a seam, or the negative control stops
-showing one.
+`$TMPDIR/baia-pane-glass-stacking`). Exits non-zero if a capture fails or a
+glass view never samples.
 
 **Two halves, and only the second is a test.** The four MOCK arms answered the
 spec's fork in the 2026-08-08 spike; their numbers are recorded below and

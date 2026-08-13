@@ -84,7 +84,16 @@ func differingPixels(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep) -> Int {
 // MARK: - fixtures
 
 let paneSize = NSSize(width: 300, height: 120)
-let barSize = NSSize(width: 300, height: PaneStatusBarMetrics.height)
+
+// `barSize`, `makeBar(theme:)` and the `busy-dot` and `bar-lift` arms lived
+// here until 2026-08-13, when `Sources/PaneStatusBarView.swift` was deleted.
+// They checked that `busyDotInk` and `barLift` reached a rendering, and the
+// only view that ever rendered either was the footer. The two dials are still
+// in `PaneThemeAdjustments`, so the question "does this dial reach a pixel"
+// is re-aimable rather than answered — but at nothing yet: no surviving view
+// draws a busy dot or lifts a bar. Dropped rather than half-ported, and left
+// as a note so a future reader knows these dials lost their pixel witness
+// instead of never having had one.
 
 /// A lift view in the state that actually draws: visible, and with the window's
 /// bottom corners rounded so the ring and the highlight both follow a curve
@@ -98,28 +107,6 @@ func makeLift(
     view.parameters = parameters
     view.rim = rim
     view.isVisible = true
-    return view
-}
-
-/// A footer showing a busy agent, which is the one state that draws the dot.
-///
-/// `wantsAttention: false` matters: the bar only draws the dot when the agent is
-/// busy *and* nothing is asking (`PaneStatusBarView`'s own `busy` gate), so an
-/// asking fixture would render a capsule and no dot, and the busy-dot arm would
-/// then be measuring an ornament that is not there.
-func makeBar(theme: PaneTheme) -> PaneStatusBarView {
-    let view = PaneStatusBarView(frame: NSRect(origin: .zero, size: barSize))
-    view.theme = theme
-    view.isFocused = true
-    view.isWindowActive = true
-    view.status = PaneStatus(
-        anchorName: "baia",
-        anchorIsRepository: true,
-        isPinned: false,
-        workingDirectory: nil,
-        git: nil,
-        agent: PaneStatus.Agent(label: "working", wantsAttention: false, isBusy: true)
-    )
     return view
 }
 
@@ -260,40 +247,6 @@ func armRim() {
     )
 }
 
-func armBusyDot() {
-    print("== busy-dot: busyDotHex repaints the dot and nothing else")
-    let shipped = render(makeBar(theme: darkTheme), size: barSize)
-
-    var dialled = darkTheme
-    dialled.adjustments.busyDotInk = broken ? darkTheme.ok : .eightBit(0xFF, 0x00, 0x99)
-    let moved = render(makeBar(theme: dialled), size: barSize)
-
-    check(!identical(shipped, moved), "busyDotHex changes the rendering")
-    // The dot is 5 pt across, so it covers a bounded number of pixels at 1x and
-    // four times that at 2x. An upper bound is what separates "the dot moved"
-    // from "a colour dial repainted the bar", which is the failure a `theme.ok`
-    // read at the wrong site would produce.
-    let moved_count = differingPixels(shipped, moved)
-    check(moved_count > 0, "at least one pixel differs (\(moved_count))")
-    check(moved_count < 200, "fewer than 200 pixels differ, so it is the dot and not the bar (\(moved_count))")
-}
-
-func armBarLift() {
-    print("== bar-lift: barLift repaints the bar, which is most of it")
-    let shipped = render(makeBar(theme: darkTheme), size: barSize)
-
-    var dialled = darkTheme
-    dialled.adjustments.barLift = broken ? 0.08 : 0.45
-    let moved = render(makeBar(theme: dialled), size: barSize)
-
-    check(!identical(shipped, moved), "barLift changes the rendering")
-    // The opposite bound to the dot's: the bar's fill is the whole surface, so a
-    // lift that moved only a handful of pixels would be a lift reaching a colour
-    // nothing large is drawn in.
-    let moved_count = differingPixels(shipped, moved)
-    check(moved_count > 1000, "more than 1000 pixels differ, so it is the bar and not an ornament (\(moved_count))")
-}
-
 func armSurfaceFill() {
     print("== surface-fill: each of the four roles resolves to its own colour, and nil to none")
     // The one wire with no `draw(_:)` behind it: a fill becomes an
@@ -346,8 +299,6 @@ enum Probe {
             "lift-highlight": armLiftHighlight,
             "lift-enabled": armLiftEnabled,
             "rim": armRim,
-            "busy-dot": armBusyDot,
-            "bar-lift": armBarLift,
             "surface-fill": armSurfaceFill,
         ]
 

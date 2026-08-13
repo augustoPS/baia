@@ -145,8 +145,6 @@ final class TerminalPaneController: NSViewController {
     /// pane's own directory is the part of it worth keeping.
     private let command: String?
 
-    let statusBar = PaneStatusBarView(frame: .zero)
-
     /// Whether the capsule carries this pane's facts. Always true, and a
     /// constant rather than a dial since 2026-08-13.
     ///
@@ -213,10 +211,12 @@ final class TerminalPaneController: NSViewController {
     /// reference would re-point a dial at dead layout.
     private var clusterEdgeConstraints: [NSLayoutConstraint] = []
 
-    /// The capsule in the pane's top-right (design v6). Created beside
-    /// ``statusBar`` and fed by the same passthroughs, so the moment the mode
-    /// dial installs it the pill is already telling the truth; at `.footer`
-    /// the writes land on a view no window holds, which renders nothing.
+    /// The capsule in the pane's top-right (design v6), and since the footer's
+    /// deletion the only view this controller's presentation passthroughs
+    /// feed. It was built beside the footer and fed by the same writes, which
+    /// is why it was already telling the truth on the day the mode dial
+    /// installed it; the writes it does not share with anything now are the
+    /// remains of that arrangement, not a second copy of one.
     private let clusterView = PaneClusterView(frame: .zero)
 
     /// The one card mechanism for this pane's capsule: place and changes both
@@ -340,12 +340,11 @@ final class TerminalPaneController: NSViewController {
     }
 
     /// The palette everything in this pane derives from. One property rather than
-    /// one per view, so a theme change cannot land on the footer and miss the
+    /// one per view, so a theme change cannot land on the capsule and miss the
     /// scrim.
     var theme: PaneTheme = .darkPastel {
         didSet {
             guard theme != oldValue else { return }
-            statusBar.theme = theme
             applyPresentation()
         }
     }
@@ -353,26 +352,23 @@ final class TerminalPaneController: NSViewController {
     var attentionStyle: AttentionStyle = .loud {
         didSet {
             guard attentionStyle != oldValue else { return }
-            statusBar.attentionStyle = attentionStyle
             // The frame is gated on `loud` too, so a live config edit that
             // quietens attention has to take the frame down with the fill.
             applyPresentation()
         }
     }
 
-    /// What the footer and the lift should draw: flat, unchanged, or glass
+    /// What the capsule and the lift should draw: flat, unchanged, or glass
     /// with a material set, per `PaneChrome.resolvedStyle(setting:materialIsDark:appearance:)`.
     ///
-    /// Stored here, unlike ``bottomCorners``, because Task 6 gives it a
-    /// second reader: ``applyPresentation()`` has to know whether chrome is
-    /// glass to decide ``liftView``'s ``PaneLiftView/isVisible``, and a
-    /// passthrough straight to ``statusBar`` would leave that read with
-    /// nowhere to come from except unwrapping `statusBar.resolvedChrome`
-    /// back out, the same value stored a second time under a different name.
+    /// Stored here rather than passed straight through, because
+    /// ``applyPresentation()`` reads it back: it has to know whether chrome is
+    /// glass to decide ``liftView``'s ``PaneLiftView/isVisible``, and a pure
+    /// passthrough would leave that read with nowhere to come from except
+    /// unwrapping the value back out of a view it had just been handed to.
     var resolvedChrome: ResolvedChrome = .flat {
         didSet {
             guard resolvedChrome != oldValue else { return }
-            statusBar.resolvedChrome = resolvedChrome
             clusterView.resolvedChrome = resolvedChrome
             applyResolvedGlassPlane()
             applyPresentation()
@@ -408,14 +404,14 @@ final class TerminalPaneController: NSViewController {
     /// Which derivation the attention signal is drawn from, and what to do when it
     /// lands on the focus colour.
     ///
-    /// Both reach the footer and the pane frame, which is why they are stored here
-    /// rather than passed straight to the bar the way ``bottomCorners`` is: the
-    /// frame around the whole pane is drawn in the same colour, and a setting that
-    /// moved one of the two would leave half of the loud treatment behind.
+    /// Both reach the capsule and the pane frame, which is why they are stored
+    /// here rather than passed straight to one view the way ``bottomCorners``
+    /// is: the frame around the whole pane is drawn in the same colour, and a
+    /// setting that moved one of the two would leave half of the loud treatment
+    /// behind.
     var attentionAccent: AttentionAccent = .alert {
         didSet {
             guard attentionAccent != oldValue else { return }
-            statusBar.attentionAccent = attentionAccent
             clusterView.attentionAccent = attentionAccent
             applyPresentation()
         }
@@ -424,7 +420,6 @@ final class TerminalPaneController: NSViewController {
     var alertBehavior: AlertBehavior = .stock {
         didSet {
             guard alertBehavior != oldValue else { return }
-            statusBar.alertBehavior = alertBehavior
             clusterView.alertBehavior = alertBehavior
             applyPresentation()
         }
@@ -437,14 +432,22 @@ final class TerminalPaneController: NSViewController {
     /// theme and attention it moves for a different reason: the arrangement
     /// changed, not this pane's state. ``PaneTreeController`` is the only writer.
     ///
-    /// The footer and the attention frame both reach the corner, and they overlap
-    /// there, so a value that moved one of the two would put a square frame over a
-    /// curved fill and leave the frame's own corner to the window's mask.
-    /// ``statusBar`` holds the value, since it is the view that has always had one.
+    /// The attention frame, the lift and the glass masks all reach the corner,
+    /// and they overlap there, so a value that moved one of them would put a
+    /// square frame over a curved fill and leave the frame's own corner to the
+    /// window's mask.
+    ///
+    /// ``edgeFrame`` is where the read comes from. This was the footer's
+    /// property until 2026-08-13, on the grounds that it was the view that had
+    /// always had one; with that view deleted the getter needed a store among
+    /// the views that outlive it, and the edge frame is the one that cannot go
+    /// away — a `private let` built with the controller, written by this same
+    /// setter, and holding its own equality guard. No new stored property here,
+    /// because a fourth copy is exactly the disagreement this passthrough shape
+    /// exists to prevent.
     var bottomCorners: BottomCorners {
-        get { statusBar.bottomCorners }
+        get { edgeFrame.bottomCorners }
         set {
-            statusBar.bottomCorners = newValue
             edgeFrame.bottomCorners = newValue
             liftView.bottomCorners = newValue
             updateGlassPlaneMasks()
@@ -480,35 +483,33 @@ final class TerminalPaneController: NSViewController {
     /// that draw them, in one pass.
     ///
     /// One method rather than one per input, because every input moves more than
-    /// one view: a theme change has to reach the scrim as well as the footer, and
-    /// an attention change has to reach the pane frame as well as the bar. Split
-    /// setters are how a pane ends up with a repainted footer over a stale scrim.
+    /// one view: a theme change has to reach the scrim as well as the capsule, and
+    /// an attention change has to reach the pane frame as well as the pill. Split
+    /// setters are how a pane ends up with a repainted capsule over a stale scrim.
     private func applyPresentation() {
-        statusBar.isFocused = isPaneFocused
-        statusBar.isWindowActive = isWindowActive
-        statusBar.theme = theme
         clusterView.isPaneFocused = isPaneFocused
         clusterView.isWindowActive = isWindowActive
         clusterView.theme = theme
         scrim.colour = theme.background
         // See `isWindowActive` above for why an inactive window is the only thing
         // that scrims a pane. An unfocused pane in the key window is left alone
-        // and the focused one is enclosed by its footer instead.
+        // and the focused one is marked by its lift instead.
         scrim.amount = isWindowActive ? 0 : PaneTheme.inactiveScrim
         // The pane frame has one reason to appear and therefore one colour, but
         // the colour still has to be pushed on every pass: a live theme edit moves
         // what the attention colour resolves to under a frame that is already on
-        // screen. Resolved from the same call the footer's wash uses, so the frame
-        // around the pane and the fill inside it cannot end up two colours.
+        // screen. Resolved from the same call the capsule's own attention colour
+        // comes from, so the frame around the pane and the pill inside it cannot
+        // end up two colours.
         edgeFrame.colour = theme.attentionColour(attentionAccent, behavior: alertBehavior)
         edgeFrame.isVisible = drawsAttentionFrame
-        // The same `isFocused && isWindowActive` gate `PaneStatusBarView`
-        // computes internally as `framesForFocus` for its own thick-fill step,
-        // recomputed here because the lift lives outside the bar and has no
-        // other way to hear about focus or window activation. Glass-only:
-        // under flat (or Reduce Transparency, which `resolvedChrome` already
-        // folds into `.flat` upstream) the lift stays invisible and the
-        // footer's own stroke is the whole expression of focus, unchanged.
+        // `isFocused && isWindowActive`, the gate the deleted footer computed
+        // internally as `framesForFocus` for its own thick-fill step and the
+        // reason this conjunction is spelled out rather than read off
+        // `isPaneFocused` alone. Glass-only: under flat (or Reduce
+        // Transparency, which `resolvedChrome` already folds into `.flat`
+        // upstream) the lift stays invisible and focus goes unmarked, which is
+        // what flat has always looked like since the footer's stroke went.
         let isGlass = if case .glass = resolvedChrome { true } else { false }
         liftView.isVisible = isPaneFocused && isWindowActive && isGlass
         updateGlassWashColour()
@@ -713,13 +714,15 @@ final class TerminalPaneController: NSViewController {
 
     /// Whether this pane is asking loudly enough to wear a frame.
     ///
-    /// Not gated on `isWindowActive`, unlike the footer's focus frame: focus is a
-    /// statement about a window that has the keyboard, while an unanswered agent
-    /// in a background window is exactly the thing worth finding.
+    /// Not gated on `isWindowActive`, unlike the focus frame the footer used to
+    /// draw: focus is a statement about a window that has the keyboard, while an
+    /// unanswered agent in a background window is exactly the thing worth
+    /// finding.
     ///
-    /// The volume term is what `AttentionStyle` still owns: both volumes draw the
-    /// footer's capsule (`PaneStatusBarView.showsCapsuleFill` is asking-only and
-    /// style-blind), and `loud` adds this frame on top as the cross-window carrier.
+    /// The volume term is what `AttentionStyle` still owns: both volumes draw
+    /// the pill's attention fill, which is asking-only and style-blind (the rule
+    /// was the deleted footer's `showsCapsuleFill`), and `loud` adds this frame
+    /// on top as the cross-window carrier.
     ///
     /// The conjunction moved to ``PaneChrome/PaneStatus/Attention/wearsFrame(under:)``
     /// on 2026-08-13, when `SettingsPreviewPane` became the second view to draw
@@ -922,11 +925,10 @@ final class TerminalPaneController: NSViewController {
     /// This is the property that stops a live chrome toggle — Reduce
     /// Transparency, a dark/light switch, an edited `chromeStyle` — from
     /// reaching either one: both a frame resize and a `window-padding-y`
-    /// change on an already-spawned surface are a live grid resize, the same
-    /// `SIGWINCH` hazard `PaneStatusBarMetrics.height` staying
-    /// focus-independent exists to close. The arrangement a pane was spawned
-    /// with is the arrangement it keeps; a toggle takes effect for the next
-    /// pane opened.
+    /// change on an already-spawned surface are a live grid resize, the
+    /// `SIGWINCH` hazard the footer's fixed, focus-independent height was also
+    /// written to close. The arrangement a pane was spawned with is the
+    /// arrangement it keeps; a toggle takes effect for the next pane opened.
     private lazy var spawnedUnderGlass: Bool = {
         if case .glass = resolvedChrome { true } else { false }
     }()
@@ -1237,9 +1239,7 @@ final class TerminalPaneController: NSViewController {
         )
         terminalView.controller = controller
         terminalView.translatesAutoresizingMaskIntoConstraints = false
-        statusBar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(terminalView)
-        view.addSubview(statusBar)
         // Added last so they sit above both. None can be hit, so ordering
         // costs the terminal nothing. liftView is added after edgeFrame, so
         // an attention frame and the focused-pane lift never fight over which
@@ -1271,16 +1271,6 @@ final class TerminalPaneController: NSViewController {
         preferredWidth.priority = .defaultLow
         preferredHeight.priority = .defaultLow
 
-        // The footer's height is fixed but breakable, while the terminal's
-        // minimum is not. Under extreme vertical pressure the footer is what
-        // gives, because a terminal squeezed to zero rows is a surface ghostty
-        // cannot lay out, and the pane stops rendering entirely rather than
-        // merely looking cramped.
-        let barHeight = statusBar.heightAnchor.constraint(
-            equalToConstant: PaneStatusBarMetrics.height
-        )
-        barHeight.priority = .init(999)
-
         // Arrangement (B) from the glass-backdrop spike's verdict, read from
         // ``spawnedBottomArrangement`` — frozen at this pane's first chrome
         // resolution — rather than live from ``resolvedChrome``.
@@ -1292,38 +1282,30 @@ final class TerminalPaneController: NSViewController {
         // reach it. Changing which anchor `terminalView.bottomAnchor` is pinned
         // to resizes the view, and an `AppTerminalView` resize is exactly the
         // live grid resize (`layout()` in `AppTerminalView+Lifecycle.swift`)
-        // that sends `SIGWINCH` to whatever the pane is running — the same
-        // hazard `PaneStatusBarMetrics.height` staying focus-independent
-        // exists to close. The arrangement therefore applies to a pane as
-        // configured at spawn; flipping chrome at runtime takes effect for the
-        // next pane opened, not the ones already running.
+        // that sends `SIGWINCH` to whatever the pane is running. The
+        // arrangement therefore applies to a pane as configured at spawn;
+        // flipping chrome at runtime takes effect for the next pane opened, not
+        // the ones already running.
         //
-        // Under flat: unchanged from Plan 1. The surface stops above the bar
-        // (the "inset" arrangement `gridtest.swift` calls A) and the grid's
-        // padding is whatever the settings-derived `TerminalConfiguration`
-        // already says.
+        // **The anchor no longer branches, and the arrangement is still read.**
+        // Every pane spawns `.fullHeightClear` now — `clusterOnly` is the
+        // constant `true`, so `bottomArrangement` returns before it consults
+        // glass — and the surface runs to the view's own bottom edge with no
+        // bar below it to stop above and none floating over its last points to
+        // clear. The two arms this ternary used to have both named a footer:
+        // `.insetAboveBar` pinned to the bar's top, `.fullHeightWithBump`
+        // cleared the bar it floated under. With the view deleted neither can
+        // be spelled, so the pin is unconditional here.
         //
-        // Under glass: the surface runs to the view's own bottom edge, 22 pt
-        // taller, with the bar floating over its last 22 pt (statusBar is added
-        // to `view` after `terminalView` above, so it already sits on top in
-        // z-order — no restacking needed for the overlap to render). The grid
-        // keeps its inset through `window-padding-y` instead of through frame
-        // geometry: see `ConfigurationCenter.apply(to:)`, which raises it by
-        // `PaneStatusBarMetrics.glassWindowPaddingBump` exactly when the
-        // frozen arrangement is `.fullHeightWithBump`, so the two never
-        // disagree about which arrangement is in effect.
-        //
-        // Under a cluster-only spawn (`.fullHeightClear`): the surface runs
-        // to the view's bottom edge as under glass, but with no bump, because
-        // there is no bar below the surface to stop above and none floating
-        // over its last points to clear. Same anchor for flat and glass both;
-        // the hidden footer keeps its constraints (see `applyClusterMode()`)
-        // without holding the surface's bottom edge, and a later flip back to
-        // `.footer` or `.both` un-hides the bar over the running surface
-        // rather than resizing it, the next-pane discipline again.
-        let terminalBottom = spawnedBottomArrangement == .insetAboveBar
-            ? terminalView.bottomAnchor.constraint(equalTo: statusBar.topAnchor)
-            : terminalView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        // What is deliberately NOT collapsed is the enum behind it. The
+        // arrangement still decides ghostty's real `window-padding-y` in
+        // `ConfigurationCenter.apply(to:)`, where `.fullHeightWithBump`'s arm
+        // sets a padding the grid renders into; dropping the case there
+        // changes rows on a glass pane rather than removing a dead branch. See
+        // ``spawnedBottomArrangement`` for the measurement that gates it.
+        let terminalBottom = terminalView.bottomAnchor.constraint(
+            equalTo: view.bottomAnchor
+        )
 
         NSLayoutConstraint.activate([
             terminalView.topAnchor.constraint(equalTo: view.topAnchor),
@@ -1331,11 +1313,6 @@ final class TerminalPaneController: NSViewController {
             terminalView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             terminalBottom,
             terminalView.heightAnchor.constraint(greaterThanOrEqualToConstant: 1),
-
-            statusBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            statusBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            statusBar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            barHeight,
 
             preferredWidth,
             preferredHeight,
@@ -1459,8 +1436,8 @@ final class TerminalPaneController: NSViewController {
     /// pane's state with it.
     ///
     /// Written at exactly one point, ``refreshStatus()``, which then hands the
-    /// value to both surfaces. `private(set)` so that stays true: a second
-    /// writer is how the footer and the capsule would start disagreeing.
+    /// value down. `private(set)` so that stays true: a second writer is how
+    /// the readers would start disagreeing.
     private(set) var status: PaneStatus?
 
     /// The last values published to the control channel, held apart from
@@ -1533,12 +1510,12 @@ final class TerminalPaneController: NSViewController {
     /// segments rather than rendering placeholders.
     ///
     /// **The one write.** ``status`` is `private(set)` and this is the only
-    /// place it moves, which is what lets the footer and the capsule be two
-    /// renderings of one value rather than two constructions that agree today.
+    /// place it moves, which is what lets the capsule and the five readers
+    /// listed on ``status`` be renderings of one value rather than separate
+    /// constructions that agree today.
     private func refreshStatus() {
         guard let anchor = anchorTracker.anchor else {
             status = nil
-            statusBar.status = nil
             clusterView.segments = []
             return
         }
@@ -1562,13 +1539,11 @@ final class TerminalPaneController: NSViewController {
             notice: notice
         )
         status = rebuilt
-        // Both surfaces from the one value that was just built, never from a
-        // second construction: the same value and one fewer place for the two to
-        // part. This used to read back off `statusBar.status` to get that
-        // property, which worked but bought it by making the footer the store;
-        // the local is the same guarantee without the view in the middle, and it
-        // survives the footer's deletion.
-        statusBar.status = rebuilt
+        // The capsule's segments from the one value that was just built, never
+        // from a second construction. This used to read back off
+        // `statusBar.status`, which worked but bought it by making the footer
+        // the store; the local is the same guarantee without the view in the
+        // middle, and it is what survived that view's deletion.
         clusterView.segments = PaneClusterSegments.build(from: rebuilt)
     }
 
@@ -1640,7 +1615,7 @@ final class TerminalPaneController: NSViewController {
         guard let window = view.window else { return }
         // The view hands the rect in its own coordinates; the controller's
         // contract is host-window coordinates, the same conversion
-        // `onCapsuleClick` above makes for the approval popover's anchor.
+        // ``approvalPopoverAnchor()`` makes for the popover's own anchor.
         let anchor = clusterView.convert(segmentRect, to: nil)
         // The same derivation `ConfigurationCenter.windowIsDark` feeds the
         // approval popover's `isDark` from, read off this pane's own theme
@@ -1863,10 +1838,10 @@ final class TerminalPaneController: NSViewController {
     /// one keystroke, written here directly because the pane already owns
     /// `send(_:)`.
     ///
-    /// **It is the only door as of 2026-08-13.** The title rule was the
-    /// footer's `onCapsuleClick` wire's, copied here to keep the two doors
-    /// titling one question the same way; that wire is deleted with the footer
-    /// and this is now where the rule lives rather than where it is echoed.
+    /// **It is the only door as of 2026-08-13.** The title rule came from the
+    /// footer's `onCapsuleClick` wire, copied here to keep the two doors
+    /// titling one question the same way; that wire went with the footer, so
+    /// this is now where the rule lives rather than where it is echoed.
     ///
     /// - Parameter role: which of the two segments summoned the card, stored
     ///   as the toggle's memory. Tracking the summoning segment rather than a

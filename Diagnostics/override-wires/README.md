@@ -56,9 +56,19 @@ from reading as evidence.
 | `lift-highlight` | `innerHighlightAlpha` and `innerHighlightOffsetY` move the top edge |
 | `lift-enabled` | `enabled = false` renders what a lift that was never made visible renders. Off has to mean *absent* for the knob's own question ("is the lift carrying its weight?") to be answerable by switching it off |
 | `rim` | Off is the shipped rendering, byte for byte: the rim constants' first consumer added a knob without adding a pixel. On changes the rendering, and `topAlpha` moves it again |
-| `busy-dot` | `busyDotHex` repaints the dot **and nothing else**: measured at 92 differing pixels, bounded above at 200. The upper bound is what separates "the dot moved" from "a colour dial repainted the bar" |
-| `bar-lift` | `barLift` repaints the bar, measured at 26342 differing pixels, bounded *below* at 1000 — the opposite bound to the dot's, since a lift that moved a handful of pixels would be reaching a colour nothing large is drawn in |
 | `surface-fill` | The four material roles resolve to four distinct colours, nil resolves to no tint, and one role answers differently in the dark and light sets |
+
+Two arms were dropped on 2026-08-13, when `Sources/PaneStatusBarView.swift` was
+deleted: `busy-dot` (`busyDotHex` repaints the dot and nothing else, measured at
+92 differing pixels and bounded above at 200) and `bar-lift` (`barLift` repaints
+the bar, measured at 26342 and bounded below at 1000). Both rendered the footer,
+which was the only view that drew either dial.
+
+The two dials still exist in `PaneThemeAdjustments`, so their wires are now
+**unwitnessed rather than proven absent** — nothing surviving draws a busy dot
+or lifts a bar, so there is no pixel to re-aim at today. If a later surface
+picks either dial up, this is the probe that should grow the arm back, and the
+bounds above are the numbers it had.
 
 ## What this probe does not measure, and why
 

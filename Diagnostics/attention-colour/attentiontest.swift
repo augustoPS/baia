@@ -174,67 +174,13 @@ func status(
     )
 }
 
-/// A real `PaneStatusBarView`, configured the way `ConfigurationCenter` configures
-/// one, rendered.
-///
-/// `drawnAccent` and `drawnBehavior` are what the *view* is told. They are separate
-/// arguments from what the caller expects so a control can hand the view the
-/// shipped defaults while the arm still checks against the combination under
-/// test: that is precisely the code as it stood before this feature, a wash wired
-/// to `theme.alert` whatever the config said.
-func renderBar(
-    theme: PaneTheme,
-    drawnAccent: AttentionAccent,
-    drawnBehavior: AlertBehavior,
-    attention: PaneStatus.Attention,
-    style: AttentionStyle,
-    conflicted: Bool = false
-) -> Render? {
-    let bar = PaneStatusBarView(
-        frame: NSRect(x: 0, y: 0, width: barWidth, height: PaneStatusBarMetrics.height)
-    )
-    bar.theme = theme
-    bar.isWindowActive = true
-    bar.isFocused = false
-    bar.attentionStyle = style
-    bar.attentionAccent = drawnAccent
-    bar.alertBehavior = drawnBehavior
-    bar.status = status(attention: attention, conflicted: conflicted)
-    return rasterize(bar)
-}
-
-// MARK: - The pipeline gate
+// `renderBar(...)` lived here until 2026-08-13, rendering a real
+// `PaneStatusBarView` configured the way `ConfigurationCenter` configures one.
+// The footer was deleted that day; the four arms that called it went with it.
 //
-// Run at the top of every pixel arm. If the colours coming back out of a bitmap
-// were not the colours that went in, every arm below would fail for a reason
-// that has nothing to do with the feature, and this says so first.
-
-func colourPipelineIsHonest(_ theme: PaneTheme) -> Bool {
-    guard let render = renderBar(
-        theme: theme,
-        drawnAccent: .alert,
-        drawnBehavior: .stock,
-        attention: .none,
-        style: .loud
-    ) else {
-        print("  FAIL: the bar rendered nothing, so nothing was measured")
-        return false
-    }
-    let bar = coverage(render, theme.barBackground, region: wholeBar(render))
-    print(String(
-        format: "  pipeline: %.1f%% of a quiet bar is barBackground %@, commonest pixel %@",
-        bar.fraction * 100, theme.barBackground.hexString, bar.commonest.text
-    ))
-    guard bar.fraction > 0.5 else {
-        print("    FAIL: the colours read back are not the colours drawn, so no arm below means anything")
-        return false
-    }
-    return true
-}
-
 // MARK: - The distinctness gate
 //
-// Run at the end of every pixel arm, over the commonest pixel each of the six
+// Run at the end of the pixel arm, over the commonest pixel each of the six
 // rows drew. See the note at the top of the file: without this an arm proves
 // plumbing and nothing about the resolution it is plumbed to.
 
@@ -245,147 +191,6 @@ func distinctness(_ drawn: Set<Pixel>, _ what: String) -> Bool {
         return false
     }
     return true
-}
-
-// MARK: - fill
-
-/// The loud wash, which is also what the 510 ms arrival pulse animates.
-func fillArm(breakIt: Bool) -> Bool {
-    let theme = PaneTheme.darkPastel
-    guard colourPipelineIsHonest(theme) else { return false }
-
-    var ok = true
-    var drawn: Set<Pixel> = []
-    for combination in combinations {
-        let expected = theme.attentionColour(combination.accent, behavior: combination.behavior)
-        // The control draws the shipped defaults whatever the arm asked for, which
-        // is the wash as it was before this feature: wired to `theme.alert`.
-        guard let render = renderBar(
-            theme: theme,
-            drawnAccent: breakIt ? .alert : combination.accent,
-            drawnBehavior: breakIt ? .stock : combination.behavior,
-            attention: .asking,
-            style: .loud
-        ) else { return false }
-
-        let measured = coverage(render, expected, region: wholeBar(render))
-        drawn.insert(measured.commonest)
-        print(String(
-            format: "  %@/%@ expects %@: %.1f%% of the bar, commonest %@",
-            combination.accent.rawValue, combination.behavior.rawValue,
-            expected.hexString, measured.fraction * 100, measured.commonest.text
-        ))
-        // Half the bar rather than all of it: the text, the hairline and the
-        // busy dot are drawn over the wash and are entitled to their pixels.
-        guard measured.fraction > 0.5, matches(measured.commonest, expected) else {
-            print("    FAIL: the wash is not the colour the setting resolves to")
-            ok = false
-            continue
-        }
-    }
-
-    return distinctness(drawn, "washes") && ok
-}
-
-// MARK: - quiet
-
-/// The 2 pt line the quiet treatment spends instead of the bar's background.
-func quietArm(breakIt: Bool) -> Bool {
-    let theme = PaneTheme.darkPastel
-    guard colourPipelineIsHonest(theme) else { return false }
-
-    var ok = true
-    var drawn: Set<Pixel> = []
-    let lineHeight = 2 * scale
-    for combination in combinations {
-        let expected = theme.attentionColour(combination.accent, behavior: combination.behavior)
-        guard let render = renderBar(
-            theme: theme,
-            drawnAccent: breakIt ? .alert : combination.accent,
-            drawnBehavior: breakIt ? .stock : combination.behavior,
-            attention: .asking,
-            style: .quiet
-        ) else { return false }
-
-        // Row 0 of the bitmap is the top of the bar, and the view is flipped, so
-        // the line the unfocused bar draws at y 0 is at the top of the bitmap.
-        let line = coverage(render, expected, region: (x: 0 ..< render.width, y: 0 ..< lineHeight))
-        // Below the line the bar has to be its own background. A quiet treatment
-        // that filled the bar would pass the check above and be the loud one.
-        let body = coverage(
-            render, theme.barBackground,
-            region: (x: 0 ..< render.width, y: (lineHeight + 2) ..< render.height)
-        )
-        drawn.insert(line.commonest)
-        print(String(
-            format: "  %@/%@ expects %@: line %.1f%%, body still barBackground %.1f%%",
-            combination.accent.rawValue, combination.behavior.rawValue,
-            expected.hexString, line.fraction * 100, body.fraction * 100
-        ))
-        guard line.fraction > 0.98 else {
-            print("    FAIL: the quiet line is not the colour the setting resolves to, it is \(line.commonest.text)")
-            ok = false
-            continue
-        }
-        guard body.fraction > 0.5 else {
-            print("    FAIL: the bar under the line is filled, so this is not the quiet treatment at all")
-            ok = false
-            continue
-        }
-    }
-    return distinctness(drawn, "lines") && ok
-}
-
-// MARK: - acked
-
-/// The 6x6 pt square an acknowledged pane keeps.
-func ackedArm(breakIt: Bool) -> Bool {
-    let theme = PaneTheme.darkPastel
-    guard colourPipelineIsHonest(theme) else { return false }
-
-    // The mark's own rectangle, from the constants the view draws it with, pulled
-    // in one pixel so the antialiased edge is nobody's evidence.
-    let markSize = 6.0
-    let left = Int(PaneStatusBarMetrics.horizontalInset) * scale + 1
-    let right = Int(PaneStatusBarMetrics.horizontalInset + markSize) * scale - 1
-    let top = Int((PaneStatusBarMetrics.height - markSize) / 2) * scale + 1
-    let bottom = Int((PaneStatusBarMetrics.height + markSize) / 2) * scale - 1
-
-    var ok = true
-    var drawn: Set<Pixel> = []
-    for combination in combinations {
-        let expected = theme.attentionColour(combination.accent, behavior: combination.behavior)
-        guard let render = renderBar(
-            theme: theme,
-            drawnAccent: breakIt ? .alert : combination.accent,
-            drawnBehavior: breakIt ? .stock : combination.behavior,
-            attention: .acknowledged,
-            style: .loud
-        ) else { return false }
-
-        let mark = coverage(render, expected, region: (x: left ..< right, y: top ..< bottom))
-        drawn.insert(mark.commonest)
-        // The mark is the smallest thing on the bar that is not grey. If the whole
-        // bar came back in this colour the check above would pass on a footer that
-        // had filled itself, which is the loud treatment and not this one.
-        let whole = coverage(render, expected, region: wholeBar(render))
-        print(String(
-            format: "  %@/%@ expects %@: square %.1f%% of %d px, whole bar %.1f%%",
-            combination.accent.rawValue, combination.behavior.rawValue,
-            expected.hexString, mark.fraction * 100, mark.total, whole.fraction * 100
-        ))
-        guard mark.fraction > 0.98 else {
-            print("    FAIL: the acknowledged square is \(mark.commonest.text), not the resolved colour")
-            ok = false
-            continue
-        }
-        guard whole.fraction < 0.1 else {
-            print("    FAIL: the whole bar carries this colour, so what was measured is a fill, not a mark")
-            ok = false
-            continue
-        }
-    }
-    return distinctness(drawn, "squares") && ok
 }
 
 // MARK: - frame
@@ -506,92 +311,6 @@ func paneControllerHandsOverTheResolvedColour(breakIt: Bool) -> Bool {
     return true
 }
 
-// MARK: - conflict
-
-/// Red still means conflict.
-///
-/// `PaneTheme.alert` is the conflicted-tree marker and the `!` glyph as well as
-/// the attention colour, and only the attention colour follows the setting. A
-/// pane with a conflicted tree and no agent asking must therefore render
-/// identically under all six combinations: if the git segments had been helpfully
-/// wired up too, the six bars would differ and this counts the pixels that did.
-func conflictArm(breakIt: Bool) -> Bool {
-    let theme = PaneTheme.darkPastel
-    guard colourPipelineIsHonest(theme) else { return false }
-
-    // Anti-vacuity, and it runs in both modes because it is not what the control
-    // damages. An arm built on equality passes when it is blind, and this one is
-    // blind twice over: a comparison of six identical footers is trivially equal,
-    // and the expectations below come from the function under test. So the six
-    // settings are first made to prove they can move a pixel at all, on a pane that
-    // *is* asking, where they are supposed to differ.
-    var drawn: Set<Pixel> = []
-    for combination in combinations {
-        guard let render = renderBar(
-            theme: theme,
-            drawnAccent: combination.accent,
-            drawnBehavior: combination.behavior,
-            attention: .asking,
-            style: .loud,
-            conflicted: true
-        ) else { return false }
-        let expected = theme.attentionColour(combination.accent, behavior: combination.behavior)
-        drawn.insert(coverage(render, expected, region: wholeBar(render)).commonest)
-    }
-    guard distinctness(drawn, "asking bars") else { return false }
-
-    // The control asks the equality question of a pane that *is* asking, where the
-    // six settings are supposed to differ, so the comparison below has to fail.
-    let attention: PaneStatus.Attention = breakIt ? .asking : .none
-
-    guard let reference = renderBar(
-        theme: theme,
-        drawnAccent: combinations[0].accent,
-        drawnBehavior: combinations[0].behavior,
-        attention: attention,
-        style: .loud,
-        conflicted: true
-    ) else { return false }
-
-    // The conflict marker has to actually be on the bar, or this compares six
-    // copies of a footer with nothing red on it and calls that a result.
-    let marker = theme.color(for: .alert, focused: false, on: theme.barBackground)
-    let markerPixels = coverage(reference, marker, region: wholeBar(reference))
-    print(String(
-        format: "  the conflict marker %@ covers %d px of the bar",
-        marker.hexString, Int(markerPixels.fraction * Double(markerPixels.total))
-    ))
-    guard markerPixels.fraction * Double(markerPixels.total) > 20 else {
-        print("    FAIL: no conflict marker was drawn, so there is nothing here to leave alone")
-        return false
-    }
-
-    var ok = true
-    for combination in combinations.dropFirst() {
-        guard let render = renderBar(
-            theme: theme,
-            drawnAccent: combination.accent,
-            drawnBehavior: combination.behavior,
-            attention: attention,
-            style: .loud,
-            conflicted: true
-        ) else { return false }
-        var differing = 0
-        for y in 0 ..< render.height {
-            for x in 0 ..< render.width where render.pixel(x: x, y: y) != reference.pixel(x: x, y: y) {
-                differing += 1
-            }
-        }
-        print("  \(combination.accent.rawValue)/\(combination.behavior.rawValue): \(differing) px differ from the first row")
-        guard differing == 0 else {
-            print("    FAIL: the setting moved a pixel on a pane that is not asking")
-            ok = false
-            continue
-        }
-    }
-    return ok
-}
-
 // MARK: - Entry
 
 @main
@@ -607,13 +326,9 @@ enum Probe {
 
         let ok: Bool
         switch arm {
-        case "fill": ok = fillArm(breakIt: breakIt)
-        case "quiet": ok = quietArm(breakIt: breakIt)
-        case "acked": ok = ackedArm(breakIt: breakIt)
         case "frame": ok = frameArm(breakIt: breakIt)
-        case "conflict": ok = conflictArm(breakIt: breakIt)
         default:
-            print("usage: attentiontest fill|quiet|acked|frame|conflict [break]")
+            print("usage: attentiontest frame [break]")
             ok = false
         }
 

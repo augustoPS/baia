@@ -1,5 +1,19 @@
 # Footer corners probe
 
+> **Frozen as record, 2026-08-13. It does not run.** This probe measured a
+> surface that no longer exists: `Sources/PaneStatusBarView.swift` was deleted
+> that day, and `run.sh` compiled it verbatim, so there is nothing left to
+> build. The directory is kept rather than deleted because three other probes
+> (`glass-backdrop`, `pane-glass-stacking`, `override-wires`) cite this one's
+> *method* — the geometry-versus-bitmap agreement to 0.002 pt, the arm-plus-
+> inverted-control shape, and the rule that a probe compiles shipped files
+> verbatim so a new dependency edge shows up at the `swiftc` line. Those
+> citations are why the text below is worth reading; every measurement in it
+> is history, and no number here describes anything the app draws now.
+>
+> `run.sh` now says this and exits rather than failing at a missing file.
+> Everything from here down is preserved as it read on the day it last passed.
+
 `./run.sh` from anywhere. It measures the window's own rounded corner, measures
 the ones the footer and the attention frame draw, checks that rounding a corner
 did not move the bar or its text, checks that the attention capsule fills,

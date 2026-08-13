@@ -3,6 +3,26 @@
 # writes nothing into the repo.
 set -euo pipefail
 
+# Frozen as record on 2026-08-13, when `Sources/PaneStatusBarView.swift` was
+# deleted. The `swiftc` line below compiles that file verbatim — that is the
+# point of the arrangement, not an accident — so this probe cannot build and
+# will never build again. It exits here, saying so, rather than dying twenty
+# lines down on `no such file or directory` and reading like a broken probe
+# instead of a retired one.
+#
+# The directory survives because three probes cite its method; see README.md
+# for which and why. Nothing below this block has run since that date.
+cat <<'FROZEN'
+footer-corners is frozen as record and does not run.
+
+It measured the footer (`Sources/PaneStatusBarView.swift`), which was deleted
+on 2026-08-13. The file it compiled verbatim is gone, so there is nothing to
+build. The directory is kept because `glass-backdrop`, `pane-glass-stacking`
+and `override-wires` cite this probe's method; README.md carries the frozen
+findings and the citation list.
+FROZEN
+exit 0
+
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
 OUT=${TMPDIR:-/tmp}/baia-footer-corners-probe

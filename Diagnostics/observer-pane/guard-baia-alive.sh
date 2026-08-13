@@ -71,13 +71,19 @@ fi
 # widened only after reading each probe's source, not on the strength of that
 # argument.
 #
-# **`footer-corners` and `fullscreen-strip` stay denied, and for a reason this
-# block did not previously state.** Neither quits baia either, so the message
-# below is wrong about them too, but both call `makeKeyAndOrderFront` and
-# `activate`, and `fullscreen-strip` additionally runs a real event loop and
-# drives its window into full screen and back twice. They steal focus from the
-# pane that launched them, which is disruption of a different kind than the one
-# named here rather than an absence of it.
+# **`fullscreen-strip` stays denied, and for a reason this block did not
+# previously state.** It does not quit baia either, so the message below is
+# wrong about it too, but it calls `makeKeyAndOrderFront` and `activate`, runs a
+# real event loop, and drives its window into full screen and back twice. It
+# steals focus from the pane that launched it, which is disruption of a
+# different kind than the one named here rather than an absence of it.
+#
+# `footer-corners` was the other member of this pair, denied on the same
+# `activate` ground, until 2026-08-13. It is now frozen as record: the footer it
+# measured was deleted, its `run.sh` prints a notice and exits 0, and it opens
+# no window at all. It is left out of `SAFE_PROBES` regardless — a probe that
+# does nothing has no reason to be pre-approved, and the day someone thaws it
+# the focus question comes back with it.
 #
 # **`design-panel-key` is denied, and it is the member that could never
 # qualify.** It was written for the design panel's `wantsKey` leak and evaluated
@@ -181,18 +187,19 @@ fi
 # measurement. Either way the probe writes only into `TMPDIR` and drives no
 # terminal the owner is sitting in.
 #
-# **`footer-status-store` qualifies on `cluster-notice`'s ground, and is if anything
-# milder.** It compiles the shipped `PaneStatusBarView` verbatim and renders it
-# through `cacheDisplay(in:to:)` into an offscreen bitmap: no `NSWindow` is ordered
-# on screen at all, no `NSApplication` activation policy is set, nothing is launched
-# and nothing is quit. Two of its four arms never render anything — they read a
-# `CALayer`'s opacity and animation keys back after a property write — and the other
-# two read bytes out of a bitmap. Nothing reaches a compositor, so there is no focus
-# to take.
+# **`footer-status-store` was here until 2026-08-13 and is gone.** It qualified
+# on `cluster-notice`'s ground and was if anything milder: it compiled the
+# shipped `PaneStatusBarView` verbatim and rendered it through
+# `cacheDisplay(in:to:)` into an offscreen bitmap, reaching no compositor and so
+# having no focus to take. The probe asked whether the footer, handed a
+# `PaneStatus`, kept its invariants; the footer was deleted that day, so the
+# question stopped existing and the probe was deleted with it rather than
+# retargeted. Removed from the list below in the same commit: a name here that
+# resolves to no directory is a rule that cannot be checked.
 #
 # Every probe named must be safe, so a command pairing a safe one with a real
 # driver is still denied.
-SAFE_PROBES='^(cluster-legibility|cluster-notice|theme-catalog|app-icon|clip-layout|theme-refresh|pane-resize|glass-backdrop|override-wires|cluster-wires|footer-accessory|titlebar-merge|footer-status-store)$'
+SAFE_PROBES='^(cluster-legibility|cluster-notice|theme-catalog|app-icon|clip-layout|theme-refresh|pane-resize|glass-backdrop|override-wires|cluster-wires|footer-accessory|titlebar-merge)$'
 probes=$(printf '%s' "$COMMAND" | grep -oE 'Diagnostics/[a-zA-Z0-9_-]+/run\.sh' | sed -E 's|Diagnostics/([^/]+)/run\.sh|\1|')
 if [ -n "$probes" ]; then
   unsafe=0
@@ -202,7 +209,7 @@ if [ -n "$probes" ]; then
 $probes
 EOF
   if [ "$unsafe" = "1" ]; then
-    emit_deny "Blocked: this Diagnostics probe takes over the screen. footer-corners and fullscreen-strip open a key window and activate, and fullscreen-strip runs an event loop driving it in and out of full screen, so either would pull focus off this pane mid-run. Others quit any running baia and launch their own. Use 'make test' for package work, or theme-catalog, app-icon, clip-layout, theme-refresh, pane-resize, glass-backdrop, override-wires, cluster-wires, cluster-legibility, cluster-notice, footer-accessory, titlebar-merge and footer-status-store, which take no focus. (glass-backdrop does put windows on screen for about fifteen seconds; it never takes the keyboard.)"
+    emit_deny "Blocked: this Diagnostics probe takes over the screen. fullscreen-strip opens a key window, activates, and runs an event loop driving it in and out of full screen, so it would pull focus off this pane mid-run. Others quit any running baia and launch their own. Use 'make test' for package work, or theme-catalog, app-icon, clip-layout, theme-refresh, pane-resize, glass-backdrop, override-wires, cluster-wires, cluster-legibility, cluster-notice, footer-accessory and titlebar-merge, which take no focus. (glass-backdrop does put windows on screen for about fifteen seconds; it never takes the keyboard.)"
   fi
 fi
 

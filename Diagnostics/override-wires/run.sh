@@ -7,9 +7,9 @@
 # **Safe from anywhere, including inside a baia pane.** This probe opens no
 # window, takes no focus, launches nothing and quits nothing: every arm renders a
 # view offscreen into a bitmap and reads the bytes back. It is in the same class
-# as `theme-catalog` and `app-icon` on that count, and unlike `glass-backdrop` and
-# `footer-corners` it never needs a compositor, because its question is what this
-# app's own drawing code puts down rather than what glass samples.
+# as `theme-catalog` and `app-icon` on that count, and unlike `glass-backdrop` it
+# never needs a compositor, because its question is what this app's own drawing
+# code puts down rather than what glass samples.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -26,11 +26,16 @@ cd "$ROOT"
 build_packages "$LIB" BaiaSettings GitWorkspace PaneControl PaneChrome WorkspaceLayout
 
 # The shipped files are compiled verbatim, not sliced and not retyped, so the
-# pixels this probe measures are the pixels the app draws. This is the same set
-# `footer-corners` compiles, and for the same reason: `PaneStatusBarView` and
-# `PaneOverlayView` reach nothing outside these packages, `WindowCorner` and
-# `SurfaceFill`. If either grows a dependency on another file in `Sources/`, this
-# line is where that shows up.
+# pixels this probe measures are the pixels the app draws. `PaneOverlayView`
+# reaches nothing outside these packages, `WindowCorner` and `SurfaceFill`. If
+# it grows a dependency on another file in `Sources/`, this line is where that
+# shows up.
+#
+# `PaneStatusBarView.swift` was on this line until 2026-08-13 and was deleted
+# that day. The rule the line encodes is why its two arms went with it rather
+# than being stubbed: a probe compiles what ships, so a probe that cannot
+# compile is telling you the surface is gone. `footer-corners`, which compiled
+# the same set, is frozen as record for the same reason — see its README.
 #
 # -default-isolation MainActor matches the app target's
 # SWIFT_DEFAULT_ACTOR_ISOLATION, so they compile under the rules they ship under.
@@ -39,14 +44,14 @@ swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/wiretest" \
   -Xlinker -rpath -Xlinker "$LIB" \
   "$HERE/wiretest.swift" "$ROOT/Sources/WindowCorner.swift" \
   "$ROOT/Sources/SurfaceFill.swift" \
-  "$ROOT/Sources/PaneStatusBarView.swift" "$ROOT/Sources/PaneOverlayView.swift"
+  "$ROOT/Sources/PaneOverlayView.swift"
 
 # One arm per process, each followed by its negative control. `set -e` makes the
 # passing arms the test; the controls are inverted, so a control that stops
 # failing fails the run just as loudly as an arm that stops passing. The same
 # discipline `footer-corners` runs under, and it is what stops an arm that has
 # quietly become a tautology from reading as evidence.
-ARMS="lift-nil lift-ring lift-highlight lift-enabled rim busy-dot bar-lift surface-fill"
+ARMS="lift-nil lift-ring lift-highlight lift-enabled rim surface-fill"
 COUNT=0
 for arm in $ARMS; do
   "$OUT/wiretest" "$arm"

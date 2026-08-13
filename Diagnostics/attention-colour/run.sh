@@ -45,11 +45,16 @@ swiftc -swift-version 6 -emit-library -emit-module \
   -o "$LIB/libPaneChrome.dylib" -I "$LIB" -L "$LIB" -lBaiaSettings -lGitWorkspace \
   "${PANE_CHROME_SOURCES[@]}"
 
-# The three shipped files are compiled verbatim, not sliced and not retyped, so
-# the pixels measured are the pixels the app draws. `PaneStatusBarView` and
-# `PaneOverlayView` reach nothing outside these three packages and `WindowCorner`;
-# if either grows a dependency on another file in `Sources/`, this line is where
-# that shows up.
+# The shipped files are compiled verbatim, not sliced and not retyped, so the
+# pixels measured are the pixels the app draws. `PaneOverlayView` reaches nothing
+# outside these three packages and `WindowCorner`; if it grows a dependency on
+# another file in `Sources/`, this line is where that shows up.
+#
+# `Sources/PaneStatusBarView.swift` was on this line until 2026-08-13 and was
+# deleted that day, taking the `fill`, `quiet`, `acked` and `conflict` arms with
+# it — all four rendered the footer, which was the only view that drew the
+# attention wash. Only `frame` survives; see the README for what went and what
+# it would take to re-aim.
 #
 # `TerminalPaneController` is deliberately absent. It pulls in libghostty and
 # spawns a pty, so the `frame` arm reads its one assignment out of the source text
@@ -62,13 +67,12 @@ swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/attentiontest" \
   -Xlinker -rpath -Xlinker "$LIB" \
   "$HERE/attentiontest.swift" \
   "$ROOT/Sources/WindowCorner.swift" \
-  "$ROOT/Sources/PaneStatusBarView.swift" \
-  "$ROOT/Sources/PaneOverlayView.swift"
+    "$ROOT/Sources/PaneOverlayView.swift"
 
 # One arm per process, each followed by its negative control. `set -e` makes the
 # passing arms the test; the controls are inverted, so a control that stops
 # failing fails the run just as loudly as an arm that stops passing.
-for arm in fill quiet acked frame conflict; do
+for arm in frame; do
   "$OUT/attentiontest" "$arm"
   echo
   if "$OUT/attentiontest" "$arm" break; then
@@ -79,4 +83,4 @@ for arm in fill quiet acked frame conflict; do
   echo
 done
 
-echo "all five arms pass and all five controls fail"
+echo "the frame arm passes and its control fails"

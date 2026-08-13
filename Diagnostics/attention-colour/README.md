@@ -1,21 +1,35 @@
 # Attention colour probe
 
-`./run.sh` from anywhere. It renders a real `PaneStatusBarView` and a real
-`PaneEdgeFrameView` through `cacheDisplay(in:to:)`, reads the pixels back, and
-checks that every attention mark carries the colour `attentionAccent` and
-`alertBehavior` resolve to. Five arms, one process each, and every arm is followed
-by a `break` variant that damages the drawing and is expected to fail. `run.sh`
-inverts those, so a control that stops failing fails the run as loudly as an arm
-that stops passing.
+> **Four of its five arms went on 2026-08-13.** `fill`, `quiet`, `acked` and
+> `conflict` rendered a real `PaneStatusBarView`, which was deleted that day.
+> The footer was the only view that drew the attention wash, so those arms have
+> no subject; the wash itself had already retired on 2026-08-08, and the four
+> had been failing against the shipped tree since then. Only `frame` survives,
+> and it is the arm that was never about the footer.
+>
+> What is no longer checked: that the *wash* carries the resolved colour. What
+> still is: that the pane frame does, in pixels, and that
+> `TerminalPaneController` hands it the resolved colour rather than
+> `theme.alert`. A re-aim would point the four arms at the capsule
+> (`PaneClusterView`), which is where attention is now drawn — that is real
+> work, not a rename, because the coverage fractions below are written against
+> a full-width 22 pt bar.
+
+`./run.sh` from anywhere. It renders a real `PaneEdgeFrameView` through
+`cacheDisplay(in:to:)`, reads the pixels back, and checks that the attention
+frame carries the colour `attentionAccent` and `alertBehavior` resolve to. One
+arm, followed by a `break` variant that damages the drawing and is expected to
+fail. `run.sh` inverts that, so a control that stops failing fails the run as
+loudly as an arm that stops passing.
 
 Nothing is captured from the screen. `screencapture` needs a screen-recording
 grant that a headless run cannot answer, and it is not needed: every reading comes
 from a bitmap this process rasterizes itself. No arm takes focus and no window is
 made key.
 
-`Sources/PaneStatusBarView.swift`, `Sources/PaneOverlayView.swift` and
-`Sources/WindowCorner.swift` are compiled verbatim by `run.sh`, so the pixels
-measured are the ones the app draws.
+`Sources/PaneOverlayView.swift` and `Sources/WindowCorner.swift` are compiled
+verbatim by `run.sh`, so the pixels measured are the ones the app draws.
+`Sources/PaneStatusBarView.swift` was on that line until it was deleted.
 
 ## What the arms are for, and what the controls damage
 
