@@ -390,59 +390,50 @@ final class ConfigurationCenter {
         SettingsDerivations.terminalConfiguration(from: effectiveSettings)
     }
 
-    /// ``terminalConfiguration``, with `window-padding-y` raised by
-    /// ``PaneChrome/PaneStatusBarMetrics/glassWindowPaddingBump`` — arrangement
-    /// (B) from the glass-backdrop spike's verdict, for a pane whose surface
-    /// was built to extend under the footer bar.
-    ///
-    /// Built from ``settings/windowPadding`` directly rather than by reading
-    /// the padding back out of `terminalConfiguration`: `TerminalConfiguration`
-    /// carries its accumulated commands as `internal` state (`GhosttyTerminal`
-    /// keeps `commands` unexported), so there is nothing here to reach in and
-    /// inspect even if that were the right way to do it, and it would not be —
-    /// this reads the one input that actually decided the base value.
-    ///
-    /// Appended after everything `terminalOverrides` already renders, which is
-    /// what makes this safe to compose rather than something that has to
-    /// duplicate `TerminalOverride.windowPadding`'s own rounding rule twice:
-    /// ghostty's config parser takes the *last* value it reads for a scalar
-    /// key, the same rule `SettingsDerivations.terminalTheme` leans on to fold
-    /// a background override on top of a theme, so one more `window-padding-y`
-    /// line after the settings-derived one simply wins.
-    ///
-    /// `TerminalPaneController.bottomArrangementAtSpawn` decides which of
-    /// this, ``glassClearTerminalConfiguration`` or ``terminalConfiguration``
-    /// a given pane is handed, frozen at that pane's spawn; see
-    /// `spawnedUnderGlass`'s doc comment for why a pane already running must
-    /// never be moved between them. This one is `.fullHeightWithBump`'s:
-    /// glass, with the footer floating over the surface's last points.
-    ///
-    /// `background-opacity` is appended for the same reason and on the same
-    /// last-value-wins rule as the padding line above, and it goes to `0`: under
-    /// glass the well belongs to the plane and the wash, so the pane's own Metal
-    /// layer must stop painting a second one over them. That doubled well is the
-    /// difference between what `Diagnostics/pane-glass-legibility` measured and
-    /// what would otherwise ship. The settings key keeps its value and its other
-    /// readers — ``windowIsTransparent`` and the wash both still resolve off
-    /// `effectiveSettings.backgroundOpacity`; this zeroes the *surface*, not the
-    /// setting. The per-pane freeze through `isSpawnedUnderGlass` is unchanged:
-    /// a pane still gets this configuration or ``terminalConfiguration`` once,
-    /// at spawn, and is never moved between them.
-    var glassCompensatedTerminalConfiguration: TerminalConfiguration {
-        terminalConfiguration
-            .windowPaddingY(
-                Int((effectiveSettings.windowPadding + PaneStatusBarMetrics.glassWindowPaddingBump).rounded())
-            )
-            .backgroundOpacity(0)
-    }
+    // **`glassCompensatedTerminalConfiguration` stood here until 2026-08-13.**
+    // It was `terminalConfiguration` with `window-padding-y` raised by
+    // `PaneStatusBarMetrics.glassWindowPaddingBump` — arrangement (B) from the
+    // glass-backdrop spike — for a glass pane whose surface extended under the
+    // footer bar, so the grid kept its inset while the bar floated over the
+    // surface's last points. It was reached from exactly one place, the
+    // `.fullHeightWithBump` arm of the switch in `apply(to:)`, and that arm was
+    // already unreachable: a pane spawning under glass answered
+    // `.fullHeightClear` and took `glassClearTerminalConfiguration` instead.
+    //
+    // Deleting it therefore moves no padding on any live pane, which was
+    // verified rather than argued — see the note in `PaneClusterLayout.swift`
+    // for the `fatalError` trap and the 44 x 106 measurement. With the footer
+    // gone there is no bar floating over a surface for a bump to clear, so
+    // nothing will want this again in its current form.
+    //
+    // **This was `PaneStatusBarMetrics.glassWindowPaddingBump`'s last
+    // consumer.** The constant is left standing deliberately; it belongs to
+    // `PaneStatusBarMetrics`, which is its own deletion step.
 
-    /// ``glassCompensatedTerminalConfiguration``'s `background-opacity`
-    /// zeroing without its padding bump, for a glass pane spawned with no
-    /// footer (`.fullHeightClear` under glass). The well still belongs to the
-    /// plane and the wash, so the surface must not paint a second one over
-    /// them, but no bar floats over the surface's last points, so there is
-    /// nothing for a `window-padding-y` bump to clear and the settings-derived
-    /// padding stands. Frozen per pane on the same terms as the other two.
+    /// A glass pane's `background-opacity` zeroing, with no padding bump: the
+    /// one configuration a glass pane is handed now that no footer floats over
+    /// any surface.
+    ///
+    /// Under glass the well belongs to the plane and the wash, so the pane's
+    /// own Metal layer must stop painting a second one over them. That doubled
+    /// well is the difference between what `Diagnostics/pane-glass-legibility`
+    /// measured and what would otherwise ship. The settings key keeps its value
+    /// and its other readers — ``windowIsTransparent`` and the wash both still
+    /// resolve off `effectiveSettings.backgroundOpacity`; this zeroes the
+    /// *surface*, not the setting.
+    ///
+    /// `background-opacity` is appended after everything `terminalOverrides`
+    /// already renders, which is what makes it safe to compose: ghostty's
+    /// config parser takes the *last* value it reads for a scalar key, the same
+    /// rule `SettingsDerivations.terminalTheme` leans on to fold a background
+    /// override on top of a theme.
+    ///
+    /// The padding is untouched, so the settings-derived `window-padding-y`
+    /// stands and this pane's grid is the same size a flat pane's would be.
+    /// A pane is handed this or ``terminalConfiguration`` once, at spawn,
+    /// frozen through `TerminalPaneController.isSpawnedUnderGlass`, and is
+    /// never moved between them; see `spawnedUnderGlass`'s doc comment for why
+    /// a running pane must not change configuration.
     var glassClearTerminalConfiguration: TerminalConfiguration {
         terminalConfiguration.backgroundOpacity(0)
     }
@@ -610,20 +601,37 @@ final class ConfigurationCenter {
         // hazard arrangement (B) was built to avoid, not to relocate to a
         // settings reload.
         //
-        // The cluster case rode the same freeze while the mode was dialable,
-        // and since 2026-08-13 it is no longer a case: every pane wears the
-        // capsule and none wears a footer, so `clusterOnly` is constant and
-        // the arrangement is `.fullHeightClear` unless the pane spawned under
-        // glass. The freeze stays because `resolvedChrome` still moves under
-        // a live toggle. This is also the first read of the frozen pair, and
-        // it runs at registration — after `resolvedChrome` is assigned above,
-        // before the view loads — which is what "at spawn" means concretely.
-        let spawnConfiguration: TerminalConfiguration = switch pane.bottomArrangementAtSpawn {
-        case .insetAboveBar: terminalConfiguration
-        case .fullHeightWithBump: glassCompensatedTerminalConfiguration
-        case .fullHeightClear:
-            pane.isSpawnedUnderGlass ? glassClearTerminalConfiguration : terminalConfiguration
-        }
+        // **This was a three-armed switch on `pane.bottomArrangementAtSpawn`
+        // until 2026-08-13, and the arrangement enum is now deleted.** Two of
+        // its arms named a footer — one for the surface stopping above the bar,
+        // one adding `+glassWindowPaddingBump` to clear a bar floating over the
+        // surface's last points — and the footer view is gone, so both were
+        // unreachable: every pane spawns with the capsule alone, which answered
+        // `.fullHeightClear` whatever the chrome. The bumped arm was the reason
+        // this deletion was gated on a measurement (a changed
+        // `window-padding-y` is a live grid resize), and the measurement is why
+        // it is safe: a glass pane was already taking the un-bumped
+        // configuration through `.fullHeightClear`, so no live padding moves.
+        //
+        // What survives is the glass distinction the clear case made, read
+        // straight off `isSpawnedUnderGlass` instead of through an arrangement
+        // that no longer varies. Under glass the well belongs to the plane and
+        // the wash, so the surface's own `background-opacity` goes to zero
+        // rather than painting a second one over them; under flat the surface
+        // keeps the settings-derived opacity.
+        //
+        // The freeze is unchanged and still load-bearing. `isSpawnedUnderGlass`
+        // is frozen at this pane's first chrome resolution, so a pane spawned
+        // under flat keeps `terminalConfiguration` even after a live toggle
+        // moves `resolvedChrome` to glass, and vice versa. Handing an
+        // already-running pane a different configuration would change its
+        // surface under it; the toggle takes effect for the next pane opened.
+        // This is the first read of the frozen fact, and it runs at
+        // registration — after `resolvedChrome` is assigned above, before the
+        // view loads — which is what "at spawn" means concretely.
+        let spawnConfiguration = pane.isSpawnedUnderGlass
+            ? glassClearTerminalConfiguration
+            : terminalConfiguration
         pane.applyTerminalConfiguration(spawnConfiguration, theme: terminalTheme)
     }
 

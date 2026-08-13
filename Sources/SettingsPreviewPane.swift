@@ -132,10 +132,10 @@ final class SettingsPreviewPane: NSViewController {
             // 22 pt short, because `PaneStatusBarMetrics.reservedHeight(focused:)`
             // pinned a bar across the bottom and the surface took what was left.
             // Nothing replaces that as a *height input*, and nothing should: the
-            // capsule is an overlay, and a real pane at `.cluster` runs its
-            // surface to the view's own bottom edge for exactly this reason
-            // (`PaneClusterMetrics.bottomArrangement(clusterOnly:underGlass:)`
-            // answers `.fullHeightClear`). So the pane's height is unchanged —
+            // capsule is an overlay, and a real pane runs its surface to the
+            // view's own bottom edge for exactly this reason (see the
+            // unconditional `terminalBottom` pin in
+            // `TerminalPaneController.viewDidLoad`). So the pane's height is unchanged —
             // it was always the column's stack view, `fillEqually` over two
             // panes — and the surface simply gains the 22 pt the bar used to
             // hold. The preview grows a little more terminal, which is what the

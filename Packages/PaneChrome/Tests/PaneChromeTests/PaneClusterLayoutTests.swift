@@ -255,41 +255,36 @@ import Testing
 
     // MARK: - The spawn arrangement
 
-    // The full truth table, all four cells, because the answer freezes into a
-    // pane for its whole lifetime: a wrong cell here is a pane spawned with
-    // the wrong bottom edge, and nothing downstream may correct it without
-    // resizing a live grid.
-
-    @Test func aClusterOnlySpawnUnderFlatRunsClearToTheBottom() {
-        #expect(
-            PaneClusterMetrics.bottomArrangement(clusterOnly: true, underGlass: false)
-                == .fullHeightClear
-        )
-    }
-
-    @Test func aClusterOnlySpawnUnderGlassRunsClearToTheBottom() {
-        // Glass changes nothing once the footer is gone: the bump exists to
-        // clear a bar overlapping the surface's last points, and there is no
-        // bar to clear.
-        #expect(
-            PaneClusterMetrics.bottomArrangement(clusterOnly: true, underGlass: true)
-                == .fullHeightClear
-        )
-    }
-
-    @Test func aFooterSpawnUnderGlassRunsFullHeightWithTheBump() {
-        #expect(
-            PaneClusterMetrics.bottomArrangement(clusterOnly: false, underGlass: true)
-                == .fullHeightWithBump
-        )
-    }
-
-    @Test func aFooterSpawnUnderFlatInsetsAboveTheBar() {
-        #expect(
-            PaneClusterMetrics.bottomArrangement(clusterOnly: false, underGlass: false)
-                == .insetAboveBar
-        )
-    }
+    // **Four tests pinned `PaneClusterMetrics.bottomArrangement`'s truth table
+    // here until 2026-08-13.** They covered all four cells because the answer
+    // froze into a pane for its whole lifetime, and a wrong cell was a pane
+    // spawned with the wrong bottom edge that nothing downstream could correct
+    // without resizing a live grid.
+    //
+    // The function and its `PaneBottomArrangement` are deleted. Two of the four
+    // cells named the footer view, which is gone; with `clusterOnly` constant
+    // the other two collapsed to the same answer, leaving a function whose
+    // result depended on neither argument. There is no table left to pin, and a
+    // test asserting a deleted enum's one surviving case would pin a tautology.
+    //
+    // **What those tests were really protecting is the spawn freeze, and that
+    // is not testable from this package.** The freeze lives in
+    // `TerminalPaneController.spawnedUnderGlass` (`lazy`, so the first read
+    // fixes the pane's answer) and is consumed by
+    // `ConfigurationCenter.apply(to:)`, both in the app target, which has no
+    // test target — reaching either needs an `NSWindow` and a real surface.
+    // These four never tested the freeze; they tested the pure function it
+    // called, and the freeze was always carried by the `lazy` and by the doc
+    // comments arguing it. Deleting them removes no coverage of it.
+    //
+    // The hazard is unchanged and still live: `resolvedChrome` moves under a
+    // toggle (Reduce Transparency, a dark/light switch, an edited
+    // `chromeStyle`), and handing a running pane a different
+    // `window-padding-y` is the `SIGWINCH`-bearing grid resize the whole design
+    // avoids. What guards it now is the `lazy` freeze plus
+    // `Diagnostics/pane-glass-legibility`, which drives a real window. If this
+    // package ever gets a pure decision to make about a spawning pane again,
+    // this is where its table belongs.
 
     // MARK: - Fitting the pill to its pane
 

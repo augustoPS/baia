@@ -145,31 +145,20 @@ final class TerminalPaneController: NSViewController {
     /// pane's own directory is the part of it worth keeping.
     private let command: String?
 
-    /// Whether the capsule carries this pane's facts. Always true, and a
-    /// constant rather than a dial since 2026-08-13.
-    ///
-    /// **This was `clusterMode`, a `DesignOverrides.Chrome.Cluster.Mode`
-    /// assigned by `ConfigurationCenter.apply(to:)` from `chrome.cluster.mode`,
-    /// with a `didSet` re-running ``applyClusterMode()`` on every live flip.**
-    /// The dial resolved to `.cluster` from the 2026-08-12 default flip
-    /// onwards, so in Release it could already hold nothing else; what the
-    /// three spellings bought was the owner's ability to put the retired
-    /// footer back from the design panel. He retired that, and the key is
-    /// refused by name now (`DesignOverridesText`), which is what makes
-    /// `PaneStatusBarView` unreachable rather than merely unused.
-    ///
-    /// Kept as a named constant rather than folded into its readers, because
-    /// the three sites that branched on it — ``applyClusterMode()``, the
-    /// popover anchor, and the spawn arrangement — were each their own
-    /// deletion with its own argument to make, and a constant is what let them
-    /// be made one at a time against a compiling tree.
-    ///
-    /// Two of the three are straightened as of 2026-08-13 and no longer read
-    /// it. The last reader is ``spawnedBottomArrangement``, which passes it to
-    /// `PaneClusterMetrics.bottomArrangement(clusterOnly:underGlass:)` — see
-    /// there for why that argument is still passed rather than folded in, and
-    /// what has to be measured before it can be.
-    let clusterCarriesTheFacts = true
+    // **`clusterCarriesTheFacts`, a `let = true`, stood here until
+    // 2026-08-13.** It was `clusterMode`, a `DesignOverrides.Chrome.Cluster.Mode`
+    // assigned from `chrome.cluster.mode` with a `didSet` re-running
+    // `applyClusterMode()` on every live flip; when the owner retired the dial
+    // it became a constant so its three branch sites — `applyClusterMode()`,
+    // the popover anchor, and the spawn arrangement — could each be deleted as
+    // its own step against a compiling tree.
+    //
+    // All three are straightened now. The spawn arrangement was the last
+    // reader, and it went with `PaneBottomArrangement` itself, so the constant
+    // has nothing left to inform: every pane wears the capsule and none wears a
+    // footer, which is a fact about the app rather than a value to carry. The
+    // scaffolding existed to make three deletions separable and has served that
+    // purpose.
 
     /// `chrome.cluster.cornerInset`, nil for the `PaneClusterMetrics.cornerInset`
     /// constant. Re-pins the installed capsule's two constraints in place, the
@@ -942,40 +931,20 @@ final class TerminalPaneController: NSViewController {
     /// rather than read fresh from ``resolvedChrome`` on every call.
     var isSpawnedUnderGlass: Bool { spawnedUnderGlass }
 
-    /// The ``PaneBottomArrangement`` this pane spawned with: the second
-    /// spawn-frozen fact, beside ``spawnedUnderGlass`` and frozen at the same
-    /// moment, from the pane's chrome as `ConfigurationCenter.apply(to:)`
-    /// first resolved it. `lazy` for ``spawnedUnderGlass``'s whole argument:
-    /// every one of the three answers names a bottom anchor and a padding, so
-    /// moving a running pane between them is the live grid resize (`SIGWINCH`)
-    /// that property's doc comment closes off.
-    ///
-    /// It took the pane's mode as well until 2026-08-13. With the dial retired
-    /// `clusterOnly` is constant, so the freeze now only holds the glass
-    /// answer still — which is the half that could ever move under a live
-    /// toggle anyway.
-    ///
-    /// **`true` is passed rather than folded in, and the truth table is left
-    /// standing, on purpose.** With `clusterOnly` constant this call can only
-    /// answer `.fullHeightClear`, which makes `.insetAboveBar` and
-    /// `.fullHeightWithBump` dead cases and the whole enum collapsible to
-    /// nothing. That collapse is not a deletion of unreachable code: on a
-    /// glass pane the bumped arm is what sets ghostty's real
-    /// `window-padding-y`, so removing it changes the grid the terminal
-    /// renders into rather than the branch that chooses it. It is gated behind
-    /// a live measurement of a glass pane and kept as its own step, and until
-    /// that measurement exists the argument passes through here honestly and
-    /// the four tests pinning the table keep pinning it.
-    private lazy var spawnedBottomArrangement: PaneBottomArrangement =
-        PaneClusterMetrics.bottomArrangement(
-            clusterOnly: clusterCarriesTheFacts,
-            underGlass: spawnedUnderGlass
-        )
-
-    /// Read-only outward face of ``spawnedBottomArrangement``, for
-    /// `ConfigurationCenter.apply(to:)` to pick which `TerminalConfiguration`
-    /// this pane is handed, on the same terms as ``isSpawnedUnderGlass``.
-    var bottomArrangementAtSpawn: PaneBottomArrangement { spawnedBottomArrangement }
+    // **`spawnedBottomArrangement` and `bottomArrangementAtSpawn` stood here
+    // until 2026-08-13**, freezing a `PaneBottomArrangement` beside
+    // ``spawnedUnderGlass`` at the same moment and for the same reason. The
+    // arrangement they carried named a bottom anchor and a padding, and two of
+    // its three answers named the footer view, which is gone. With the mode
+    // dial retired the call could only ever answer `.fullHeightClear`, so the
+    // pair froze a value that could not vary; the enum is deleted and this went
+    // with it. See `PaneClusterLayout.swift` for the measurement that cleared
+    // the padding bump.
+    //
+    // The freeze itself is unaffected: ``spawnedUnderGlass`` is the fact that
+    // could always move under a live toggle, it is still frozen, and
+    // `ConfigurationCenter.apply(to:)` now reads it directly through
+    // ``isSpawnedUnderGlass`` rather than through an arrangement.
 
     /// Re-resolves this pane's surface config, cursor accent included.
     ///
@@ -1271,38 +1240,28 @@ final class TerminalPaneController: NSViewController {
         preferredWidth.priority = .defaultLow
         preferredHeight.priority = .defaultLow
 
-        // Arrangement (B) from the glass-backdrop spike's verdict, read from
-        // ``spawnedBottomArrangement`` — frozen at this pane's first chrome
-        // resolution — rather than live from ``resolvedChrome``.
+        // The surface runs to the view's own bottom edge, unconditionally.
         //
-        // `resolvedChrome`'s own `didSet` deliberately does not touch this
-        // constraint, and this is the only place the constraint is built at
-        // all: `viewDidLoad` runs once. A live toggle afterwards — Reduce
-        // Transparency, a dark/light switch, an edited `chromeStyle` — must not
-        // reach it. Changing which anchor `terminalView.bottomAnchor` is pinned
-        // to resizes the view, and an `AppTerminalView` resize is exactly the
-        // live grid resize (`layout()` in `AppTerminalView+Lifecycle.swift`)
-        // that sends `SIGWINCH` to whatever the pane is running. The
-        // arrangement therefore applies to a pane as configured at spawn;
-        // flipping chrome at runtime takes effect for the next pane opened, not
-        // the ones already running.
+        // **This read a frozen `PaneBottomArrangement` until 2026-08-13, and
+        // the ternary it fed is gone with the enum.** The two arms it used to
+        // have both named the footer view: one pinned the surface to the bar's
+        // top, the other ran full height and let a `window-padding-y` bump
+        // clear the bar floating over the surface's last points. With the
+        // footer deleted every pane runs clear to the bottom — nothing below it
+        // to stop above, nothing over its last points to clear — so there is no
+        // longer a choice to freeze here.
         //
-        // **The anchor no longer branches, and the arrangement is still read.**
-        // Every pane spawns `.fullHeightClear` now — `clusterOnly` is the
-        // constant `true`, so `bottomArrangement` returns before it consults
-        // glass — and the surface runs to the view's own bottom edge with no
-        // bar below it to stop above and none floating over its last points to
-        // clear. The two arms this ternary used to have both named a footer:
-        // `.insetAboveBar` pinned to the bar's top, `.fullHeightWithBump`
-        // cleared the bar it floated under. With the view deleted neither can
-        // be spelled, so the pin is unconditional here.
-        //
-        // What is deliberately NOT collapsed is the enum behind it. The
-        // arrangement still decides ghostty's real `window-padding-y` in
-        // `ConfigurationCenter.apply(to:)`, where `.fullHeightWithBump`'s arm
-        // sets a padding the grid renders into; dropping the case there
-        // changes rows on a glass pane rather than removing a dead branch. See
-        // ``spawnedBottomArrangement`` for the measurement that gates it.
+        // The freeze this comment used to argue for still matters, it just
+        // lives entirely in `ConfigurationCenter.apply(to:)` now, keyed on
+        // ``isSpawnedUnderGlass``. The hazard is unchanged and worth restating
+        // because this constraint is where it would bite: `viewDidLoad` runs
+        // once and `resolvedChrome`'s `didSet` deliberately does not touch this
+        // constraint, because re-pinning `terminalView.bottomAnchor` resizes
+        // the view, and an `AppTerminalView` resize is the live grid resize
+        // (`layout()` in `AppTerminalView+Lifecycle.swift`) that sends
+        // `SIGWINCH` to whatever the pane is running. A live toggle — Reduce
+        // Transparency, a dark/light switch, an edited `chromeStyle` — takes
+        // effect for the next pane opened, never for one already running.
         let terminalBottom = terminalView.bottomAnchor.constraint(
             equalTo: view.bottomAnchor
         )

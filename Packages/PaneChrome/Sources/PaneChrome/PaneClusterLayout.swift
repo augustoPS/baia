@@ -27,40 +27,43 @@ public enum PaneClusterMetrics {
     public static let cornerInset: Double = 6
 }
 
-/// What a pane's surface pins to at its bottom edge, decided once at spawn.
-///
-/// Three answers rather than a pair of Bools, because only three of the four
-/// combinations exist: a pane with no footer never needs the bump, whatever
-/// its chrome, so the fourth cell (clear, but bumped) is unrepresentable
-/// here rather than a state every consumer has to know not to build.
-public enum PaneBottomArrangement: Sendable, Equatable {
-    /// The surface stops above the bar: a flat pane wearing the footer.
-    case insetAboveBar
-    /// The surface runs to the view's bottom and the grid keeps its inset
-    /// through the `window-padding-y` bump: a glass pane with the footer
-    /// floating over its last points.
-    case fullHeightWithBump
-    /// The surface runs to the view's bottom with no bump: nothing sits
-    /// below it and nothing floats over it.
-    case fullHeightClear
-}
-
-public extension PaneClusterMetrics {
-    /// Which ``PaneBottomArrangement`` a pane spawns with.
-    ///
-    /// `clusterOnly` is whether the pane's mode at spawn is `.cluster`, the
-    /// only mode with no footer; `underGlass` is whether its chrome resolved
-    /// to glass at the same moment. Both inputs are spawn-frozen facts and
-    /// the answer freezes with them: moving an existing pane between
-    /// arrangements means changing its bottom anchor or its padding, and
-    /// either is the live grid resize that signals SIGWINCH to whatever the
-    /// pane is running. `TerminalPaneController.spawnedUnderGlass` carries
-    /// the full argument; this function only decides, it never re-decides.
-    static func bottomArrangement(clusterOnly: Bool, underGlass: Bool) -> PaneBottomArrangement {
-        if clusterOnly { return .fullHeightClear }
-        return underGlass ? .fullHeightWithBump : .insetAboveBar
-    }
-}
+// **`PaneBottomArrangement` and `bottomArrangement(clusterOnly:underGlass:)`
+// stood here until 2026-08-13.** The enum named three bottom edges — the
+// surface stopping above the footer bar, running full height with a
+// `window-padding-y` bump to clear a bar floating over its last points, or
+// running clear to the bottom with nothing below it. Two of the three named a
+// footer, and the footer view is gone: every pane wears the capsule, so
+// `clusterOnly` was the constant `true`, the function returned
+// `.fullHeightClear` before it ever consulted glass, and the other two cases
+// were unconstructible.
+//
+// **The type is deleted rather than collapsed to its one surviving case,
+// because a one-case enum decides nothing.** What made this a type was the
+// choice between three bottom edges; with two gone there is no choice left to
+// represent, and `bottomArrangement` would be a function whose answer does not
+// depend on either argument. A `case fullHeightClear` retained alone would
+// have every consumer switch on a value that cannot vary — the shape that
+// reads as a live decision and is not one, which is how a dead branch survives
+// a sweep. The pin at `TerminalPaneController.viewDidLoad` is unconditional
+// now and states its own reason.
+//
+// **The one distinction the enum carried that still exists is glass, and it
+// moved to the fact that always owned it.** `.fullHeightClear` split by
+// `isSpawnedUnderGlass` at `ConfigurationCenter.apply(to:)` to pick between
+// zeroing the surface's `background-opacity` and leaving it; that read the
+// glass fact through the arrangement rather than directly. It now reads
+// `TerminalPaneController.spawnedUnderGlass`, which is where the freeze lives
+// and always did.
+//
+// **Deleting this moved no padding, and that was measured rather than
+// reasoned.** The `+glassWindowPaddingBump` arm was the live-grid risk in this
+// deletion: a changed `window-padding-y` is a SIGWINCH-bearing grid resize.
+// But a pane spawning under glass already answered `.fullHeightClear` and took
+// the un-bumped configuration, so the bumped arm was unreachable before this
+// commit, not merely unused. Confirmed by trapping both dead arms with
+// `fatalError` and running the dev build under the owner's `chromeStyle:
+// glass` — the app spawned a live shell and neither fired. A real glass pane
+// measured 44 rows x 106 columns before and after.
 
 /// Where each segment sits inside the pill and which segment a click lands
 /// on. The caller measures text (measuring needs a font, fonts need AppKit);
