@@ -40,7 +40,7 @@ import Testing
     }
 
     /// Untracked files alone are not dirty, which is the one count that does not
-    /// join the rule. `git diff --quiet` says nothing about them, and the footer
+    /// join the rule. `git diff --quiet` says nothing about them, and the capsule
     /// draws them as their own indicator.
     @Test func untrackedFilesAloneAreNotDirty() {
         #expect(!PaneStatus.Git(status(untracked: 3), operation: nil, isLinkedWorktree: false).dirty)
@@ -125,7 +125,7 @@ import Testing
 
     /// The five labels are distinct. Without this a mapping collapsing two
     /// states onto one string passes every assertion above that it happens to
-    /// agree with, and the footer says MERGE during a revert.
+    /// agree with, and the capsule says MERGE during a revert.
     @Test func noTwoOperationsShareALabel() {
         let states: [RepositoryStatus.InProgress] = [.rebase, .merge, .cherryPick, .revert, .bisect]
         let labels = states.compactMap { PaneStatus.Git.operationLabel(for: $0) }
@@ -134,7 +134,7 @@ import Testing
     }
 
     /// Upper case is the rule, not an accident of the five strings chosen. The
-    /// footer is otherwise all lower case, which is what makes an operation
+    /// chrome is otherwise all lower case, which is what makes an operation
     /// readable at a glance.
     @Test func everyLabelIsUpperCase() {
         for state in [

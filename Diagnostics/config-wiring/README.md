@@ -18,7 +18,7 @@ the watcher pick it up, capture the window, and read the pixel back with
 `../lib/pixel.py`.
 
 Some checks cannot be pixels. Those print `LOOK` and need a human to compare two
-images, because "the footers moved with the surface" is not an assertion a colour
+images, because "the chrome moved with the surface" is not an assertion a colour
 sample can make.
 
 It was written for Task 6 of the config-wiring plan, which has shipped. It is kept

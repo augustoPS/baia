@@ -226,7 +226,7 @@ public enum ProcessTree {
     /// ghostty spawns, and that leader is **root**. `proc_pidinfo` requires the
     /// caller to share the target's effective uid, so the read is denied, and a
     /// caller that gives up there never resolves an anchor at all: the poll's
-    /// guard fails on every tick forever and the whole footer stays blank.
+    /// guard fails on every tick forever and the pane's whole capsule stays blank.
     ///
     /// An interactive pane escapes it by accident. Job control gives the running
     /// command its own group, so the leader *is* the command and it is owned by

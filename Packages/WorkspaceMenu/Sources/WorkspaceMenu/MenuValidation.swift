@@ -24,14 +24,10 @@ public enum MenuValidation {
              .reloadProjectList, .mergeAllWindows, .bringAllToFront, .copyDiagnostics:
             MenuItemState(isEnabled: true, isChecked: nil)
 
-        // Always available, and checkable, so hiding the status bars is
-        // discoverable from the menu rather than only by pressing the key again.
-        case .toggleStatusBars:
-            MenuItemState(isEnabled: true, isChecked: availability.statusBarsVisible)
-
-        // The only other checkable item. Zooming needs something to zoom away
-        // from, so a single pane disables it, and the check is what tells the
-        // user which state ⇧⌘↩ will leave them in.
+        // The only checkable item left, since Status Bars went with the footer.
+        // Zooming needs something to zoom away from, so a single pane disables
+        // it, and the check is what tells the user which state ⇧⌘↩ will leave
+        // them in.
         case .zoomPane:
             MenuItemState(
                 isEnabled: availability.paneCount > 1,

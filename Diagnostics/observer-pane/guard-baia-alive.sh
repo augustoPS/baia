@@ -155,6 +155,16 @@ fi
 # `activate`, no `pkill`, no shell spawned at all. The keyboard never leaves
 # the pane that launched it.
 #
+# It stays on this list after the 2026-08-13 footer deletion, unlike its two
+# neighbours, and the reason is what each probe compiles. `footer-corners`
+# compiled `PaneStatusBarView` verbatim and froze; `footer-status-store` asked a
+# question only that view could answer and was deleted. This one compiles no app
+# source at all — it reconstructs the bar from `PaneChromeMetrics`, which keeps
+# the geometry as a measured record — and its question was never about baia's
+# footer but about what an `NSSplitViewItemAccessoryViewController` receives that
+# a hand-managed bar cannot. It builds, runs and passes unchanged; verified that
+# day. Its README carries the same reasoning.
+#
 # **`titlebar-merge` qualifies the way `glass-backdrop` does, and it is the closest
 # sibling on this list.** Four real windows on screen for about twenty seconds, over
 # the same kind of full-screen controlled backdrop, for the same reason: glass has to

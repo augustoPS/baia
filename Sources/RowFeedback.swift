@@ -16,6 +16,7 @@ import PaneChrome
 ///
 /// **One clock, driven by hand.** The fades are interpolated in the view's own
 /// `draw(_:)` rather than through `CALayer.opacity` the way the footer's frame
+/// once
 /// is, because a row is not a view: it is a rect inside one, and per-row layers
 /// for a list that can hold a thousand entries is the wrong shape. A timer steps
 /// the levels and invalidates only the rows that moved.

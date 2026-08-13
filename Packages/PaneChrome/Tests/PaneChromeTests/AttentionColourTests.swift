@@ -506,8 +506,9 @@ import Testing
     }
 
     @Test func theFocusFrameOnAFilledBarIsStillReadableOnAnAccentFill() {
-        // `PaneStatusBarView.drawBarFrame` swaps `inkFocus` for `ink(on:)` when the
-        // bar is filled, because `inkFocus` is repaired against `barBackground` and
+        // `PaneStatusBarView.drawBarFrame` swapped `inkFocus` for `ink(on:)` when
+        // the bar was filled, and `PaneClusterView` carries that rule since the
+        // footer's deletion, because `inkFocus` is repaired against `barBackground` and
         // scores 2.08:1 on the alert fill. The swap has to keep holding for the new
         // fills: an accent fill is the pane that is both focused and asking under
         // `attentionAccent: accent`, which is the state the owner is in every time

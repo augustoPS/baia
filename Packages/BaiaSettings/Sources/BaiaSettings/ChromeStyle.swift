@@ -16,7 +16,7 @@ public enum ChromeStyle: String, Sendable, Equatable, CaseIterable {
     /// backing material anywhere in the chrome.
     case flat
 
-    /// The v5 material lift: translucent backing views under the footer and
+    /// The v5 material lift: translucent backing views under the pane and
     /// sidebar, the focus lift's ring and shadow. Resolved against Reduce
     /// Transparency and the system appearance by `PaneChrome`'s
     /// `resolvedStyle(setting:materialIsDark:appearance:)`, not read directly by anything that
@@ -58,7 +58,7 @@ public enum FocusAccent: String, Sendable, Equatable, CaseIterable {
     /// alert, warn, info and ok, and a mixture can never be misread as one of
     /// them.
     ///
-    /// Called `midnight` until the name was measured against the value. A footer
+    /// Called `midnight` until the name was measured against the value. A chrome
     /// ink has to clear 4.5:1 on the bar, so the repair chain sets a floor under
     /// how dark this is allowed to be, and what it lands on is a lit blue-violet
     /// rather than anything anyone would call midnight. The old spelling still
@@ -129,11 +129,15 @@ public extension FocusAccent {
 
 /// How hard an unacknowledged pane asks.
 ///
-/// Both volumes draw the footer's attention capsule (design v5 §3): tinted
+/// Both volumes draw the pane's attention capsule (design v5 §3): tinted
 /// while asking, clear once acknowledged, a bare ✓ when done. This chooses
-/// only whether the ask also leaves the footer, because how much interruption
+/// only whether the ask also leaves the capsule, because how much interruption
 /// is right depends on whether the owner is watching the panes or working in
 /// one.
+///
+/// The capsule was the footer's until that view was deleted on 2026-08-13. It
+/// moved to `PaneClusterView`, and this dial did not change meaning: it has
+/// always been about how far past the capsule an ask is allowed to reach.
 ///
 /// Neither spelling ever reaches ghostty, nor does ``FocusAccent``'s, so both
 /// are baia's own. Renaming a case changes the config file baia reads and
@@ -141,11 +145,11 @@ public extension FocusAccent {
 public enum AttentionStyle: String, Sendable, Equatable, CaseIterable {
     /// The capsule, plus a 2 pt alert frame around the whole pane while the
     /// ask is unacknowledged. The frame is the cross-window carrier: findable
-    /// across four panes without reading a single footer.
+    /// across four panes without reading a single capsule.
     case loud
 
     /// The capsule alone. The pane says it is asking; nothing outside the
-    /// footer moves.
+    /// capsule moves.
     case quiet
 }
 
@@ -188,8 +192,9 @@ public enum AttentionAccent: String, Sendable, Equatable, CaseIterable {
 ///
 /// "Cannot be told apart" is measured rather than compared, and it covers two
 /// things rather than one. The focus colour is the obvious one. The other is the
-/// footer itself: the loud treatment is a wash across the bar and a frame around
-/// the pane, and a wash the colour of the bar it washes leaves the pane asking
+/// filled surface itself: the loud treatment is a fill across the capsule and a
+/// frame around
+/// the pane, and a fill the colour of the surface it fills leaves the pane asking
 /// with nothing on screen to say so. 141 of the 485 shipped ghostty themes do
 /// exactly that under `accent`, because a selection colour is usually the theme's
 /// own background lifted a step and so is the bar. Both repair values measure
@@ -202,7 +207,7 @@ public enum AlertBehavior: String, Sendable, Equatable, CaseIterable {
     /// two signals in one colour are still two signals.
     ///
     /// It means it. On the themes whose selection colour is their own bar, `accent`
-    /// plus this value paints the footer in the colour the footer already was.
+    /// plus this value paints the capsule in the colour it already was.
     /// That is the value doing what it says; the other two are what to set when it
     /// is not what you want.
     case stock

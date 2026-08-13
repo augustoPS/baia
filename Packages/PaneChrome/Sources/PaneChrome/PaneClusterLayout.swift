@@ -12,7 +12,7 @@ import Foundation
 /// rather than as a hazard. See ``PaneChromeMetrics`` for the measurement that
 /// outlived the bar.
 public enum PaneClusterMetrics {
-    /// Sized for the same 11 pt segment text the footer draws, plus the
+    /// Sized for the same 11 pt segment text the footer drew, plus the
     /// pill's vertical breathing room.
     public static let height: Double = 20
 

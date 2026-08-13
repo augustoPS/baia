@@ -232,9 +232,10 @@ and they are.
 
 ## Why not ghostty parity (arrangement B)
 
-Extending the terminal surface under the titlebar the way the footer does is
-the other way to make the band read as terminal rather than as chrome, and it is
-ruled out here rather than measured.
+Extending the terminal surface under the titlebar, the way the footer did along
+the bottom edge until it was deleted on 2026-08-13, is the other way to make the
+band read as terminal rather than as chrome, and it is ruled out here rather than
+measured.
 
 The premise it was proposed on is false and worth correcting: `window-padding-y`
 is **not** restricted to one symmetric value. Ghostty 1.3.1 documents
@@ -246,8 +247,13 @@ doc comment says "`window-padding-y` is symmetric", which is true of how baia
 out: a 40 pt titlebar wants `+40` on top, and `window-padding-y = 40+p,p` says
 exactly that.
 
-What rules it out is the window's shape. The footer's compensation works because
-every pane has its own footer, so the bump is per-pane and uniform. The titlebar
+What rules it out is the window's shape, and the comparison survives the footer's
+deletion because it is about geometry rather than about a view that exists. The
+footer's compensation worked because the bar was per-pane: every pane carried its
+own, along its own bottom edge, so the bump was uniform and each pane could
+compensate with its own grid. That is still the shape `glassWindowPaddingBump`
+encodes, and `Diagnostics/glass-backdrop`'s grid arm still measures it against a
+real PTY. The titlebar
 spans the whole window above a *sidebar column plus a split pane tree*: only the
 top row of panes touches the band, the sidebar touches it too and has no ghostty
 grid to compensate with, and the compensation would have to be recomputed per

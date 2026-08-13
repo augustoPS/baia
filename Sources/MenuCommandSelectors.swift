@@ -38,7 +38,6 @@ enum MenuCommandSelectors {
         // be the thing that opens it.
         case .findInPane: #selector(AppDelegate.findInPane(_:))
 
-        case .toggleStatusBars: nil
         case .toggleSurfacePanels: #selector(AppDelegate.toggleSurfacePanels(_:))
         case .resetSidebarSize: #selector(AppDelegate.resetSidebarSize(_:))
         case .zoomPane: #selector(AppDelegate.zoomPane(_:))

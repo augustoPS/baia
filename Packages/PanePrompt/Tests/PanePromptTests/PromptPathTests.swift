@@ -46,7 +46,7 @@ import Testing
     }
 
     /// The same, for a path with no `String` spelling. Which refusal it is matters
-    /// as much as that there was one: the footer says the reason, and "not UTF-8"
+    /// as much as that there was one: the capsule says the reason, and "not UTF-8"
     /// for a name whose real problem is a tab would send the owner to the wrong
     /// fix.
     private func refusalOf(
@@ -346,7 +346,7 @@ import Testing
     }
 
     /// A lone high byte and the C1 pair are both refused, for different reasons,
-    /// and the reason is what the footer will say.
+    /// and the reason is what the capsule will say.
     ///
     /// `0x80` on its own is not valid UTF-8; `0xC2 0x85` is valid UTF-8 for a C1
     /// control, which a line editor would act on. Two rules, two cases, and a
@@ -393,7 +393,7 @@ import Testing
     /// the probe and the resolver cannot drift.
     ///
     /// The probe clicks the row and expects the prompt to stay empty and the
-    /// footer to say why. This is the same claim without a window: the row that
+    /// capsule to say why. This is the same claim without a window: the row that
     /// probe builds resolves to a refusal, and to this one.
     @Test func theLiveProbesRowResolvesToTheRefusalItExpects() {
         let path = Array("src/caf".utf8) + [0xE9] + Array(".txt".utf8)

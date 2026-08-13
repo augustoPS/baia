@@ -1022,8 +1022,9 @@ def main():
     # pane happened to be doing.
     # **The check that was missing, and the reason a live look had to find this.**
     # `PaneRecord.attention` is populated from the controller's own
-    # `lastAttention`, which is the value the footer, the frame, the window title
-    # and the Dock badge all draw from. Nothing compared it to what `report` had
+    # `lastAttention`, which is the value the pane's capsule, the frame, the
+    # window title and the Dock badge all draw from (the footer was a fifth
+    # reader until it was deleted on 2026-08-13). Nothing compared it to what `report` had
     # just said, so a reported block published `attentionRaised` on this very
     # socket while the pane stayed dark, and every check here passed.
     #

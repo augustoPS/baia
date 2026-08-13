@@ -139,7 +139,7 @@ import Testing
     @Test func aPaneThatWasNeverAskingHasNothingToResumeFrom() {
         // Reported as no change, because the activity poll calls this on every
         // idle-to-running transition and a redraw per transition would repaint
-        // every pane's footer for nothing.
+        // every pane's chrome for nothing.
         var state = PaneAttentionState()
         let resumed = state.noteResumed()
         #expect(!resumed)

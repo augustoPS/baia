@@ -167,8 +167,9 @@ import Testing
         }
 
         // And the reason it is not composed: `barBackground` is the fill the
-        // **flat** bar paints (`PaneStatusBarView.draw(_:)` fills it only when
-        // `materialSet == nil`; under glass the bar draws no fill at all). So
+        // **flat** chrome paints (`PaneStatusBarView.draw(_:)` filled it only
+        // when `materialSet == nil`, and drew no fill at all under glass; the
+        // capsule inherited that split when the footer was deleted). So
         // this value moves a flat pixel and no glass one, which is the exact
         // inverse of what the knob is for.
     }
@@ -284,7 +285,7 @@ import Testing
         #expect(flattened.barBackground != theme.barBackground)
     }
 
-    /// The footer's ink follows the bar it is graded on, which is the coupling
+    /// Chrome ink follows the bar it is graded on, which is the coupling
     /// `DesignOverrides.Chrome.barLift`'s doc comment warns about: one slider,
     /// two things move.
     @Test func barLiftAlsoMovesTheInkGradedAgainstTheBar() {

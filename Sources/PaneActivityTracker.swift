@@ -97,7 +97,7 @@ final class PaneActivityTracker {
         rebuild()
     }
 
-    /// OSC 9 or OSC 777. Carries a message, so the footer can say what is wanted
+    /// OSC 9 or OSC 777. Carries a message, so the capsule can say what is wanted
     /// rather than only that something is.
     func noteNotification(title: String, body: String) {
         guard attention.noteNotification(title: title, body: body) else { return }
@@ -141,7 +141,7 @@ final class PaneActivityTracker {
 
     /// The latch once the pane's own statement is taken into account.
     ///
-    /// Every reader of "is this pane asking" goes through here, so the footer,
+    /// Every reader of "is this pane asking" goes through here, so the capsule,
     /// the frame, the window title, the Dock badge and `PaneRecord.attention`
     /// cannot disagree with each other or with the channel.
     private var resolvedAttention: PaneAttention {
@@ -198,7 +198,7 @@ final class PaneActivityTracker {
     ///
     /// **Split from ``rebuild()`` because a report needs the recompute and not
     /// the notification.** The controller sets a report and then publishes once,
-    /// deriving both the wire event and the footer level from that single pass;
+    /// deriving both the wire event and the chrome's level from that single pass;
     /// if this fired `onChange` too, one report would publish twice, and if it
     /// did not recompute at all the publish would read a stale `agent` and the
     /// chrome would stay dark. The second is exactly the bug this file is being
@@ -215,7 +215,7 @@ final class PaneActivityTracker {
     /// sitting at a prompt shows its project and git state and nothing else.
     /// What is running, with no attention substitution anywhere near it.
     ///
-    /// The footer reads ``agent`` instead, whose label falls back to the
+    /// The capsule reads ``agent`` instead, whose label falls back to the
     /// attention message so a pane that rang while idle still has something to
     /// draw. That fallback is a display decision and it stays inside the display:
     /// anything answering "what is running" for the control channel or for a

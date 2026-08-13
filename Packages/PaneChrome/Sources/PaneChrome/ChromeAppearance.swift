@@ -126,7 +126,7 @@ public enum ResolvedChrome: Sendable, Equatable {
     /// anywhere in the chrome. Byte-identical to what Plan 1 shipped.
     case flat
 
-    /// Translucent backing views under the footer and sidebar, and the focus
+    /// Translucent backing views under the pane and sidebar, and the focus
     /// lift's ring and shadow, drawn with the carried material set.
     case glass(MaterialSet)
 }
@@ -141,7 +141,7 @@ public enum ResolvedChrome: Sendable, Equatable {
 ///
 /// **`materialIsDark` is an input rather than `appearance.isDark`, and that is
 /// the same rule ``windowIsDark(paneTheme:)`` below already carries reaching
-/// the glass materials.** The material set decides what the footer, the
+/// the glass materials.** The material set decides what the pane's glass, the
 /// sidebar column, the palette and the popover are *filled* with, and those are
 /// chrome; the standing rule (`PaneTheme`'s own header) is that chrome matches
 /// the theme and never the system. Reading `ChromeAppearance.isDark` here wired

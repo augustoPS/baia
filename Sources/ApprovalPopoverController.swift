@@ -2,7 +2,7 @@ import AppKit
 import BaiaSettings
 import PaneChrome
 
-/// The approval popover that springs from a footer's attention capsule.
+/// The approval popover that springs from a pane's attention capsule.
 /// Design v5 §6.
 ///
 /// One instance, owned by the app delegate exactly the way ``palette`` and
@@ -195,9 +195,14 @@ final class ApprovalPopoverController: NSObject {
 
         if let frame = screen?.visibleFrame {
             origin.x = min(max(origin.x, frame.minX), frame.maxX - size.width)
-            // If there is no room below the capsule (a footer near the bottom
-            // of the screen), open upward instead, above the capsule, rather
-            // than let the popover draw off the visible frame.
+            // If there is no room below the capsule, open upward instead, above
+            // it, rather than let the popover draw off the visible frame. The
+            // example used to be "a footer near the bottom of the screen"; that
+            // view was deleted on 2026-08-13 and the capsule sits in a pane's
+            // top-right, so the case that reaches this branch now is a short
+            // window low on the screen, or a bottom-row pane in a tall split.
+            // The arithmetic is unchanged: it tests the popover's own bottom
+            // against the visible frame and never assumed where the anchor was.
             if origin.y < frame.minY {
                 origin.y = screenAnchor.maxY + Self.anchorGap
             }

@@ -10,7 +10,7 @@ public extension PaneTheme {
     /// app looks a theme up by name and hands the strings across, which keeps the
     /// terminal and its chrome derived from one lookup instead of two sources
     /// that can disagree. The standing rule is that chrome matches the theme, so
-    /// a theme change that moved the surface and left the footer behind would be
+    /// a theme change that moved the surface and left the chrome behind would be
     /// the failure this initializer exists to prevent.
     ///
     /// Every argument is tolerated rather than trusted. The catalog spells its

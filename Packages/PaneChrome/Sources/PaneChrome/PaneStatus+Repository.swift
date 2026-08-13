@@ -1,6 +1,6 @@
 import GitWorkspace
 
-/// The one translation from `GitWorkspace`'s vocabulary into the footer's.
+/// The one translation from `GitWorkspace`'s vocabulary into the chrome's.
 ///
 /// It lived twice before this file: once in the app target, where the poller
 /// built it and nothing could test it, and once inside
@@ -9,7 +9,7 @@ import GitWorkspace
 /// rather than a guarantee: the dirty rule below is a judgement, and a judgement
 /// held in two places drifts the first time one of them is corrected.
 extension PaneStatus.Git {
-    /// Maps a repository's status onto the footer's fields.
+    /// Maps a repository's status onto ``PaneStatus/Git``'s fields.
     ///
     /// Neither `operation` nor `isLinkedWorktree` comes from `status`, so both
     /// are asked for rather than defaulted. The palette passes nil and false and
@@ -40,11 +40,11 @@ extension PaneStatus.Git {
     /// The label for an operation the repository is halfway through, or nil.
     ///
     /// Upper case because these are the states where the next command does
-    /// something other than what it usually does, and the footer is otherwise
+    /// something other than what it usually does, and the chrome is otherwise
     /// all lower case.
     ///
     /// Separate from the mapping above rather than folded into it, because the
-    /// palette drops the operation on purpose and the footer keeps it. A caller
+    /// palette drops the operation on purpose and the capsule keeps it. A caller
     /// that wants both writes both.
     public static func operationLabel(for operation: RepositoryStatus.InProgress?) -> String? {
         switch operation {

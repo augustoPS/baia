@@ -215,8 +215,9 @@ running the arm.**
    `inkContext` still read **4.41:1** at the bright bound. The pill did not have
    this problem while its fill was opaque. The fix is
    `PaneTheme.readable(_:on:minimumRatio:)` — the package's own repair chain,
-   which every footer tier already goes through — graded against the worst face
-   the pill can present. It fires only where a theme needs it; the flat arm
+   which every chrome tier goes through, and which every footer tier went
+   through before that view was deleted — graded against the worst face the
+   pill can present. It fires only where a theme needs it; the flat arm
    shows it returning `inkContext` untouched.
 
 ### The space divergence, and the first draw path caught by it

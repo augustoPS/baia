@@ -3,8 +3,8 @@ import Foundation
 /// One changed path, in the shape a list needs.
 ///
 /// The deliberate opposite of ``RepositoryStatus``, which holds counts and no paths
-/// because the footer it feeds is one line that must not wrap. This is what the
-/// footer cannot say: the footer reports `*3 ?1`, and this names which three files
+/// because the one-line chrome it feeds must not wrap. This is what that line
+/// cannot say: it reports `*3 ?1`, and this names which three files
 /// are dirty and which one is untracked. Neither type is a better version of the
 /// other and neither should grow into it, because the reason each exists is the
 /// surface it is rendered on.

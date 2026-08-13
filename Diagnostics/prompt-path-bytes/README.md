@@ -58,23 +58,29 @@ byte that is not valid UTF-8.
 
 Sending was the worse of the two failures available. A half-line reads as the app
 having lost the click, and it has to be cleared by hand before anything else can
-be typed. So `PromptPath` refuses such a path and the pane's footer says why,
-and this probe grades the refusal rather than the bytes.
+be typed. So `PromptPath` refuses such a path and the pane says why, and this
+probe grades the refusal rather than the bytes.
+
+**Where the sentence draws moved on 2026-08-13 and the check did not.** The
+footer carried the refusal notice until it was deleted that day; the notice was
+rehomed onto the pane cluster capsule (`Diagnostics/cluster-notice`), which is
+where `2-refused.png` shows it now. The probe's subject is the sentence reaching
+the screen, not the surface it lands on, so the re-home cost it nothing.
 
 | Check | How |
 |---|---|
 | an ordinary name still lands | click `plain.txt`, read the prompt over the channel |
 | the unholdable name appends nothing | click `caf<E9>.txt`, assert absence |
-| the footer says why | by eye, in `2-refused.png` |
+| the pane says why | by eye, in `2-refused.png` |
 
 **The positive control is not decoration.** On its own, "nothing was appended" is
 equally consistent with the refusal working, the row index being wrong, the click
 missing the window, and the picker being broken outright. Check 1 is the same
 picker, the same run and the neighbouring row, so check 2 means the refusal.
 
-**The footer is by eye on purpose.** It is chrome rather than terminal text, so
+**The notice is by eye on purpose.** It is chrome rather than terminal text, so
 the control channel's `read` cannot reach it: that verb returns what the pty
-holds and the bar is drawn by the app. `PaneClusterSegmentsTests` grades the rule
+holds and the capsule is drawn by the app. `PaneClusterSegmentsTests` grades the rule
 that a notice takes the bar alone, and `PromptPathTests` grades which refusal
 this row produces. What no test can see is the sentence arriving on screen.
 

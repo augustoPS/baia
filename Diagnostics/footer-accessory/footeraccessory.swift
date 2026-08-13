@@ -1,7 +1,7 @@
 import AppKit
 import PaneChrome
 
-// Plan 5's accessory-controller probe: baia's hand-managed footer beside an
+// Plan 5's accessory-controller probe: a hand-managed footer beside an
 // `NSSplitViewItemAccessoryViewController` footer, with
 // `preferredScrollEdgeEffectStyle` enumerated as arms. The README carries the
 // question and the arm table; this file carries the arrangement.
@@ -34,10 +34,17 @@ func nsColor(_ rgba: RGBA) -> NSColor {
     )
 }
 
-/// The bar's segments, drawn the way `PaneStatusBarView` groups them: the
-/// repository group, the agent, the working directory, each gap read off
-/// `PaneChromeMetrics` rather than transcribed. The baseline is the shipped
-/// `baselineFromTop`, converted for an unflipped view.
+/// The bar's segments, drawn the way `PaneStatusBarView` grouped them until it
+/// was deleted on 2026-08-13: the repository group, the agent, the working
+/// directory, each gap read off `PaneChromeMetrics` rather than transcribed.
+/// The baseline is that view's `baselineFromTop`, converted for an unflipped
+/// view.
+///
+/// Reading the package rather than transcribing it is why this probe outlived
+/// the view. `PaneChromeMetrics` keeps the bar's geometry as a measured record
+/// (its `paneBarHeight` still derives the live `glassWindowPaddingBump`), so
+/// the reconstruction below is still the real numbers rather than a guess at
+/// what they were.
 ///
 /// What is deliberately not reproduced: the PIN, the capsule, the focus frame
 /// and the attention line. Every arm draws the same segments, so anything
@@ -76,7 +83,7 @@ func drawSegments(in bounds: NSRect) {
 
 /// The 22 pt bar, in both constructions.
 ///
-/// `drawsFill: true` is the hand-managed control: the shipped base layer
+/// `drawsFill: true` is the hand-managed control: the base layer baia shipped
 /// (`MaterialSet.dark.fillChrome`, the unfocused value — `fillThick` steps on
 /// focus and no arm here is focused) plus the hairline on the outer edge.
 ///
@@ -156,7 +163,7 @@ final class DocumentView: NSView {
         while y + Self.rowStep <= bounds.height {
             let line = row % 3 == 0
                 ? "$ git status --porcelain=v2 --branch  # row \(row)"
-                : "  MM Sources/PaneStatusBarView.swift          \(row)"
+                : "  MM Sources/PaneClusterView.swift             \(row)"
             line.draw(at: NSPoint(x: 8, y: y), withAttributes: attributes)
             y += Self.rowStep
             row += 1
@@ -167,7 +174,7 @@ final class DocumentView: NSView {
 // MARK: - the arms
 
 enum Arm: String, CaseIterable {
-    /// The control: the shipped construction. A custom view with the
+    /// The control: the construction baia shipped until 2026-08-13. A custom view with the
     /// `fillChrome` fill overlaid on the scroll view, content sliding under
     /// it, and no way to receive the scroll edge effect (DTS, forums 815816).
     case handManaged = "1-hand-managed"

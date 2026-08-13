@@ -21,7 +21,7 @@ import UserNotifications
 /// top of it.
 @MainActor
 final class AttentionNotifier {
-    /// From `notificationsEnabled`. Gates the banner only: the per-pane footer
+    /// From `notificationsEnabled`. Gates the banner only: the per-pane capsule
     /// marker and the window title are not covered by it, because a notification
     /// the user denied at the system level never appears and reports no error, so
     /// it can only ever be an addition to an indicator that already works.

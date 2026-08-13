@@ -22,7 +22,7 @@ import Testing
         #expect(Set(enabled) == [
             .about, .hide, .hideOthers, .showAll, .quit,
             .newWindow, .newTab, .openConfiguration,
-            .toggleStatusBars, .reloadProjectList, .mergeAllWindows, .bringAllToFront,
+            .reloadProjectList, .mergeAllWindows, .bringAllToFront,
             .copyDiagnostics, .toggleSurfacePanels, .resetSidebarSize,
         ])
     }
@@ -122,26 +122,32 @@ import Testing
         #expect(state(.commandPalette, MenuAvailability(paletteAvailable: true)).isEnabled)
     }
 
-    @Test func onlyTheTwoCheckableItemsReportACheckedState() {
+    @Test func zoomIsTheOnlyItemReportingACheckedState() {
         // Nil and false are different answers, and collapsing them would have the
         // app target write .off onto every plain item. NSMenuItem.state is already
         // .off, so that bug stays invisible until a checkable item is added and
         // then forgotten.
+        //
+        // This read `[.toggleStatusBars, .zoomPane]` until Status Bars was
+        // deleted. A one-element set is a weaker fixture than a two-element one
+        // and it is worth naming why it still holds: the assertion fails both
+        // ways, on a new command that reports a check nobody decided to draw and
+        // on zoom quietly returning nil, which is the pair that matters.
         let checkable = MenuCommand.allCases.filter { state($0, .empty).isChecked != nil }
-        #expect(Set(checkable) == [.toggleStatusBars, .zoomPane])
+        #expect(Set(checkable) == [.zoomPane])
     }
 
     @Test func theCheckedStateTracksTheThingItReports() {
-        // Both flags default to false in MenuAvailability, so a rule wired to the
-        // wrong field would still read false here. Setting each one on its own is
-        // what separates them.
+        // Every flag in MenuAvailability defaults to false, so a rule wired to the
+        // wrong field would still read false here. Setting isZoomed on its own,
+        // against a state matching it in every other respect, is what separates
+        // the check from the default. The pair is the test: an implementation
+        // returning a constant passes either half alone.
         let zoomed = MenuAvailability(paneCount: 2, isZoomed: true)
         let twoPanes = MenuAvailability(paneCount: 2)
 
         #expect(state(.zoomPane, zoomed).isChecked == true)
         #expect(state(.zoomPane, twoPanes).isChecked == false)
-        #expect(state(.toggleStatusBars, MenuAvailability(statusBarsVisible: true)).isChecked == true)
-        #expect(state(.toggleStatusBars, .empty).isChecked == false)
     }
 
     @Test func zoomIsCheckableAndStillDisabledWithOnePane() {

@@ -5,8 +5,9 @@ import Testing
 
 @Suite struct ApprovalPopoverTests {
     @Test func presentsOnlyWhileAskingOrAcknowledged() {
-        // The capsule itself draws for exactly these two levels
-        // (`PaneStatusBarView.capsuleRect()`); a done pane shows a bare ✓, a
+        // The capsule itself draws for exactly these two levels (the rule
+        // `PaneStatusBarView.capsuleRect()` set before that view was deleted on
+        // 2026-08-13, carried by `PaneClusterSegments` since); a done pane shows a bare ✓, a
         // fact rather than a question, and a click on it must open nothing.
         #expect(ApprovalPopover.presents(for: .asking))
         #expect(ApprovalPopover.presents(for: .acknowledged))

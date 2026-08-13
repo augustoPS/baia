@@ -4,6 +4,25 @@
 companion for each, and a grid measurement; exits non-zero if a capture fails, if a
 material never samples its backdrop, or if a grid arm misses its number.
 
+## Still live after the footer's deletion
+
+**The bar this probe grades was deleted on 2026-08-13, and the probe still
+runs and still answers something.** Read every "the shipped footer" below as the
+footer that shipped until that date: the tint and backdrop findings are a record
+of what was measured, not a description of what draws now.
+
+What is not historical is the arithmetic. The arms chose arrangement (B), which
+shipped as `PaneChromeMetrics.glassWindowPaddingBump`, and `gridtest.swift`
+still measures that compensation against a real PTY on every run — arm D there
+is what keeps the naive `+height` version from looking correct. That constant
+outlived the bar because a surface extended under chrome is the arrangement
+design v6 is still choosing between; if that question closes the other way, this
+probe's grid arm goes with it.
+
+The geometry arms read `PaneChromeMetrics` at run time rather than transcribing
+it, which is why the deletion did not strand them: the type keeps the bar's
+numbers as a measured record.
+
 ## The question
 
 Design v5 Plans 2-3 shipped Liquid Glass chrome (`NSGlassEffectView`) that
@@ -51,8 +70,8 @@ stand-in at the shipped 0.42 well opacity over a non-opaque window.
 Arm 4 is not a candidate. It is the control that says how much of any difference
 between the others is glass rather than blur.
 
-Arm 1 models the **present** and arms 2-3 the **future**, and they are built
-differently on purpose. Arm 1 reproduces `PaneStatusBarView`'s hierarchy including
+Arm 1 modelled what shipped at the time and arms 2-3 the candidates, and they are
+built differently on purpose. Arm 1 reproduces `PaneStatusBarView`'s hierarchy including
 the drawn fill and the sibling-above-glass content placement; arms 2-3 use
 `contentView`, which is what the research report says the adopted arrangement
 should use. Grading the shipped bar through `contentView` would have measured
@@ -139,11 +158,11 @@ both at y 0.980-0.997.** Every part of that band is load-bearing:
   y-fractions land on the same rows of the bar in every file. Absolute pixel rows
   do not transfer between files; fractions do.
 
-**Arm 1 is the shipped bar in all three of its layers**, which the first version of
-this probe did not reproduce and which changes the headline result. `PaneStatusBarView`
-fills the whole bar with `effectiveFillMaterial` (`fillChrome`, `rgb(18,20,24)` at
-α 0.44) in `draw(_:)`, puts `glassBacking` above that as a subview, and draws its
-segments as siblings *above* the glass. The first version modelled only the tint,
+**Arm 1 is the bar as it then shipped, in all three of its layers**, which the
+first version of this probe did not reproduce and which changes the headline
+result. `PaneStatusBarView` filled the whole bar with `effectiveFillMaterial`
+(`fillChrome`, `rgb(18,20,24)` at α 0.44) in `draw(_:)`, put `glassBacking` above
+that as a subview, and drew its segments as siblings *above* the glass. The first version modelled only the tint,
 skipped the 0.44 fill, and assigned the label as the glass's `contentView` (which
 invites AppKit legibility treatments the shipped path never gets). Arms 2-3 keep
 `contentView` deliberately: they model the *future* arrangement the research report
@@ -462,11 +481,12 @@ required to clear the floor.**
 
 Two earlier conclusions are overturned, both by the faithful arm 1:
 
-1. **The shipped bar is not broken over a bright desktop.** It measures 9.17:1,
+1. **The bar was not broken over a bright desktop.** It measured 9.17:1,
    comfortably clear of WCAG AA. The previous verdict called it "a real shipped
    bug" that "any owner with a light wallpaper cannot read"; that was an artifact
    of an arm 1 built without `PaneStatusBarView`'s own 0.44 `fillChrome` pass.
-   Nothing needs rescuing today.
+   Nothing needed rescuing, which is part of why deleting the bar in 2026-08
+   cost no legibility that had to be rebuilt elsewhere.
 2. **(A) is the regression, not the status quo.** Untinting the bar without
    changing its backdrop (arm 2) drops it to 2.04:1. Plan 4 as written would
    *introduce* the unreadable-over-bright-desktop bug the spike thought it was
@@ -532,9 +552,11 @@ desktop by more than a factor of four.
 ### The capsule: **drawn-on-glass**, on the current evidence.
 
 Glass-in-container and drawn render within 1-2 chroma units of each other
-(finding 5). Given that, prefer the drawn capsule: it is what ships today, it
-costs no second `NSGlassEffectView` and no container, and `PaneStatusBarView`'s
-existing hit-testing refusals already cover it. The container arrangement buys
+(finding 5). Given that, prefer the drawn capsule: it was already what shipped,
+it costs no second `NSGlassEffectView` and no container, and `PaneStatusBarView`'s
+hit-testing refusals covered it. The capsule outlived that view — it draws on
+`PaneClusterView` now — and this recommendation is why it is drawn rather than
+glass-in-container there. The container arrangement buys
 nothing measurable here.
 
 **Named ambiguity, for a human eye.** The pixel means say the two are equivalent;

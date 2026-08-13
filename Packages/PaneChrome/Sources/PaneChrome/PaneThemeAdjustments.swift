@@ -32,7 +32,7 @@ public struct PaneThemeAdjustments: Sendable, Equatable {
     ///
     /// The one field here that moves a *colour every ink is then measured
     /// against*: ``PaneTheme/barBackground`` is the backdrop the repair chain
-    /// grades footer text on, so setting this moves the text too. That is the
+    /// grades chrome text on, so setting this moves the text too. That is the
     /// effect working rather than a surprise.
     public var barLift: Double?
 

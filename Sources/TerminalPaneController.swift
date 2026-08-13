@@ -71,7 +71,7 @@ final class TerminalPaneController: NSViewController {
     var onFocusGained: (() -> Void)?
 
     /// Raised when the anchor or the working directory moves, which is what the
-    /// window title and this pane's footer are derived from.
+    /// window title and this pane's capsule are derived from.
     var onAnchorChange: (() -> Void)?
 
     /// Raised when the pane's shell exits. Closing the window here would be
@@ -213,9 +213,11 @@ final class TerminalPaneController: NSViewController {
     /// property of the pane rather than a discipline every card keeps. Lazy
     /// beside the approval popover's own build-on-first-use shape (the
     /// popover itself is app-wide in `AppDelegate`; this is per pane because
-    /// the card's toggle state is), and load-bearing for a pane dialled to
-    /// `.footer`: the only touch is inside the click path, so a pane
-    /// whose capsule is never installed never constructs the panel at all.
+    /// the card's toggle state is). It was load-bearing for a pane dialled to
+    /// the retired `.footer` mode, where the capsule was never installed; the
+    /// laziness is kept for its own sake, since the only touch is inside the
+    /// click path and a pane whose card is never opened never constructs the
+    /// panel at all.
     private lazy var clusterCards = ClusterCardController()
 
     /// Which segment summoned the card now up, or nil when none is. The
@@ -246,8 +248,8 @@ final class TerminalPaneController: NSViewController {
     /// This and not ``ClusterCardController/isShowing``, for the reason
     /// ``applyClusterMode()`` gives for its own superview check: reading the
     /// lazy controller *builds* it, and building a floating panel for every pane
-    /// that has never opened a card — every pane under `.footer`, and most panes
-    /// under `.cluster` — is the cost that laziness exists to avoid. The role is
+    /// that has never opened a card — which is most panes — is the cost that
+    /// laziness exists to avoid. The role is
     /// written when a card is shown and cleared from its `onDismiss`, so it
     /// answers the same question without touching the panel.
     ///
@@ -288,17 +290,19 @@ final class TerminalPaneController: NSViewController {
     /// each one costs. Lazy for ``clusterCardQueue``'s reason.
     private lazy var clusterGitCommand = GitCommand()
 
-    /// Covers the terminal and the footer both, which is the point: a background
-    /// window recedes as one object, and a scrim that stopped at the footer would
-    /// leave every pane in it wearing a bright band.
+    /// Covers the pane whole, which is the point: a background window recedes as
+    /// one object, and a scrim that stopped short of any part of a pane would
+    /// leave every pane in it wearing a bright band. The part it had to reach
+    /// was the footer until that view was deleted; it is the capsule now, and
+    /// covering the whole pane is what makes the rule survive the change.
     private let scrim = PaneScrimView(frame: .zero)
 
     private let edgeFrame = PaneEdgeFrameView(frame: .zero)
 
     /// The focused pane's ring, inner highlight and shadow under glass
-    /// (Task 6). Covers the terminal and the footer both, the same span as
-    /// ``scrim`` and ``edgeFrame``: the lift marks the whole pane as the one
-    /// holding focus, not just its footer.
+    /// (Task 6). Covers the pane whole, the same span as ``scrim`` and
+    /// ``edgeFrame``: the lift marks the whole pane as the one holding focus,
+    /// not just the chrome that names it.
     private let liftView = PaneLiftView(frame: .zero)
 
     /// The pane's glass plane and its wash, glass path only. Created and torn
@@ -724,7 +728,7 @@ final class TerminalPaneController: NSViewController {
 
     /// Raised when this pane's git read produced something new.
     ///
-    /// The sidebar draws the same answer the footer does, so it has to hear about a
+    /// The sidebar draws the same answer the capsule does, so it has to hear about a
     /// poll landing on the pane already in focus. Without this it would only refresh
     /// when focus moved, which is the case where nothing changed.
     var onGitChange: (() -> Void)?
@@ -926,7 +930,7 @@ final class TerminalPaneController: NSViewController {
     /// `ConfigurationCenter.apply(to:)` to decide whether this pane's
     /// `TerminalConfiguration` needs the glass `background-opacity` zeroing
     /// (the padding bump keys off ``spawnedBottomArrangement`` instead, which
-    /// knows whether there is a footer for the bump to clear). See
+    /// knew whether there was a footer for the bump to clear). See
     /// ``spawnedUnderGlass``'s own doc comment for why the answer is frozen
     /// rather than read fresh from ``resolvedChrome`` on every call.
     var isSpawnedUnderGlass: Bool { spawnedUnderGlass }
@@ -956,7 +960,7 @@ final class TerminalPaneController: NSViewController {
     /// second colour, so it falls back to whatever the terminal theme chose.
     ///
     /// ``PaneTheme/inkFocus`` rather than the raw accent, because that is the
-    /// colour the footer already draws the focused pane's name in. One accent in
+    /// colour the capsule already draws the focused pane's name in. One accent in
     /// two places reads as one idea; the unrepaired accent beside the repaired
     /// name is two blues arguing, which is the argument that property was written
     /// for.
@@ -1097,7 +1101,7 @@ final class TerminalPaneController: NSViewController {
     ///
     /// ``lastAttention`` rather than a second derivation, for the reason
     /// `PaneStatus.Attention.init(_:)` exists: two copies of "is this pane asking"
-    /// is one copy that can disagree with the footer the owner is looking at.
+    /// is one copy that can disagree with the chrome the owner is looking at.
     var attentionState: PaneStatus.Attention { lastAttention }
 
     @available(*, unavailable)
@@ -1138,7 +1142,7 @@ final class TerminalPaneController: NSViewController {
         var environment = [
             "BAIA_PANE": paneID.rawValue.uuidString,
             // The accent the chrome resolved, so a prompt can wear the same
-            // colour the footer draws this pane's name in. A shell cannot ask
+            // colour the capsule draws this pane's name in. A shell cannot ask
             // for it any other way: `focusAccent` names a derivation, the theme
             // decides what it resolves to, and neither is on disk as a hex.
             //
@@ -1307,7 +1311,7 @@ final class TerminalPaneController: NSViewController {
         gitStatus.onChange = { [weak self] _ in
             guard let self else { return }
             refreshStatus()
-            // Raised after the footer is rebuilt, so anything drawing the same read
+            // Raised after the capsule is rebuilt, so anything drawing the same read
             // elsewhere is redrawing from a poller that has already settled.
             onGitChange?()
         }
@@ -1329,7 +1333,7 @@ final class TerminalPaneController: NSViewController {
 
         activityTracker.onChange = { [weak self] in
             guard let self else { return }
-            // Unconditional, so the footer keeps tracking the label.
+            // Unconditional, so the capsule keeps tracking the label.
             refreshStatus()
 
             // Edge-triggering, the ordering, and the source rule all live in
@@ -1375,7 +1379,7 @@ final class TerminalPaneController: NSViewController {
         }
     }
 
-    /// Readable so the channel's read verbs report the same level the footer
+    /// Readable so the channel's read verbs report the same level the capsule
     /// draws, and settable only here.
     private(set) var lastAttention: PaneStatus.Attention = .none
 
@@ -1402,9 +1406,9 @@ final class TerminalPaneController: NSViewController {
     /// The last values published to the control channel, held apart from
     /// `lastAttention`.
     ///
-    /// `lastAttention` is the chrome's three-level value and drives the footer.
+    /// `lastAttention` is the chrome's three-level value and drives the capsule.
     /// The channel publishes the boolean the spec defines its events on plus the
-    /// activity label, and collapsing the two would turn a footer change into a
+    /// activity label, and collapsing the two would turn a chrome change into a
     /// wire event or the reverse.
     private var publishedState = ObservedPaneState()
 
@@ -1443,7 +1447,7 @@ final class TerminalPaneController: NSViewController {
     /// same statement.
     ///
     /// **Before the publish, never after.** The publish derives both the wire
-    /// event and the footer level, so a report pushed afterwards leaves the
+    /// event and the chrome's level, so a report pushed afterwards leaves the
     /// chrome a poll behind the channel: the subscriber is told the pane is
     /// asking and the pane the owner is looking at is still dark. That is a
     /// smaller version of the bug this whole change exists to fix.
@@ -1880,7 +1884,7 @@ final class TerminalPaneController: NSViewController {
         clusterCards.dismiss()
     }
 
-    /// The sentence the footer is showing instead of its segments, and nil the
+    /// The sentence the capsule is showing instead of its segments, and nil the
     /// rest of the time.
     ///
     /// Held here rather than written straight into ``status``, because
@@ -2144,8 +2148,8 @@ extension TerminalPaneController:
         gridColumns = columns
     }
 
-    /// The footer follows both directions, because the pane losing focus has to
-    /// stop drawing its accent stripe. Only the gaining side is reported upward:
+    /// The chrome follows both directions, because the pane losing focus has to
+    /// stop drawing its focus expression. Only the gaining side is reported upward:
     /// a responder change delivers false to the outgoing pane and true to the
     /// incoming one, so raising the callback on both would have two panes racing
     /// to tell the workspace which of them is focused.

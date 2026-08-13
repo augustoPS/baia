@@ -19,7 +19,7 @@ public enum FileChangeMark: Sendable, Equatable, Comparable, CaseIterable {
     case conflict
 
     /// The glyph, which is the owner's own vocabulary rather than a new one: `*`
-    /// and `?` are what the footer and the shell prompt already print, and `M` and
+    /// and `?` are what the pane's chrome and the shell prompt already print, and `M` and
     /// `!` are git's.
     public var glyph: Character {
         switch self {

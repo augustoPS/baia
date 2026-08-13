@@ -135,13 +135,15 @@ public extension DesignOverrides {
         /// The pane cluster's two dials. See ``Cluster``.
         public var cluster = Cluster()
 
-        /// Stands in for `PaneTheme.barLift`, today 0.08: how far the footer's
-        /// bar is blended off the terminal background so it reads as chrome
-        /// rather than as the last line of output.
+        /// Stands in for `PaneTheme.barLift`, today 0.08: how far `barBackground`
+        /// is blended off the terminal background so chrome reads as chrome
+        /// rather than as the last line of output. It was the footer's bar that
+        /// was blended off it until that view was deleted on 2026-08-13; the
+        /// colour is the capsule's backdrop now.
         ///
         /// A fraction, 0 through 1. It is the one number here that moves a
         /// *colour every ink is then measured against*, since `barBackground` is
-        /// the backdrop the repair chain grades footer text on, so dialling it
+        /// the backdrop the repair chain grades chrome text on, so dialling it
         /// moves the text too. That is the effect working rather than a
         /// surprise, and it is said here because the panel shows one slider and
         /// two things change.

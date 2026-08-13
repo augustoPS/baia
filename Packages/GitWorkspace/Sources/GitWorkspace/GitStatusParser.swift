@@ -172,7 +172,7 @@ public enum GitStatusParser {
     ///
     /// A second pass over the same string rather than a second return value from
     /// ``parse(_:)``, and rather than paths added to ``RepositoryStatus``. The
-    /// status feeds a one-line footer and says so on its own doc comment; widening
+    /// status feeds a one-line surface and says so on its own doc comment; widening
     /// it to carry paths would put them in reach of the caller that must not render
     /// them. The cost of the extra pass is a walk over one repository's status
     /// output, which is already in memory because the status read fetched it.

@@ -13,6 +13,12 @@
 > asserting on is the capsule in the pane's top-right, and a band pointed there
 > without re-derivation would measure background and pass vacuously. See the
 > removed-assertion block in `run.sh` for the thresholds it had.
+>
+> **Everything from here down is preserved as it read on the day the two arms
+> last asserted**, the same convention `footer-corners/README.md` uses. It
+> describes the footer in the present tense throughout because that is what it
+> measured; read every such sentence as scoped by this block rather than as a
+> claim about what draws today.
 
 `./run.sh [output-directory]` from anywhere. Puts a controlled backdrop and four
 pane-shaped windows on screen for ~25 seconds, writes the captures with their

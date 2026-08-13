@@ -338,7 +338,7 @@ import Testing
     }
 
     @Test func aFinishedAgentStillEarnsTheAttentionDot() {
-        // The footer draws a mark for every attention level except `.none`
+        // The footer drew a mark for every attention level except `.none`
         // (`PaneStatusBarView.capsuleGlyph(ink:)`), and `done` is a level. A
         // capsule keyed on `wantsAttention` alone would go quiet on exactly the
         // pane that finished while the owner was elsewhere.

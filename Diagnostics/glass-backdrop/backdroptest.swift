@@ -149,7 +149,7 @@ final class SurfaceStandIn: NSView {
         while y < bounds.height {
             let line = row % 3 == 0
                 ? "$ git status --porcelain=v2 --branch  # row \(row)"
-                : "  MM Sources/PaneStatusBarView.swift          \(row)"
+                : "  MM Sources/PaneClusterView.swift             \(row)"
             line.draw(at: NSPoint(x: 8, y: y), withAttributes: attributes)
             y += font.boundingRectForFont.height + 3
             row += 1
@@ -662,7 +662,7 @@ final class SidebarContentView: NSView {
         "CHANGED".draw(at: NSPoint(x: 96, y: 16), withAttributes: headerBefore)
         var y: CGFloat = 40
         for name in [
-            "Sources/PaneStatusBarView.swift",
+            "Sources/PaneClusterView.swift",
             "Sources/PaneTreeController.swift",
             "Packages/PaneChrome/ChromeMaterials.swift",
             "Diagnostics/glass-backdrop/run.sh",

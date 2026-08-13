@@ -37,11 +37,18 @@ holds reads exactly like one that does.
 
 ## What it grades
 
+The consequence clauses below said "footer" until 2026-08-13, when that view was
+deleted. They are stated against the chrome generally now, and the rules did not
+move with the surface: this probe grades `PaneTheme`'s resolvers, which draw
+nothing themselves and are read today by the pane cluster capsule. A rule about
+whether ink clears its own fill is a rule about the resolver, so the deletion
+changed which view would exhibit the failure and not whether it can happen.
+
 | Rule | What would be false if it passed and the code were wrong |
 |---|---|
-| repair | A focused pane's own name is unreadable on its own footer on some theme nobody tried. `inkFocus` is graded, not the raw derivation: the accent is repaired on the way to the screen and grading it before the chain is measuring a colour where it is not drawn |
-| ink, mutedInk | An asking pane's footer is filled with a colour its own text cannot be read on. Both tiers, on every fill the two repair behaviours can produce |
-| tier order | Tier 4 comes back louder than tier 3 on a mid-luminance fill, so a filled footer reads with its quietest tier shouting |
+| repair | A focused pane's own name is unreadable on its own chrome on some theme nobody tried. `inkFocus` is graded, not the raw derivation: the accent is repaired on the way to the screen and grading it before the chain is measuring a colour where it is not drawn |
+| ink, mutedInk | An asking pane's chrome is filled with a colour its own text cannot be read on. Both tiers, on every fill the two repair behaviours can produce |
+| tier order | Tier 4 comes back louder than tier 3 on a mid-luminance fill, so a filled surface reads with its quietest tier shouting |
 | the floor | `derive` hands back a colour under ΔE00 10 from focus, from the bar or from the terminal, on a theme whose palette had a slot that would have cleared it. Retro is the one theme allowed to miss, and `deriveOnAThemeWithNothingToBlendTowardsStillAnswers` is why |
 | the pins | The catalog moved and the prose did not |
 

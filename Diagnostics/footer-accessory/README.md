@@ -1,15 +1,40 @@
 # footer-accessory
 
+**Kept live on 2026-08-13, when `Sources/PaneStatusBarView.swift` was deleted,
+and the sibling `footer-corners` was frozen the same day.** The two probes went
+opposite ways on purpose, and the difference is what each one compiles.
+`footer-corners` compiled the shipped footer verbatim, so deleting the file
+ended it. This probe compiles no app source at all: it reconstructs the bar from
+`PaneChrome` constants, which is the arrangement the "read the package rather
+than transcribe" note below describes, and those constants survive the deletion
+as a measured record (`PaneChromeMetrics`, whose `paneBarHeight` still derives
+the live `glassWindowPaddingBump`).
+
+So its premise is retired but its question is not. It never asked "is baia's
+footer right"; it asked what an `NSSplitViewItemAccessoryViewController` gets
+that a hand-managed bar cannot, with the hand-managed construction as the
+control. Deleting baia's footer removed an *instance* of the control, not the
+control itself — the probe draws its own. Any future bottom-aligned accessory,
+in a design v6 arrangement or after it, faces the same scroll-edge-effect
+question, and this is the only place the four styles sit side by side against a
+hand-managed baseline. Freezing it would discard a live comparison to tidy up a
+name.
+
+The name is now the least accurate thing here: it reads as a probe about baia's
+footer and it is a probe about AppKit accessory geometry. Renaming it would
+break the `SAFE_PROBES` entry and three citations for no measurement gained, so
+it keeps the name and carries this paragraph instead.
+
 Plan 5 of the design v6 line (`vault/projects/baia/plans/2026-08-07-design-v6-native-everything.md`):
 the accessory-controller probe. The question:
 
 **Does a footer built as an `NSSplitViewItemAccessoryViewController` receive an
-optic over scrolling content that baia's hand-managed footer cannot have, and
-what does each `preferredScrollEdgeEffectStyle` actually look like beside the
+optic over scrolling content that a hand-managed footer cannot have, and what
+does each `preferredScrollEdgeEffectStyle` actually look like beside the
 hand-managed control?**
 
-The scroll edge effect is the one platform behavior baia's hand-managed bars
-cannot receive (research report: DTS confirms custom static content does not get
+The scroll edge effect is the one platform behavior a hand-managed bar cannot
+receive (research report: DTS confirms custom static content does not get
 it, forums 815816; there is no AppKit API for arbitrary custom bars,
 FB19629432). 26.1 added `preferredScrollEdgeEffectStyle` (`.automatic` /
 `.soft` / `.hard`) on accessory controllers only. V5 ruled adoption out on
@@ -32,7 +57,7 @@ monospaced rows (drawn at the terminal's 11.5 pt scale) scrolling slowly under a
 
 | Arm | Bar construction | Edge effect |
 |---|---|---|
-| `1-hand-managed` | The shipped construction, reproduced: custom view, `fillChrome` fill (α 0.44), hairline on the outer edge, drawn segments. Overlaid on the scroll view; content slides under it. | None, and none possible. The control every accessory arm is read against. |
+| `1-hand-managed` | The construction baia shipped until 2026-08-13, reproduced: custom view, `fillChrome` fill (α 0.44), hairline on the outer edge, drawn segments. Overlaid on the scroll view; content slides under it. | None, and none possible. The control every accessory arm is read against. |
 | `2-accessory-automatic` | `NSSplitViewItemAccessoryViewController`, bottom-aligned, segments drawn with **no fill** — the system supplies the bar's material. | Whatever `.automatic` decides. This is what 26.0 would give. |
 | `3-accessory-soft` | Same. | `preferredScrollEdgeEffectStyle = .soft` (26.1+). |
 | `4-accessory-hard` | Same. | `preferredScrollEdgeEffectStyle = .hard` (26.1+). |

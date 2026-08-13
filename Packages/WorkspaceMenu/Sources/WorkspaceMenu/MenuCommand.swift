@@ -34,7 +34,6 @@ public enum MenuCommand: String, Sendable, Equatable, CaseIterable {
     case selectAll
     case findInPane
 
-    case toggleStatusBars
     case toggleSurfacePanels
     case resetSidebarSize
     case zoomPane
@@ -106,7 +105,11 @@ public enum MenuCommand: String, Sendable, Equatable, CaseIterable {
         case .selectAll: 303
         case .findInPane: 304
 
-        case .toggleStatusBars: 400
+        // 400 is retired rather than reused. It was Status Bars, which went with
+        // the footer it toggled, and handing the free integer to the next View
+        // command would make a tag quoted in an older bug report name a different
+        // item. The View group was never dense anyway: 403 and 404 sit above 401
+        // because they were appended after the first three were written.
         case .toggleSurfacePanels: 403
         case .resetSidebarSize: 404
         case .zoomPane: 401

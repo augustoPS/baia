@@ -111,10 +111,12 @@ after, so nothing landed anywhere rather than landing in the wrong pane.
 `baia split` calls, so the tidy explanation (an AX menu pick arms menu tracking
 and swallows keys) is contradicted by the timeline and is not the cause.
 
-What the screenshot shows instead is a **focus attribution that disagrees with
-itself**: the top-left pane draws the inverted footer that `focusStyle: invert`
-gives the focused pane, while the window title and the sidebar both name a
-`/private/tmp` pane. One of those is stale. Which one is the question to answer
+What the screenshot showed instead is a **focus attribution that disagrees with
+itself**: the top-left pane drew the inverted footer that `focusStyle: invert`
+gave the focused pane, while the window title and the sidebar both named a
+`/private/tmp` pane. (The footer was deleted on 2026-08-13, so a re-drive reads
+that same disagreement off the capsule instead; the evidence in this capture
+does not reproduce as pictured.) One of those is stale. Which one is the question to answer
 before this is driven again, and it is answerable from inside a pane with
 `baia whoami`, which is the only oracle that does not depend on the chrome.
 

@@ -2,8 +2,8 @@ import Foundation
 
 /// One repository's state, in the shape a one-line status bar needs.
 ///
-/// Every field is a count rather than a list of paths. The pane status bar
-/// copies `claude-dotfiles/statusline/ps1-style.sh`, which is one line that must
+/// Every field is a count rather than a list of paths. The pane's one-line
+/// chrome copies `claude-dotfiles/statusline/ps1-style.sh`, which is one line that must
 /// not wrap, so holding paths here would only invite a caller to render them
 /// where they do not fit.
 public struct RepositoryStatus: Sendable, Equatable {

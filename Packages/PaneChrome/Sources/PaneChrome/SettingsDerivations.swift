@@ -90,7 +90,7 @@ public enum SettingsDerivations {
     ///
     /// One lookup feeding both is the point. The standing rule is that chrome
     /// matches the theme and never the reverse, and two sources for one theme is
-    /// how a footer ends up in Dark Pastel while the surface is in something
+    /// how a pane's chrome ends up in Dark Pastel while the surface is in something
     /// else.
     ///
     /// `focusAccent` goes in as an argument rather than being applied to the

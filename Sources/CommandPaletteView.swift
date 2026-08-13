@@ -27,7 +27,7 @@ final class PaletteQueryView: NSView {
     var theme: PaneTheme = .darkPastel { didSet { needsDisplay = true } }
 
     /// Flat, unchanged, or glass with the material set the theme's own darkness
-    /// picked, exactly the input ``PaneStatusBarView/resolvedChrome`` reads.
+    /// picked, exactly the input `PaneStatusBarView.resolvedChrome` read.
     /// The find panel leaves this at its default `.flat` — nothing sets it —
     /// so sharing this view costs the find panel nothing: it draws the same
     /// opaque fill it always has.
@@ -95,7 +95,7 @@ final class PaletteQueryView: NSView {
         // `NSGlassEffectView` backing (below every band, added by the
         // controller) is itself untinted now, and painting `fillMenu` here
         // would put back exactly the tinted layer that view no longer draws,
-        // one level higher. See ``PaneStatusBarView/draw(_:)`` for the same
+        // one level higher. See `PaneStatusBarView.draw(_:)` for the same
         // trade made on the footer.
         if materialSet == nil {
             nsColor(theme.panelBackground).setFill()

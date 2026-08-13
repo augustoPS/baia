@@ -168,9 +168,10 @@ public enum ChromeMaterials {
         /// status bar in `materials.css`, the vitreous spec of record.
         ///
         /// **Retired from every live draw path as of Task 2 (untinted glass).**
-        /// The footer's `NSGlassEffectView` draws no tint and its own
-        /// `draw(_:)` draws no fill on the glass path; nothing in `Sources/`
-        /// reads this constant for a live fill or tint any more. Kept as the
+        /// The footer's `NSGlassEffectView` drew no tint and its own
+        /// `draw(_:)` drew no fill on the glass path, and that view was deleted
+        /// on 2026-08-13; nothing in `Sources/` reads this constant for a live
+        /// fill or tint any more. Kept as the
         /// tested transcription of the CSS token and as the source for any
         /// future flat/Reduce-Transparency vitreous rendering — it is not
         /// itself that rendering, since flat's own fill is `theme.barBackground`,

@@ -2,7 +2,7 @@ import Foundation
 
 /// What the approval popover does, decided without a window (design v5 §6).
 ///
-/// The popover springs from the footer's attention capsule and writes exactly
+/// The popover springs from the pane's attention capsule and writes exactly
 /// one keystroke into the pane it was opened from: nothing here reaches a
 /// pane, a surface, or AppKit. `TerminalPaneController.send(_:)` already
 /// exists (the sidebar's path picker uses it) and is the one place the bytes
@@ -20,7 +20,8 @@ public enum ApprovalPopover {
     ///
     /// Gated on attention rather than on the click alone, because the capsule
     /// only draws for `.asking` and `.acknowledged`
-    /// (``PaneStatusBarView/capsuleRect()``'s own rule): a done pane shows a
+    /// (the rule `PaneStatusBarView.capsuleRect()` set before that view was
+    /// deleted on 2026-08-13, and `PaneClusterSegments` carries now): a done pane shows a
     /// bare ✓, a fact rather than a question, and there is nothing to open on
     /// it. Matching that rule here rather than re-deriving it from
     /// `PaneStatus.Attention` at the call site is what keeps the capsule's

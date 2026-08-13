@@ -109,7 +109,7 @@ import Testing
     /// agent does not go back to work, and that is the entire reason `idle`
     /// crosses the channel instead of being read off the process tree. Reported
     /// as no change, so the poll that calls this on every idle-to-running
-    /// transition does not repaint a finished pane's footer for nothing.
+    /// transition does not repaint a finished pane's chrome for nothing.
     @Test func resumingDoesNotEndAFinish() {
         var state = PaneAttentionState()
         _ = state.noteReported(blocked: false, finished: true, message: nil)

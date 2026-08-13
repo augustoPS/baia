@@ -76,7 +76,7 @@ import Testing
     @Test func aPinnedRepositoryAnchorHasARootLikeAnAutomaticOne() {
         // The source decides how the anchor was chosen, never whether it has git
         // state. A guard written against `.automatic` would pass every test above
-        // and silently blank the footer of every pinned repository.
+        // and silently blank the chrome of every pinned repository.
         let url = URL(filePath: "/Users/x/Projects/vault", directoryHint: .isDirectory)
         #expect(
             Anchor.repositoryRoot(of: Anchor(url: url, kind: .repository, source: .pinned)) == url

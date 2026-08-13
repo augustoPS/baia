@@ -9,7 +9,7 @@
 #
 # Writes its captures to verify-out/ and prints PASS or FAIL per step. The colour
 # checks are automated; the ones marked LOOK need a human to compare two images,
-# because "the footers moved with the surface" is not a pixel assertion.
+# because "the chrome moved with the surface" is not a pixel assertion.
 set -uo pipefail
 
 APP=".build/Build/Products/Debug/baia-dev.app"
@@ -111,7 +111,16 @@ probe() {
     shot probe >/dev/null || return 1
     python3 Diagnostics/lib/pixel.py "$@" "$OUT/probe.png"
 }
-# Terminal background, sampled well clear of the text and the 22 pt footer.
+# Terminal background, sampled mid-pane: right of the prompt, below the `Last
+# login` block, above the bottom edge. It reads a fraction of the whole window
+# capture, so both edges have to be cleared deliberately.
+#
+# The offset used to be justified by "clear of the 22 pt footer", which was
+# deleted on 2026-08-13. Mid-pane is still the right answer and the number does
+# not move: what the footer occupied is now terminal surface, but the bottom of
+# the window is where the glass treatment and the corner rounding land, so a
+# sample chased down toward the edge would read chrome and grade it as the
+# theme's background. The reason changed; 0.55 did not.
 term_bg()  { probe_at 0.75 0.55; }
 probe_at() { shot probe >/dev/null || return 1; python3 Diagnostics/lib/pixel.py at "$OUT/probe.png" "$1" "$2"; }
 # The default-foreground text of the `Last login` line, which is the reliable
@@ -210,7 +219,12 @@ if [ "$before_fg" != "$after_fg" ]; then
 else
     bad "the surface did not change: setTheme did not apply, or the name is not in the catalog"
 fi
-look "02 vs 03: 'sleep 300' is still on screen and the footers moved too"
+# The witness used to be "the footers moved too", the bar being the one piece of
+# per-pane chrome that repainted visibly on a theme change. It was deleted on
+# 2026-08-13, so the check names what still repaints: the scrollback is the
+# assertion that nothing respawned, and the pane's own chrome is the assertion
+# that the change reached more than the character cells.
+look "02 vs 03: 'sleep 300' is still on screen, and the pane chrome repainted with the surface rather than only the text"
 
 echo
 echo "Step 4: an unknown theme name falls back rather than half-applying"

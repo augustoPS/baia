@@ -23,7 +23,9 @@
 #   clip-layout       GhosttyTerminal, via SettingsDerivations
 #   theme-refresh     GitWorkspace, via FileTreeExpansions
 #   pane-resize       GitWorkspace, via FileTreeExpansions
-#   footer-corners    GitWorkspace, via FileTreeExpansions
+#   footer-corners    GitWorkspace, via FileTreeExpansions (frozen 2026-08-13;
+#                     the row is kept because the freeze left its build path
+#                     intact below an early `exit 0`, so a thaw inherits it)
 #
 # Only `fullscreen-strip` survived, because it builds a minimal target of its own
 # and imports no local package at all.

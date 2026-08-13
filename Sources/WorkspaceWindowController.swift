@@ -141,7 +141,7 @@ final class WorkspaceWindowController: NSObject {
     /// anything.** `NSGlassEffectView` samples what is *behind* its window. An
     /// opaque `NSWindow` fills its whole frame rect with `backgroundColor`
     /// under the content view, so until this existed the sidebar's backing
-    /// (``SurfaceHosts``) and the footer's (``PaneStatusBarView``) both lensed
+    /// (``SurfaceHosts``) and the footer's (`PaneStatusBarView`) both lensed
     /// an opaque fill of the app's own making and returned flat grey. The
     /// terminal's own `background-opacity` had the same fate one layer down:
     /// ghostty's Metal layer does render the alpha the setting asks for, and a

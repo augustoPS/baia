@@ -16,13 +16,13 @@ final class PaneGitStatus {
 
     private(set) var git: PaneStatus.Git?
 
-    /// The changed paths behind the footer's counts, from the same read.
+    /// The changed paths behind the capsule's counts, from the same read.
     ///
     /// Held here rather than fetched by whatever draws them, so the sidebar costs no
     /// `git` invocation of its own: this poller already runs one per interval per
     /// pane, and a surface that started its own would double that for every pane in
     /// every window. Empty for a pane that is not in a repository, which is the same
-    /// answer as a repository with nothing changed, and the footer already says which
+    /// answer as a repository with nothing changed, and the capsule already says which
     /// of those it is.
     private(set) var changes: [RepositoryFileChange] = []
 
@@ -35,8 +35,8 @@ final class PaneGitStatus {
 
     /// Whether the head reported in ``git`` is the repository's default branch.
     ///
-    /// Kept beside the footer's value rather than inside it because nothing in the
-    /// footer draws it: it exists for the tab label, which says `project:branch`
+    /// Kept beside the chrome's value rather than inside it because nothing in the
+    /// chrome draws it: it exists for the tab label, which says `project:branch`
     /// only where the branch is worth saying. Updated before ``onChange`` fires, so
     /// a reader of both sees one repository's answer rather than two.
     ///
@@ -106,7 +106,7 @@ final class PaneGitStatus {
         isLinkedWorktree = next.map { GitDirectory.isLinkedWorktree(repositoryRoot: $0) } ?? false
         // Cleared rather than left stale. Showing the previous repository's
         // branch under a new anchor's name is worse than showing nothing, and it
-        // is exactly the wrong-repo confusion the footer exists to prevent. The
+        // is exactly the wrong-repo confusion the pane's chrome exists to prevent. The
         // default-branch answer goes with it: carrying the old repository's over
         // would hide the new one's branch for the length of one read.
         isOnDefaultBranch = true
@@ -196,7 +196,7 @@ final class PaneGitStatus {
             return
         }
         // Set before `apply`, which is what calls `onChange`: the handler rebuilds
-        // the footer and relabels the tab from both values at once, and assigning
+        // the capsule and relabels the tab from both values at once, and assigning
         // this afterwards would label one poll's branch with the previous poll's
         // answer.
         isOnDefaultBranch = isDefault

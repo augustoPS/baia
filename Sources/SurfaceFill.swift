@@ -8,10 +8,11 @@ import PaneChrome
 /// ## What this re-activates, and what "today" means
 ///
 /// **All four `MaterialSet` fill roles are dormant at HEAD.** Design v5's Task 2
-/// (untinted glass) retired every live consumer: the footer's backing carries no
-/// tint and paints no fill, the palette's and the popover's backings are left at
-/// `tintColor == nil`, the sidebar's old `fillSidebar` swap was dropped, and the
-/// titlebar's glass is untinted too. Each of those five sites still says so in
+/// (untinted glass) retired every live consumer: the palette's and the popover's
+/// backings are left at `tintColor == nil`, the sidebar's old `fillSidebar` swap
+/// was dropped, and the titlebar's glass is untinted too. The footer's backing
+/// was a fifth site, carrying no tint and painting no fill, until that view was
+/// deleted on 2026-08-13. Each of the four that remain still says so in
 /// its own doc comment, with the measurement behind it — the glass-backdrop
 /// spike found the tint and fill layers were the largest single term in the
 /// bar's appearance and pinned it near mid-grey, defeating the material's own

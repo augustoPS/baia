@@ -85,7 +85,7 @@ is recorded as owed rather than claimed.
 `chrome.sidebarWashFloor` put a minimum under the sidebar's glass wash. It never
 got an arm because `SidebarHost` is an `NSViewController` whose glass is built
 against a live window, so it does not render standalone the way `PaneLiftView`
-and `PaneStatusBarView` do. Both the wash and the floor retired on 2026-08-08,
+does, and the way `PaneStatusBarView` did before its deletion. Both the wash and the floor retired on 2026-08-08,
 when the owner A/B'd naked native glass against the hand-drawn layer through
 `chrome.bareGlass` and ruled that the naked material wins. `chrome.bareGlass`
 retired in the same stroke, having answered the one question it was built to ask.
@@ -151,9 +151,11 @@ is the surviving view's choice of backdrop, which is asserted in prose at
 
 ## Related
 
-- `footer-corners/` compiles the same shipped files and measures their geometry.
-  It is the byte-stability contract for the flat path; this probe is the
-  wire-continuity contract for the glass-side extras.
+- `footer-corners/` compiled the same shipped files and measured their geometry.
+  It was the byte-stability contract for the flat path; this probe is the
+  wire-continuity contract for the glass-side extras. It froze on 2026-08-13
+  with the footer it compiled, so that contract is now unwitnessed rather than
+  met, the same shape as the two arms this probe lost the same day.
 - `glass-backdrop/` is the measured record of why the fills are dormant in the
   first place, which is the finding `SurfaceFill`'s own doc comment carries
   forward.

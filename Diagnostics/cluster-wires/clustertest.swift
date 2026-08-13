@@ -232,7 +232,8 @@ func armFocus() {
         "a fill-only pixel moved: the step is the fill, not just the stroke"
     )
 
-    // The footer's second half of the gate, `framesForFocus`: a focused pane
+    // The second half of the gate, `framesForFocus`, inherited from the footer
+    // that enforced it until 2026-08-13: a focused pane
     // in a deactivated window renders what an unfocused pane renders, byte
     // for byte. `isWindowActive` is a plain property here, so the offscreen
     // render measures the conjunction directly.

@@ -163,8 +163,9 @@ public enum PaneClusterSegments {
             }
 
             // One assembly, not a copy of the vocabulary: the string is the
-            // footer's own marker text, so the two surfaces cannot disagree
-            // about what `↑1*?3` says. Absent when empty, since a clean
+            // marker text the footer used, kept in `PaneGitRuns` when that view
+            // was deleted on 2026-08-13, so no surface reading it can disagree
+            // about what `↑1*?3` says. The tab title is the other reader. Absent when empty, since a clean
             // repository is the common case.
             let markers = PaneGitRuns.markerText(for: git)
             if !markers.isEmpty {
@@ -176,11 +177,13 @@ public enum PaneClusterSegments {
             segments.append(PaneClusterSegment(role: .agent, text: agent.label))
         }
 
-        // The footer's own predicate: `PaneStatusBarView.capsuleGlyph(ink:)`
+        // The footer's own predicate, inherited: `PaneStatusBarView.capsuleGlyph(ink:)`
         // draws a mark for every ``PaneStatus/Attention`` level except `.none`
         // (`!` for asking and acknowledged, `✓` for done), and
-        // ``PaneStatus/attention`` is the one derivation of the level, so the
-        // capsule and the footer cannot disagree about when attention shows.
+        // ``PaneStatus/attention`` is the one derivation of the level, so every
+        // surface reading it agrees about when attention shows. The predicate
+        // outlived the footer because it was never about that view: it is the
+        // rule that `.none` is the only level with nothing to draw.
         if status.attention != .none {
             segments.append(PaneClusterSegment(role: .attention, text: ""))
         }

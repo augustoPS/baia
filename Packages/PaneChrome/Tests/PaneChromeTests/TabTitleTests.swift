@@ -127,7 +127,7 @@ import Testing
     }
 
     @Test func aDonePaneEarnsNoTabGlyph() {
-        // The ✓ lives in the footer alone. The tab grammar is the shipped rule.
+        // The ✓ lives in the capsule alone. The tab grammar is the shipped rule.
         #expect(TabTitle.tab(project: "baia", attention: .done) == "baia")
     }
 
@@ -237,7 +237,7 @@ import Testing
 
     @Test func theWindowTitleUsesTheSameGlyphAsTheFooterAndTheGitMarkers() {
         // `!` rather than a filled circle. It is already the glyph for "act now"
-        // in the conflicted-files marker and in the footer, and a second symbol
+        // in the conflicted-files marker and in the capsule, and a second symbol
         // for one idea is one the reader has to learn separately.
         #expect(TabTitle.windowTitle(waitingProjects: ["vault"], tab: "baia").hasPrefix("!"))
     }

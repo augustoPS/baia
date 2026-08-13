@@ -25,7 +25,6 @@ public struct MenuAvailability: Sendable, Equatable {
     public var anchorIsRepository: Bool
 
     public var isZoomed: Bool
-    public var statusBarsVisible: Bool
 
     /// False until the project list has been read at least once. The palette
     /// with nothing in it is worse than a disabled item, because it looks like
@@ -39,7 +38,6 @@ public struct MenuAvailability: Sendable, Equatable {
         hasAnchor: Bool = false,
         anchorIsRepository: Bool = false,
         isZoomed: Bool = false,
-        statusBarsVisible: Bool = false,
         paletteAvailable: Bool = false
     ) {
         self.paneCount = paneCount
@@ -48,7 +46,6 @@ public struct MenuAvailability: Sendable, Equatable {
         self.hasAnchor = hasAnchor
         self.anchorIsRepository = anchorIsRepository
         self.isZoomed = isZoomed
-        self.statusBarsVisible = statusBarsVisible
         self.paletteAvailable = paletteAvailable
     }
 

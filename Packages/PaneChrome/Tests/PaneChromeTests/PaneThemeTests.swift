@@ -157,7 +157,7 @@ import Testing
                 #expect(theme.mutedInk(on: fill).contrastRatio(against: fill)
                     >= PaneTheme.minimumTextContrast)
                 // The tier ordering has to survive the repair too, or a filled
-                // footer flattens tier 4 into tier 3 on exactly these fills.
+                // chrome flattens tier 4 into tier 3 on exactly these fills.
                 #expect(theme.mutedInk(on: fill).contrastRatio(against: fill)
                     <= theme.ink(on: fill).contrastRatio(against: fill))
             }
@@ -165,7 +165,7 @@ import Testing
     }
 
     /// The guarantee itself, over the whole palette rather than the two fills the
-    /// footer happens to use today.
+    /// chrome happens to use today.
     @Test func readableNeverReturnsAnUncheckedFallback() {
         let theme = PaneTheme.darkPastel
         for fill in theme.ansi + [theme.background, theme.foreground, theme.focusedAccent] {
@@ -176,7 +176,7 @@ import Testing
 
     @Test func theMutedInkOnAFilledBarIsQuieterThanTheInkBesideIt() {
         // Tier 4 has to keep receding when the bar is filled, or an asking
-        // footer flattens every tier it worked to separate.
+        // chrome flattens every tier it worked to separate.
         let theme = PaneTheme.darkPastel
         let fill = theme.focusedAccent
         #expect(theme.mutedInk(on: fill).contrastRatio(against: fill)
@@ -480,7 +480,7 @@ import Testing
         let theme = PaneTheme.darkPastel
         #expect(theme.plank.hexString == "#6e6e6e")
         // Between the hairline and the foreground: heavier than the line under a
-        // footer, quieter than the text on it.
+        // chrome, quieter than the text on it.
         #expect(theme.plank.relativeLuminance > theme.hairline.relativeLuminance)
         #expect(theme.plank.relativeLuminance < theme.foreground.relativeLuminance)
     }

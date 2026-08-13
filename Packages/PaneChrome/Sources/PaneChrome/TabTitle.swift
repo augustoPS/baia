@@ -101,7 +101,7 @@ public enum TabTitle {
         case everything
 
         /// Three or four. The markers went first, being the only part that was
-        /// still readable from the pane's own footer.
+        /// still readable from the pane's own capsule.
         case withoutMarkers
 
         /// Five or six. The branch went too.
@@ -189,7 +189,7 @@ public enum TabTitle {
     /// marker exists, since the signal it replaces was one identical sound per
     /// session. Three or more is where naming stops paying for its width.
     ///
-    /// `!` rather than a filled circle, because it is the glyph the footer and
+    /// `!` rather than a filled circle, because it is the glyph the capsule and
     /// the git markers already use for "act now", and a second symbol for the
     /// same idea is one the reader has to learn separately.
     public static func windowTitle(waitingProjects: [String], tab: String) -> String {

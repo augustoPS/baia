@@ -118,8 +118,8 @@ public enum PaneClusterInk {
     /// pill is not guaranteed to clear ``PaneTheme/minimumTextContrast`` on its
     /// own, and the repair chain inside `color(for:focused:on:)` walks it to
     /// the floor when it does not. That is the same instrument every footer
-    /// tier and the sidebar offer's caption already go through, so no new
-    /// threshold is invented here.
+    /// tier went through before that view was deleted, and the sidebar offer's
+    /// caption still goes through, so no new threshold is invented here.
     public static func noticeInk(theme: PaneTheme, chrome: ResolvedChrome) -> RGB {
         theme.color(for: .alert, focused: false, on: worstFace(theme: theme, chrome: chrome))
     }

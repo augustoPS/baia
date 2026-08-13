@@ -94,7 +94,7 @@ public struct Settings: Sendable, Equatable {
     /// Which derivation the focus colour comes from. See ``FocusAccent``.
     ///
     /// There is no companion key for the focus *treatment*. The focused pane
-    /// wears a 2 pt frame around its footer and every other pane is left alone,
+    /// wears a 2 pt frame around its capsule and every other pane is left alone,
     /// which is one treatment for one problem, so there is nothing left to
     /// choose between.
     public var focusAccent: FocusAccent
@@ -125,9 +125,9 @@ public struct Settings: Sendable, Equatable {
     /// ``SidebarContent``.
     ///
     /// One key rather than one per surface, because there is one region. The
-    /// footer stands nothing down when this is set, unlike the first draft of the
-    /// design where the panel was to own branch and ahead-behind and the footer
-    /// was to go quiet.
+    /// pane's chrome stands nothing down when this is set, unlike the first draft
+    /// of the design where the panel was to own branch and ahead-behind and the
+    /// footer was to go quiet.
     ///
     /// It named which three files were dirty and which one was untracked until
     /// 2026-08-12, when the owner's ruling removed the sidebar's CHANGES section

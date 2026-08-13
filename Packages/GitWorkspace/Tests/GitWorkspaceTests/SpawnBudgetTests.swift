@@ -44,7 +44,7 @@ import Testing
         return root
     }
 
-    /// The reason `read(ofRepositoryRoot:)` exists at all. The footer wants counts
+    /// The reason `read(ofRepositoryRoot:)` exists at all. The capsule wants counts
     /// and the sidebar wants paths, they come out of the same bytes, and asking
     /// twice would double the busiest git call in the app.
     @Test func oneReadServesBothTheStatusAndTheChanges() throws {

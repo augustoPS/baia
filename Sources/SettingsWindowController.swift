@@ -6,7 +6,7 @@ import SwiftUI
 /// The settings window: the form on the left, the committed settings and the
 /// pending draft rendered side by side on the right.
 ///
-/// Each side is a whole miniature workspace, sidebar and terminal and footer,
+/// Each side is a whole miniature workspace, sidebar and terminal and capsule,
 /// with a focused pane above an asking one. Both are fed identical canned output
 /// and identical sample state, so the only difference on screen is the settings
 /// themselves. That comparison is why the window exists.

@@ -87,7 +87,8 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
     ///
     /// Under glass the panel wears the menu material — `ChromeMaterials`'
     /// `fillMenu` role plus an `NSGlassEffectView` backing, design v5 §6's
-    /// "same pattern as the footer's". Flat keeps the opaque `panelBackground`
+    /// "same pattern as the footer's" (that view is gone; the pattern is not).
+    /// Flat keeps the opaque `panelBackground`
     /// fill this panel has always drawn.
     var resolvedChrome: ResolvedChrome = .flat {
         didSet {
@@ -404,7 +405,7 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
         for view in [queryView, listView, hintsView] { view.needsDisplay = true }
         // `content.layer.masksToBounds` already clips this to the panel's own
         // rounded corners, so the backing needs no mask of its own the way the
-        // footer's does against the window's variable-corner squircle.
+        // footer's did against the window's variable-corner squircle.
         glassBacking?.frame = content.bounds
     }
 

@@ -139,10 +139,11 @@ final class PaneScrimView: PaneOverlayView {
 
 /// A 2 pt stroke just inside a pane's edge, marking the pane that is asking.
 ///
-/// The one place in the design a frame leaves the footer and takes the whole
-/// compartment. That is what makes attention rank above focus without either
-/// needing to know about the other: focus takes the footer's edges and attention
-/// takes the pane's, so a pane can be both at once and still be read correctly,
+/// The one place in the design a frame leaves the pane's chrome and takes the
+/// whole compartment. That is what makes attention rank above focus without
+/// either needing to know about the other: focus takes the chrome's edges (the
+/// footer's until 2026-08-13, the capsule's since) and attention takes the
+/// pane's, so a pane can be both at once and still be read correctly,
 /// which is the state the owner is in every time he answers an agent.
 ///
 /// Drawing over a terminal surface is only defensible because this is temporary
@@ -165,9 +166,9 @@ final class PaneEdgeFrameView: PaneOverlayView {
 
     /// Which of the window's bottom corners this pane sits in.
     ///
-    /// Pushed from ``TerminalPaneController`` alongside the footer's copy, and for
-    /// the same reason the footer has one: the frame and the footer meet at that
-    /// corner, so a frame that kept its own shape there is the two disagreeing in
+    /// Pushed from ``TerminalPaneController``, for the reason the footer also had
+    /// a copy while it existed: anything drawn at that corner meets the window's
+    /// own mask there, so a frame that kept its own shape is a disagreement in
     /// the one place both are visible at once. Square-cornered by default, which
     /// is every pane away from the window's edge.
     var bottomCorners: BottomCorners = [] {
@@ -326,7 +327,7 @@ struct PaneRimParameters: Equatable {
 ///
 /// Under flat, and under Reduce Transparency (which forces flat regardless of
 /// the configured `chromeStyle`), this view stays invisible and the shipped
-/// 1.5-2 pt `FocusAccent` stroke inside the footer (``PaneStatusBarView/drawBarFrame(in:)``)
+/// 1.5-2 pt `FocusAccent` stroke inside the footer (`PaneStatusBarView.drawBarFrame(in:)`)
 /// remains the whole expression of focus, unchanged. `TerminalPaneController`
 /// never sets ``isVisible`` under those conditions, and this view's own
 /// nothing-drawn default (`isVisible = false`) is the same "no view drawn,
@@ -346,7 +347,7 @@ final class PaneLiftView: PaneOverlayView {
     /// under a `glass`-resolved chrome ever sets this true;
     /// `TerminalPaneController.applyPresentation` is the only caller and the
     /// same three conditions (`isPaneFocused`, `isWindowActive`,
-    /// `resolvedChrome` is `.glass`) that gate the thick footer fill gate
+    /// `resolvedChrome` is `.glass`) that gated the footer's thick fill gate
     /// this too, so the ring and the fill step never appear one without the
     /// other.
     var isVisible: Bool = false {
@@ -357,7 +358,7 @@ final class PaneLiftView: PaneOverlayView {
     }
 
     /// Which of the window's bottom corners this pane sits in, the same value
-    /// pushed to ``PaneEdgeFrameView`` and the footer, so the lift's outline
+    /// pushed to ``PaneEdgeFrameView``, so the lift's outline
     /// curves exactly where the window's own mask does and nowhere else.
     var bottomCorners: BottomCorners = [] {
         didSet {
@@ -560,7 +561,7 @@ final class PaneLiftView: PaneOverlayView {
         // highlight's own corners still follow the window's curve rather
         // than squaring off where the pane meets it. This view is flipped
         // (``PaneOverlayView/isFlipped``), so `y: 0` is the pane's top edge,
-        // the same convention ``PaneStatusBarView`` and ``PaneEdgeFrameView``
+        // the same convention `PaneStatusBarView` and ``PaneEdgeFrameView``
         // draw under.
         NSGraphicsContext.saveGraphicsState()
         WindowCorner.path(in: bounds, corners: bottomCorners).addClip()

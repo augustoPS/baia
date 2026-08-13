@@ -46,7 +46,7 @@ final class PaneClusterView: PaneOverlayView {
 
     /// Whether this pane's window is the key window, the footer's second half
     /// of the focus gate. Two properties rather than one pre-gated feed, the
-    /// same shape ``PaneStatusBarView`` keeps: the conjunction is computed
+    /// same shape `PaneStatusBarView` kept: the conjunction is computed
     /// here, in ``framesForFocus``, so a call site that forgets one half
     /// cannot hand the pill a focus expression the footer would refuse to
     /// draw.
@@ -97,7 +97,7 @@ final class PaneClusterView: PaneOverlayView {
     }
 
     /// Which derivation the attention dot is drawn from, and what to do when
-    /// it lands on the focus colour. Received exactly as ``PaneStatusBarView``
+    /// it lands on the focus colour. Received exactly as `PaneStatusBarView`
     /// receives its pair: stored, and resolved against ``theme`` on every
     /// draw, so a live theme edit moves the dot with everything else.
     var attentionAccent: AttentionAccent = .alert {
@@ -582,9 +582,10 @@ final class PaneClusterView: PaneOverlayView {
     // nonisolated deinit may not touch main-actor state, and this view is
     // `@MainActor` with everything it holds. The teardown lives on the
     // lifecycle path instead, which reaches every way this observation can end.
-    // `viewDidMoveToSuperview` fires on removal as well as on install
-    // (`applyClusterMode()` removes the capsule at `.footer`, and a closing pane
-    // takes its whole hierarchy down), and `updatePaneWidthObservation()` finds
+    // `viewDidMoveToSuperview` fires on removal as well as on install (a closing
+    // pane takes its whole hierarchy down; until the `.footer` mode was retired
+    // `applyClusterMode()` could also remove the capsule outright), and
+    // `updatePaneWidthObservation()` finds
     // no superview there and unregisters. The block captures `self` weakly
     // besides, so the worst an unregistered observer could do is a no-op.
 
@@ -622,7 +623,7 @@ final class PaneClusterView: PaneOverlayView {
     }
 
     /// The material set glass resolves to, or nil under flat — the same
-    /// one-place unwrap ``PaneStatusBarView`` keeps for its own readers.
+    /// one-place unwrap `PaneStatusBarView` kept for its own readers.
     private var materialSet: MaterialSet? {
         switch resolvedChrome {
         case .flat: nil

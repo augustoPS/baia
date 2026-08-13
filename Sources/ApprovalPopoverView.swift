@@ -3,8 +3,9 @@ import BaiaSettings
 import PaneChrome
 
 /// `NSGlassEffectView`, with the same refusals every other popover-owned glass
-/// backing in this app makes (``PaneStatusBarView``'s and the palette's own
-/// copies carry the identical doc comment): a plain `NSGlassEffectView`
+/// backing in this app makes (the palette's own copy carries the identical doc
+/// comment, and `PaneStatusBarView`'s did until that view was deleted on
+/// 2026-08-13): a plain `NSGlassEffectView`
 /// hit-tests itself, and ``ApprovalPopoverView`` relies on the buttons
 /// underneath it (in ``ApprovalPopoverContentView``) receiving every click.
 private final class ApprovalPopoverGlassBacking: NSGlassEffectView {
@@ -20,7 +21,7 @@ private final class ApprovalPopoverGlassBacking: NSGlassEffectView {
 ///
 /// `draw(_:)` is a view's own base layer, which every subview (including a
 /// glass backing) renders above — the same fact `PaneStatusBarView.draw(_:)`
-/// documents on its own copy of this split. Content painted in the parent's
+/// documented on its own copy of this split before it was deleted. Content painted in the parent's
 /// `draw(_:)` would sit *under* the glass and be blurred and refracted along
 /// with it, so the title, the message and both capsules live in this sibling
 /// view instead, stacked above the backing.
@@ -64,8 +65,9 @@ final class ApprovalPopoverView: NSView {
         }
     }
 
-    /// Flat, unchanged, or glass with the menu material, mirroring
-    /// ``PaneStatusBarView/resolvedChrome`` and the palette's own copy.
+    /// Flat, unchanged, or glass with the menu material, mirroring the palette's
+    /// own copy (and `PaneStatusBarView.resolvedChrome`, until that view was
+    /// deleted on 2026-08-13).
     var resolvedChrome: ResolvedChrome = .flat {
         didSet {
             guard resolvedChrome != oldValue else { return }

@@ -139,7 +139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return find
     }()
 
-    /// The approval popover that springs from a footer's attention capsule.
+    /// The approval popover that springs from a pane's attention capsule.
     /// One instance, built once and reused, the same as `find` and `palette`
     /// above: it can be summoned from any pane in any window, and its
     /// `onAction` is rewired to the clicked pane on every ``present(anchoredTo:in:title:message:onAction:)``.
@@ -1005,7 +1005,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return true
         case let .refuse(reason):
             // The beep says a click was refused and never which one or why, and
-            // the row's red flash says the same thing twice. The footer carries
+            // the row's red flash says the same thing twice. The capsule carries
             // the reason, which is the half that lets the owner act: every
             // message names the fix. Both are kept, because the sound is what
             // survives the pointer having moved on.
@@ -1038,7 +1038,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ///    literal `git init`, so what is read before the click and what appears
     ///    after it are the same string. Nothing is composed out of sight.
     /// 3. **Where it runs is the pane's own working directory**, which the prompt
-    ///    line already shows and the footer already names. No path is
+    ///    line already shows and the capsule already names. No path is
     ///    interpolated here — the command carries none — so there is no spelling
     ///    of a directory for this to get wrong, which is the whole class of bug
     ///    `sendToPrompt` needs its symlink resolution for.
@@ -1605,7 +1605,6 @@ extension AppDelegate: NSMenuItemValidation {
             hasAnchor: anchor != nil,
             anchorIsRepository: anchor?.kind == .repository,
             isZoomed: tree.isZoomed,
-            statusBarsVisible: true,
             // Enabled until the walk proves otherwise. `MenuValidation` wants
             // this to mean "there are projects to show", and the honest answer
             // needs a walk of every root, which cannot happen here: AppKit

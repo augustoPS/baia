@@ -173,15 +173,18 @@ public enum MenuBarLayout {
     /// bridge drops most window-level actions, so it has to be tried by hand in
     /// the running app before anything is said about it.
     ///
-    /// Status Bars carries no key equivalent. Every free single-letter ⌘ key is
-    /// spoken for by a command used far more often, and a two-modifier shortcut
-    /// for a preference nobody toggles twice a day earns nothing.
+    /// A View item earns a key equivalent only if it is reached several times an
+    /// hour. Every free single-letter ⌘ key is spoken for by a command used far
+    /// more often, and a two-modifier shortcut for a preference nobody toggles
+    /// twice a day earns nothing. This doctrine was written for Status Bars,
+    /// which carried no key equivalent under it and has since been deleted along
+    /// with the footer it toggled; it is kept here because the sidebar item below
+    /// cites it, and losing it would leave that reasoning pointing at nothing.
     private static func viewMenu() -> MenuDescriptor {
         MenuDescriptor(
             title: "View",
             role: .standard,
             items: [
-                item(.toggleStatusBars, "Status Bars", .noConflict),
                 // ⌥⌘S, added 2026-07-29 after the sidebar became something to
                 // reach for rather than something to compare. Two modifiers
                 // rather than a bare ⌘S: the doctrine above still holds, and a

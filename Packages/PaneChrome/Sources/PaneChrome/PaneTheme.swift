@@ -87,7 +87,7 @@ public struct PaneTheme: Sendable, Equatable {
     ///
     /// ``PaneThemeAdjustments/barLift`` stands in front of ``barLift`` here. It
     /// is the one dial that moves a colour every ink is then measured against —
-    /// this is the backdrop ``color(for:focused:)`` grades footer text on — so a
+    /// this is the backdrop ``color(for:focused:)`` grades chrome text on — so a
     /// single slider moves the bar and the text on it together.
     public var barBackground: RGB {
         background.blended(with: foreground, fraction: adjustments.barLift ?? Self.barLift)
@@ -109,7 +109,13 @@ public struct PaneTheme: Sendable, Equatable {
         tinted(matching: 0.12)
     }
 
-    /// The line between the terminal and its own footer.
+    /// The hairline that separated a terminal from its own footer.
+    ///
+    /// **The footer was deleted on 2026-08-13 and no pane draws this line any
+    /// more.** The value is kept because it is a tint rule rather than a
+    /// position: it is what a one-point separator inside a pane's chrome weighs,
+    /// and `PaneThemeTests` still pins it against ``divider`` and ``plank`` so
+    /// the three stay ordered.
     ///
     /// Tinted like ``divider`` and for the same reason, holding the weight of the
     /// 0.18 towards the foreground it replaces.
@@ -244,9 +250,11 @@ public struct PaneTheme: Sendable, Equatable {
         }
     }
 
-    /// The colour the attention signal is drawn in: the wash under an asking
-    /// footer, the quiet line along its top edge, the acknowledged square, and the
-    /// frame around the whole pane.
+    /// The colour the attention signal is drawn in: the fill under an asking
+    /// pane's capsule, the acknowledged square, and the frame around the whole
+    /// pane. It was the wash under an asking footer and the quiet line along
+    /// that bar's top edge until the footer was deleted on 2026-08-13; the
+    /// expressions moved, the colour did not.
     ///
     /// Not the git segments. ``alert`` is also the conflicted-tree marker and the
     /// `!` glyph, and those stay red however this resolves, so a pane can say
@@ -330,9 +338,11 @@ public struct PaneTheme: Sendable, Equatable {
     /// obvious one is the focus colour: focus and attention drawn in one hue is two
     /// signals nobody can separate.
     ///
-    /// The other is the surface underneath. The loud treatment is a 22 pt wash
+    /// The other is the surface underneath. The loud treatment was a 22 pt wash
     /// across the footer plus a 2 pt frame around the pane, and a wash the colour
-    /// of the footer it washes is not a wash. The pane stops asking with nothing on
+    /// of the footer it washes is not a wash. That is still the failure being
+    /// avoided, on the capsule the footer's deletion moved it to: a fill the
+    /// colour of the surface it fills is not a fill. The pane stops asking with nothing on
     /// screen to explain it, which is a worse failure than the collision with focus
     /// this key was written for, because at least a colliding focus is *a* colour.
     /// Measured against ``barBackground`` and ``background`` both, since the wash
@@ -365,8 +375,10 @@ public struct PaneTheme: Sendable, Equatable {
     /// Not a just-noticeable difference, which is around 1 and would be met by a
     /// pair nobody could tell apart here. A JND is measured on two large patches
     /// abutting each other under controlled light, and none of that holds: the
-    /// attention fill is 22 pt of one pane's footer and the focus edge is 2 pt of
-    /// another's, both over live terminal output, and the question is not whether
+    /// attention fill is a band inside one pane's chrome and the focus edge is 2 pt of
+    /// another's (22 pt of footer and 2 pt of footer frame when this was
+    /// measured; the capsule's pill and stroke now), both over live terminal
+    /// output, and the question is not whether
     /// someone staring at the pair can separate them but whether a glance across
     /// six panes reads two signals rather than one. 10 is where colours stop
     /// sharing a name.
@@ -465,7 +477,7 @@ public struct PaneTheme: Sendable, Equatable {
     ///
     /// Spelled as the focused anchor name's own colour rather than as a separate
     /// call to ``readable(_:on:minimumRatio:)``, so an edit to `.strong` cannot
-    /// leave the two disagreeing. Its other two consumers are the footer's focus
+    /// leave the two disagreeing. Its other two consumers are the capsule's focus
     /// frame and the colour a divider takes while it is dragged: neither is text
     /// and the 4.5:1 is not owed to them, but an unrepaired accent drawn beside a
     /// repaired name is two blues arguing.
@@ -492,7 +504,7 @@ public struct PaneTheme: Sendable, Equatable {
     /// A working agent's dot. Never used for text.
     public var ok: RGB { ansiColor(2) }
 
-    /// The colour the footer's working-agent dot is filled with: ``ok``, or the
+    /// The colour the working-agent dot is filled with: ``ok``, or the
     /// explicit colour ``PaneThemeAdjustments/busyDotInk`` names.
     ///
     /// A derivation rather than the drawing site reading `ok` and applying its
@@ -547,7 +559,7 @@ public struct PaneTheme: Sendable, Equatable {
 
     /// The colour a file's change state is drawn in, wherever it appears.
     ///
-    /// Borrowed from the footer's own vocabulary rather than invented: the same
+    /// Borrowed from the footer's vocabulary rather than invented, and outlived it: the same
     /// colours already mean the same things one line below.
     public func colour(for mark: ChangeMark) -> RGB {
         switch mark {
@@ -564,7 +576,7 @@ public struct PaneTheme: Sendable, Equatable {
     /// A floating panel over the workspace, for example the command palette.
     ///
     /// Below ``barBackground`` rather than above it. The panel is a large surface
-    /// and the footer is a thin one, so lifting the panel as far as the bar would
+    /// and a pane's chrome is a thin one, so lifting the panel as far as the bar would
     /// make it the brightest object on screen by area. It separates from the
     /// terminal by its border and its shadow instead.
     public var panelBackground: RGB {
@@ -699,8 +711,9 @@ public struct PaneTheme: Sendable, Equatable {
         }
     }
 
-    /// The text colour for a bar that has been filled with `fill`, which today
-    /// means an asking footer.
+    /// The text colour for a bar that has been filled with `fill`, which means an
+    /// asking pane's capsule (an asking footer, until that view was deleted on
+    /// 2026-08-13).
     ///
     /// The candidate is ``background`` rather than the emphasis colour, and that
     /// is the whole point. A fill loud enough to be worth filling a bar with is
@@ -718,7 +731,7 @@ public struct PaneTheme: Sendable, Equatable {
         readable(background, on: fill, minimumRatio: Self.minimumTextContrast)
     }
 
-    /// The quieter text colour on a filled bar, for tier 4 on an asking footer.
+    /// The quieter text colour on a filled bar, for tier 4 on an asking pane.
     ///
     /// Pulled towards the fill rather than towards the foreground, so it recedes
     /// into the bar it sits on the way ``inkContext`` recedes into an ordinary
@@ -734,7 +747,7 @@ public struct PaneTheme: Sendable, Equatable {
         // On a mid-luminance fill the muted candidate starts *closer* to the
         // fill than the ink does, fails the floor, and is then repaired away from
         // it. The repair overshoots: tier 4 comes back louder than tier 3, so a
-        // filled footer reads with the quiet tier shouting. Where that happens
+        // filled surface reads with the quiet tier shouting. Where that happens
         // the two tiers collapse into one. Flattening loses a distinction;
         // inverting states a false one.
         guard muted.contrastRatio(against: fill) <= ink.contrastRatio(against: fill) else {
@@ -823,8 +836,8 @@ public struct PaneTheme: Sendable, Equatable {
     /// the boundary is visible without the hairline.
     ///
     /// **0.08 is a measured ceiling, not a taste.** It is the highest lift that
-    /// keeps the four footer tiers ordered on ``darkPastel``. This is the
-    /// backdrop ``color(for:focused:)`` grades footer text on, so raising it
+    /// keeps the four ink tiers ordered on ``darkPastel``. This is the
+    /// backdrop ``color(for:focused:)`` grades chrome text on, so raising it
     /// darkens the bar *and* squeezes the ink measured against it — and once
     /// ``inkFaint`` drops under ``minimumTextContrast``, ``readable(_:on:_:)``
     /// repairs it back up, past ``inkContext``. The hierarchy then inverts:
@@ -871,7 +884,7 @@ public struct PaneTheme: Sendable, Equatable {
     /// Light enough that the panes stay readable, because a background window is
     /// exactly when the owner is scanning them to decide which one to come back
     /// to. A heavier scrim above it once marked the focused pane by taxing every
-    /// other one; the focused pane's footer wears a frame now, so no pane is
+    /// other one; the focused pane's capsule wears a frame now, so no pane is
     /// taxed for being merely unfocused.
     public static let inactiveScrim: Double = 0.15
 

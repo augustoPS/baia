@@ -39,6 +39,6 @@ public enum SidebarContent: String, Sendable, Equatable, CaseIterable {
     /// `guard window?.firstResponder === self`, and that is the *window's* first
     /// responder: a row that took it would disable every ghostty binding in every
     /// pane of the window, not just one. Clicks are handled in `mouseDown` without
-    /// taking focus, the way `PaneStatusBarView` already does.
+    /// taking focus, the way the pane's own chrome does.
     case files
 }

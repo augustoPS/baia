@@ -92,8 +92,12 @@ type_line "cd ~/Projects/baia"
 shot 02-three-repos-git-states
 
 echo "03 pinned pane"
-# Pin the focused pane to ~/Projects, which is not a repository, so the footer
-# shows the pin marker, the working directory, and no git segments at once.
+# Pin the focused pane to ~/Projects, which is not a repository, so the pane's
+# chrome shows the pin marker, the working directory, and no git segments at
+# once. The three-at-once state is the point of the shot, and a non-repository
+# is the only place it occurs. The footer was what displayed it until that view
+# was deleted on 2026-08-13; the capsule shows the same combination now, so the
+# keystrokes below are unchanged and the capture still earns its place.
 act
 osascript -e 'tell application "System Events" to keystroke "p" using {command down, shift down}' >/dev/null 2>&1
 sleep 2

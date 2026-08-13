@@ -22,7 +22,7 @@ import Testing
     /// attention message here, which is how a pane that rang while idle reported
     /// "needs input" as the thing it was running, in the same breath as it
     /// reported "needs input" as the thing it wanted. The substitution belongs to
-    /// the footer, which has one line to say everything in. It does not belong to
+    /// the pane's one-line chrome, which has one line to say everything in. It does not belong to
     /// anything that answers "what is running".
     @Test func anIdleShellHasNoLabelAndBorrowsNobodyElses() {
         #expect(PaneActivity.idleShell.label == nil)
