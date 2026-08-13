@@ -83,6 +83,24 @@ final class TerminalPaneController: NSViewController {
     /// delegate owns a panel, so this pane's job ends at naming where the
     /// popover should anchor and what it should say, and handing back the
     /// click.
+    ///
+    /// **Nothing raises it since 2026-08-13, and the chain below it is left
+    /// whole deliberately.** The footer's `onCapsuleClick` was its only
+    /// caller; the delivery path it feeds (pane → `PaneTreeController` →
+    /// `WorkspaceWindowController` → `AppDelegate.presentApprovalPopover`) is
+    /// four files of live wiring for a standalone panel that no click now
+    /// reaches. The question it answered has not gone unanswered: the capsule's
+    /// attention segment opens ``presentAttentionCard(_:anchoredTo:in:)``
+    /// instead, behind the identical `ApprovalPopover.presents(for:)` gate,
+    /// carrying the same title rule, the same `body(for:)` and the same single
+    /// answering keystroke — that method's doc comment calls it "a second door
+    /// into the same room", and since this step it is the only door.
+    ///
+    /// Retiring the chain is its own step with its own argument to make (the
+    /// popover and the embedded card are not pixel-identical, and which one the
+    /// owner wants is a design call, not a deletion). It stays wired rather
+    /// than half-removed so that call is made once, against a tree where the
+    /// popover can still be re-reached by restoring one closure.
     var onApprovalRequested: ((ApprovalRequest) -> Void)?
 
     /// Raised when a cluster card hands work to the terminal: a new pane
@@ -143,11 +161,16 @@ final class TerminalPaneController: NSViewController {
     /// `PaneStatusBarView` unreachable rather than merely unused.
     ///
     /// Kept as a named constant rather than folded into its readers, because
-    /// the three sites that branch on it — ``applyClusterMode()``, the popover
-    /// anchor, and the spawn arrangement — are each their own deletion with
-    /// its own argument to make, and a constant is what lets them be made one
-    /// at a time against a compiling tree. Every branch it now decides is
-    /// decided the same way on every pane.
+    /// the three sites that branched on it — ``applyClusterMode()``, the
+    /// popover anchor, and the spawn arrangement — were each their own
+    /// deletion with its own argument to make, and a constant is what let them
+    /// be made one at a time against a compiling tree.
+    ///
+    /// Two of the three are straightened as of 2026-08-13 and no longer read
+    /// it. The last reader is ``spawnedBottomArrangement``, which passes it to
+    /// `PaneClusterMetrics.bottomArrangement(clusterOnly:underGlass:)` — see
+    /// there for why that argument is still passed rather than folded in, and
+    /// what has to be measured before it can be.
     let clusterCarriesTheFacts = true
 
     /// `chrome.cluster.cornerInset`, nil for the `PaneClusterMetrics.cornerInset`
@@ -541,42 +564,25 @@ final class TerminalPaneController: NSViewController {
         updateGlassWashColour()
     }
 
-    /// Installs the capsule and hides the footer, from `viewDidLoad`.
+    /// Installs the capsule, from `viewDidLoad`.
     ///
     /// **Called from every live mode change too, until 2026-08-13.** The dial
-    /// that pushed those changes retired, so this now runs exactly once per
-    /// pane and both branches below resolve the same way on every one. Left
-    /// branching rather than straightened here: the removal path is the
-    /// footer's teardown, which comes out with the view itself, and
-    /// collapsing it in the same step as retiring the dial would mix a
-    /// deletion into a retirement.
+    /// that pushed those changes retired, so this runs exactly once per pane,
+    /// and what it did on 2026-08-13 was branch three ways to reach the one
+    /// arrangement every pane now spawns in. The removal arm was the
+    /// footer-only rendering's teardown — a capsule taken out of the
+    /// hierarchy, its edge constraints dropped, and any card floating over it
+    /// dismissed first — and it went out with the mode that could ask for it.
+    /// The footer-hiding line went out with the footer.
     ///
-    /// The footer hides rather than being removed, and the asymmetry is the
-    /// SIGWINCH wall. Under a flat footer spawn (`.insetAboveBar`)
-    /// `terminalView`'s bottom is pinned to `statusBar.topAnchor`, so removing
-    /// the bar (or collapsing its height) would resize the surface and signal
-    /// whatever is running in the pane. A hidden view keeps its constraints
-    /// and its frame, so the grid never hears about it at all.
+    /// The `superview == nil` check survives the straightening on its own
+    /// terms rather than as a leftover: it is what keeps this idempotent, and
+    /// `viewDidLoad` is not the only caller with a claim on being able to ask
+    /// twice.
     private func applyClusterMode() {
         guard isViewLoaded else { return }
-        if !clusterCarriesTheFacts {
-            // Unreachable since the dial retired, and it was the footer-only
-            // rendering's teardown: a card floating over a capsule about to
-            // be removed had to come down with it, and the superview check
-            // kept the lazy controller unforced for panes whose capsule never
-            // existed at all.
-            if clusterView.superview != nil {
-                clusterCards.dismiss()
-            }
-            clusterView.removeFromSuperview()
-            clusterEdgeConstraints = []
-        } else if clusterView.superview == nil {
-            installClusterView()
-        }
-        // The footer's visibility keys off the same constant as the capsule's
-        // membership, so the two cannot disagree about which chrome is
-        // carrying the facts.
-        statusBar.isHidden = clusterCarriesTheFacts
+        guard clusterView.superview == nil else { return }
+        installClusterView()
     }
 
     /// Adds the capsule below the scrim, deliberately: the inactive-window
@@ -615,17 +621,16 @@ final class TerminalPaneController: NSViewController {
     /// `ApprovalPopoverController.origin(forAnchor:size:in:)` hands to
     /// `convertToScreen`.
     ///
-    /// One rule, keyed off ``clusterCarriesTheFacts``, which is constant since
-    /// 2026-08-13 — so the footer-capsule branch below is now unreachable and
-    /// stays only until the bar it converts a rect on is deleted. The footer
-    /// is hidden, so a rect on it would anchor the popover to an invisible
-    /// bar; the anchor is the chrome that carries attention, the cluster
-    /// capsule's attention-segment rect. If the capsule is not installed at
-    /// all (unreachable, since ``applyClusterMode()`` installs it on every
-    /// pane, but a nil-window `convert` would answer garbage rather than
-    /// fail) the pane's top-right corner — where the capsule would sit —
-    /// keeps the popover on the pane it speaks for instead of anchored at a
-    /// zero rect.
+    /// One rule, and one only since 2026-08-13. It took a `footerCapsule`
+    /// rect and converted that instead whenever the footer was the chrome
+    /// carrying attention; the footer is deleted, and the sole caller that
+    /// had a footer rect to hand went with it. The anchor is the chrome that
+    /// carries attention, the cluster capsule's attention-segment rect. If the
+    /// capsule is not installed at all (unreachable, since ``applyClusterMode()``
+    /// installs it on every pane, but a nil-window `convert` would answer
+    /// garbage rather than fail) the pane's top-right corner — where the
+    /// capsule would sit — keeps the popover on the pane it speaks for instead
+    /// of anchored at a zero rect.
     ///
     /// **``PaneClusterView/approvalAnchorRect()`` and not
     /// ``PaneClusterView/segmentRect(for:)``, and the difference is a notice.**
@@ -651,10 +656,12 @@ final class TerminalPaneController: NSViewController {
     /// an approval the owner is mid-answering — the notice explains a click
     /// that did nothing, and taking away a prompt over it would be the larger
     /// surprise. Naming the returning dot needs no wire and no dismissal.
-    private func approvalPopoverAnchor(footerCapsule: NSRect) -> NSRect {
-        guard clusterCarriesTheFacts else {
-            return statusBar.convert(footerCapsule, to: nil)
-        }
+    ///
+    /// Callerless since 2026-08-13, with ``onApprovalRequested`` — it is the
+    /// anchor half of that chain and retires in the same step, for the reason
+    /// that property carries. Kept private and unused rather than deleted so
+    /// the chain comes out in one piece or not at all.
+    private func approvalPopoverAnchor() -> NSRect {
         guard clusterView.superview != nil else {
             return view.convert(
                 NSRect(x: view.bounds.maxX, y: view.bounds.maxY, width: 0, height: 0),
@@ -945,6 +952,18 @@ final class TerminalPaneController: NSViewController {
     /// `clusterOnly` is constant, so the freeze now only holds the glass
     /// answer still — which is the half that could ever move under a live
     /// toggle anyway.
+    ///
+    /// **`true` is passed rather than folded in, and the truth table is left
+    /// standing, on purpose.** With `clusterOnly` constant this call can only
+    /// answer `.fullHeightClear`, which makes `.insetAboveBar` and
+    /// `.fullHeightWithBump` dead cases and the whole enum collapsible to
+    /// nothing. That collapse is not a deletion of unreachable code: on a
+    /// glass pane the bumped arm is what sets ghostty's real
+    /// `window-padding-y`, so removing it changes the grid the terminal
+    /// renders into rather than the branch that chooses it. It is gated behind
+    /// a live measurement of a glass pane and kept as its own step, and until
+    /// that measurement exists the argument passes through here honestly and
+    /// the four tests pinning the table keep pinning it.
     private lazy var spawnedBottomArrangement: PaneBottomArrangement =
         PaneClusterMetrics.bottomArrangement(
             clusterOnly: clusterCarriesTheFacts,
@@ -1355,24 +1374,6 @@ final class TerminalPaneController: NSViewController {
             // Raised after the footer is rebuilt, so anything drawing the same read
             // elsewhere is redrawing from a poller that has already settled.
             onGitChange?()
-        }
-
-        // Weak, so the footer cannot keep the pane alive. `PaneTreeController`
-        // is the only strong owner of a pane, and a leaked pane is a leaked
-        // shell.
-        statusBar.onClick = { [weak self] in self?.takeFocus() }
-        statusBar.onCapsuleClick = { [weak self] capsuleFrame in
-            guard let self else { return }
-            // `agent · repo`, or the bare repo name when nothing is running
-            // under this pane to give the popover an agent half of the title.
-            let anchorName = status?.anchorName ?? "baia"
-            let agentLabel = status?.agent?.label
-            let title = agentLabel.map { "\($0) · \(anchorName)" } ?? anchorName
-            onApprovalRequested?(ApprovalRequest(
-                capsuleFrame: approvalPopoverAnchor(footerCapsule: capsuleFrame),
-                title: title,
-                message: attentionMessage
-            ))
         }
 
         // Assigned unconditionally, and live on every pane since the mode dial
@@ -1857,10 +1858,15 @@ final class TerminalPaneController: NSViewController {
     /// from the pane's `attentionMessage` and answers through
     /// `pane.send(ApprovalPopover.bytes(for:))`, so this card is a second
     /// door into the same room — the gate is `ApprovalPopover.presents(for:)`
-    /// (the popover's own), the title is `onCapsuleClick`'s derivation, the
-    /// body is the same `body(for:)` fallback, and the answer is the same one
-    /// keystroke, written here directly because the pane already owns
-    /// `send(_:)`. The popover flow is untouched.
+    /// (the popover's own), the title is the `agent · repo` derivation below,
+    /// the body is the same `body(for:)` fallback, and the answer is the same
+    /// one keystroke, written here directly because the pane already owns
+    /// `send(_:)`.
+    ///
+    /// **It is the only door as of 2026-08-13.** The title rule was the
+    /// footer's `onCapsuleClick` wire's, copied here to keep the two doors
+    /// titling one question the same way; that wire is deleted with the footer
+    /// and this is now where the rule lives rather than where it is echoed.
     ///
     /// - Parameter role: which of the two segments summoned the card, stored
     ///   as the toggle's memory. Tracking the summoning segment rather than a
@@ -1875,9 +1881,10 @@ final class TerminalPaneController: NSViewController {
 
         var approval: ClusterAttentionCardView.Model.Approval?
         if ApprovalPopover.presents(for: attention) {
-            // `agent · repo`, `onCapsuleClick`'s own title rule, unchanged,
-            // so the embedded approval and the standalone popover cannot
-            // title the same question two ways.
+            // `agent · repo`, or the bare repo name when nothing is running
+            // under this pane to give the card an agent half of the title.
+            // Inherited verbatim from the footer's `onCapsuleClick`, which
+            // held it until that wire was deleted.
             let anchorName = status?.anchorName ?? "baia"
             let agentLabel = agent?.label
             approval = .init(
