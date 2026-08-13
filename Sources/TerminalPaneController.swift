@@ -1378,6 +1378,13 @@ final class TerminalPaneController: NSViewController {
             self?.clusterSegmentClicked(role, segmentRect: segmentRect)
         }
 
+        // A card outlives neither the segment it is anchored to nor the pill it
+        // hangs off. Inert under `.footer` with `onSegmentClick` above, and for
+        // the same reason: no capsule in the hierarchy, nothing to re-measure.
+        clusterView.onSegmentsVanished = { [weak self] roles in
+            self?.clusterSegmentsVanished(roles)
+        }
+
         activityTracker.onChange = { [weak self] in
             guard let self else { return }
             // Unconditional, so the footer keeps tracking the label.
@@ -1537,6 +1544,38 @@ final class TerminalPaneController: NSViewController {
     /// card: the two segments describe one thing, the agent in the pane and
     /// how hard it is asking, and two cards would carve that sentence in
     /// half.
+    /// Takes the card down when the segment it was anchored to leaves the pill.
+    ///
+    /// **The one response to "a segment stopped existing", for every way that
+    /// can happen.** The rule itself is old and was stated on ``showNotice(_:)``:
+    /// a card anchored to a segment that is no longer there hangs beside a pill
+    /// that no longer says what it is about, wears no active wash (the pill
+    /// washes off the placement, and the role is not in it), and cannot be
+    /// dismissed by clicking the segment again because there is no segment to
+    /// click — only ⎋ or a click elsewhere takes it down. What was wrong is that
+    /// `showNotice` *implemented* that rule as well as stating it, so the rule
+    /// held for exactly the one path that remembered it. The fitting pass added
+    /// a second path — a divider dragged narrow drops a role
+    /// (``PaneChrome/PaneClusterLayout/fitting(segments:widths:budget:)``) — and
+    /// the card stayed up.
+    ///
+    /// So the notice no longer dismisses anything itself: it writes the notice,
+    /// `refreshStatus` re-measures, the pill loses every resting segment, and
+    /// this fires with them. One concept, one signal
+    /// (``PaneClusterView/onSegmentsVanished``), one response.
+    ///
+    /// ``clusterCardIsShowing`` rather than the panel, for that property's own
+    /// reason: reading the lazy controller builds it, and a pane whose capsule
+    /// merely re-measured has no business constructing a floating panel.
+    private func clusterSegmentsVanished(_ roles: [PaneClusterSegmentRole]) {
+        guard clusterCardIsShowing, let open = clusterCardRole, roles.contains(open)
+        else { return }
+        // `dismiss()` clears `clusterCardRole` and the pill's active wash
+        // through the card's `onDismiss`, so the wash cannot outlive the segment
+        // it was highlighting.
+        clusterCards.dismiss()
+    }
+
     private func clusterSegmentClicked(
         _ role: PaneClusterSegmentRole, segmentRect: NSRect
     ) {
@@ -1578,7 +1617,13 @@ final class TerminalPaneController: NSViewController {
         // the gate off.
         clusterCards.isDark = windowIsDark(paneTheme: theme)
         switch role {
-        case .place: presentPlaceCard(anchoredTo: anchor, in: window)
+        // The operation shares the place card rather than opening one of its
+        // own, the same argument agent and attention share theirs: the two
+        // segments describe one thing. A half-finished rebase is a statement
+        // about *where this pane is* — it is why the branch reads as a detached
+        // hash — so its detail belongs beside the branch it qualifies, not in a
+        // second panel the owner would have to compare against the first.
+        case .operation, .place: presentPlaceCard(anchoredTo: anchor, in: window)
         case .changes: presentChangesCard(anchoredTo: anchor, in: window)
         case .agent, .attention: presentAttentionCard(role, anchoredTo: anchor, in: window)
         // Unreachable past the `opensCard` guard above, and spelled out rather
@@ -1644,6 +1689,24 @@ final class TerminalPaneController: NSViewController {
             repositoryName: repositoryName,
             worktreeName: worktreeName,
             branch: branch,
+            // ``PaneChrome/PaneStatus/Git/displayableOperation``: the same
+            // *predicate* the pill's segment is built from, not merely the same
+            // field. Sharing the input is not sharing the derivation, and this
+            // line proved it — it read `git?.operation` raw while
+            // `PaneClusterSegments.build` applied `isBlank`, so a poller handing
+            // over `"   "` drew no pill segment and grew a card row captioned
+            // `operation` with a blank value in it (found 2026-08-13).
+            //
+            // What is guaranteed now is narrow and worth stating exactly: both
+            // surfaces call one function on one value, so for a given
+            // `PaneStatus.Git` either both draw the operation and draw the same
+            // string, or neither draws it. The card can still *lack* a row the
+            // pill has, and does — the pill takes segments only while a notice is
+            // not up, and the stale-facts rule nils `git` here for a plain
+            // directory the same way it drops the pill's git segments. Agreement
+            // on the blank case is pinned by
+            // `PaneClusterSegmentsTests.theCardAndThePillAgreeOnWhatCountsAsAnOperation`.
+            operation: git?.displayableOperation,
             workingDirectory: PaneStatus.abbreviated(directoryPath, home: home)
         ))
         // The effects live here rather than in the card, the sidebar's own
@@ -1875,24 +1938,19 @@ final class TerminalPaneController: NSViewController {
     /// same reason, stated in each. Under `.both` it happens on both, which is
     /// what that mode means.
     ///
-    /// A card open over this pane's capsule is dismissed first. The notice
-    /// takes the pill alone, so the segment a card was anchored to stops
-    /// existing for those three seconds: left up, the card would hang beside a
-    /// pill that no longer says what it is about, and its own dismissal path
-    /// (a click elsewhere, ⎋) is the only thing that would ever take it down.
-    /// Dismissing is also what clears `clusterCardRole` and the pill's active
-    /// wash through the card's `onDismiss`, so the wash cannot outlive the
-    /// segment it was highlighting.
-    ///
-    /// ``clusterCardIsShowing`` is the one derivation of "is a card up", and
-    /// that property carries why it is the role and not `clusterCards.isShowing`
-    /// — laziness, and the direction the two drift in when they part. This call
-    /// site and the toggle in ``clusterSegmentClicked(_:segmentRect:)`` now ask
-    /// it the same way; they did not, and the pair of answers was a card the
-    /// notice could skip dismissing.
+    /// A card open over this pane's capsule comes down with the segment it was
+    /// anchored to, but **not from here** — see
+    /// ``clusterSegmentsVanished(_:)``. The notice takes the pill alone, so
+    /// every resting segment stops existing for those three seconds, and that is
+    /// the same event a divider dragged narrow produces. This function used to
+    /// dismiss the card itself, which made the rule true for the notice path and
+    /// false for the fitting one: `refreshStatus()` below re-measures the pill,
+    /// the resting segments leave the placement, and the view's
+    /// ``PaneClusterView/onSegmentsVanished`` raises it once for whatever caused
+    /// it. One concept, one response, and a third cause invented later is
+    /// covered without editing this comment.
     func showNotice(_ text: String) {
         noticeDismissal?.cancel()
-        if clusterCardIsShowing { clusterCards.dismiss() }
         notice = text
         refreshStatus()
 

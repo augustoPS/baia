@@ -181,6 +181,32 @@ final class ClusterPlaceCardView: NSView {
         /// repository.
         var branch: String?
 
+        /// The operation the repository is halfway through (`REBASE`,
+        /// `CHERRY-PICK`, …), or nil when it is not.
+        ///
+        /// **The pill says this too, and that is the stated exception to one
+        /// home per fact.** The capsule's own rule is that a fact lives in one
+        /// place, and the linked-worktree prefix obeys it by living here alone.
+        /// This one is drawn twice on purpose, because the two draws answer
+        /// different questions: the pill's segment is the *alarm* — it must be
+        /// readable without a click, since it is what explains why the branch
+        /// beside it has become a bare commit hash — and this row is the
+        /// *caption*, the operation named next to the branch and the repository
+        /// it applies to, where a reader who clicked through to understand the
+        /// hash finds the two facts adjacent. Dropping the row would leave the
+        /// place card describing a checkout while silently omitting the reason
+        /// it is in the state it is in; dropping the segment would put the fact
+        /// behind a click, which is exactly what a fact that changes the meaning
+        /// of the pill's other facts cannot be.
+        ///
+        /// **Twice drawn, once decided.** The caller fills this from
+        /// ``PaneChrome/PaneStatus/Git/displayableOperation``, the predicate the
+        /// pill's segment is also built from, so "is there an operation to show"
+        /// is answered in one place for both. Nil here therefore means the same
+        /// thing it means on the pill, blanks included — this row read the raw
+        /// field until 2026-08-13 and drew a captioned empty box for `"   "`.
+        var operation: String?
+
         /// The pane's working directory, tilde-abbreviated for display. The
         /// full path stays with the caller, whose Copy path closure is the
         /// one place that needs it.
@@ -207,6 +233,16 @@ final class ClusterPlaceCardView: NSView {
         }
         if let branch = model.branch {
             facts.append(("branch", branch, Self.valueFont))
+        }
+        // Directly under the branch, not above it as on the pill, and the two
+        // orders are consistent rather than contradictory. The pill is read
+        // left-to-right in one glance, so the operation leads there to colour
+        // everything after it. The card is a list of captioned facts read
+        // top-down, where the operation's job is to qualify the branch line the
+        // eye has just landed on — a repository row, then the branch, then what
+        // is being done to it.
+        if let operation = model.operation {
+            facts.append(("operation", operation, Self.valueFont))
         }
         facts.append(("directory", model.workingDirectory, Self.valueFont))
 

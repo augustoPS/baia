@@ -43,7 +43,7 @@ import PaneChrome
 // and never derived from the arm it grades — this repo has been burned by that
 // shape four times.
 //
-// Three arms, each with a negative control that must fail:
+// Six arms, each with a negative control that must fail:
 //
 //   draws       ink appears on the pill when a notice is handed in.
 //               Control: the same capsule with `notice = nil`.
@@ -53,6 +53,15 @@ import PaneChrome
 //   legible     `PaneClusterInk.noticeInk`'s ink clears the text floor over the
 //               pill's own composited face.
 //               Control: ink set to that face.
+//   operation   the operation segment draws in its own ink on the resting pill.
+//               Control: the status with no operation on it.
+//   fits        a fitted pill is never wider than the pane it is pinned in.
+//               Control: the same segments measured with no pane, so unfitted —
+//               the geometry the view shipped with until 2026-08-13.
+//   vanish      a segment dropped by the fit announces itself, so the card
+//               anchored to it can be dismissed.
+//               Control: the announcement unsubscribed, which is the shipped
+//               state before that fix.
 
 // MARK: - offscreen rendering
 
@@ -638,6 +647,423 @@ func armLegible() {
     }
 }
 
+/// A repository halfway through a cherry-pick, with the branch detached the way
+/// git actually leaves it mid-operation.
+///
+/// `CHERRY-PICK` is the longest label ``PaneStatus/Git/operationLabel(for:)``
+/// produces (74.8 pt in the capsule's 11 pt monospace against `REBASE`'s 40.8),
+/// so it is the one that exercises the width the segment costs. The head is a
+/// parenthesised short commit because that is what
+/// `GitWorkspace.RepositoryStatus.displayHead` answers for a detached HEAD, and a
+/// detached HEAD is the state a halted rebase or cherry-pick leaves the
+/// repository in — which is the argument for putting this segment on the pill at
+/// all, rendered here rather than asserted in prose.
+let cherryPickStatus = PaneStatus(
+    anchorName: "baia",
+    anchorIsRepository: true,
+    isPinned: false,
+    workingDirectory: "/Users/x/Projects/baia",
+    git: PaneStatus.Git(
+        head: "(a1b2c3d)",
+        hasUpstream: false,
+        ahead: 0,
+        behind: 0,
+        dirty: true,
+        untracked: 0,
+        conflicted: 1,
+        operation: "CHERRY-PICK",
+        isLinkedWorktree: false
+    ),
+    agent: nil
+)
+
+/// `operation`: the half-finished git operation is drawn on the pill, in warn
+/// ink, and **is not the notice's alert red**.
+///
+/// The pure layer is `PaneClusterInkTests` (the tier asked for, the repair chain,
+/// the collapse case) and `PaneClusterSegmentsTests` (the order, the blank rule,
+/// the sharing). What only pixels can answer is whether the segment survives the
+/// draw loop at all — the notice's own history is the reason that is not assumed
+/// here — and whether the two rehomed facts are actually *different colours* on
+/// a real pill rather than merely different constants in the package.
+///
+/// **The colour separation is the point of this arm.** `PaneClusterInk`'s doc
+/// argues that alert stays reserved so a mid-rebase pane does not cry "act now"
+/// for hours; that argument is only true if the drawn pixels differ. So the arm
+/// renders the operation segment and compares its measured ink both to
+/// `operationInk`'s answer and to `noticeInk`'s, requiring a match on the first
+/// and a miss on the second. A perceptual distance rather than a byte inequality:
+/// two colours one byte apart are unequal and indistinguishable, and the claim
+/// being made is about what the eye can tell apart.
+///
+/// The ink is read from the pill's *leading* segment, since the operation is
+/// placed first — which also makes the read a check on the order, from the pixel
+/// side: an operation drawn after the branch would leave grey foreground here.
+///
+/// Control: the graded ink set to the pill's own composited face, downstream of
+/// the repair chain, which is `legible`'s control for `legible`'s reason — the
+/// chain's last resort rescues any damaged theme, so damaging the theme would
+/// let the arm pass broken.
+func armOperation() {
+    print("== operation: a half-finished operation draws in warn ink, not the notice's alert")
+    let base = PaneTheme.darkPastel
+    let expected = PaneClusterInk.operationInk(theme: base, chrome: .glass(.dark))
+    let noticeRed = PaneClusterInk.noticeInk(theme: base, chrome: .glass(.dark))
+
+    for backdrop in backdrops {
+        let measured = measureNotice(
+            status: cherryPickStatus,
+            notice: nil,
+            theme: base,
+            backdrop: backdrop.colour,
+            focused: false
+        )
+
+        check(!measured.hidden, "the capsule is visible over \(backdrop.name)")
+        guard !measured.hidden else { continue }
+
+        let predicted = predictedBand(
+            fill: MaterialSet.dark.fillChrome, over: backdrop.colour
+        )
+        check(
+            within(measured.band, predicted, bytes: 1),
+            "the pill band \(measured.band.hexString) is backing + fillChrome flattened over "
+                + "\(backdrop.name) (predicted \(predicted.hexString), ±1 byte)"
+        )
+
+        // The leading segment: one pill inset in from the leading edge, the
+        // width of `CHERRY-PICK` as the capsule's own font measures it. Reading
+        // the whole ink band instead would find the brightest pixel on the pill,
+        // which is the branch's grey foreground, and the arm would grade the
+        // wrong segment while looking like it worked.
+        let band = inkBand(of: measured.capsule)
+        let head = NSRect(
+            x: band.minX, y: band.minY,
+            width: operationLabelWidth, height: band.height
+        )
+        let ink = broken
+            ? measured.band
+            : brightest(in: head, rep: measured.rep, size: measured.pane.size)
+
+        let ratio = ink.contrastRatio(against: measured.band)
+        let separation = ink.perceptualDistance(to: noticeRed)
+        print(String(
+            format: "       pill %.0f pt wide, band %@, operation ink %@ -> %.2f:1, "
+                + "distance from the notice red %@ is %.1f%@",
+            measured.capsule.width, measured.band.hexString, ink.hexString,
+            ratio, noticeRed.hexString, separation,
+            broken ? "  (control: ink set to the pill's own face)" : ""
+        ))
+
+        if !broken {
+            check(
+                within(ink, expected, bytes: 2),
+                "the leading segment's ink \(ink.hexString) is operationInk's answer "
+                    + "\(expected.hexString) (±2 bytes) over \(backdrop.name)"
+            )
+            // Not a byte inequality: the claim is that the eye can tell the two
+            // rehomed facts apart, so the threshold is a perceptual one. 20 is
+            // far below the measured separation and far above the ±2 byte
+            // tolerance above, so it cannot be met by antialiasing noise and
+            // cannot be missed by two genuinely different tiers.
+            check(
+                separation > operationAlertSeparation,
+                String(
+                    format: "the operation ink is perceptually distinct from the notice's "
+                        + "alert red: %.1f > %.1f over %@",
+                    separation, operationAlertSeparation, backdrop.name
+                )
+            )
+        }
+
+        check(
+            ratio >= textFloor,
+            String(
+                format: "the operation reads %.2f:1 >= %.1f:1 (PaneTheme.minimumTextContrast) over %@",
+                ratio, textFloor, backdrop.name
+            )
+        )
+    }
+}
+
+/// How wide `CHERRY-PICK` is in the capsule's own font, measured through the same
+/// `NSFont` `PaneClusterView` draws with rather than hard-coded, so a font change
+/// moves the sampled rect with the drawn glyphs.
+@MainActor let operationLabelWidth: Double = {
+    let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+    return Double(
+        NSAttributedString(string: "CHERRY-PICK", attributes: [.font: font]).size().width
+    )
+}()
+
+/// The perceptual distance the operation's ink must keep from the notice's.
+///
+/// A fixed literal and **not derived from either ink**, which is the discipline
+/// the presence floor is documented under: a threshold computed from the two
+/// colours it compares would pass whatever they happened to be. 20 is chosen
+/// against the two tolerances it sits between — an order of magnitude above the
+/// ±2 byte antialiasing tolerance the colour match uses, and far below the
+/// separation two genuinely different palette tiers produce — so it fails on a
+/// collapse and cannot be met by noise. The control, which sets the ink to the
+/// pill's own face, is what proves it has teeth.
+let operationAlertSeparation = 20.0
+
+/// `fits`: the pill never runs off the pane it belongs to, and the operation is
+/// what made that reachable.
+///
+/// **The band this arm exists for.** `(a1b2c3d) *` is a 92.0 pt pill and
+/// `CHERRY-PICK (a1b2c3d) *` is 174.8 pt, so a pane between about 98 and 181 pt
+/// wide drew its pill correctly right up until a cherry-pick started and then
+/// grew past its own leading edge, over the neighbouring pane — for a `bisect`,
+/// until `bisect reset`. `PaneClusterLayout.fitting` drops resting segments to
+/// the pane's budget; the package tests pin the arithmetic and this arm watches
+/// the *rendered view* obey it, because the fitting pass runs inside
+/// `remeasure()` off `superview.bounds` and nothing in the package can see
+/// whether the view actually consults its pane.
+///
+/// Three widths, each a different claim: a wide pane keeps every segment (so the
+/// fix is not "always drop"), a mid pane drops down to what fits, and a very
+/// narrow pane still leaves the capsule inside its own bounds.
+///
+/// Control: `break` renders through the unfitted segment list — what the view
+/// did before — which puts the pill's leading edge off the pane and fails the
+/// containment check. That is the defect itself as the negative control.
+@MainActor func armFits() {
+    print("== fits: a pill is never wider than the pane it is pinned in")
+    let theme = PaneTheme.darkPastel
+
+    for width in [300.0, 150, 90] {
+        let capsule = makeCapsule(theme: theme, focused: false)
+        let built = PaneClusterSegments.build(from: cherryPickStatus)
+
+        // The control renders the segments unfitted, by handing the view a pane
+        // it never sees: with no superview `remeasure()` skips the budget
+        // entirely (its own documented behaviour), which is exactly the
+        // pre-fix geometry.
+        let (rep, pane, frame) = broken
+            ? renderUnfitted(capsule, segments: built, backdrop: backdrops[0].colour, paneWidth: width)
+            : renderInPane(capsule, segments: built, backdrop: backdrops[0].colour, paneWidth: width)
+        _ = rep
+
+        // What the view kept, derived rather than read off it: the pill's width
+        // is the observable, and `fitting` is a pure function this probe can ask
+        // the same question. No diagnostics-only accessor is added to the
+        // shipped view for a probe's sake.
+        let roles = PaneClusterLayout.fitting(
+            segments: built,
+            widths: measuredSegmentWidths(built),
+            budget: PaneClusterLayout.pillWidthBudget(
+                paneWidth: width, cornerInset: PaneClusterMetrics.cornerInset
+            )
+        ).map(\.role)
+        print(String(
+            format: "       pane %.0f pt -> pill %.1f pt at x %.1f, segments %@%@",
+            width, frame.width, frame.minX,
+            roles.map { "\($0)" }.joined(separator: "+"),
+            broken ? "  (control: measured with no pane, so unfitted)" : ""
+        ))
+
+        // The claim: the pill's own frame is inside the pane. A frame that
+        // starts left of zero is drawn over the *neighbouring* pane, because
+        // drawing is not clipped by the pane's frame (nothing sets
+        // `clipsToBounds` on it).
+        //
+        // Drawn over, and only that. An earlier version of this comment added
+        // "and opens this pane's cards", on the belief that `hitTest` answering
+        // self anywhere in `bounds` handed the overhang the neighbour's clicks.
+        // It does not: AppKit tests a point against each subview's frame before
+        // descending, so a point outside the pane never reaches this view, and
+        // `PaneClusterView.hitTest` is never called for it. Measured on a real
+        // two-pane split; see that function's doc for the numbers. The visual
+        // overflow below is the real defect and the whole one.
+        check(
+            frame.minX >= 0,
+            String(format: "the pill's leading edge %.1f is inside the pane at %.0f pt", frame.minX, width)
+        )
+        check(
+            frame.maxX <= pane.maxX,
+            String(format: "the pill's trailing edge %.1f is inside the pane at %.0f pt", frame.maxX, width)
+        )
+
+        if !broken {
+            // No assertion about the attention dot here: `cherryPickStatus`
+            // carries `agent: nil`, so `build` emits no attention segment and
+            // there is no dot on this pill to survive anything. That the dot is
+            // never dropped is `PaneClusterLayoutTests`'
+            // `theAttentionDotSurvivesEveryBudget`, where the fixture has one.
+            //
+            // The fit keeps what fits rather than dropping until it fits, so a
+            // pane wide enough for the place segment beside the dot keeps it.
+            // Asserted against the arithmetic rather than a hardcoded pane
+            // width, so this cannot drift from `fitting` the way a magic
+            // threshold did: a 150 pt pane used to be expected to have given
+            // the branch name up.
+            let placeAndDot = PaneClusterLayout.width(
+                of: built.filter { $0.role == .place || $0.role == .attention },
+                widths: measuredSegmentWidths(built)
+            )
+            let budget = PaneClusterLayout.pillWidthBudget(
+                paneWidth: width, cornerInset: PaneClusterMetrics.cornerInset
+            )
+            check(
+                placeAndDot > budget || roles.contains(.place),
+                String(
+                    format: "a pane with room for the place segment keeps it at %.0f pt "
+                        + "(place+dot %.1f vs budget %.1f)",
+                    width, placeAndDot, budget
+                )
+            )
+            // And a wide pane keeps the operation, so the fitting pass is not
+            // simply refusing to draw it.
+            if width >= 300 {
+                check(
+                    roles.contains(.operation),
+                    "a 300 pt pane still wears the whole operation label"
+                )
+            }
+        }
+    }
+}
+
+/// A segment dropped by the fit announces itself, so the card anchored to it
+/// can come down.
+///
+/// **The failure this grades.** A card is anchored to a segment. Until
+/// 2026-08-13 only one thing was known to take a segment away — a notice, which
+/// claims the pill alone — and `TerminalPaneController.showNotice` dismissed the
+/// open card itself. The fitting pass added a second: drag a divider narrow
+/// enough and `fitting` drops the role. Nothing told the controller, so the card
+/// stayed on screen anchored to a segment that no longer existed, with no active
+/// wash behind it (`segmentRect(for:)` answers nil for an unplaced role) and no
+/// segment left to click to dismiss it.
+///
+/// Both causes now raise `PaneClusterView.onSegmentsVanished` from `remeasure`,
+/// which is the one funnel every placement change runs through. This arm drives
+/// the *narrowing* cause, which is the one that had no coverage: install a
+/// capsule in a wide pane, confirm the changes segment is on it, narrow the pane
+/// to a width the arithmetic says cannot hold it, and require the callback to
+/// name `.changes`.
+///
+/// A probe rather than a package test because `onSegmentsVanished` is raised by
+/// `PaneClusterView`, which is in `Sources/` and needs AppKit to measure text;
+/// the narrowing is a real `frameDidChange` on a real superview. No window is
+/// opened and no focus taken, per this probe's own contract.
+@MainActor func armVanish() {
+    print("== vanish: a segment dropped by the fit tells the controller it is gone")
+    let theme = PaneTheme.darkPastel
+    let capsule = makeCapsule(theme: theme, focused: false)
+    let built = PaneClusterSegments.build(from: cherryPickStatus)
+
+    var vanished: [PaneClusterSegmentRole] = []
+    capsule.onSegmentsVanished = { roles in vanished.append(contentsOf: roles) }
+
+    // Wide enough for everything the status carries.
+    let wide = 400.0
+    let pane = NSRect(x: 0, y: 0, width: wide, height: 120)
+    let container = BackdropView(frame: pane)
+    container.colour = nsSRGB(backdrops[0].colour)
+    container.addSubview(capsule)
+    // Installed, then fed, for `renderInPane`'s stated reason.
+    capsule.segments = built
+    container.layoutSubtreeIfNeeded()
+
+    let widths = measuredSegmentWidths(built)
+    let atWide = PaneClusterLayout.fitting(
+        segments: built, widths: widths,
+        budget: PaneClusterLayout.pillWidthBudget(
+            paneWidth: wide, cornerInset: PaneClusterMetrics.cornerInset
+        )
+    ).map(\.role)
+    print("       pane \(Int(wide)) pt -> segments \(atWide.map { "\($0)" }.joined(separator: "+"))")
+    check(atWide.contains(.changes), "the wide pane starts with the changes segment on the pill")
+
+    // Narrow to a width whose budget cannot hold the changes segment. Derived
+    // rather than hardcoded so this cannot drift from `fitting`.
+    let narrow = 100.0
+    let atNarrow = PaneClusterLayout.fitting(
+        segments: built, widths: widths,
+        budget: PaneClusterLayout.pillWidthBudget(
+            paneWidth: narrow, cornerInset: PaneClusterMetrics.cornerInset
+        )
+    ).map(\.role)
+    print("       pane \(Int(narrow)) pt -> segments \(atNarrow.map { "\($0)" }.joined(separator: "+"))")
+    check(
+        !atNarrow.contains(.changes),
+        "the narrow pane genuinely drops changes, so this arm tests what it claims"
+    )
+
+    vanished.removeAll()
+    // The real resize: the superview's frame moves, which is what a divider drag
+    // does, and `PaneClusterView` observes `frameDidChangeNotification` on it.
+    //
+    // The control breaks the *signal*, not the geometry: the callback is cleared,
+    // which is exactly the shipped state before this fix (nothing told the
+    // controller). The narrowing still happens and the segment still goes.
+    if broken { capsule.onSegmentsVanished = nil }
+    container.frame = NSRect(x: 0, y: 0, width: narrow, height: 120)
+    container.layoutSubtreeIfNeeded()
+
+    print("       vanished -> \(vanished.isEmpty ? "(nothing)" : vanished.map { "\($0)" }.joined(separator: "+"))")
+    check(
+        vanished.contains(.changes),
+        "narrowing the pane announced that the changes segment is gone"
+    )
+}
+
+/// Each segment measured in the capsule's own font, the same measurement
+/// `PaneClusterView.remeasure()` makes before it calls `fitting`. Through
+/// `NSAttributedString` rather than a table of numbers so a font change moves
+/// this with the drawn glyphs.
+@MainActor func measuredSegmentWidths(
+    _ segments: [PaneClusterSegment]
+) -> [PaneClusterSegmentRole: Double] {
+    let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+    var widths: [PaneClusterSegmentRole: Double] = [:]
+    for segment in segments {
+        widths[segment.role] = segment.role == .attention
+            ? PaneClusterMetrics.dotDiameter
+            : Double(
+                NSAttributedString(string: segment.text, attributes: [.font: font]).size().width
+            )
+    }
+    return widths
+}
+
+/// `renderInPane` with the budget defeated: the capsule is fed its segments
+/// *before* it has a superview, so `remeasure()` finds no pane, skips the
+/// fitting pass, and keeps the unfitted width when it is installed. This is the
+/// geometry the view shipped with until 2026-08-13 and it is only ever used by
+/// `armFits`' negative control.
+@MainActor func renderUnfitted(
+    _ view: PaneClusterView,
+    segments: [PaneClusterSegment],
+    backdrop: RGB,
+    paneWidth: Double
+) -> (rep: NSBitmapImageRep, pane: NSRect, capsule: NSRect) {
+    // Fed first, with no pane in sight.
+    view.segments = segments
+
+    let pane = NSRect(x: 0, y: 0, width: paneWidth, height: 120)
+    let container = BackdropView(frame: pane)
+    container.colour = nsSRGB(backdrop)
+    container.addSubview(view)
+
+    let size = view.intrinsicContentSize
+    view.frame = NSRect(
+        x: pane.width - PaneClusterMetrics.cornerInset - size.width,
+        y: PaneClusterMetrics.cornerInset,
+        width: size.width,
+        height: size.height
+    )
+    container.layoutSubtreeIfNeeded()
+
+    guard let rep = container.bitmapImageRepForCachingDisplay(in: container.bounds) else {
+        fatalError("no bitmap rep for the pane container")
+    }
+    container.cacheDisplay(in: container.bounds, to: rep)
+    return (rep, pane, view.frame)
+}
+
 // MARK: - main
 
 @main
@@ -652,6 +1078,9 @@ enum Probe {
             "draws": armDraws,
             "bare-shell": armBareShell,
             "legible": armLegible,
+            "operation": armOperation,
+            "fits": armFits,
+            "vanish": armVanish,
         ]
 
         State.broken = CommandLine.arguments.contains("break")

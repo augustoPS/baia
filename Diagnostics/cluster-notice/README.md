@@ -1,10 +1,20 @@
 # Capsule notice
 
-`./run.sh` from anywhere. Three arms — `draws`, `bare-shell`, `legible` — each
-over two backdrops, each followed by its inverted control; exits non-zero if any
-arm misses its floor, if any control loses its teeth, or if a measured fill band
-stops matching the composite prediction. Needs only `swiftc`; no app build, no
-capture, no `python3`.
+`./run.sh` from anywhere. Six arms — `draws`, `bare-shell`, `legible`,
+`operation`, `fits`, `vanish` — the first four over two backdrops, `fits` over
+three pane widths, each followed by its inverted control; exits non-zero if any
+arm misses its floor, if any control loses its teeth, if a measured fill band
+stops matching the composite prediction, if a pill lands outside the pane it is
+pinned in, or if a segment dropped by the fit fails to announce itself. Needs
+only `swiftc`; no app build, no capture, no `python3`.
+
+**This probe graded one rehomed fact until 2026-08-13 and now grades two.** The
+`operation` arm joined when `PaneStatus.Git.operation` — the second and last
+homeless footer fact — was given a home on the same pill. It is asked here rather
+than in a probe of its own because it is the same question about the same
+surface, and because the one claim neither fact can make alone is about the
+*pair*: the notice is drawn in alert ink and the operation deliberately is not,
+and only pixels can show that the two are actually different colours on a pill.
 
 **Safe from anywhere, including inside a baia pane.** The probe opens no window,
 takes no focus, launches nothing and quits nothing: every arm renders the shipped
@@ -206,6 +216,111 @@ the arm would pass broken. So the control damages the graded *pixel*, downstream
 of the repair. Everything under it — theme, render, band sampling, the grade — is
 the arm's own, so a probe reading the wrong pixels still fails there.
 
+### `operation`
+
+A repository halfway through a cherry-pick, with the branch detached the way git
+actually leaves it mid-operation. Asserts the leading segment is drawn, in
+`PaneClusterInk.operationInk`'s answer, clearing the same text floor — and that
+its ink is **perceptually distinct from the notice's alert red**.
+
+That last check is the arm's reason to exist. `PaneClusterInk` argues that alert
+stays reserved for conflicted files and an agent asking, so a mid-rebase pane
+does not cry "act now" for the hours it is mid-rebase; the argument is only true
+if the drawn pixels differ. The package tests pin the *tier asked for*
+(`PaneClusterInkTests.theOperationIsNeverDrawnInTheNoticesAlertInk`) and they
+also record the one case where the guarantee is conditional — on a light theme
+under glass both tiers exhaust the repair chain and land on its black last
+resort. This arm measures the shipped dark theme, where they do not.
+
+`CHERRY-PICK` is the fixture because it is the longest label
+`PaneStatus.Git.operationLabel` produces, so it is the one that exercises the
+width the segment costs. The head is `(a1b2c3d)` because that is what
+`RepositoryStatus.displayHead` answers for a detached HEAD, which is the state a
+halted cherry-pick leaves the repository in — the argument for putting this
+segment on the pill at all, rendered rather than asserted in prose.
+
+The ink is read from the pill's **leading** inset rather than from the whole ink
+band, which makes the read a check on the order from the pixel side: an operation
+drawn after the branch leaves the branch's grey foreground here and the colour
+match fails. Reading the whole band would find the brightest pixel on the pill,
+which is that same grey, and the arm would grade the wrong segment while looking
+like it worked.
+
+The separation threshold is a fixed 20 perceptual units, not derived from either
+ink — the discipline the presence floor is documented under. It sits an order of
+magnitude above the ±2 byte antialiasing tolerance the colour match uses and far
+below what two genuinely different palette tiers produce (46.9 measured), so it
+fails on a collapse and cannot be met by noise.
+
+Control: the graded ink set to the pill's own composited face, `legible`'s
+control for `legible`'s reason — the repair chain's last resort rescues any
+damaged theme, so damaging the theme would let the arm pass broken.
+
+### `fits`
+
+The same cherry-picking repository, rendered in panes of 300, 150 and 90 points,
+asserting the pill's frame stays inside the pane at every one.
+
+**The failure it watches for is the operation's own doing.** `(a1b2c3d) *` is a
+92.0 pt pill and `CHERRY-PICK (a1b2c3d) *` is 174.8 pt, so a pane anywhere
+between about 98 and 181 pt wide drew its pill correctly right up to the moment a
+cherry-pick began, and then the pill — pinned by its top-right corner, sized from
+`intrinsicContentSize`, with no leading constraint and nothing clipping it — grew
+past the pane's leading edge and over the neighbouring pane. It stays there until
+the operation ends, which for `git bisect` is until `bisect reset`.
+
+**The overlap is visual and only visual, and this README claimed otherwise until
+2026-08-13.** It said the overhanging strip "took clicks aimed at the
+*neighbouring* pane and opened this pane's cards with them", because
+`PaneClusterView.hitTest` answers self anywhere inside `bounds`. That is false:
+`NSView.hitTest` tests a point against each subview's frame before descending
+into it, so a point past the pane's leading edge never reaches the pill and its
+`hitTest` is never called. Measured on a real `NSSplitViewController` with two
+pane containers and a pill overhanging 156 pt — the neighbour's click resolved to
+the neighbour with the guard on *and* off, `pill.hitTest` called zero times,
+while a control click on the pill inside its own pane resolved to the pill. The
+pane-bounds guard written to defend against the imagined click was dead code and
+has been removed; see `PaneClusterView.hitTest`.
+
+Drawing has no such clip (nothing sets `clipsToBounds` on the pane), which is why
+the visual half was real.
+
+`PaneClusterLayout.fitting` is the fix and `PaneClusterLayoutTests` pins its
+arithmetic. This arm exists because that arithmetic runs inside `remeasure()`
+against `superview.bounds`, and no package test can see whether the view actually
+consults its pane. The assertion is geometric rather than chromatic: the pill's
+frame against the pane's.
+
+Control: the capsule is fed its segments before it has a superview, so
+`remeasure()` finds no pane and skips the budget. That is the pre-fix geometry
+exactly, and it reproduces the defect: the leading edge lands at **-44.4** in a
+150 pt pane and **-104.4** in a 90 pt one.
+
+### `vanish`
+
+A capsule installed in a 400 pt pane, then narrowed to 100, asserting the view
+announces the segments that left the pill.
+
+**The rule is old; the second way to break it is new.** A card is anchored to a
+segment, so a segment that stops existing while its card is up leaves the card
+hanging beside a pill that no longer says what it is about — with no active wash
+(the pill washes off the placement, and the role is not in it) and no segment
+left to click to dismiss it. `TerminalPaneController.showNotice` knew that and
+dismissed the card itself, because a notice claims the pill alone. The fitting
+pass then introduced a second way for a segment to disappear — drag a divider
+narrow enough and `fitting` drops the role — which went nowhere near
+`showNotice`, so the card stayed up.
+
+Both causes now raise `PaneClusterView.onSegmentsVanished` from `remeasure()`,
+the one funnel every placement change runs through, and the controller's
+`clusterSegmentsVanished` is the single response. This arm drives the narrowing
+cause, which had no coverage: at 400 pt the pill carries `operation+place+changes`
+and at 100 pt the fit leaves `place`, so the callback must name `changes`.
+
+Control: the callback is unsubscribed, which is exactly the shipped state before
+the fix — the narrowing still happens, the segment still goes, and nothing is
+announced (`vanished -> (nothing)`).
+
 ## The numbers, 2026-08-13
 
 Deterministic. A changed byte is a changed feature.
@@ -220,6 +335,34 @@ Deterministic. A changed byte is a changed feature.
 | legible | fillChrome | `#7c7c7c` | `#363638` | `#ff9090` | 5.52:1 |
 | legible | fillThick | `#141414` | `#151718` | `#ff9090` | 8.26:1 |
 | legible | fillThick | `#7c7c7c` | `#323435` | `#ff9090` | 5.75:1 |
+| operation | fillChrome | `#141414` | `#141415` | `#c4c545` | 10.00:1 |
+| operation | fillChrome | `#7c7c7c` | `#363638` | `#c4c545` | 6.51:1 |
+
+The operation's pill measures 188 pt at `CHERRY-PICK` over a detached head, and
+its ink sits **46.9** perceptual units from the notice's `#ff9191` on both
+backdrops — the alert reservation holding in drawn pixels rather than only in the
+package's tiers. `operationInk` answers `#c4c445` against the `#c4c545` measured,
+the same one-byte antialiasing gap the notice shows.
+
+`fits` measures geometry rather than colour, and the control column is the
+defect:
+
+| pane | pill, fitted | leading edge | segments kept | pill, unfitted (control) | leading edge |
+|---|---|---|---|---|---|
+| 300 pt | 188.4 pt | 105.6 | operation+place+changes | 188.4 pt | 105.6 |
+| 150 pt | 105.6 pt | 38.4 | place+changes | 188.4 pt | **-44.4** |
+| 90 pt | 77.2 pt | 6.8 | place | 188.4 pt | **-104.4** |
+
+The 150 pt row read `77.2 pt` at `66.8` with `place` alone until the fit was
+corrected on 2026-08-13. That was the overshoot: `fitting` walked the drop order
+once and never reconsidered, so `changes` stayed dropped after `operation` was
+dropped too and freed far more room than `changes` had needed. The pane now keeps
+`place+changes` at 105.6 against a 138.0 pt budget.
+
+A 300 pt pane is unaffected, which is why the defect survived review: the widths
+that break are the ones nobody photographs. At 150 and 90 the unfitted pill hangs
+44 and 104 points into the neighbouring pane, and every one of those points was a
+click target routed to the wrong pane's card.
 
 The notice pill measures 485 pt wide at this sentence and pane width; the resting
 pill measures 141 pt. `noticeInk` answers `#ff9191` and the drawn glyph core reads

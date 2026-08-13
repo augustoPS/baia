@@ -290,4 +290,361 @@ import Testing
                 == .insetAboveBar
         )
     }
+
+    // MARK: - Fitting the pill to its pane
+
+    /// The widths the shipped 11 pt monospace actually measures, so the pane
+    /// numbers below are the ones a user hits rather than round fixtures.
+    /// Measured 2026-08-13 through `NSAttributedString.size().width`, the same
+    /// call `PaneClusterView.remeasure()` makes.
+    private var measuredWidths: [PaneClusterSegmentRole: Double] {
+        [
+            .operation: 74.7978515625, // CHERRY-PICK
+            .place: 61.1982421875, // (a1b2c3d)
+            .changes: 6.7998046875, // *
+            .agent: 40.798828125, // claude
+            .attention: PaneClusterMetrics.dotDiameter,
+        ]
+    }
+
+    private var cherryPicking: [PaneClusterSegment] {
+        [
+            .init(role: .operation, text: "CHERRY-PICK"),
+            .init(role: .place, text: "(a1b2c3d)"),
+            .init(role: .changes, text: "*"),
+        ]
+    }
+
+    /// **The failure band the fitting pass exists for.** Without a budget the
+    /// pill takes its width from its content and is pinned by its top-right
+    /// corner alone, so a pill wider than its pane hangs over the neighbour.
+    ///
+    /// The numbers are the point: `(a1b2c3d) *` is a 92.0 pt pill and the same
+    /// pane mid-cherry-pick is 174.8 pt, so every pane between those two widths
+    /// drew correctly until the operation arrived. Asserted as *what the pane
+    /// gets*, not as "something was dropped", so a fix that dropped the wrong
+    /// segment fails here too.
+    @Test func aPaneTooNarrowForTheOperationKeepsThePlaceInstead() {
+        let widths = measuredWidths
+        // 174.80 with the operation; 92.00 without it. The 83 pt between them is
+        // the band of panes this defect appeared in.
+        let full = PaneClusterLayout.width(of: cherryPicking, widths: widths)
+        #expect(abs(full - 174.80) < 0.01)
+        #expect(
+            abs(PaneClusterLayout.width(
+                of: cherryPicking.filter { $0.role != .operation }, widths: widths
+            ) - 92.00) < 0.01
+        )
+
+        // A 300 pt pane is fine and nothing is dropped — the case the original
+        // comment reasoned from, kept so the fix cannot be "drop always".
+        #expect(
+            PaneClusterLayout.fitting(
+                segments: cherryPicking,
+                widths: widths,
+                budget: PaneClusterLayout.pillWidthBudget(paneWidth: 300, cornerInset: 6)
+            ).map(\.role) == [.operation, .place, .changes]
+        )
+
+        // A 120 pt pane is inside the band: its 108 pt budget cannot hold the
+        // operation (174.8) but does hold `(a1b2c3d) *` (92.0). The operation is
+        // the only thing given up — changes is *not*, because the fit keeps the
+        // best-ranked set that fits rather than walking the drop order once.
+        // (An earlier version of this pass dropped changes here too and left the
+        // pill at 77.2 against 108 pt of room; see `fitting`'s doc.)
+        #expect(
+            PaneClusterLayout.fitting(
+                segments: cherryPicking,
+                widths: widths,
+                budget: PaneClusterLayout.pillWidthBudget(paneWidth: 120, cornerInset: 6)
+            ).map(\.role) == [.place, .changes]
+        )
+
+        // And the survivors genuinely fit, which is the whole claim: no pill
+        // wider than its pane, so nothing to hang over the neighbour. 92.0 <= 108.
+        #expect(
+            PaneClusterLayout.width(
+                of: [
+                    .init(role: .place, text: "(a1b2c3d)"),
+                    .init(role: .changes, text: "*"),
+                ],
+                widths: widths
+            ) <= PaneClusterLayout.pillWidthBudget(paneWidth: 120, cornerInset: 6)
+        )
+    }
+
+    /// The order is agent, changes, operation, place — least missed first — and
+    /// it is a *precedence*, not a ratchet: at every budget the pill wears the
+    /// best-ranked set of segments that fits, rather than whatever is left after
+    /// walking the drop order once.
+    ///
+    /// **Every expectation below is arithmetic from ``measuredWidths``, computed
+    /// by hand and shown, not read off what `fitting` returns.** The previous
+    /// version of this test pinned the greedy implementation's own output —
+    /// including a `(170, [.place, .attention])` step that was the overshoot
+    /// defect written down as an invariant, with a comment calling it "a real
+    /// property of these widths". A check whose expectations come from running
+    /// the code under test grades nothing.
+    ///
+    /// A pill of n segments costs `sum(widths) + 8*(n-1) + 16`. The five
+    /// relevant sets, worked out:
+    ///
+    ///   - `operation place changes agent attention`
+    ///     = 74.80+61.20+6.80+40.80+6.00 + 8*4 + 16 = 237.59
+    ///   - `operation place attention` = 74.80+61.20+6.00 + 8*2 + 16 = 174.00
+    ///   - `place changes attention`   = 61.20+6.80+6.00  + 8*2 + 16 = 106.00
+    ///   - `place attention`           = 61.20+6.00       + 8*1 + 16 =  91.20
+    ///   - `changes agent attention`   = 6.80+40.80+6.00  + 8*2 + 16 =  85.60
+    ///   - `attention`                 = 6.00             + 8*0 + 16 =  22.00
+    @Test func theFitKeepsTheBestRankedSetThatActuallyFits() {
+        let widths = measuredWidths
+        let all: [PaneClusterSegment] = [
+            .init(role: .operation, text: "CHERRY-PICK"),
+            .init(role: .place, text: "(a1b2c3d)"),
+            .init(role: .changes, text: "*"),
+            .init(role: .agent, text: "claude"),
+            .init(role: .attention, text: ""),
+        ]
+
+        let steps: [(budget: Double, roles: [PaneClusterSegmentRole], why: String)] = [
+            // Everything fits.
+            (400, [.operation, .place, .changes, .agent, .attention], "237.59 <= 400"),
+            // 188 admits `operation place changes attention` (188.79)? No —
+            // 188.79 > 188. Next rank down keeping place and operation is
+            // `operation place attention` at 174.00, which fits.
+            (188, [.operation, .place, .attention], "174.00 <= 188 < 188.79"),
+            // The step the old test got wrong. At 170 the operation cannot stay
+            // beside place (174.00 > 170), so operation is given up — and the
+            // room it frees is then spent on changes *and* agent, both of which
+            // the greedy version had already thrown away for nothing:
+            // `place changes agent attention` = 61.20+6.80+40.80+6.00 + 8*3 + 16
+            // = 154.80, which fits in 170. Keeping agent as well is not a
+            // consolation prize: it costs nothing any more precious segment
+            // needed, and the precedence vector (place, operation, changes,
+            // agent) reads 1,0,1,1 against 1,0,1,0 for dropping it.
+            (170, [.place, .changes, .agent, .attention], "154.80 <= 170 < 174.00"),
+            // 120 cannot hold agent too (154.80 > 120) but holds changes.
+            (120, [.place, .changes, .attention], "106.00 <= 120 < 154.80"),
+            // Below `place changes attention` (106.00) but above
+            // `place attention` (91.20): changes is the one given up.
+            (100, [.place, .attention], "91.20 <= 100 < 106.00"),
+            // Under 91.20 no set containing place fits at all, so precedence
+            // falls through a rank and the budget buys changes and agent
+            // instead. Non-monotonic in place, and correct: see `fitting`'s doc.
+            (91, [.changes, .agent, .attention], "91.20 > 91, 85.60 <= 91"),
+            // Under 85.60: agent is the first given up at this rank.
+            (85, [.changes, .attention], "36.80 <= 85 < 85.60"),
+            // Under `changes attention` (36.80): the dot alone.
+            (30, [.attention], "22.00 <= 30 < 36.80"),
+            // Under even the dot's own pill. Nothing droppable is left and the
+            // dot survives anyway.
+            (20, [.attention], "22.00 > 20, dot is undroppable"),
+        ]
+        for (budget, roles, why) in steps {
+            #expect(
+                PaneClusterLayout.fitting(segments: all, widths: widths, budget: budget)
+                    .map(\.role) == roles,
+                "budget \(budget): \(why)"
+            )
+        }
+    }
+
+    /// The property behind the table above, checked against a brute-force oracle
+    /// rather than against a second copy of the algorithm.
+    ///
+    /// For every budget on a fine sweep, the oracle enumerates all subsets of the
+    /// droppable roles independently of `fitting`, keeps those that fit, and
+    /// picks the best by the same lexicographic precedence the doc states —
+    /// place, then operation, then changes, then agent. `fitting` must agree.
+    /// This is what fails if the implementation ever returns a set that fits but
+    /// is not the best one (the overshoot defect), or one that is best-ranked but
+    /// does not fit.
+    @Test func theFitIsTheBestRankedSetThatFitsRatherThanTheFirstOne() {
+        let widths = measuredWidths
+        let all: [PaneClusterSegment] = [
+            .init(role: .operation, text: "CHERRY-PICK"),
+            .init(role: .place, text: "(a1b2c3d)"),
+            .init(role: .changes, text: "*"),
+            .init(role: .agent, text: "claude"),
+            .init(role: .attention, text: ""),
+        ]
+        let droppable = PaneClusterLayout.dropOrder
+        // Most precious first, which is the drop order reversed.
+        let precedence = Array(droppable.reversed())
+
+        for step in stride(from: 0.0, through: 260, by: 0.5) {
+            // The oracle: all 16 subsets, filtered to those that fit, ranked.
+            var bestRoles: [PaneClusterSegmentRole]?
+            var bestRank: [Int]?
+            for mask in 0..<(1 << droppable.count) {
+                var kept: Set<PaneClusterSegmentRole> = []
+                for (index, role) in droppable.enumerated() where mask & (1 << index) != 0 {
+                    kept.insert(role)
+                }
+                let candidate = all.filter {
+                    kept.contains($0.role) || !droppable.contains($0.role)
+                }
+                guard PaneClusterLayout.width(of: candidate, widths: widths) <= step
+                else { continue }
+                let rank = precedence.map { kept.contains($0) ? 1 : 0 }
+                if let current = bestRank, !current.lexicographicallyPrecedes(rank) { continue }
+                bestRank = rank
+                bestRoles = candidate.map(\.role)
+            }
+            // Nothing fits at all: the undroppable roles survive regardless.
+            let expected = bestRoles ?? all.filter { !droppable.contains($0.role) }.map(\.role)
+
+            #expect(
+                PaneClusterLayout.fitting(segments: all, widths: widths, budget: step)
+                    .map(\.role) == expected,
+                "budget \(step)"
+            )
+        }
+    }
+
+    /// No survivor set ever exceeds the budget it was fitted to — the claim the
+    /// whole pass exists for, since a pill wider than its pane is the thing that
+    /// draws over the neighbour. Checked on every subset of the segments, so a
+    /// status carrying only some of the roles is covered too, and at budgets
+    /// down to zero.
+    ///
+    /// The one documented exception is a budget too small for the undroppable
+    /// roles alone: the attention dot is never given up, so a pane narrower than
+    /// 22 pt still wears its dot. Asserted as exactly that, rather than skipped.
+    @Test func aFittedPillNeverExceedsItsBudget() {
+        let widths = measuredWidths
+        let all: [PaneClusterSegment] = [
+            .init(role: .operation, text: "CHERRY-PICK"),
+            .init(role: .place, text: "(a1b2c3d)"),
+            .init(role: .changes, text: "*"),
+            .init(role: .agent, text: "claude"),
+            .init(role: .attention, text: ""),
+        ]
+        let undroppableOnly = all.filter { !PaneClusterLayout.dropOrder.contains($0.role) }
+        let floor = PaneClusterLayout.width(of: undroppableOnly, widths: widths)
+
+        for mask in 0..<(1 << all.count) {
+            let segments = all.enumerated()
+                .filter { mask & (1 << $0.offset) != 0 }
+                .map(\.element)
+            for step in stride(from: 0.0, through: 260, by: 2.5) {
+                let kept = PaneClusterLayout.fitting(
+                    segments: segments, widths: widths, budget: step
+                )
+                let width = PaneClusterLayout.width(of: kept, widths: widths)
+                guard width > step else { continue }
+                // Over budget is allowed only when the undroppable roles alone
+                // already exceed it.
+                #expect(
+                    kept.allSatisfy { !PaneClusterLayout.dropOrder.contains($0.role) }
+                        && step < floor,
+                    "budget \(step) kept \(kept.map(\.role)) at \(width)"
+                )
+            }
+        }
+    }
+
+    /// The dot is never dropped. It is 6 pt, it is what a pane is scanned for
+    /// from across the window, and the approval popover reserves a position
+    /// against it (`PaneClusterView.approvalAnchorRect()`), so a fitting pass
+    /// that could drop it would move a popover's anchor by narrowing a pane.
+    @Test func theAttentionDotSurvivesEveryBudget() {
+        let widths = measuredWidths
+        let all: [PaneClusterSegment] = [
+            .init(role: .operation, text: "CHERRY-PICK"),
+            .init(role: .place, text: "(a1b2c3d)"),
+            .init(role: .changes, text: "*"),
+            .init(role: .agent, text: "claude"),
+            .init(role: .attention, text: ""),
+        ]
+        // The claim is that the dot is *present* at every budget, which is what
+        // the popover's anchor depends on — not that it is alone.
+        //
+        // **This test asserted `== [.attention]` at every budget below 91.20
+        // until 2026-08-13, and that was the greedy overshoot written down as an
+        // invariant.** Dropping until the survivors fit emptied the pill down to
+        // the dot far earlier than the arithmetic requires: at a budget of 50 the
+        // pill can afford `changes attention` (36.80) and at 91 it can afford
+        // `changes agent attention` (85.60). Pinning "only the dot" made the
+        // defect look like the specification. The dot's survival is the property;
+        // what accompanies it is `theFitKeepsTheBestRankedSetThatActuallyFits`'
+        // business.
+        for budget in [0.0, 1, 10, 22, 50, 91] {
+            let kept = PaneClusterLayout.fitting(segments: all, widths: widths, budget: budget)
+            #expect(kept.map(\.role).contains(.attention), "budget \(budget)")
+        }
+
+        // The genuinely load-bearing end of the range: below the dot's own 22 pt
+        // pill nothing droppable is left, and it survives anyway rather than the
+        // pill emptying. `fitting` runs out of candidates and keeps the
+        // undroppable roles.
+        for budget in [0.0, 1, 10, 20] {
+            let kept = PaneClusterLayout.fitting(segments: all, widths: widths, budget: budget)
+            #expect(kept.map(\.role) == [.attention], "budget \(budget)")
+        }
+
+        // And `dropOrder` is the reason, not luck: attention is not in it.
+        #expect(!PaneClusterLayout.dropOrder.contains(.attention))
+        #expect(!PaneClusterLayout.dropOrder.contains(.notice))
+    }
+
+    /// Segments are dropped whole, never cut. `CHERRY-P` in warn ink is a fact
+    /// the owner cannot act on wearing the colour that says act now, and the
+    /// capsule's own grammar is "absent, never empty". Asserted as every
+    /// survivor keeping its exact text.
+    @Test func aDroppedSegmentIsGoneRatherThanTruncated() {
+        let widths = measuredWidths
+        for budget in stride(from: 0.0, through: 200, by: 7) {
+            let kept = PaneClusterLayout.fitting(
+                segments: cherryPicking, widths: widths, budget: budget
+            )
+            for segment in kept {
+                let original = cherryPicking.first { $0.role == segment.role }
+                #expect(segment.text == original?.text, "budget \(budget)")
+            }
+        }
+    }
+
+    /// The pill budget and the notice budget are one reservation, differing by
+    /// exactly the pill's own two insets. Pinned so the two cannot drift: a
+    /// notice's glyphs and a resting pill are bounded by the same pane.
+    @Test func thePillBudgetIsTheNoticeBudgetPlusThePillsOwnPadding() {
+        for pane in [600.0, 300, 120, 40] {
+            for inset in [6.0, 40] {
+                #expect(
+                    PaneClusterLayout.pillWidthBudget(paneWidth: pane, cornerInset: inset)
+                        - PaneClusterLayout.noticeTextBudget(paneWidth: pane, cornerInset: inset)
+                        == PaneClusterMetrics.horizontalInset * 2
+                        || PaneClusterLayout.noticeTextBudget(
+                            paneWidth: pane, cornerInset: inset
+                        ) == 0
+                )
+            }
+        }
+        // 600 - 6 - 6 = 588, the pill's whole allowance on the shipped inset.
+        #expect(PaneClusterLayout.pillWidthBudget(paneWidth: 600, cornerInset: 6) == 588)
+        #expect(PaneClusterLayout.pillWidthBudget(paneWidth: 0, cornerInset: 6) == 0)
+        #expect(PaneClusterLayout.pillWidthBudget(paneWidth: -100, cornerInset: 6) == 0)
+    }
+
+    /// `width(of:widths:)` answers what `solve` + `pillWidth` would, which is
+    /// what lets the budget be applied before a placement exists. Two
+    /// derivations of one number is two chances to drop a gap.
+    @Test func theBudgetsWidthIsThePlacementsWidth() {
+        let widths = measuredWidths
+        let cases: [[PaneClusterSegment]] = [
+            cherryPicking,
+            [.init(role: .place, text: "(a1b2c3d)")],
+            [.init(role: .place, text: "x"), .init(role: .attention, text: "")],
+            [],
+        ]
+        for segments in cases {
+            #expect(
+                PaneClusterLayout.width(of: segments, widths: widths)
+                    == PaneClusterLayout.pillWidth(
+                        for: PaneClusterLayout.solve(segments: segments, widths: widths)
+                    )
+            )
+        }
+    }
 }

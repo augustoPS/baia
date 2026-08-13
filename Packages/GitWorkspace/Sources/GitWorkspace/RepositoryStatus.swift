@@ -24,6 +24,26 @@ public struct RepositoryStatus: Sendable, Equatable {
     /// Never set by ``GitStatusParser``. Porcelain v2 reports none of these at
     /// all, so they come from ``InProgressProbe`` reading the git directory, and
     /// a caller that parses status output on its own gets nil here forever.
+    ///
+    /// **Not `CaseIterable`, because the compiler already guards what the
+    /// conformance was carried for.** It was added so a test could walk every
+    /// case through `PaneChrome`'s `PaneStatus.Git.operationLabel(for:)` and fail
+    /// on a nil, catching a state nobody taught the label mapping about. That
+    /// test could not fail: `operationLabel` switches over this enum with no
+    /// `default`, so a case added here is `error: switch must be exhaustive` at
+    /// `PaneStatus+Repository.swift:50` and `swift build` stops before any test
+    /// runs. Measured 2026-08-13 by adding a `graft` case — `make test` died in
+    /// compilation and the test's nil branch was never reached.
+    ///
+    /// The compiler's check is strictly stronger than the test was: it fires on
+    /// every switch over this type in every target, at build time, and cannot be
+    /// skipped by a suite nobody ran. So the conformance went with the test.
+    /// `allCases` had exactly one caller in the tree — that `for` loop — and a
+    /// package does not grow public API surface to feed one.
+    ///
+    /// A consumer that genuinely needs to enumerate these should add the
+    /// conformance back with a real caller named here. Anything that only needs
+    /// *total* handling already has it, for free, from the switch.
     public enum InProgress: Sendable, Equatable {
         case rebase, merge, cherryPick, revert, bisect
     }

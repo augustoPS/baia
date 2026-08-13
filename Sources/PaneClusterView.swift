@@ -134,22 +134,52 @@ final class PaneClusterView: PaneOverlayView {
     /// nearer.
     var onSegmentClick: ((PaneClusterSegmentRole, NSRect) -> Void)?
 
+    /// Raised with the roles that were on the pill a moment ago and are not on
+    /// it now, whatever took them off.
+    ///
+    /// **"A segment stopped existing" is one concept and this is its one
+    /// signal.** A card is anchored to a segment, so a segment that goes away
+    /// while its card is up leaves the card hanging beside a pill that no longer
+    /// says what it is about — with no active wash behind it, since
+    /// ``segmentRect(for:)`` answers nil for a role that is not placed, and no
+    /// way to click the segment to dismiss it, since there is nothing left to
+    /// click. ``TerminalPaneController/showNotice(_:)`` knew that rule and
+    /// dismissed the card itself, but it knew it for the *notice* path only, and
+    /// the fitting pass then introduced a second way for a segment to vanish —
+    /// a divider dragged narrow enough to drop the role
+    /// (``PaneChrome/PaneClusterLayout/fitting(segments:widths:budget:)``) — which
+    /// did not go anywhere near `showNotice` and so left the card up.
+    ///
+    /// Raised from ``remeasure()``, which is the single funnel every placement
+    /// change runs through: a status edit, a notice arriving or clearing, a
+    /// divider drag, a `cornerInset` dial. So a third way to lose a segment
+    /// invented later reaches the same handler without having to remember to.
+    /// The controller's response is one line — dismiss the card if it belonged to
+    /// a vanished role — and it lives in one place for the same reason.
+    ///
+    /// Reports roles rather than "something changed" so the handler can ignore a
+    /// placement change that has nothing to do with the card that is up: a
+    /// branch name growing does not take the changes card down.
+    var onSegmentsVanished: (([PaneClusterSegmentRole]) -> Void)?
+
     /// The pane inset the pill is pinned at, written by the controller from
     /// its own ``TerminalPaneController/resolvedClusterInset`` whenever that
     /// moves (install, and every `chrome.cluster.cornerInset` edit).
     ///
     /// Held rather than read from ``PaneClusterMetrics/cornerInset``, because
-    /// the constant is only the *default* the dial falls back to. The notice
-    /// budget is the one derivation that cares: it reserves the inset at both
-    /// ends of the pane, and reserving 6 while the constraints hold 40
-    /// over-allows by 68 pt and runs the pill off the pane's leading edge.
-    /// Re-measures on change for the same reason the pane width does — the
-    /// budget moved, so what the sentence may claim moved with it.
+    /// the constant is only the *default* the dial falls back to. Both budgets
+    /// care: each reserves the inset at both ends of the pane, and reserving 6
+    /// while the constraints hold 40 over-allows by 68 pt and runs the pill off
+    /// the pane's leading edge. Re-measures on change for the same reason the
+    /// pane width does — the budget moved, so what the pill may wear moved with
+    /// it.
+    ///
+    /// Guarded on a non-empty capsule rather than on a notice, since
+    /// ``PaneChrome/PaneClusterLayout/pillWidthBudget(paneWidth:cornerInset:)``
+    /// subtracts this for the resting pill too.
     var cornerInset: Double = PaneClusterMetrics.cornerInset {
         didSet {
-            guard cornerInset != oldValue,
-                  segments.contains(where: { $0.role == .notice })
-            else { return }
+            guard cornerInset != oldValue, !segments.isEmpty else { return }
             remeasure()
         }
     }
@@ -198,13 +228,19 @@ final class PaneClusterView: PaneOverlayView {
     /// that changes what a notice may claim can re-measure and one that does
     /// not can stay quiet.
     ///
-    /// Only the notice's width depends on the pane (see
-    /// ``PaneChrome/PaneClusterLayout/noticeTextBudget(paneWidth:cornerInset:)``);
-    /// every resting segment measures the same at every pane width. So this is
-    /// consulted in ``paneWidthChanged()``, which is only ever subscribed while
-    /// a notice is up, and a pane dragged narrower with a branch name on its
-    /// pill re-measures nothing — the common case, and the one that must not
-    /// thrash.
+    /// **Every segment's presence depends on the pane now, not only the
+    /// notice's width.** This said the opposite until 2026-08-13, and it was
+    /// true then: the notice was budgeted
+    /// (``PaneChrome/PaneClusterLayout/noticeTextBudget(paneWidth:cornerInset:)``)
+    /// and every resting segment measured the same at every pane width, so a
+    /// pane dragged narrower with a branch name on its pill re-measured nothing.
+    /// That is what let an oversized resting pill run off the pane.
+    /// ``PaneChrome/PaneClusterLayout/fitting(segments:widths:budget:)`` now
+    /// drops resting segments against the pane's width, so the answer moves with
+    /// the pane and a resize has to re-fit.
+    ///
+    /// It is still consulted before re-measuring, so a resize that does not
+    /// change the width costs nothing.
     private var measuredPaneWidth: Double?
 
     /// One font for measuring and drawing both, because a width measured in
@@ -232,10 +268,39 @@ final class PaneClusterView: PaneOverlayView {
     /// The departure: self inside the pill, nil outside. See the class header
     /// for why this view alone leaves the overlay family's hitTest-nil
     /// contract, and what it keeps instead.
+    ///
+    /// **An oversized pill never took the neighbour's clicks, and a pane-bounds
+    /// guard here was dead code.** An earlier version of this function tested
+    /// `point` against the superview's bounds as well as this view's, on the
+    /// claim that `bounds.contains` alone "is what let an oversized pill swallow
+    /// the neighbour's clicks". That claim is false, and it was measured false
+    /// on the real arrangement — `NSSplitViewController`, two pane containers,
+    /// a pill in the right pane overhanging 156 pt past its pane's leading edge,
+    /// laid out:
+    ///
+    ///     guard OFF   click in LEFT pane under overhang -> LEFT PANE  [pill.hitTest 0x]
+    ///     guard ON    click in LEFT pane under overhang -> LEFT PANE  [pill.hitTest 0x]
+    ///     (control)   click on the pill inside its own pane -> PILL   [pill.hitTest 1x]
+    ///
+    /// `pill.hitTest` is never *called* for a point outside its pane, with or
+    /// without the guard: `NSView.hitTest` rejects the point against each
+    /// subview's frame before descending into it, so a point beyond the pane's
+    /// leading edge never reaches a child of that pane at all. Asking the right
+    /// pane directly about the same point also answers nil. The guard rejected
+    /// nothing that would otherwise have been accepted, and the control proves
+    /// the experiment could see an accepted click.
+    ///
+    /// The real defect of an oversized pill is **visual** — it is drawn over the
+    /// neighbour, because drawing is not clipped by a frame the way hit-testing
+    /// is — and
+    /// ``PaneChrome/PaneClusterLayout/fitting(segments:widths:budget:)`` is what
+    /// fixes it. Nothing here has to defend against a cross-pane click, so
+    /// nothing here does; the guard is gone rather than kept with an honest
+    /// comment, because dead code that looks load-bearing is what cost this
+    /// review a false premise repeated in three files.
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard !isHidden, !placed.isEmpty else { return nil }
-        let local = convert(point, from: superview)
-        return bounds.contains(local) ? self : nil
+        return bounds.contains(convert(point, from: superview)) ? self : nil
     }
 
     /// Resolves the click to a segment and hands it up. Consuming the event
@@ -366,8 +431,52 @@ final class PaneClusterView: PaneOverlayView {
             }
         }
         self.noticeCut = noticeCut
-        placed = PaneClusterLayout.solve(segments: segments, widths: widths)
+
+        // The pill is fitted to the pane before it is placed. Without this the
+        // width came straight off `intrinsicContentSize` with no leading
+        // constraint and no clip to stop it: an oversized pill ran past the
+        // pane's leading edge and drew over the neighbouring pane.
+        //
+        // Drawing over it is the whole defect, and it is worth being exact,
+        // because this comment claimed a second one that does not exist: the
+        // overhang never took the neighbour's *clicks*. AppKit's `hitTest`
+        // clips to each subview's frame before descending, so a point past the
+        // pane's leading edge never reaches this view — measured, see
+        // ``hitTest(_:)``. Drawing has no such clip (the pane does not
+        // `clipsToBounds`), which is why the visual half was real and the
+        // interaction half was imagined.
+        //
+        // `superview` and not `window`, and unbudgeted with no superview, for
+        // ``noticeText(_:)``'s reason: the budget is about the pane this view is
+        // installed in, and before installation there is nothing on screen to
+        // overflow.
+        let fitted = superview.map { pane in
+            PaneClusterLayout.fitting(
+                segments: segments,
+                widths: widths,
+                budget: PaneClusterLayout.pillWidthBudget(
+                    paneWidth: Double(pane.bounds.width),
+                    cornerInset: cornerInset
+                )
+            )
+        } ?? segments
+
+        // What was on the pill before this measure, so the roles that leave it
+        // can be named below. Read before `placed` is replaced, obviously, and
+        // cheap: at most five roles.
+        let before = Set(placed.map(\.segment.role))
+
+        placed = PaneClusterLayout.solve(segments: fitted, widths: widths)
         measuredPaneWidth = superview.map { Double($0.bounds.width) }
+
+        // The one announcement that a segment stopped existing, whatever took
+        // it off — a status change, a notice taking the pill alone, or the fit
+        // dropping it because the pane narrowed. See ``onSegmentsVanished``.
+        // Raised after `placed` is installed so a handler that asks this view
+        // anything sees the new placement, and before `needsDisplay`, so a card
+        // dismissed here clears its wash in the same draw rather than one later.
+        let vanished = before.subtracting(placed.map(\.segment.role))
+        if !vanished.isEmpty { onSegmentsVanished?(Array(vanished)) }
 
         // The attention dot's distance from the pill's trailing edge, kept for
         // ``approvalAnchorRect()`` to hand back while a notice has taken the
@@ -384,7 +493,7 @@ final class PaneClusterView: PaneOverlayView {
         needsDisplay = true
     }
 
-    /// Re-measures a notice whose pane has changed width under it.
+    /// Re-measures a pill whose pane has changed width under it.
     ///
     /// A notice lives three seconds and a divider drag takes longer than that,
     /// so a pane narrowed mid-notice is reachable: without this the pill keeps
@@ -392,6 +501,14 @@ final class PaneClusterView: PaneOverlayView {
     /// is the exact failure the budget exists to prevent. Widening has the
     /// milder version — a sentence stays cut shorter than it needed to be —
     /// and the same call fixes it.
+    ///
+    /// **The resting pill needs the same call, which it did not get until
+    /// 2026-08-13.** A pill is now fitted to its pane
+    /// (``PaneChrome/PaneClusterLayout/fitting(segments:widths:budget:)``), so
+    /// dragging a divider narrower has to drop a segment and dragging it wider
+    /// has to bring one back. Keyed off a non-empty placement rather than off a
+    /// notice for that reason. A resize to the same width still re-measures
+    /// nothing, on ``measuredPaneWidth``.
     ///
     /// **Driven off the superview's frame, and it has to be, because this view
     /// has no reason of its own to lay out when the pane resizes.** The capsule
@@ -418,13 +535,14 @@ final class PaneClusterView: PaneOverlayView {
     /// notification. The old mechanism could not fire on the path it was written
     /// for; this one does.
     ///
-    /// The observation is registered only while a notice is up
+    /// The observation is registered whenever the capsule has anything on it
     /// (``updatePaneWidthObservation()``, from ``segments``' setter) and torn
-    /// down the moment the sentence clears, so the resting capsule — every pane
-    /// for the whole time no click is being refused — carries no observer, no
-    /// notification traffic and no per-resize work at all.
+    /// down when it does not. It was notice-only until the fitting pass existed,
+    /// which is what kept a resting pill from ever noticing its pane had
+    /// narrowed under it. The cost is one notification per pane per resize,
+    /// discarded on the width check above when the width did not actually move.
     private func paneWidthChanged() {
-        guard segments.contains(where: { $0.role == .notice }),
+        guard !segments.isEmpty,
               let paneWidth = superview.map({ Double($0.bounds.width) }),
               paneWidth != measuredPaneWidth
         else { return }
@@ -444,9 +562,7 @@ final class PaneClusterView: PaneOverlayView {
             NotificationCenter.default.removeObserver(paneWidthObserver)
             self.paneWidthObserver = nil
         }
-        guard segments.contains(where: { $0.role == .notice }),
-              let pane = superview
-        else { return }
+        guard !segments.isEmpty, let pane = superview else { return }
         paneWidthObserver = NotificationCenter.default.addObserver(
             forName: NSView.frameDidChangeNotification,
             object: pane,
@@ -642,6 +758,25 @@ final class PaneClusterView: PaneOverlayView {
                 let string = attributed(
                     noticeCut ?? placement.segment.text,
                     ink: PaneClusterInk.noticeInk(theme: theme, chrome: resolvedChrome)
+                )
+                string.draw(at: NSPoint(
+                    x: placement.x,
+                    y: (bounds.height - string.size().height) / 2
+                ))
+            case .operation:
+                // Graded rather than taken raw, the notice's exception for the
+                // notice's reason: `theme.warn` is a hue-bearing blend and not a
+                // luminance tier, so nothing guarantees it clears the floor on
+                // the pill's face the way `theme.foreground` provably does. It
+                // needs the chain more than the notice does — `warn` is blended
+                // three-quarters of the way *toward* the background, so it
+                // starts nearer the surface it is drawn on than `alert` ever
+                // does. See ``PaneChrome/PaneClusterInk/operationInk(theme:chrome:)``,
+                // which also carries why this tier is warn and not the notice's
+                // alert.
+                let string = attributed(
+                    placement.segment.text,
+                    ink: PaneClusterInk.operationInk(theme: theme, chrome: resolvedChrome)
                 )
                 string.draw(at: NSPoint(
                     x: placement.x,

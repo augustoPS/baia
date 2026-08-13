@@ -113,6 +113,213 @@ public enum PaneClusterLayout {
         placed.first { x >= $0.x && x < $0.x + $0.width }?.segment
     }
 
+    /// How wide the whole pill may be on this pane.
+    ///
+    /// The same reservation ``noticeTextBudget(paneWidth:cornerInset:)`` makes,
+    /// one level out: that budgets the notice's *glyphs*, this budgets the
+    /// *pill*, so the two answers differ by exactly the pill's two insets and
+    /// cannot drift apart. `cornerInset` comes off both ends for that function's
+    /// reason — the trailing inset is the gap the pill sits behind, and
+    /// reserving the same at the leading edge is what keeps a full-width pill
+    /// from reading as a bar welded across the pane's top.
+    ///
+    /// Clamped at zero: a pane mid-divider-drag can be narrower than its own
+    /// insets, and the harmless failure is a pill with nothing on it.
+    public static func pillWidthBudget(paneWidth: Double, cornerInset: Double) -> Double {
+        max(0, paneWidth - cornerInset * 2)
+    }
+
+    /// The order resting segments are given up in when the pill will not fit
+    /// its pane, first dropped first.
+    ///
+    /// **Why there is a drop order at all.** Every resting segment used to be
+    /// treated as affordable — "the pill has never budgeted a resting segment" —
+    /// which was true while the widest of them was a branch name. The operation
+    /// broke it: `CHERRY-PICK (a1b2c3d) *` measures 174.8 pt against the same
+    /// pane's 92.0 pt without the operation, so a pane between 98 and 181 pt
+    /// wide displayed its pill correctly right up until a cherry-pick began, and
+    /// then the pill grew past the pane's leading edge and drew over the
+    /// neighbour. For `git bisect` that state lasts until `bisect reset`, which
+    /// can be the whole session. Nothing about that is temporary enough to buy
+    /// with width the pane does not have.
+    ///
+    /// **The order, and why the operation is not first out.** Read as a list of
+    /// what a glance can least afford to lose:
+    ///
+    /// 1. ``PaneClusterSegmentRole/agent`` — the agent's label. The attention
+    ///    dot, which is what the label is scanned *for*, survives separately and
+    ///    is the last thing dropped, so losing the name costs the least.
+    /// 2. ``PaneClusterSegmentRole/changes`` — `↑1*?3`. Counts, recoverable in
+    ///    one click on the changes card, and meaningful only once the place is
+    ///    known.
+    /// 3. ``PaneClusterSegmentRole/operation`` — `CHERRY-PICK`. Third rather
+    ///    than first *because* it is the widest: dropping it is what buys the
+    ///    room, so it must not be spent before the two segments whose loss costs
+    ///    less. It goes before place because a bare hash with no operation is
+    ///    merely unexplained, while an operation with no place names work in
+    ///    progress on nothing. Both facts are on the place card, one click away,
+    ///    which is where the `wt:` prefix already lives for the same reason.
+    /// 4. ``PaneClusterSegmentRole/place`` — the branch or hash. What the pane
+    ///    *is*; the last text to go.
+    ///
+    /// ``PaneClusterSegmentRole/attention`` is absent from this list and is
+    /// never dropped: it is 6 pt, it is the one segment a pane can be scanned
+    /// for from across the window, and it is the anchor the approval popover
+    /// reserves a position against
+    /// (``PaneClusterView/approvalAnchorRect()``). ``PaneClusterSegmentRole/notice``
+    /// is absent too, because a notice takes the pill alone and is budgeted as
+    /// glyphs by ``noticeCut(_:budget:measure:)`` instead.
+    ///
+    /// **So a pill carrying only the dot has a floor of 22 pt and a pane below
+    /// that wears a pill wider than itself.** The dot is 6 and the two pill
+    /// insets are 8 each; nothing in ``fitting(segments:widths:budget:)`` can go
+    /// under that, because the only thing left to give up is the one role this
+    /// list deliberately excludes. A pane dragged to 20 pt or less therefore
+    /// overflows by a few points, and that is chosen rather than overlooked:
+    /// the alternative is a pane that is *silent* about an agent waiting on the
+    /// owner, which is the one thing the capsule exists to prevent, and at 20 pt
+    /// of pane there is nothing legible to protect anyway. An earlier version of
+    /// this doc claimed "the pane wears no pill rather than a clipped one",
+    /// which was never true of the dot.
+    public static let dropOrder: [PaneClusterSegmentRole] = [
+        .agent, .changes, .operation, .place,
+    ]
+
+    /// The segments that fit `budget`, dropped in ``dropOrder`` until they do.
+    ///
+    /// **Dropped whole, never truncated, and that is the capsule's existing
+    /// grammar rather than a new one.** ``PaneClusterSegments/build(from:)``
+    /// already states it — "a segment with nothing to say is absent, never
+    /// empty, which is the footer's vanish discipline, moved" — and a half-drawn
+    /// `CHERRY-P` would be a fact the owner cannot act on wearing the colour that
+    /// says act now. The notice is the one thing here that *is* cut, because a
+    /// half-read sentence still names its problem; a half-read label names a
+    /// different operation.
+    ///
+    /// Returns the survivors in the input's order, so the caller's placement
+    /// pass is unchanged. `widths` is what the caller measured, in the caller's
+    /// font; a role missing from it counts as zero-wide, matching
+    /// ``solve(segments:widths:)``'s own tolerance.
+    ///
+    /// A budget that not even the smallest survivor fits answers what is left
+    /// after every droppable role is gone, which is the attention dot alone. The
+    /// dot's own 22 pt pill can still exceed a degenerate budget; see
+    /// ``fitting(segments:widths:budget:)``'s note on the pane that is narrower
+    /// than a dot.
+    ///
+    /// **Keep what fits, not drop until it fits, and the difference is a third
+    /// of the pill.** The first version of this walked ``dropOrder`` and removed
+    /// each role permanently, stopping at the first survivor set that fit. That
+    /// reads like the drop order but implements a one-way ratchet: once
+    /// ``PaneClusterSegmentRole/changes`` was given up it stayed given up even
+    /// after ``PaneClusterSegmentRole/operation`` was given up too and freed 82.8
+    /// pt, far more than changes had needed. Measured on the shipped widths, a
+    /// 200 pt pane kept `operation, place, attention` at 174.0 while `place,
+    /// changes, attention` at 106.0 would also have fit; a 160 pt pane kept 91.2
+    /// of its 148.0 budget and a 100 pt pane showed a bare dot against 88.0 pt of
+    /// room. The owner dragging a divider watched the branch name vanish with the
+    /// pill two-thirds empty.
+    ///
+    /// **``dropOrder`` is a precedence, so the search is lexicographic and not a
+    /// sum.** Every subset of the droppable roles is a candidate; the winner is
+    /// the widest-ranked one that fits, compared by reading the drop order
+    /// backwards — does it keep ``PaneClusterSegmentRole/place``, then
+    /// ``PaneClusterSegmentRole/operation``, then
+    /// ``PaneClusterSegmentRole/changes``, then ``PaneClusterSegmentRole/agent``.
+    /// Lexicographic rather than "most segments" or a weighted count, because
+    /// those let three cheap low-rank segments outbid one precious one: scoring
+    /// by a bitmask sum drops the branch name to keep `agent` and `changes`
+    /// together, which is exactly the trade the doc above says never to make.
+    /// Under this comparison one more precious role beats any number of cheaper
+    /// ones, which is what "least missed first" meant.
+    ///
+    /// A consequence worth naming, because it looks like a bug and is not: the
+    /// survivors are not monotonic in the budget. At 100 pt of budget the pill
+    /// keeps `place, attention` (91.2); at 91 it keeps `changes, agent,
+    /// attention` (85.6), having given the branch name up — because at 91 no set
+    /// containing place fits at all (place with the dot alone is 91.2), so
+    /// precedence falls through to the next rank and spends the room on what
+    /// does fit. Dropping a role frees its width for cheaper ones; that is the
+    /// whole point of reconsidering.
+    ///
+    /// **Cost is a subset enumeration and that is affordable because the set is
+    /// four.** ``dropOrder`` has four members, so this is at most sixteen
+    /// candidate sets, each measured by a `reduce` over at most five segments,
+    /// and it runs from `remeasure` on a status change or a divider drag rather
+    /// than per `draw`. Written as a bitmask loop rather than a recursive
+    /// power-set for the same reason ``noticeCut(_:budget:measure:)`` keeps its
+    /// simple loop: the bound is fixed by a constant in this file, and a reader
+    /// can check sixteen. `theFitIsTheBestRankedSetThatFitsRatherThanTheFirstOne`
+    /// pins the property against a brute-force oracle, so if `dropOrder` ever
+    /// grows past what enumeration can afford, that test is where the cost shows
+    /// up.
+    ///
+    /// Returns the survivors in the input's order regardless of which subset
+    /// won, so the caller's placement pass is unchanged.
+    public static func fitting(
+        segments: [PaneClusterSegment],
+        widths: [PaneClusterSegmentRole: Double],
+        budget: Double
+    ) -> [PaneClusterSegment] {
+        // The roles actually present that may be given up, in `dropOrder`'s own
+        // order. Anything not in `dropOrder` — the attention dot, a notice — is
+        // never a candidate for dropping and is carried by every subset below.
+        let droppable = dropOrder.filter { role in segments.contains { $0.role == role } }
+        guard !droppable.isEmpty else { return segments }
+
+        // Precedence, most precious first: `dropOrder` read backwards. The
+        // comparison below is lexicographic on this sequence.
+        let precedence = Array(droppable.reversed())
+
+        var best: [PaneClusterSegment]?
+        var bestRank: [Int]?
+        // Every subset of `droppable`, as a bitmask. At most sixteen.
+        for mask in 0..<(1 << droppable.count) {
+            var keptRoles: Set<PaneClusterSegmentRole> = []
+            for (index, role) in droppable.enumerated() where mask & (1 << index) != 0 {
+                keptRoles.insert(role)
+            }
+            // Undroppable roles ride along in every candidate.
+            let candidate = segments.filter {
+                keptRoles.contains($0.role) || !droppable.contains($0.role)
+            }
+            guard width(of: candidate, widths: widths) <= budget else { continue }
+
+            // Rank as a most-precious-first vector of "is this role kept".
+            // `true` sorts above `false`, so the lexicographically greatest
+            // vector is the set that keeps the most precious role it can, and
+            // breaks ties on the next most precious, and so on.
+            let rank = precedence.map { keptRoles.contains($0) ? 1 : 0 }
+            if let current = bestRank, !current.lexicographicallyPrecedes(rank) { continue }
+            bestRank = rank
+            best = candidate
+        }
+
+        // No subset fits, not even the empty one: the budget is under what the
+        // undroppable roles alone cost. They survive anyway — the dot is what a
+        // pane is scanned for and `dropOrder` deliberately excludes it — so the
+        // answer is those roles and the pill overflows a pane narrower than a
+        // dot. See the note on ``dropOrder`` for why that is preferred to a pane
+        // that goes dark.
+        return best ?? segments.filter { !droppable.contains($0.role) }
+    }
+
+    /// What ``solve(segments:widths:)`` followed by ``pillWidth(for:)`` would
+    /// answer, without building the placement. Kept beside them so the budget
+    /// and the layout cannot disagree about what a set of segments costs.
+    ///
+    /// Zero for no segments, matching ``pillWidth(for:)``: a pane with nothing
+    /// to say wears no capsule rather than an empty pill.
+    public static func width(
+        of segments: [PaneClusterSegment],
+        widths: [PaneClusterSegmentRole: Double]
+    ) -> Double {
+        guard !segments.isEmpty else { return 0 }
+        let text = segments.reduce(0.0) { $0 + (widths[$1.role] ?? 0) }
+        let gaps = Double(segments.count - 1) * PaneClusterMetrics.segmentGap
+        return text + gaps + PaneClusterMetrics.horizontalInset * 2
+    }
+
     /// How much text width a notice may claim, given the pane it floats over.
     ///
     /// **The one place the capsule bounds itself, and only the notice needs

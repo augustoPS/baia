@@ -1,9 +1,9 @@
 import Foundation
 
 /// What a capsule segment is, independent of what it says, in the fixed order
-/// the capsule wears them: place, changes, agent, attention.
+/// the capsule wears them: operation, place, changes, agent, attention.
 public enum PaneClusterSegmentRole: Sendable, Equatable, CaseIterable {
-    case place, changes, agent, attention
+    case operation, place, changes, agent, attention
 
     /// A transient sentence answering a click the pane refused, and the only
     /// role that takes the pill alone rather than sharing it. See
@@ -44,9 +44,9 @@ public struct PaneClusterSegment: Sendable, Equatable {
 }
 
 /// The capsule's resting segments, derived from the same ``PaneStatus`` the
-/// footer consumes. Order is fixed and right-anchored: place, changes, agent,
-/// attention. A segment with nothing to say is absent, never empty, which is
-/// the footer's vanish discipline, moved.
+/// footer consumes. Order is fixed and right-anchored: operation, place,
+/// changes, agent, attention. A segment with nothing to say is absent, never
+/// empty, which is the footer's vanish discipline, moved.
 public enum PaneClusterSegments {
     public static func build(from status: PaneStatus) -> [PaneClusterSegment] {
         // A notice takes the pill alone and returns before anything else is
@@ -83,6 +83,75 @@ public enum PaneClusterSegments {
         // facts from before a `cd` out of the repository, and a branch name on
         // a directory that has no branch is a lie the owner would act on.
         if status.anchorIsRepository, let git = status.git {
+            // The operation leads, which is the footer's own order
+            // (``PaneStatusSegments/append(_:to:)``: "the operation comes first
+            // because a half-finished rebase changes what every other fact on
+            // the bar means") and it survives the move for a reason the pill
+            // makes sharper than the bar did. Mid-rebase, git detaches HEAD, so
+            // ``GitWorkspace/RepositoryStatus/displayHead`` answers `(a1b2c3d)`
+            // and the place segment stops naming a branch at all. The operation
+            // is what turns that bare hash from a mystery into a step of
+            // something. Behind it, the hash is the only thing on the pill and
+            // nothing explains it.
+            //
+            // **Persistent, so it shares the pill rather than taking it.** The
+            // notice above may take the pill alone precisely because it clears
+            // itself in three seconds; this one appears when a rebase halts on a
+            // conflict and stays until the operation is finished or aborted, and
+            // `BISECT_LOG` outlives the whole session until `git bisect reset`
+            // (``GitWorkspace/InProgressProbe/detect(gitDirectory:)`` records
+            // that measurement). A takeover here would hide the branch, the
+            // markers and the agent for hours, which is the resting capsule
+            // switched off rather than a fact given a home.
+            //
+            // **The full label, not a mark.** The `wt:` prefix went the other
+            // way one task ago — dropped to the place card to keep the pill
+            // narrow — and the two facts look alike enough that the same answer
+            // is tempting. They differ where it counts: `wt:` qualifies a fact
+            // that is already fully drawn beside it, so abbreviating it costs
+            // the reader a nuance, while the operation has no other
+            // representation on the pill at all, so abbreviating it to a mark
+            // costs the reader the fact.
+            //
+            // **The width is budgeted rather than assumed affordable, and the
+            // first version of this comment got that wrong twice.** It argued
+            // the label is free because "the pill has never budgeted a resting
+            // segment", on two claims that do not survive measurement:
+            //
+            // - *That an operation only joins a pill already too wide.*
+            //   Measured in the shipped font: `(a1b2c3d) *` is a 92.0 pt pill,
+            //   and `CHERRY-PICK (a1b2c3d) *` is 174.8 pt. So the operation
+            //   moves the pane width the pill needs from 98 pt to 181 pt, into a
+            //   band where the pill was displaying correctly a moment earlier.
+            //   The pane that breaks is not one that was already broken.
+            // - *That `WorkspaceLayout/PaneTree` floors a pane at 70 pt.* It
+            //   does not. The 0.05 clamp is per split and yields 70 pt only on a
+            //   1400 pt window; `PaneTree.swift:663-665` records that five
+            //   nested splits at 0.05 still reach three points. There is no
+            //   floor to lean on.
+            //
+            // And the asymmetry that settles it: ``PaneClusterLayout``'s
+            // `noticeTextBudget` exists, with a long doc, to stop a *three
+            // second* sentence growing leftward off the pane "because it is
+            // pinned by its top-right corner and nothing else". This fact has
+            // identical geometry and lasts until the operation ends — for
+            // `git bisect`, until `bisect reset`, which can be the whole
+            // session. So the pill is fitted to its pane by
+            // ``PaneClusterLayout/fitting(segments:widths:budget:)`` and the
+            // operation takes its place in ``PaneClusterLayout/dropOrder``,
+            // where the reasoning for its rank lives. It is still the label,
+            // whole, on every pane wide enough for it.
+            //
+            // ``PaneStatus/Git/displayableOperation``, the one predicate every
+            // surface that draws this fact asks: a label formatted from an empty
+            // git file arrives as `" "`, which is not nothing to `isEmpty` and
+            // draws as an empty box either way. Asked rather than re-spelled
+            // because the place card spelled its own and got a blank row
+            // (2026-08-13); the predicate's own doc carries that history.
+            if let operation = git.displayableOperation {
+                segments.append(PaneClusterSegment(role: .operation, text: operation))
+            }
+
             if !git.head.isEmpty {
                 // Bare `head`, without the footer's `wt:` worktree prefix, on
                 // purpose (ruled at Task 2 review, 2026-08-11): the pill stays

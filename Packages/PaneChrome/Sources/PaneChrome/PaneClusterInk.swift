@@ -121,4 +121,36 @@ public enum PaneClusterInk {
     public static func noticeInk(theme: PaneTheme, chrome: ResolvedChrome) -> RGB {
         theme.color(for: .alert, focused: false, on: worstFace(theme: theme, chrome: chrome))
     }
+
+    /// The colour a half-finished git operation is drawn in on the pill.
+    ///
+    /// **``PaneStatusEmphasis/warn``, and the tier is the whole decision.** The
+    /// footer drew this segment at `.warn` and wrote down why, in the one
+    /// sentence worth carrying up here verbatim: a half-finished rebase changes
+    /// what every other fact on the bar means, which is a warning rather than an
+    /// emphasis, and alert stays reserved for conflicted files and for an agent
+    /// asking, so that one colour means "act now" and a mid-rebase pane does not
+    /// cry it the whole time it is mid-rebase.
+    ///
+    /// That reservation is why this is a second function rather than
+    /// ``noticeInk(theme:chrome:)`` reused with a different name. The two facts
+    /// sit on one pill and the notice is the alert one; if the operation took
+    /// alert too, the pill would wear the loud colour continuously for as long as
+    /// a rebase is unresolved, and the three-second sentence that actually needs
+    /// the eye would arrive in a colour already on screen. One tier per meaning,
+    /// and the tiers are ``PaneTheme``'s, not this file's.
+    ///
+    /// Everything else is ``noticeInk(theme:chrome:)``'s, deliberately: the same
+    /// ``worstFace(theme:chrome:)``, the same ``PaneTheme/color(for:focused:on:)``
+    /// repair chain, and the same literal `false` for focus, which is a decision
+    /// there and stays one here for the identical reason — `focused` swaps only
+    /// the ``PaneStatusEmphasis/strong`` tier for the focus accent, and `.warn`
+    /// is not that tier. ``PaneTheme/warn`` is a blend three-quarters of the way
+    /// from the background toward `ansi[3]`, so it starts *closer* to the pill's
+    /// face than `theme.alert` does and needs the chain more, not less: a theme
+    /// whose yellow lands near the glass face would otherwise draw the operation
+    /// into the surface it is printed on.
+    public static func operationInk(theme: PaneTheme, chrome: ResolvedChrome) -> RGB {
+        theme.color(for: .warn, focused: false, on: worstFace(theme: theme, chrome: chrome))
+    }
 }

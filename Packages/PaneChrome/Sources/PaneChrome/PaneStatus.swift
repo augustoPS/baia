@@ -37,6 +37,10 @@ public struct PaneStatus: Sendable, Equatable {
         /// The caller formats it because only the caller can read
         /// `.git/rebase-merge/msgnum`, and a half-parsed operation shown as
         /// `REBASE` with no position is worse than the label the caller built.
+        ///
+        /// Read it through ``displayableOperation`` rather than directly, unless
+        /// you mean the raw field: a label formatted from an empty git file
+        /// arrives as `" "`, which is not nil and not `isEmpty`.
         public var operation: String?
 
         /// True when the pane sits in a linked worktree rather than the main
@@ -66,6 +70,31 @@ public struct PaneStatus: Sendable, Equatable {
             self.conflicted = conflicted
             self.operation = operation
             self.isLinkedWorktree = isLinkedWorktree
+        }
+
+        /// The operation as a surface may show it, or nil when there is nothing
+        /// to show. **The one predicate, for every surface that draws this
+        /// fact.**
+        ///
+        /// Three surfaces read the operation — the footer's segment
+        /// (``PaneStatusSegments/build(from:)``), the capsule's pill segment
+        /// (``PaneClusterSegments/build(from:)``) and the place card's row
+        /// (`ClusterPlaceCardView.Model.operation`, assembled in
+        /// `TerminalPaneController.presentPlaceCard`) — and until 2026-08-13 they
+        /// shared the *input* while each spelled its own *test*. Two applied
+        /// ``PaneStatusSegments/isBlank(_:)``; the card applied `if let` alone,
+        /// so `git.operation == "   "` drew no pill segment and grew a card row
+        /// captioned `operation` with a blank value beside it. That is exactly
+        /// the empty box `isBlank` exists to prevent, reintroduced on the one
+        /// surface that had not been given the predicate.
+        ///
+        /// A shared input is not a shared derivation. This is the derivation, and
+        /// nil is the whole answer to "should this be drawn": a caller that
+        /// unwraps this cannot construct the blank case, because the blank case
+        /// is already nil here.
+        public var displayableOperation: String? {
+            guard let operation, !PaneStatusSegments.isBlank(operation) else { return nil }
+            return operation
         }
     }
 

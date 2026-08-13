@@ -188,7 +188,10 @@ public enum PaneStatusSegments {
     /// because a half-finished rebase changes what every other fact on the bar
     /// means.
     private static func append(_ git: PaneStatus.Git, to segments: inout [PaneStatusSegment]) {
-        if let operation = git.operation, !isBlank(operation) {
+        // ``PaneStatus/Git/displayableOperation``, the one predicate, rather than
+        // this surface's own `isBlank` call: the footer, the pill and the place
+        // card all ask it, so a new kind of blank is learned once.
+        if let operation = git.displayableOperation {
             segments.append(PaneStatusSegment(
                 role: .operation,
                 text: operation,
@@ -300,7 +303,14 @@ public enum PaneStatusSegments {
     /// True for a string with nothing but whitespace in it. A caller that
     /// formatted an operation label from an empty git file hands over `" "`
     /// rather than `""`, and that still draws as an empty box.
-    private static func isBlank(_ text: String) -> Bool {
+    ///
+    /// Package-internal rather than private since the capsule took the operation
+    /// on too (``PaneClusterSegments/build(from:)``), for ``markerText(for:)``'s
+    /// reason: the pill has the identical problem — a blank label there costs a
+    /// segment gap and draws nothing in it — and two copies of one predicate is
+    /// two chances for one surface to be taught about a new kind of blank and the
+    /// other not.
+    static func isBlank(_ text: String) -> Bool {
         text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }

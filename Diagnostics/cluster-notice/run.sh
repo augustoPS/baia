@@ -46,7 +46,7 @@ swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/notice" \
 # control that stops failing fails the run just as loudly as an arm that stops
 # passing — `cluster-legibility`'s loop, and `override-wires`' discipline behind
 # it.
-ARMS="draws bare-shell legible"
+ARMS="draws bare-shell legible operation fits vanish"
 COUNT=0
 for arm in $ARMS; do
   "$OUT/notice" "$arm"
