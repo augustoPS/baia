@@ -4,16 +4,16 @@ import PaneChrome
 /// The folder icon and the working directory, drawn in the titlebar band.
 ///
 /// **The owner's 2026-08-13 ruling: "reduce the titlebar height, remove the
-/// folder name, keep a folder icon and the path."** Two of those three shipped
-/// here. The height did not, and the reason is measured rather than assumed —
-/// see ``WorkspaceWindowController/titlebarBandHeight`` and the note below.
+/// folder name, keep a folder icon and the path."** All three shipped, the
+/// height last and in a separate change — see
+/// ``WorkspaceWindowController/titlebarBandHeight`` and the note below.
 ///
 /// ## Why an accessory rather than the title line
 ///
-/// The band already has two text slots the toolbar stacks for free, and the
-/// obvious spelling of this change is to leave the path in `window.subtitle` and
-/// put nothing in `window.title`. That is half of what happens: the path *is*
-/// still the subtitle, written by `AppDelegate` from
+/// The band has two text slots it stacks for free, and the obvious spelling of
+/// this change is to leave the path in `window.subtitle` and put nothing in
+/// `window.title`. That is half of what happens: the path *is* still the
+/// subtitle, written by `AppDelegate` from
 /// ``TerminalPaneController/windowTitle``. What the subtitle cannot do is carry a
 /// glyph. An SF Symbol in a string is a font substitution the theme cannot tint,
 /// and `NSWindow.subtitle` is a `String` with no attributed spelling, so the icon
@@ -21,26 +21,38 @@ import PaneChrome
 /// sit beside the title text without inventing a toolbar item.
 ///
 /// **Measured to cost no height, which is the only reason it is allowed.** With
-/// the `.unifiedCompact` toolbar this window carries, the band is 40.0 pt with no
-/// accessory, 40.0 pt with a `.leading` accessory, and 40.0 pt with a `.right`
-/// one. A `.bottom` accessory is the trap: it measures **76.0 pt regardless of
-/// the height its view asks for** — 0, 12, 20 and 28 all produced 76.0 — so it
-/// grows the band it was reached for to shrink. Nothing here is `.bottom`.
+/// the `.unifiedCompact` toolbar this window carried at the time, the band was
+/// 40.0 pt with no accessory, 40.0 pt with a `.leading` accessory, and 40.0 pt
+/// with a `.right` one. A `.bottom` accessory is the trap: it measures **76.0 pt
+/// regardless of the height its view asks for** — 0, 12, 20 and 28 all produced
+/// 76.0 — so it grows the band it was reached for to shrink. Nothing here is
+/// `.bottom`. The accessory costing nothing is what survived the toolbar's
+/// removal unchanged: at 32 pt it still adds no height.
 ///
-/// ## Why the band is still 40 pt
+/// ## Why the band is 32 pt, having been 40
 ///
-/// The owner asked for less, and it is not buildable without giving up something
-/// they did not authorise. The band's height is the toolbar's: `.unifiedCompact`
-/// is 40.0 pt, `.unified` is 52.0 pt, and **no toolbar at all is 32.0 pt**.
-/// Hiding the title buys nothing — a compact toolbar with the title hidden still
-/// measures 40.0 pt — and the accessory route measured above cannot shrink it
-/// either. The only lever is removing the toolbar, and
-/// `Diagnostics/titlebar-toolbar` measured the toolbar as the thing that gives
-/// this window its titlebar *material* on macOS 26: without it the strip reads
-/// through to whatever is behind the window and varies down its height, and with
-/// it the band is one flat neutral. Trading the material for 8 pt is a different
-/// change than the one that was asked for, so the toolbar stays and the band
-/// stays 40 pt.
+/// This section said the height could not be had, and it was right about the
+/// window it described and wrong within the day. The band's height was the
+/// toolbar's: `.unifiedCompact` is 40.0 pt, `.unified` is 52.0 pt, and **no
+/// toolbar at all is 32.0 pt**. Hiding the title bought nothing — a compact
+/// toolbar with the title hidden still measured 40.0 pt — and the accessory
+/// route above cannot shrink it either. The only lever was removing the toolbar,
+/// and that read as trading the band's *material* for 8 pt, because
+/// `Diagnostics/titlebar-toolbar` had measured the toolbar as the thing that
+/// gives a bare titled window its material on macOS 26.
+///
+/// **What that reasoning missed is that the window had stopped being bare.**
+/// The 2026-08-12 band/column merge put the band's glass in
+/// ``SidebarHost/bandGlass``, inside `contentView`, so the material no longer
+/// comes from the toolbar at all. Removing it on 2026-08-13 took the band to
+/// 32.0 pt and left its appearance where it was: measured at x=700 down the
+/// band, mean 0.1845 with the toolbar against 0.1839 without over the desktop,
+/// and 0.5555 against 0.5511 over a white window placed behind the workspace.
+/// The toolbar was contributing nothing the band still needed.
+/// ``WorkspaceWindowController``'s `init` carries the full table.
+///
+/// The trade was real when it was written. It stopped being a trade when the
+/// glass moved, and the eight points were then free.
 ///
 /// ## Why an SF Symbol rather than `NSWorkspace.icon(forFile:)`
 ///
@@ -181,10 +193,15 @@ final class TitlebarPathAccessory: NSTitlebarAccessoryViewController {
     /// than hard against them.
     private static let leadingInset: Double = 8
 
-    /// The accessory's own height, and it is not the band's 40 pt: a `.leading`
+    /// The accessory's own height, and it is not the band's: a `.leading`
     /// accessory is laid out inside the band's title row, so asking for the whole
     /// band makes it taller than the row it sits in. 18 pt is the 13 pt label's
     /// line height with the two points the symbol needs around it.
+    ///
+    /// **Independent of the band, which the toolbar's removal proved rather than
+    /// assumed.** The band went 40 to 32 on 2026-08-13 and this stayed 18; the
+    /// row it sits in re-centred with it, measured on the live window at a
+    /// mid-Y of 16.0 pt from the frame top against the traffic lights' own 16.0.
     private static let height: Double = 18
 
     /// A starting width, not a limit. The label truncates its head inside

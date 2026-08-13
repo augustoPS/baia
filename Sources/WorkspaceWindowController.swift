@@ -129,18 +129,15 @@ final class WorkspaceWindowController: NSObject {
     /// `contentViewController`, and that reparents every live ghostty surface.
     let sidebar: SidebarHost
 
-    /// Held because `NSWindow.toolbar` is `weak`-adjacent in practice: the window
-    /// does not keep a toolbar alive on its own once nothing else references it,
-    /// and a deallocated toolbar takes the titlebar material with it.
-    private let toolbar: NSToolbar
-
     /// The folder icon and the path, which is what the band says since the
     /// owner's 2026-08-13 ruling took the folder name out of it.
     ///
-    /// Held for the same reason the toolbar above is: `NSWindow` does not retain
-    /// an accessory controller for the caller, and this one is retinted on every
-    /// settings change. ``TitlebarPathAccessory`` carries the measurements — why
-    /// it is `.leading`, why it costs no height, and why the band is still 40 pt.
+    /// Held because `NSWindow` does not retain an accessory controller for the
+    /// caller, and this one is retinted on every settings change. A `toolbar`
+    /// property stood above this one and was held for the same reason until the
+    /// toolbar went on 2026-08-13; see `init` for what replaced it.
+    /// ``TitlebarPathAccessory`` carries the measurements — why it is
+    /// `.leading`, why it costs no height, and why the band is 32 pt.
     let titlebarPath: TitlebarPathAccessory
 
     /// Whether the window itself is transparent, so glass in it can sample the
@@ -241,9 +238,8 @@ final class WorkspaceWindowController: NSObject {
         }
     }
 
-    /// Whether this window's own chrome — the titlebar material the toolbar
-    /// asks AppKit for, the tab bar, and anything else `NSWindow.appearance`
-    /// governs — should render dark.
+    /// Whether this window's own chrome — the titlebar band, the tab bar, and
+    /// anything else `NSWindow.appearance` governs — should render dark.
     ///
     /// **Window-level, deliberately not `NSApp.appearance`.** Setting the app
     /// appearance would force every window in the process, including the
@@ -257,7 +253,7 @@ final class WorkspaceWindowController: NSObject {
     /// **Owner's ruling: "titlebar should follow the pane's appearance," which
     /// is the standing chrome-matches-the-theme rule (see ``PaneTheme``'s own
     /// header) reaching this window's system-drawn chrome.** Before this, the
-    /// titlebar the toolbar asks for (`5f3b88c`, `ea7a223`) rendered in
+    /// titlebar the toolbar then asked for (`5f3b88c`, `ea7a223`) rendered in
     /// whatever `NSApp.effectiveAppearance` was — the system's light/dark, not
     /// the terminal theme's — so a dark pane theme under a light system
     /// appearance produced a light titlebar band over dark panes.
@@ -337,11 +333,17 @@ final class WorkspaceWindowController: NSObject {
     /// content, which under `.fullSizeContentView` is the band the sidebar's
     /// glass has to reach up into and the pane tree has to be held back from.
     ///
-    /// Derived rather than written as 40, for the reason the old
+    /// Derived rather than written as a constant, for the reason the old
     /// `layoutTitlebarGlass()` derived it: it is whatever the window is spending
-    /// right now, so a toolbar style change, a tab bar joining, or a system
-    /// metric this app does not control cannot leave the glass short of the band
-    /// or the tree overlapping it.
+    /// right now, so a tab bar joining, a chrome change, or a system metric this
+    /// app does not control cannot leave the glass short of the band or the tree
+    /// overlapping it.
+    ///
+    /// **Removing the toolbar on 2026-08-13 is the case that paid for it.** The
+    /// band went from 40 pt to 32 with no arithmetic changed anywhere: measured
+    /// on a fresh window, `relTop` of the sidebar's scroll area moved 40 to 32
+    /// and the pane region stayed 680 pt in both. A hardcoded 40 would have held
+    /// the tree 8 pt below a band that no longer reached it.
     ///
     /// **`contentLayoutRect` is still the source, and under
     /// `.fullSizeContentView` it still answers correctly.** The flag extends the
@@ -376,7 +378,6 @@ final class WorkspaceWindowController: NSObject {
         self.blurRadius = blurRadius
         self.isDark = isDark
         self.resolvedChrome = resolvedChrome
-        toolbar = NSToolbar(identifier: "baia.workspace.toolbar")
         // Built with the theme rather than corrected into it afterwards, which
         // is the same rule the four parameters above follow: a band that opened
         // in AppKit's default ink and was retinted on the first settings change
@@ -456,63 +457,85 @@ final class WorkspaceWindowController: NSObject {
         // slot to AppKit and not two independently hideable ones.
         window.titleVisibility = .hidden
 
-        // **An empty toolbar, which is what gives the window a titlebar at all
-        // on macOS 26.**
+        // **No toolbar, since 2026-08-13, and this block is the record of why
+        // one stood here for three months.**
         //
-        // Since the window became genuinely non-opaque (`331b7ec`, `isOpaque =
+        // An empty `NSToolbar` was what gave this window a titlebar at all.
+        // Once the window became genuinely non-opaque (`331b7ec`, `isOpaque =
         // false` and a clear `backgroundColor` whenever `backgroundOpacity <
         // 1`), the titlebar region had no material in it: the traffic lights and
         // the title floated on whatever the desktop happened to show behind the
         // window. A titled `NSWindow` does not draw its own titlebar material on
-        // 26 — the material arrives with an `NSToolbar`, per the research record
-        // (`vault/projects/baia/liquid-glass-research.md` §4: "the glass comes
-        // from `NSToolbar` and window style, not new window flags").
+        // macOS 26 — the material arrives with an `NSToolbar`, per the research
+        // record (`vault/projects/baia/liquid-glass-research.md` §4: "the glass
+        // comes from `NSToolbar` and window style, not new window flags").
+        // `Diagnostics/titlebar-toolbar` measured exactly that, and shipped it
+        // in `5f3b88c`: with no toolbar the strip read the content behind it and
+        // varied down its height, and with one it read a flat neutral all the
+        // way down.
         //
-        // Measured in `Diagnostics/titlebar-toolbar`, sampling a column clear of
-        // the traffic lights: with no toolbar the strip reads the content behind
-        // it and varies down its height, and with a toolbar it reads one flat
-        // neutral all the way down, which is the system material compositing
-        // over whatever is behind the window.
+        // **What retired it is the band/column merge, not a change of mind.**
+        // Since 2026-08-12 the band's material comes from
+        // ``SidebarHost/bandGlass``, an `NSGlassEffectView` inside `contentView`
+        // that `.fullSizeContentView` lets reach up into the band. The toolbar
+        // was asking AppKit for a material the app now draws for itself one
+        // layer down, so what it still bought was its 40 pt metric — and in a
+        // terminal workspace that is eight rows of nothing.
         //
-        // **The toolbar is necessary and was not sufficient.** This shipped in
-        // `5f3b88c` and the owner still saw no titlebar, because the material
-        // also needs a non-clear window background to composite against — see
-        // ``applyTransparency()``, which carries that measurement. The toolbar
-        // is still what asks for the material; that is what makes it possible
-        // to draw at all.
+        // **Measured on the live dev build under the owner's `chromeStyle:
+        // glass`, both arms, sampling a column at x=700 down the band.** The
+        // band's appearance does not change when the toolbar goes; only its
+        // height does.
         //
-        // **Empty on purpose, and empty is honest.** baia's controls live in the
-        // footer and the command palette by design; the toolbar exists here for
-        // the material and the standard titlebar metrics, not to hold anything.
-        // The owner's principle is to go full macOS and not mimic anything that
-        // has a standard function, so inventing toolbar buttons to justify the
-        // toolbar would be the same mistake as hand-drawing a scrim. No delegate
-        // is set, which is what keeps it item-less: a toolbar with no delegate
-        // and no items renders as bare titlebar, and the title still shows.
+        //     |                | with toolbar | without |
+        //     |----------------|--------------|---------|
+        //     | band height    | 40 pt        | 32 pt   |
+        //     | window frame   | 720 pt       | 712 pt  |
+        //     | panes          | 680 pt       | 680 pt  |
+        //     | mean, desktop  | 0.1845       | 0.1839  |
+        //     | spread, desktop| 0.0580       | 0.0549  |
+        //     | mean, white    | 0.5555       | 0.5511  |
+        //     | spread, white  | 0.0902       | 0.0902  |
         //
-        // **Unconditional, unlike everything else on this window.** The
-        // transparency and blur above are settings-driven; this is not part of
-        // the glass/flat split. At `backgroundOpacity == 1` the window is opaque
-        // and the toolbar's material over it is simply the standard macOS
-        // titlebar, which is the correct look there too, so there is nothing to
-        // gate on.
-        window.toolbar = toolbar
-
-        // `.unifiedCompact` rather than `.unified`. Both produce the material —
-        // the two arms measured identically flat in the probe — and they differ
-        // only in the chrome height they cost the content: 40 pt against 52 pt,
-        // where no toolbar at all is 32 pt. baia's own chrome is built at the
-        // 22 pt footer scale, and this is a terminal workspace where every point
-        // taken off the titlebar is a row of cells given back to the grid, so
-        // the compact metric is the one that matches.
+        // **"White" is a white window ordered directly behind the workspace
+        // window**, which is the control that says what the band is sampling.
+        // Both arms brighten to ~0.55 over it, and the sidebar's own glass
+        // column measured 0.5780 in the same frame: the band lenses what is
+        // behind the window exactly as every other glass surface in this app
+        // does, with and without a toolbar alike. That is the band reading as
+        // glass, which is what `78aadfe`'s verdict asked for — not the flat
+        // slab the toolbar used to produce.
         //
-        // Both styles stack `window.title` over `window.subtitle`. Until
-        // 2026-08-13 that was the whole titlebar grammar — the folder name on
-        // top, the path under it — and the owner's ruling that day removed the
-        // name, so the title line is now empty except when a pane is asking.
-        // See ``titlebarPath`` for what took its place and why the band is still
-        // 40 pt.
-        window.toolbarStyle = .unifiedCompact
+        // **So the toolbar was contributing nothing to the band's material by
+        // the time it was removed**, and the two rows above are the evidence:
+        // if it had been, dropping it would have moved the desktop mean or the
+        // white mean, and neither moved by more than 0.005.
+        //
+        // **That is what makes `Diagnostics/titlebar-toolbar`'s conclusion
+        // historical.** The probe was right when it was written and its arms
+        // still measure what they always did — it builds its own windows and
+        // links no app source — but it answers "does a bare titled window get
+        // material", and this window is no longer bare underneath. Its README
+        // carries the 2026-08-13 section saying so.
+        //
+        // **Under flat the band is still the system slab and still needs no
+        // toolbar**, which is the case worth checking because the merge did not
+        // touch it: measured at `chromeStyle: flat`, the band is 32 pt and
+        // spreads 0.0031 down its height, which is the slab holding one value.
+        // ``applyTitlebarGlass()`` sets `titlebarAppearsTransparent = false`
+        // there and AppKit paints it, toolbar or no toolbar.
+        //
+        // **The `no-toolbar` arm's 32 pt was never a surprise**, only a price
+        // this window used to have to pay. `.unifiedCompact` spent 40 against
+        // `.unified`'s 52 and was chosen as the cheapest metric that still
+        // produced the material; with the material coming from elsewhere, the
+        // cheapest metric is no toolbar at all.
+        //
+        // Nothing here sets `titlebarAppearsTransparent`. That flag is
+        // ``applyTitlebarGlass()``'s, which runs at the end of this `init` and
+        // owns it in both directions — true under glass, false under flat so the
+        // system slab paints the band again. Setting it here would be a second
+        // writer for one flag, and under flat the wrong one.
 
         // **The folder icon and the path, on the owner's 2026-08-13 ruling.**
         //
@@ -548,19 +571,28 @@ final class WorkspaceWindowController: NSObject {
         // change from collapsing the window to an invisible sliver.
         //
         // **Both numbers are the band taller than they read, and without that
-        // the merge would silently cost every window 40 pt of panes.** Under
+        // the merge would silently cost every window a band of panes.** Under
         // `.fullSizeContentView` the content view spans the band, so a content
-        // height of 680 leaves the pane tree 640: this host holds the tree below
-        // the band, and what `setContentSize` sizes is the rect the band comes
-        // out of. Measured rather than reasoned — the same asymmetry
+        // height of 680 leaves the pane tree 680 minus the band: this host holds
+        // the tree below it, and what `setContentSize` sizes is the rect the
+        // band comes out of. Measured rather than reasoned — the same asymmetry
         // `Diagnostics/titlebar-merge` records as `normalisedFrame`, where one
         // `contentRect` produced a 720 pt frame without the flag and a 680 pt
         // frame with it. Adding the band back makes 680 mean 680 of panes, which
         // is what it meant before the flag.
         //
-        // Read from the window rather than written as 40, for
-        // ``titlebarBandHeight``'s reason: the metric is the toolbar's and this
-        // app does not own it.
+        // **Still true at 32 pt, and re-measured on the day the toolbar went.**
+        // Fresh windows, accessibility-read: with the toolbar, frame 720 and the
+        // sidebar's scroll area 680 pt tall starting at `relTop=40`; without it,
+        // frame 712 and the same 680 pt starting at `relTop=32`. The window is 8
+        // pt shorter and the panes are untouched, which is the arithmetic
+        // working rather than something to compensate for — the point of the
+        // band shrinking is that the window stops spending the height, not that
+        // it spends it somewhere else.
+        //
+        // Read from the window rather than written as a constant, for
+        // ``titlebarBandHeight``'s reason: the metric is AppKit's and this app
+        // does not own it.
         let band = titlebarBandHeight
         window.contentMinSize = NSSize(width: 480, height: 320 + band)
         window.setContentSize(NSSize(width: 1024, height: 680 + band))
@@ -683,8 +715,8 @@ final class WorkspaceWindowController: NSObject {
     ///
     /// **Nothing changes at `backgroundOpacity == 1`.** That path is the `else`
     /// here and still writes `.windowBackgroundColor` on an opaque window,
-    /// which is byte-for-byte what it has always written. The toolbar already
-    /// worked there.
+    /// which is byte-for-byte what it has always written. The band already
+    /// worked there, back when a toolbar was what drew it and since.
     private func applyTransparency() {
         window.isOpaque = !isTransparent
         window.backgroundColor = isTransparent ? Self.nonClearTransparentBackground : .windowBackgroundColor
@@ -710,8 +742,8 @@ final class WorkspaceWindowController: NSObject {
     /// This is the platform's own mechanism for a window that disagrees with
     /// the rest of the app about light and dark: `NSWindow.appearance` is
     /// documented to override `NSApp.appearance` for one window's view
-    /// hierarchy and its system-drawn chrome — the titlebar material the
-    /// empty toolbar asks for and the tab bar — while every other window
+    /// hierarchy and its system-drawn chrome — the titlebar band and the tab
+    /// bar — while every other window
     /// (settings, the command palette, the find panel) keeps resolving
     /// `nil` back to the app's own appearance and is untouched by this call.
     /// `NSApp.appearance` was not an option for the same reason: it has no
@@ -745,12 +777,21 @@ final class WorkspaceWindowController: NSObject {
     /// background it undid the material the toolbar existed to produce and left
     /// bare wallpaper. The probe's `transparent-no-glass` arm reproduces
     /// exactly that and still grades show-through. What changed is that the
-    /// band is no longer empty afterwards — the flag removes the slab and this
-    /// view replaces it, which is the arrangement the earlier commit had no
-    /// reason to try. The toolbar stays regardless, and measurably must: it is
-    /// what buys the 40 pt `.unifiedCompact` metric, and the probe asserts the
-    /// band is still 40 pt with the flag set, the title and subtitle still
-    /// present, and the toolbar still reporting visible.
+    /// band is no longer empty afterwards — the flag removes the slab and
+    /// ``SidebarHost/bandGlass`` replaces it, which is the arrangement the
+    /// earlier commit had no reason to try.
+    ///
+    /// **This is also the one writer of the flag, which is why `init` sets it
+    /// nowhere.** Under flat it must go back to `false` or the slab never
+    /// returns, so a second unconditional `true` in `init` would be a bug that
+    /// only shows under the style the merge did not touch.
+    ///
+    /// **The toolbar used to be the other half of this and went on 2026-08-13.**
+    /// It was what bought the 40 pt `.unifiedCompact` metric while also being
+    /// what asked for the material; once this view supplied the material, the
+    /// metric was all that was left and the band shrank to 32 pt without it. See
+    /// `init` for the measurements. The probe still asserts the 40 pt band and a
+    /// visible toolbar on *its own* windows, which still have one.
     ///
     /// **Why the band's plane left the frame view, on 2026-08-12.** It was
     /// parented in `contentView.superview` because the band sits above

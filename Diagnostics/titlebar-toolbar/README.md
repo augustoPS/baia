@@ -14,10 +14,75 @@ pane; it does not belong on that list. An earlier version of this file reasoned
 from "launches nothing of baia's" to "safe from inside a pane", which does not
 follow.
 
+## Historical since 2026-08-13: the app removed its toolbar
+
+**Read "the toolbar is necessary for the material" below as the answer for a
+window whose band had nothing under it — which was every baia window until
+2026-08-12, and is no longer any of them.** The arms still measure what they
+always measured, the run still passes unmodified, and no arm was re-aimed. What
+changed is the app the conclusion was being applied to.
+
+`Diagnostics/titlebar-merge` moved the band's glass into `SidebarHost.bandGlass`
+on 2026-08-12: an `NSGlassEffectView` inside `contentView`, reaching up into the
+band through `.fullSizeContentView`, merged with the sidebar column's plane in
+one `NSGlassEffectContainerView`. That view is what draws the band's material
+now. The toolbar had been asking AppKit for a material the app supplies for
+itself one layer down, and what it was still being paid for was its 40 pt
+`.unifiedCompact` metric.
+
+`WorkspaceWindowController` therefore stopped creating one. Measured on the live
+dev build under the owner's `chromeStyle: glass`, sampling a column at x=700 down
+the band:
+
+| | with toolbar | without |
+|---|---|---|
+| band height | 40 pt | **32 pt** |
+| window frame (fresh window, 680 pt of panes) | 720 pt | **712 pt** |
+| mean over the desktop | 0.1845 | 0.1839 |
+| spread over the desktop | 0.0580 | 0.0549 |
+| mean over a **white window placed behind** | 0.5555 | 0.5511 |
+| spread over white | 0.0902 | 0.0902 |
+
+**Both arms were measured, and that is what settles it: the band's appearance
+does not change when the toolbar goes, only its height.** Every luminance figure
+moves by less than 0.005 across the flip. If the toolbar had still been supplying
+the band's material, dropping it would have moved them.
+
+**The white row is a white window ordered directly behind the workspace window**,
+and it says what the band samples: both arms brighten from ~0.18 to ~0.55 over
+it, while the sidebar's own glass column measured 0.5780 in the same frame. The
+band lenses what is behind the window exactly as the rest of the app's glass
+does. That is the band reading as glass — which is what generation three was
+asking for — rather than the flat slab the toolbar used to produce.
+
+**Under `.flat` the band is still the system slab and still needs no toolbar.**
+Measured at `chromeStyle: flat`, the band is 32 pt and spreads 0.0031 down its
+height, holding one value. `applyTitlebarGlass()` sets
+`titlebarAppearsTransparent = false` there and AppKit paints the slab, toolbar or
+no toolbar. That is the case worth checking because the merge never touched it.
+
+**Why this is a change to the app and not to the probe.** These thirteen arms
+build their own windows and link no app source, so `no-toolbar` still correctly
+grades show-through: a bare titled window with nothing beneath its band still has
+no material, exactly as measured. baia's window is no longer that window. The
+same distinction the "no arm was re-aimed" note further down already draws for
+the 220-against-292 assertion applies here — the number stands, the inference the
+app draws from it changed.
+
+**What would put the toolbar back.** If the band's glass ever leaves
+`contentView` — a chrome style with no glass plane in the band, a macOS release
+that stops letting `.fullSizeContentView` reach the region, or a merge undone —
+the band goes bare again and this probe's original conclusion becomes live rather
+than historical. Under `.flat` today the system slab still paints the band
+(`applyTitlebarGlass()` sets `titlebarAppearsTransparent = false`), which is why
+flat needs no toolbar either.
+
 ## The question
 
 Three times, and each rewrite is a previous answer turning out to have answered
-a narrower question than the owner was asking.
+a narrower question than the owner was asking. A fourth thing happened on
+2026-08-13 that is not a rewrite: the app stopped being the window these
+questions were asked about. See the section above.
 
 **First**: once the workspace window became genuinely non-opaque (`331b7ec`), the
 titlebar region had no material in it, and the research record
@@ -81,6 +146,11 @@ clear (see **Measuring** for why that second condition is not automatic).
 no items, material anyway, title still displayed. Compact spends 40 pt against
 unified's 52 where no toolbar is 32, and in a terminal every point off the
 titlebar is a row returned to the grid. Unchanged from the first generation.
+
+> Held for the app until 2026-08-13, when the band's material stopped coming from
+> the toolbar and the 32 pt row became the one baia takes. The verdict is still
+> true of a window that needs AppKit to supply the band; see the historical
+> section at the top.
 
 **The toolbar was necessary and not sufficient. The material needs a non-clear
 window background.** `backgroundColor = .clear` leaves AppKit nothing to
@@ -157,6 +227,13 @@ than baia's window: the arms are as true after the change as before, and the run
 passes unmodified. The 220-against-292 assertion is now a cost the app pays
 knowingly rather than a cost it refuses, which is a change to what the app does
 with the number and not to the number.
+
+**That paragraph was written for the 2026-08-12 merge and covers the 2026-08-13
+toolbar removal without amendment**, which is the sign it was the right shape.
+The app now disagrees with this probe's headline verdict too, and for the same
+kind of reason: not because an arm measures wrongly, but because baia's window
+stopped matching the arm the verdict was about. Nothing here needs to change for
+that either.
 
 **Glass reads dimmer than bare show-through and that is the point.** The band
 mean sits between the slab's and the raw wallpaper's because the glass is

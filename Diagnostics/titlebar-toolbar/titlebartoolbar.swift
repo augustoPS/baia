@@ -1,5 +1,15 @@
 import AppKit
 
+// **baia removed its toolbar on 2026-08-13 and every arm below still measures
+// what it always did.** These windows are built here and link no app source, so
+// the arms describe arrangements rather than baia's window. What changed is that
+// baia's window stopped being a bare titled window: since the 2026-08-12
+// band/column merge its band's material comes from an `NSGlassEffectView` inside
+// `contentView` (`SidebarHost.bandGlass`), not from a toolbar, so the toolbar
+// was left buying only its 40 pt metric and the band is now 32. Read the
+// README's historical section before quoting "the toolbar is necessary" at any
+// app code. The run is unmodified and still passes.
+//
 // Two generations of arms live here, and the second exists because the first
 // measured the wrong window.
 //
