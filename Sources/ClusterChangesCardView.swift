@@ -90,9 +90,10 @@ final class ClusterChangesCardView: NSView {
             // `RowStatusLetter`, with its own precedence rule (worktree over
             // index), leading a monospaced path so the letter column aligns by
             // itself. The sidebar's CHANGED rows drew the same letter until the
-            // owner's 2026-08-12 ruling removed that section and left this card
-            // as the one place a changed file is listed.
-            row.text = "\(Self.glyph(for: RowStatusLetter(change)))  \(change.path)"
+            // owner's 2026-08-12 ruling removed that section; that day's option B
+            // ruling put the same letter on the sidebar's *file rows*, so this
+            // card and the tree speak one vocabulary from one assembly.
+            row.text = "\(RowStatusLetter(change).glyph)  \(change.path)"
             row.font = Self.fileFont
             row.onClick = { [weak self] in self?.onFileDiff?(change) }
         }
@@ -172,14 +173,11 @@ final class ClusterChangesCardView: NSView {
     // them. The pane controller builds them, because only it knows the two
     // git facts a row cannot (untracked, unborn HEAD).
 
-    private static func glyph(for letter: RowStatusLetter) -> Character {
-        switch letter {
-        case .modified: "M"
-        case .added: "A"
-        case .deleted: "D"
-        case .conflict: "!"
-        }
-    }
+    // `glyph(for:)` was private here until 2026-08-12. The owner's option B
+    // ruling gave the sidebar's file rows the same letters, and a second copy of
+    // this switch in the tree is exactly the duplication that ruling removes, so
+    // the spelling moved onto `RowStatusLetter.glyph` where both surfaces read
+    // one assembly.
 
     static let width: Double = 300
 

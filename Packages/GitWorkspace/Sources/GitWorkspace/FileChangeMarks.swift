@@ -68,8 +68,31 @@ public struct FileChangeMarks: Sendable, Equatable {
     /// bytes already; this is the other half of the same rule.
     private var marks: [RepositoryPath: FileChangeMark] = [:]
 
+    /// The per-file status letter, for the paths git named and for no directory
+    /// above them.
+    ///
+    /// **Files only, and the asymmetry against ``marks`` is the design.** A
+    /// directory's mark is a *rollup* — the worst thing under it — which is a
+    /// question urgency can answer and a letter cannot: `M` on a collapsed
+    /// `Sources/` would claim the directory itself was modified, and there is no
+    /// honest letter for "one of the nineteen files under here was deleted and
+    /// two were added". So the tree draws the letter where git actually named a
+    /// file and keeps the rolled-up dot on directories (2026-08-12, option B).
+    ///
+    /// Built in the same pass as the marks rather than in a second structure the
+    /// caller would have to keep in step: the two answers come from one change
+    /// list and are drawn on one row.
+    private var letters: [RepositoryPath: RowStatusLetter] = [:]
+
     public init(_ changes: [RepositoryFileChange]) {
         for change in changes {
+            // Before the `FileChangeMark` guard below, deliberately. That
+            // initialiser returns nil when neither column carries a state, which
+            // git does not emit; `RowStatusLetter` has no nil to return and folds
+            // the same case into modified. Keying the letter first means the two
+            // maps disagree only where git itself is incoherent, and the tree
+            // draws no letter for a path it draws no mark for anyway.
+            letters[change.rawPath] = RowStatusLetter(change)
             guard let mark = FileChangeMark(change) else { continue }
             raise(change.rawPath, to: mark)
             // Every directory above it, so a collapsed row answers for its
@@ -92,6 +115,13 @@ public struct FileChangeMarks: Sendable, Equatable {
 
     /// The mark for a path, or nil when nothing under it has changed.
     public subscript(path: RepositoryPath) -> FileChangeMark? { marks[path] }
+
+    /// The status letter for a file git named, or nil for a directory and for
+    /// anything unchanged.
+    ///
+    /// A directory answers nil rather than a rolled-up letter, for the reason
+    /// ``letters`` gives: a rollup is an urgency and this is a kind.
+    public func letter(for path: RepositoryPath) -> RowStatusLetter? { letters[path] }
 
     public var isEmpty: Bool { marks.isEmpty }
 

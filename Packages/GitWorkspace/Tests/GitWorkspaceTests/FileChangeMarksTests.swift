@@ -113,4 +113,70 @@ import Testing
         #expect(FileChangeMark.unstaged < .conflict)
         #expect(FileChangeMark.allCases.map(\.glyph) == ["?", "M", "*", "!"])
     }
+
+    // MARK: - The per-file letter (owner's ruling, 2026-08-12, option B)
+
+    /// The file rows draw ``RowStatusLetter`` and the changes card draws the same
+    /// type, so this asserts the tree reads the shared assembly rather than a
+    /// second derivation: the letter for a path is exactly what `RowStatusLetter`
+    /// makes of the change git reported for it.
+    @Test func aFileCarriesItsOwnStatusLetter() {
+        let change = RepositoryFileChange(path: "a.swift", index: .deleted, kind: .ordinary)
+        let marks = FileChangeMarks([change])
+        #expect(marks.letter(for: "a.swift") == RowStatusLetter(change))
+        #expect(marks.letter(for: "a.swift") == .deleted)
+    }
+
+    /// **The asymmetry the ruling turns on.** A directory's mark is a rollup of
+    /// what is under it, which urgency can express and a letter cannot: `M` on a
+    /// collapsed `Sources/` would claim the directory itself was modified. So the
+    /// rollup keeps the dot and only files get letters.
+    @Test func aDirectoryRollsUpAMarkButCarriesNoLetter() {
+        let marks = FileChangeMarks([
+            RepositoryFileChange(path: "Sources/a.swift", worktree: .modified, kind: .ordinary),
+        ])
+        #expect(marks["Sources"] == .unstaged)
+        #expect(marks.letter(for: "Sources") == nil)
+        #expect(marks.letter(for: "Sources/a.swift") == .modified)
+    }
+
+    @Test func anUnchangedPathHasNoLetter() {
+        let marks = FileChangeMarks([
+            RepositoryFileChange(path: "a.swift", worktree: .modified, kind: .ordinary),
+        ])
+        #expect(marks.letter(for: "b.swift") == nil)
+    }
+
+    /// Keyed on bytes like ``marks``, for the reason that map is: two files git
+    /// reports separately must not collapse onto one entry because their drawn
+    /// spellings agree.
+    @Test func twoPathsThatDrawTheSameKeepTheirOwnLetters() {
+        let added = RepositoryPath([0xFF] + Array(".swift".utf8))
+        let deleted = RepositoryPath([0xFE] + Array(".swift".utf8))
+        #expect(added.display == deleted.display)
+
+        let marks = FileChangeMarks([
+            RepositoryFileChange(path: added, index: .added, kind: .ordinary),
+            RepositoryFileChange(path: deleted, worktree: .deleted, kind: .ordinary),
+        ])
+        #expect(marks.letter(for: added) == .added)
+        #expect(marks.letter(for: deleted) == .deleted)
+    }
+
+    /// The two vocabularies agree where they overlap rather than merely
+    /// coexisting: a conflicted file draws `!` whichever type is asked.
+    @Test func theTwoVocabulariesAgreeOnAConflict() {
+        let change = RepositoryFileChange(
+            path: "a.swift", index: .unmerged, worktree: .unmerged, kind: .unmerged
+        )
+        let marks = FileChangeMarks([change])
+        #expect(marks["a.swift"]?.glyph == "!")
+        #expect(marks.letter(for: "a.swift")?.glyph == "!")
+    }
+
+    /// The glyph moved onto the shared type when the file rows needed it
+    /// (2026-08-12, option B), so this pins the spelling both surfaces read.
+    @Test func everyLetterHasItsShippedGlyph() {
+        #expect(RowStatusLetter.allCases.map(\.glyph) == ["M", "A", "D", "!"])
+    }
 }

@@ -340,18 +340,40 @@ final class FileTreeRowsView: NSView {
         // the depth budget or collide with the guides. Trailing costs the name
         // 14 pt at any depth and never moves as the tree expands.
         //
-        // Design v5 §5 collapses ``FileChangeMark/staged``/`.unstaged` to one
-        // trailing `•`, the same vocabulary the footer's `*` already spends on a
-        // dirty tree, so the two read as one signal rather than two dot-shaped
-        // ones: caution ink for the ordinary case, ok-green only when a
-        // collapsed directory's rolled-up mark says nothing under it is still
-        // owed. `.untracked` keeps its own `?`, a fact ``FileChangeMark`` already
-        // distinguishes from a modification and one the dot's binary caution/
-        // ok-green vocabulary cannot carry; `.conflict` keeps `!` in attention
-        // ink outright, the state design v5 nowhere asks this column to quiet.
+        // **A file draws its status LETTER and a directory draws the rolled-up
+        // dot, which is the owner's option B ruling (2026-08-12) and the answer
+        // to what happens to the old mark.** The ruling gives a row the git
+        // status letters, in the same vocabulary the capsule's changes card
+        // draws — ``RowStatusLetter``, read from ``FileChangeMarks/letter(for:)``
+        // so the letters are assembled once and drawn on two surfaces rather
+        // than derived a second time here.
+        //
+        // The dot did not simply die, and it did not stay beside the letter
+        // either. Two marks on one file row saying the same thing is the
+        // duplication this whole line of rulings has been removing — the CHANGES
+        // section against the capsule's card, the session header against the
+        // window title, the action row against the menu — so on a *file* the
+        // letter replaces the dot outright: `M` says everything `•` said and
+        // says which kind of change it is. On a *directory* the letter is not
+        // available and would be a lie if it were (see
+        // ``FileChangeMarks/letters``), so the rollup keeps the column: a
+        // collapsed `Sources/` still answers for what is under it, which is the
+        // one thing the tree can say that the card cannot.
+        //
+        // What survives from design v5 §5 is therefore the directory half of it:
+        // ``FileChangeMark/staged``/`.unstaged` collapse to one `•` in the
+        // footer's own caution/ok-green vocabulary, `.untracked` keeps `?`, and
+        // `.conflict` keeps `!` in attention ink. A conflicted *file* now draws
+        // `!` through ``RowStatusLetter/glyph``, which is the same character in
+        // the same ink, so the two vocabularies agree where they overlap rather
+        // than merely coexisting.
         let mark = marks[row.node.rawPath]
         if let mark {
-            let (glyph, ink) = Self.trailingGlyph(for: mark, in: theme)
+            let (glyph, ink) = Self.trailingGlyph(
+                for: mark,
+                letter: row.node.isDirectory ? nil : marks.letter(for: row.node.rawPath),
+                in: theme
+            )
             NSAttributedString(
                 string: String(glyph),
                 attributes: [.font: Self.font, .foregroundColor: nsColor(ink)]
@@ -385,14 +407,39 @@ final class FileTreeRowsView: NSView {
         ).draw(at: NSPoint(x: nameX, y: y + Self.textOrigin))
     }
 
-    /// The glyph and ink design v5 §5 draws for one tree mark.
-    private static func trailingGlyph(for mark: FileChangeMark, in theme: PaneTheme) -> (Character, RGB) {
-        switch mark {
-        case .staged: ("•", theme.colour(for: .added))
-        case .unstaged: ("•", theme.colour(for: .unstaged))
-        case .untracked: ("?", theme.colour(for: .untracked))
-        case .conflict: ("!", theme.alert)
+    /// What one row draws in its trailing column: the file's own status letter
+    /// where there is one, and the rolled-up mark where there is not.
+    ///
+    /// **The ink is the mark's either way, and that is deliberate.** A letter
+    /// says which kind of change and the ink says how much to care, and
+    /// ``PaneChrome/PaneTheme/colour(for:)`` is already the one policy the card
+    /// and this column share — so an `M` on an unstaged file is `warn` and an `M`
+    /// on a staged one is `staged`, the same two colours the dot spent, carrying
+    /// a distinction the letter alone cannot. Grading the letter off
+    /// ``RowStatusLetter`` instead would need a second colour policy for a
+    /// vocabulary that has no urgency in it.
+    ///
+    /// `nil` for a directory, whose rollup has no honest letter (option B,
+    /// 2026-08-12).
+    private static func trailingGlyph(
+        for mark: FileChangeMark,
+        letter: RowStatusLetter?,
+        in theme: PaneTheme
+    ) -> (Character, RGB) {
+        let ink: RGB = switch mark {
+        case .staged: theme.colour(for: .added)
+        case .unstaged: theme.colour(for: .unstaged)
+        case .untracked: theme.colour(for: .untracked)
+        case .conflict: theme.alert
         }
+        // The directory rollup, design v5 §5 unchanged: staged and unstaged
+        // collapse to one `•`, untracked keeps `?`, conflict keeps `!`.
+        let rollup: Character = switch mark {
+        case .staged, .unstaged: "•"
+        case .untracked: "?"
+        case .conflict: "!"
+        }
+        return (letter?.glyph ?? rollup, ink)
     }
 
     /// One vertical line per ancestor level, so depth is read rather than counted.
