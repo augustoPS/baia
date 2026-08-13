@@ -16,9 +16,13 @@ protocol WorkspaceSurface: AnyObject {
     /// that pane, silently.
     var view: NSView { get }
 
-    /// Drawn by the host's own chrome, so a surface does not each draw its own
-    /// heading in its own way.
-    var title: String { get }
+    // `title` stood here until the FILES ruling (2026-08-12, option C). It was
+    // what the host's own chrome drew above a surface, so that two surfaces could
+    // not each invent a heading in their own weight and inset. `SidebarHost` was
+    // its only reader, through `section.heading.title`, and with no heading in
+    // the column a surface naming itself is a string nothing draws.
+    // `SurfaceTitleView.title` survives, because `SettingsPreviewColumn` sets it
+    // directly to show how a heading is themed.
 
     var theme: PaneTheme { get set }
 
@@ -166,12 +170,27 @@ enum SurfaceMessage {
     }
 }
 
-/// The heading a host draws above whatever surface it is holding.
+/// A section heading, in the treatment the sidebar's column used to draw above
+/// its surface.
 ///
-/// Drawn by the host and not by the surface, so two surfaces cannot each invent a
-/// heading in their own weight and inset. ``WorkspaceSurface/title`` promises this
-/// exists; a promise with nothing drawing it is the design prose running ahead of
-/// the code, which this project has already been bitten by once.
+/// **No host draws one since the FILES ruling (2026-08-12, option C), and
+/// `SettingsPreviewColumn` is now the only thing that builds one.** It was the
+/// heading `SidebarHost` put above every section, drawn by the host rather than
+/// by the surface so that two surfaces could not each invent a heading in their
+/// own weight and inset. The owner's ruling retired the column's last heading —
+/// neither reference project titles its primary column, and after the titlebar
+/// merge an empty top is what lets the band and the column read as one surface.
+///
+/// It survives rather than dying with its last real use because the settings
+/// preview still shows how a heading is themed: that column sets ``title`` and
+/// ``anchorName`` directly and reads ``labelInk``'s glass repair, which is the
+/// one part carrying theme colour into a sidebar heading. Deleting the type
+/// would delete that preview, which is a change to the settings window rather
+/// than to the sidebar, and no ruling asked for it.
+///
+/// So what this type is now is a *sample*, and the honest reading of that is that
+/// its consumer decides its fate: if the preview ever stops showing a heading,
+/// nothing else needs this and it goes.
 @MainActor
 final class SurfaceTitleView: NSView {
     var title: String = "" { didSet { needsDisplay = true } }
@@ -377,6 +396,13 @@ final class SurfaceTitleView: NSView {
     /// heading's fixed 28 pt and never in the layout: a strip that drew its own
     /// 2 pt would be a control that changes height, which in this column resizes
     /// the panes beside it. Design v3 §4.3.
+    ///
+    /// Written by nothing since the FILES ruling (2026-08-12, option C):
+    /// `SidebarHost.sectionDivider` was its one writer and it had no heading left
+    /// to report to. Kept with the rest of the split machinery — the strip, the
+    /// clamp, the session file's `splitHeight` — which a second section would need
+    /// again, and which is also why `clip-layout`'s README can still say this type
+    /// names ``DividerGrabView/Touch``.
     var split: DividerGrabView.Touch = .rest { didSet { needsDisplay = true } }
 
     override func draw(_: NSRect) {

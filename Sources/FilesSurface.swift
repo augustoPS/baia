@@ -22,7 +22,10 @@ import PaneChrome
 final class FilesSurface: NSObject, WorkspaceSurface {
     var view: NSView { scrollView }
 
-    let title = "Files"
+    // `title` was "Files" here until the FILES ruling (2026-08-12, option C),
+    // and the heading it captioned is what retired. The column draws no title of
+    // its own now: the tree runs to the top of the content region, which is what
+    // makes the panel read as one surface from the traffic lights down.
 
     var theme: PaneTheme = .darkPastel {
         didSet {

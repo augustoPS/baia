@@ -94,10 +94,22 @@ final class SidebarHost: NSViewController {
     /// height, and with none the column closes.
     private(set) var sections: [Section] = []
 
-    /// A surface with the heading the host draws for it.
+    /// A surface the host stacks.
+    ///
+    /// **It carried a ``SurfaceTitleView`` until the FILES ruling (2026-08-12,
+    /// option C).** The host drew one heading per section, and with the CHANGES
+    /// section already gone that was one heading over one tree, naming a column
+    /// that has nothing else in it. Neither reference project titles its primary
+    /// column, and after the titlebar merge an empty top is what lets the band
+    /// and the column read as one surface from the traffic lights down, so the
+    /// heading retired and the tree runs to the top of the content region.
+    ///
+    /// A struct with one stored property rather than a bare `any WorkspaceSurface`
+    /// in the array, for the reason the list shape itself survives: this is the
+    /// seam a second section would come back through, and collapsing it now would
+    /// be a rename of every `section.surface` in this file for no behaviour.
     struct Section {
         let surface: any WorkspaceSurface
-        let heading = SurfaceTitleView()
     }
 
     /// Points taken from the panes.
@@ -156,15 +168,14 @@ final class SidebarHost: NSViewController {
         didSet {
             // The same guard ``resolvedChrome`` below carries. Written
             // unconditionally by `AppDelegate.settingsDidChange()` on every
-            // announcement, and this didSet fans out to every section, both
-            // headings and the divider layer, so an unmoved theme was doing all
-            // of that for nothing once per settings-file save — and would do it
-            // once per control event under the design panel. The header and the
-            // action row were the other two fan-out targets until 2026-08-12.
+            // announcement, and this didSet fans out to every section and the
+            // divider layer, so an unmoved theme was doing all of that for
+            // nothing once per settings-file save — and would do it once per
+            // control event under the design panel. The header, the action row
+            // and the headings were the other fan-out targets until 2026-08-12.
             guard theme != oldValue else { return }
             for section in sections {
                 section.surface.theme = theme
-                section.heading.theme = theme
             }
             divider.layer?.backgroundColor = nsColor(theme.hairline).cgColor
         }
@@ -188,14 +199,15 @@ final class SidebarHost: NSViewController {
 
     /// The repository the column is describing.
     ///
-    /// Design v3 §4.2 had the first heading draw this trailing, "the connector
-    /// between the footer and the sidebar". Design v5 §5 replaced that connector
-    /// with the session header's own row, and the owner's 2026-08-12 ruling
-    /// removed that row in turn, so this feeds no heading at all; the property
-    /// stays because ``SettingsPreviewColumn`` still themes
-    /// `SurfaceTitleView.anchorName` directly, and removing the value this host
-    /// used to compute for it would be a change to that preview dressed up as a
-    /// rename.
+    /// **Written by `AppDelegate.refreshSidebar(of:)` and read by nothing in this
+    /// host, which is the settled state rather than a loose end.** Design v3 §4.2
+    /// had the first heading draw it trailing, "the connector between the footer
+    /// and the sidebar"; design v5 §5 replaced that connector with the session
+    /// header's own row; the owner's 2026-08-12 rulings removed that row and then
+    /// the heading itself (option C). The property stays because
+    /// ``SettingsPreviewColumn`` still sets `SurfaceTitleView.anchorName`
+    /// directly to show how a heading is themed, and the delegate keeps one place
+    /// that knows the focused pane's anchor name.
     ///
     /// Assigning it did call `refreshHeadings()` until 2026-08-12, which read
     /// nothing this value fed. That call went with the CHANGES section (owner's
@@ -203,20 +215,20 @@ final class SidebarHost: NSViewController {
     /// only surface ever to answer.
     var anchorName: String?
 
-    /// Whether the window is key, which the anchor name's accent is gated on.
-    private var isWindowActive = true {
-        didSet {
-            guard isWindowActive != oldValue else { return }
-            for section in sections { section.heading.isWindowActive = isWindowActive }
-        }
-    }
+    // `isWindowActive` stood here until the FILES ruling (2026-08-12, option C).
+    // It gated the anchor name's accent on the window being key, watched through
+    // the two notification observers `viewDidAppear` still installs, and the one
+    // thing it ever reached was `section.heading.isWindowActive`. With no heading
+    // in this column there is no accent to gate, so the property went and the
+    // observers now keep only the key state ``SurfaceTitleView`` reads when
+    // `SettingsPreviewColumn` drives one.
 
     // `refreshHeadings()` stood here until 2026-08-12. It pushed
     // `headingCount` and `headingTotals` from each surface into the heading
     // above it, and CHANGES was the only surface that ever answered either with
     // a number: FILES answered nil to both by design. The owner's ruling that
     // day removed the section, so the function had two nils to copy and was
-    // removed with it. A heading now draws its label and nothing else.
+    // removed with it. The heading itself followed later the same day.
 
     /// What the sections fill their bodies at, so the column is the same material
     /// as the panes it sits beside. Design v3 §1.
@@ -266,7 +278,6 @@ final class SidebarHost: NSViewController {
         didSet {
             guard resolvedChrome != oldValue else { return }
             for section in sections { section.surface.resolvedChrome = resolvedChrome }
-            for section in sections { section.heading.resolvedChrome = resolvedChrome }
             applyResolvedChrome()
         }
     }
@@ -419,17 +430,17 @@ final class SidebarHost: NSViewController {
     /// heights inside a column whose width never moves, so it resizes no ghostty grid
     /// and signals no process: the only thing a sidebar does that costs a reflow is
     /// taking width from the panes in the first place.
-    private lazy var sectionDivider: DividerGrabView = {
-        let divider = DividerGrabView(axis: .vertical) { [weak self] delta in
-            self?.dragSplit(by: delta)
-        }
-        // Reported to the heading *below* the split, which is the one whose top
-        // edge the boundary is. The strip itself stays transparent and hit-only.
-        divider.onTouch = { [weak self] touch in
-            self?.sections.dropFirst().first?.heading.split = touch
-        }
-        return divider
-    }()
+    /// `onTouch` was wired alongside this until the FILES ruling (2026-08-12,
+    /// option C). It reported hover and drag to the heading *below* the split,
+    /// which drew the 2 pt reply along its own top edge; the heading's fixed
+    /// height was the whole reason the mark lived there rather than in a grab
+    /// strip that would then be a control that changes height. With no heading
+    /// there is nothing to report to. Unreachable either way while one section is
+    /// in the column, since this strip is hidden below two, and it comes back
+    /// with the affordance a second section would need.
+    private lazy var sectionDivider = DividerGrabView(axis: .vertical) { [weak self] delta in
+        self?.dragSplit(by: delta)
+    }
 
     /// The grab area over the sidebar's own edge.
     ///
@@ -487,7 +498,6 @@ final class SidebarHost: NSViewController {
     func show(_ surfaces: [any WorkspaceSurface]) {
         for section in sections {
             section.surface.view.removeFromSuperview()
-            section.heading.removeFromSuperview()
         }
         sections = surfaces.map(Section.init(surface:))
         install()
@@ -525,54 +535,27 @@ final class SidebarHost: NSViewController {
         install()
     }
 
-    /// The key state the anchor name's accent is gated on, watched the way the
-    /// pane tree watches it for the footers, and for the same reason: a window
-    /// can change key without any responder in it moving.
-    override func viewDidAppear() {
-        super.viewDidAppear()
-        guard let window = view.window, windowObservers.isEmpty else { return }
-        isWindowActive = window.isKeyWindow
-        let centre = NotificationCenter.default
-        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
-            windowObservers.append(
-                centre.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
-                    MainActor.assumeIsolated {
-                        self?.isWindowActive = self?.view.window?.isKeyWindow ?? true
-                    }
-                }
-            )
-        }
-    }
-
-    /// Removed as the window goes away rather than in `deinit`, which is the same
-    /// shape `PaneTreeController` uses and for the same reason: `deinit` is
-    /// nonisolated and an observer token is not `Sendable`.
-    override func viewWillDisappear() {
-        super.viewWillDisappear()
-        for observer in windowObservers {
-            NotificationCenter.default.removeObserver(observer)
-        }
-        windowObservers.removeAll()
-    }
-
-    private var windowObservers: [any NSObjectProtocol] = []
+    // `viewDidAppear` and `viewWillDisappear` stood here until the FILES ruling
+    // (2026-08-12, option C), holding two `NSWindow` key-state observers and the
+    // teardown that matched them. They existed for one line: pushing the window's
+    // key state into each heading, which gated the anchor name's accent so a
+    // window that is not key would not compete with the one that is. The heading
+    // went, the accent went with it, and an observer with no reader is a
+    // subscription this column pays for on every key change and spends on
+    // nothing. The pane tree still watches the same notifications for the
+    // footers, which is where that argument was always load-bearing.
 
     private func install() {
         for section in sections {
             section.surface.theme = theme
             section.surface.backgroundOpacity = backgroundOpacity
             section.surface.resolvedChrome = resolvedChrome
-            section.heading.title = section.surface.title
-            section.heading.theme = theme
-            section.heading.isWindowActive = isWindowActive
-            section.heading.resolvedChrome = resolvedChrome
             view.addSubview(section.surface.view)
-            view.addSubview(section.heading)
         }
         raiseGrabStrips()
         // `show(_:)` calls `install()` after `viewDidLoad` has already built
         // `glassContainer`, and every newly installed section view is added
-        // above it in z-order by the two `addSubview` calls just above — no
+        // above it in z-order by the `addSubview` call just above — no
         // restack needed here for the glass to keep reading as what is behind
         // the column rather than as a layer painted over it. The container is
         // the one subview of `view` that holds glass now, so raising a section
@@ -809,22 +792,21 @@ final class SidebarHost: NSViewController {
         glassContainer?.frame = bounds
 
         // The sections, and this is where holding the band back is visible: the
-        // first heading lands at `content.maxY`, which is the row it landed on
-        // before the style-mask change, rather than up in the band beside the
-        // window title.
+        // tree's first row lands at `content.maxY`, rather than up in the band
+        // beside the window title.
         //
-        // **The column is `content` and nothing else since 2026-08-12.** Two
-        // strips of chrome bracketed it that morning: a 28 pt session header at
-        // the top and a 32 pt action row at the bottom, with the sections taking
-        // what the two left between them. The owner's rulings removed both, and
-        // both closed by subtraction rather than by rebalancing a term.
-        // `layoutSections` already puts the first heading flush against the top
-        // of what it is given and gives the last section whatever is left at the
-        // bottom, so dropping the top offset put FILES at `content.maxY` and
-        // dropping the bottom one runs its tree to `content.minY`. That the top
-        // edge is `content`'s rather than `bounds`'s is the merge's doing and
-        // what keeps the heading out of the titlebar band; the bottom edge the
-        // two rects share, so the tree reaches the window's floor either way.
+        // **The column is `content` and nothing else since 2026-08-12, and now
+        // the column is the tree.** Three strips of chrome bracketed it over that
+        // day: a 28 pt session header at the top, a 32 pt action row at the
+        // bottom, and a 28 pt FILES heading between the header and the rows. The
+        // owner's rulings removed all three, and each closed by subtraction
+        // rather than by rebalancing a term. `layoutSections` puts the first
+        // section flush against the top of what it is given and gives the last
+        // whatever is left at the bottom, so with one section the tree takes the
+        // whole of `content`. That the top edge is `content`'s rather than
+        // `bounds`'s is the merge's doing and what keeps the rows out of the
+        // titlebar band; the bottom edge the two rects share, so the tree reaches
+        // the window's floor either way.
         layoutSections(in: NSRect(
             x: content.minX,
             y: content.minY,
@@ -877,8 +859,18 @@ final class SidebarHost: NSViewController {
     /// the last takes whatever is left. That rule is why the tree goes last, and
     /// since the 2026-08-12 ruling left it alone in the column it is also why the
     /// space the CHANGES section vacated closed on its own: one section is the
-    /// last section, so the tree is handed the whole height below the heading with
-    /// no arithmetic here changing at all.
+    /// last section, so the tree is handed the whole height with no arithmetic
+    /// here changing at all.
+    ///
+    /// **`SurfaceTitleView.height` came out of every term on the FILES ruling
+    /// (2026-08-12, option C), and that is the whole of the layout change.** Each
+    /// section used to be a 28 pt heading with a body under it, so the first
+    /// section began 28 pt below the top of the column and the last body was
+    /// `available - 28`. With no heading the body *is* the section: the tree now
+    /// starts at `column.maxY` and runs to `column.minY`, which is what "no gap
+    /// and no empty strip above the tree" means arithmetically. The subtraction
+    /// closed rather than being rebalanced into another term, the same way the
+    /// session header and the action row closed that morning.
     private func layoutSections(in column: NSRect) {
         sectionDivider.isHidden = sections.count < 2
         guard !sections.isEmpty else { return }
@@ -889,25 +881,15 @@ final class SidebarHost: NSViewController {
         for (index, section) in sections.enumerated() {
             let isLast = index == sections.count - 1
             let available = top - column.minY
-            let bodyHeight: Double = if isLast {
-                max(0, available - SurfaceTitleView.height)
-            } else {
-                min(firstSectionHeight, max(0, available - SurfaceTitleView.height))
-            }
+            let bodyHeight = isLast ? available : min(firstSectionHeight, available)
 
-            section.heading.frame = NSRect(
-                x: column.minX,
-                y: top - SurfaceTitleView.height,
-                width: column.width,
-                height: SurfaceTitleView.height
-            )
             section.surface.view.frame = NSRect(
                 x: column.minX,
-                y: top - SurfaceTitleView.height - bodyHeight,
+                y: top - bodyHeight,
                 width: column.width,
                 height: bodyHeight
             )
-            top -= SurfaceTitleView.height + bodyHeight
+            top -= bodyHeight
 
             if !isLast {
                 sectionDivider.frame = NSRect(
@@ -922,13 +904,16 @@ final class SidebarHost: NSViewController {
 
     /// Keeps both sections usable however far the drag went.
     ///
-    /// A split that let either side reach zero would leave a heading with nothing
-    /// under it, which reads as a surface that broke rather than one that was
+    /// A split that let either side reach zero would leave a section with no
+    /// height at all, which reads as a surface that broke rather than one that was
     /// dragged shut.
+    ///
+    /// The per-section chrome term went with the headings (2026-08-12, option C):
+    /// the column's whole height is now body, so what a drag divides is
+    /// `column.height` itself rather than what two headings left of it.
     private func clampedSplit(_ height: Double, in column: NSRect) -> Double {
         guard sections.count > 1 else { return height }
-        let chrome = SurfaceTitleView.height * Double(sections.count)
-        let usable = max(0, column.height - chrome)
+        let usable = max(0, column.height)
         return min(max(Self.minimumSectionHeight, height), max(Self.minimumSectionHeight, usable - Self.minimumSectionHeight))
     }
 
