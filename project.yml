@@ -130,12 +130,12 @@ targets:
       base:
         PRODUCT_NAME: baia
         PRODUCT_BUNDLE_IDENTIFIER: pasqualotto.baia
-        MARKETING_VERSION: "0.1.1"
+        MARKETING_VERSION: "0.2.0"
         # The build number, bumped for every installable rebuild of the same
         # marketing version. 2 is the first build whose bundle id is
         # `pasqualotto.baia`; build 1 was tagged before the rename and does not
         # produce the app in /Applications.
-        CURRENT_PROJECT_VERSION: "3"
+        CURRENT_PROJECT_VERSION: "4"
 
         # The commit the bundle was built from, expanded into `BAIAGitCommit` in
         # Info.plist the same way `BAIA_SUPPORT_DIRECTORY` is. Both versions
