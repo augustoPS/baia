@@ -176,6 +176,30 @@ enum Probe {
         }
         check(panel !== host, "the panel is a window of its own, not a view in the pane's")
         check(panel.isKeyWindow, "the panel holds the keyboard")
+        // Keyness alone is a proxy and was the only thing asserted here until
+        // 2026-08-14: a window becomes key by being ordered front, whichever view
+        // inside it holds focus, so nothing checked that focus reaches the field,
+        // which is the one thing that makes the panel usable.
+        //
+        // What the mutations found is worth keeping, because it is not what the
+        // defect report assumed. Deleting `FindPanelController`'s
+        // `makeFirstResponder(queryView.field)` does **not** break focus: AppKit
+        // focuses the first `acceptsFirstResponder` view in the key-view loop when
+        // a window becomes key with no responder set, and that is this field
+        // (`CommandPaletteView.swift:234`). So the explicit call is belt-and-braces
+        // and its deletion is invisible from outside, which is why the old arm
+        // passed without it and why this one does too. The property that actually
+        // decides focus is the field's `acceptsFirstResponder`; refusing it fails
+        // this check and passes the keyness one, which is the separation the arm
+        // exists for. Proved by both mutations rather than read off the source.
+        //
+        // `currentEditor()` is in the comparison because an `NSTextField` hands
+        // first-responder status to the window's shared field editor once focused,
+        // so identity against the field alone is false exactly when focus is right.
+        check(
+            queryField(in: panel).map { panel.firstResponder === $0 || panel.firstResponder === $0.currentEditor() } ?? false,
+            "the search field holds focus inside the panel"
+        )
         check(host.firstResponder === terminal, "the pane's window still points at the terminal")
         // The regression a future inline find bar would trip. Every control the
         // panel owns has to be in the panel's window; one of them in the host is

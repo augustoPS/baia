@@ -14,8 +14,20 @@ stand-in, makes it first responder, opens the real `FindPanelController` over it
 types, leaves once by Escape and once by Return onto a match, and asserts at
 every step that the panel is a window of its own, that no `NSControl` has been
 added to the pane's window, that the terminal is still that window's first
-responder, and that closing the panel asked the pane's window for the keyboard
-back exactly once per dismissal.
+responder, that the search field holds focus inside the panel, and that closing
+the panel asked the pane's window for the keyboard back exactly once per
+dismissal.
+
+The focus assertion was added on 2026-08-14 and the arm had been unable to fail
+without it: keyness was the only thing checked, and a window is key by being
+ordered front whichever view inside it has focus. The mutation that found it
+also corrected the reason. Deleting `FindPanelController`'s
+`makeFirstResponder(queryView.field)` does not break focus at all, because
+AppKit focuses the first `acceptsFirstResponder` view in the key-view loop when
+a window becomes key with no responder set, and that is the query field; the
+explicit call is belt-and-braces. What decides focus is the field's
+`acceptsFirstResponder`, and refusing it fails the new check while passing the
+keyness one, which is the separation worth having.
 
 `retention` is the leaked-shell check. libghostty exposes no way to close a
 surface, so a pane's pty dies only when its controller deallocates and
