@@ -190,6 +190,24 @@ public enum PaneClusterLayout {
     /// of pane there is nothing legible to protect anyway. An earlier version of
     /// this doc claimed "the pane wears no pill rather than a clipped one",
     /// which was never true of the dot.
+    ///
+    /// **An idle pane does go dark, and only the dot earns that overflow**
+    /// (owner's ruling, 2026-08-15). Every role an idle pane carries is in this
+    /// list, so no undroppable role rides along, the empty set fits any budget
+    /// and wins when nothing else does: below 22.80 pt, where `*` alone stops
+    /// fitting, such a pane wears no capsule at all. The paragraph above is
+    /// therefore about the dot specifically and not about the pill in general.
+    /// The reasoning cuts the other way once nothing is waiting: a pill
+    /// overflowing onto its neighbour to report a branch name nobody can read at
+    /// 20 pt costs more than the silence does. Pinned by
+    /// `anIdlePaneGoesDarkBelowTheCheapestSegment`, which asserts the dark band
+    /// and the dot-bearing contrast together, so adding a floor here fails a
+    /// test rather than passing unnoticed.
+    ///
+    /// That band went unexercised for as long as it existed because the
+    /// brute-force oracle built its segment list with `.attention` always
+    /// present, so the no-undroppable-roles case was never enumerated. The
+    /// oracle takes both cases now.
     public static let dropOrder: [PaneClusterSegmentRole] = [
         .agent, .changes, .operation, .place,
     ]
@@ -310,6 +328,16 @@ public enum PaneClusterLayout {
         // answer is those roles and the pill overflows a pane narrower than a
         // dot. See the note on ``dropOrder`` for why that is preferred to a pane
         // that goes dark.
+        //
+        // **This line is for the undroppable case only, and an idle pane never
+        // reaches it.** With no undroppable role the empty candidate costs 0
+        // (``width(of:widths:)`` is zero for no segments), so it fits every
+        // budget, wins at `mask == 0` when nothing better does, and `best` is
+        // `[]` rather than nil: the pane goes dark by returning that empty set
+        // above, not by falling through here. Confirmed by instrumenting both
+        // paths rather than by reading them. The nil case is exactly a pane
+        // carrying the dot at a budget under 22 pt. See ``dropOrder`` for why
+        // the two cases are allowed to differ.
         return best ?? segments.filter { !droppable.contains($0.role) }
     }
 

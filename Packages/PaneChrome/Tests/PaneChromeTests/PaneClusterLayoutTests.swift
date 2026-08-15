@@ -454,15 +454,22 @@ import Testing
     /// This is what fails if the implementation ever returns a set that fits but
     /// is not the best one (the overshoot defect), or one that is best-ranked but
     /// does not fit.
-    @Test func theFitIsTheBestRankedSetThatFitsRatherThanTheFirstOne() {
+    @Test(arguments: [true, false])
+    func theFitIsTheBestRankedSetThatFitsRatherThanTheFirstOne(withAttention: Bool) {
         let widths = measuredWidths
+        // **Both cases, because for a year this ran only the first one and that
+        // is how the idle pane's dark band went unexercised** (2026-08-15). With
+        // `.attention` always present there is an undroppable role in every
+        // candidate, so the branch where nothing survives was never enumerated;
+        // an idle pane, which is the common configuration, has no undroppable
+        // role at all. The oracle below covers whichever case it is given, so a
+        // change to the floor has to satisfy both.
         let all: [PaneClusterSegment] = [
             .init(role: .operation, text: "CHERRY-PICK"),
             .init(role: .place, text: "(a1b2c3d)"),
             .init(role: .changes, text: "*"),
             .init(role: .agent, text: "claude"),
-            .init(role: .attention, text: ""),
-        ]
+        ] + (withAttention ? [.init(role: .attention, text: "")] : [])
         let droppable = PaneClusterLayout.dropOrder
         // Most precious first, which is the drop order reversed.
         let precedence = Array(droppable.reversed())
@@ -581,6 +588,69 @@ import Testing
         // And `dropOrder` is the reason, not luck: attention is not in it.
         #expect(!PaneClusterLayout.dropOrder.contains(.attention))
         #expect(!PaneClusterLayout.dropOrder.contains(.notice))
+    }
+
+    /// **An idle pane has no undroppable role, so it goes dark below the
+    /// cheapest segment, and that is a ruling rather than an oversight**
+    /// (owner's call, 2026-08-15).
+    ///
+    /// Every role an idle pane carries is in ``PaneClusterLayout/dropOrder``, so
+    /// the empty set always fits and wins when nothing else does. The pane wears
+    /// no capsule at all below 22.80 pt of budget, where even `*` on its own
+    /// stops fitting. A pane showing the dot survives to a budget of zero
+    /// instead, because the dot is 22.00 and is never given up.
+    ///
+    /// The two cases differ on purpose. `dropOrder`'s own note takes overflow
+    /// over silence *for the dot*, because a pane that says nothing about an
+    /// agent waiting on the owner is the one thing the capsule exists to
+    /// prevent. An idle pane has nothing waiting, so the same reasoning cuts the
+    /// other way: under 23 pt there is nothing legible to protect, and a pill
+    /// overflowing its neighbour to report a branch nobody can read costs more
+    /// than the silence does.
+    ///
+    /// **Why no green suite caught the dark band.**
+    /// `theFitIsTheBestRankedSetThatFitsRatherThanTheFirstOne` builds its oracle
+    /// from a segment list that always contains `.attention`, so the
+    /// no-undroppable-roles case was never enumerated and the common
+    /// configuration went unexercised. This test is that case, pinned as what
+    /// the pane *gets* rather than as "something was dropped", so a future floor
+    /// cannot be added silently: adding one fails this test, which is the point
+    /// of writing the ruling down as an assertion.
+    @Test func anIdlePaneGoesDarkBelowTheCheapestSegment() {
+        let widths = measuredWidths
+        let idle: [PaneClusterSegment] = [
+            .init(role: .place, text: "(a1b2c3d)"),
+            .init(role: .changes, text: "*"),
+            .init(role: .agent, text: "claude"),
+        ]
+        // Arithmetic from `measuredWidths`, not a round fixture: `*` is 6.80 and
+        // the two pill insets are 8 each.
+        let cheapest = PaneClusterLayout.width(
+            of: [.init(role: .changes, text: "*")], widths: widths
+        )
+        #expect(cheapest == 22.7998046875)
+
+        // Above the floor the pill is alive and holding the cheapest thing it
+        // can, which is what makes the band below meaningful rather than vacuous.
+        for budget in [cheapest, 23.0, 30.0, 50.0] {
+            let kept = PaneClusterLayout.fitting(segments: idle, widths: widths, budget: budget)
+            #expect(kept.map(\.role) == [.changes], "budget \(budget)")
+        }
+
+        // Below it the pane wears nothing at all. The ruling.
+        for budget in [0.0, 5.0, 20.0, 22.0, cheapest - 0.01] {
+            let kept = PaneClusterLayout.fitting(segments: idle, widths: widths, budget: budget)
+            #expect(kept.isEmpty, "budget \(budget)")
+        }
+
+        // The same budgets with a dot present keep the pill, which is the
+        // contrast the ruling rests on: silence is allowed for an idle pane and
+        // never for one asking.
+        let asking = idle + [.init(role: .attention, text: "")]
+        for budget in [0.0, 5.0, 20.0, 22.0] {
+            let kept = PaneClusterLayout.fitting(segments: asking, widths: widths, budget: budget)
+            #expect(kept.map(\.role) == [.attention], "budget \(budget)")
+        }
     }
 
     /// Segments are dropped whole, never cut. `CHERRY-P` in warn ink is a fact
