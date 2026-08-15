@@ -126,11 +126,16 @@ public struct PaneStatus: Sendable, Equatable {
         /// enough to work beside, still visible from across the window.
         case acknowledged
 
-        /// The pane finished and nobody has been in it since. Drawn as a bare
-        /// `✓` on the bar, and gone the moment the pane takes focus: a finish
-        /// is a notification rather than a request, so being seen is the only
-        /// thing that can happen to it. Derived in `PaneActivity` (see
+        /// The pane finished and nobody has been in it since. Drawn as a `✓` on
+        /// the capsule, and gone the moment the pane takes focus: a finish is a
+        /// notification rather than a request, so being seen is the only thing
+        /// that can happen to it. Derived in `PaneActivity` (see
         /// `PaneAttention.done`); this is that level's display name.
+        ///
+        /// The glyph is right and its surface was not: this said "a bare `✓` on
+        /// the bar" until 2026-08-15, naming a view deleted on 2026-08-13 and a
+        /// mark the capsule that replaced it did not draw at all. See
+        /// ``PaneClusterSegments/attentionGlyph(for:)``.
         case done
 
         /// The level an agent value represents, and the only copy of that

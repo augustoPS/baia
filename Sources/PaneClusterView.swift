@@ -247,6 +247,13 @@ final class PaneClusterView: PaneOverlayView {
     /// any other font is a pill the text does not fit.
     private static let segmentFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
 
+    /// The attention capsule's glyph. Heavier and a point smaller than the
+    /// segment font, which is `PaneStatusBarView.capsuleGlyphFont`'s spelling
+    /// restored rather than re-chosen: a `!` at regular weight inside a filled
+    /// capsule reads as a smudge, and the weight is what makes a one-character
+    /// mark legible at this size.
+    private static let capsuleGlyphFont = NSFont.monospacedSystemFont(ofSize: 10, weight: .heavy)
+
     /// Width from the cached placement, height from the metrics. The pill
     /// sizes itself; the controller only pins its top-right corner.
     override var intrinsicContentSize: NSSize {
@@ -411,7 +418,27 @@ final class PaneClusterView: PaneOverlayView {
         for segment in segments {
             switch segment.role {
             case .attention:
-                widths[segment.role] = PaneClusterMetrics.dotDiameter
+                // The capsule's width, from the glyph the segment carries, the
+                // same way `place` and `agent` measure theirs. `capsuleMinWidth`
+                // is the floor a single `!` lands on once padded, so a wider
+                // glyph would grow the capsule rather than overflow it.
+                //
+                // This was `PaneClusterMetrics.dotDiameter`, a fixed 6, until
+                // 2026-08-15. The dot carried no glyph and therefore no
+                // legibility guarantee: measured across the catalog it cleared
+                // 3:1 on 67.7% of rows flat and 26.2% under glass, because
+                // nothing bounded the accent against the pill it sat on. See
+                // ``PaneChrome/PaneClusterSegments/attentionGlyph(for:)``.
+                //
+                // Measured in the font it is drawn in, not the segment font: a
+                // width taken from one font and a glyph drawn in another is the
+                // pair that disagrees, and the capsule would clip or float.
+                widths[segment.role] = PaneChromeMetrics.attentionCapsuleFrame(
+                    glyphWidth: Double(
+                        attributed(segment.text, ink: theme.foreground, font: Self.capsuleGlyphFont)
+                            .size().width
+                    )
+                ).width
             case .notice:
                 // Cut once, here, and kept for `draw` to paint. The old shape
                 // re-cut inside `draw` "so the drawn string and the measured
@@ -615,11 +642,25 @@ final class PaneClusterView: PaneOverlayView {
         )
     }
 
-    private func attributed(_ text: String, ink: RGB) -> NSAttributedString {
+    private func attributed(
+        _ text: String, ink: RGB, font: NSFont = PaneClusterView.segmentFont
+    ) -> NSAttributedString {
         NSAttributedString(string: text, attributes: [
-            .font: Self.segmentFont,
+            .font: font,
             .foregroundColor: nsColor(ink),
         ])
+    }
+
+    /// What the attention capsule is drawn over when it is only stroked, so the
+    /// glyph's ink can be bounded against the surface it really sits on.
+    ///
+    /// Flat's pill is `barBackground` and reads directly. Glass composites a
+    /// material over a `theme.background` wash, and the wash's own floor is what
+    /// guarantees anything there, so the backing is the honest answer for a
+    /// contrast question: the material above it is translucent and its effective
+    /// colour depends on a desktop this view cannot see.
+    private var pillInk: RGB {
+        materialSet == nil ? theme.barBackground : theme.background
     }
 
     /// The material set glass resolves to, or nil under flat — the same
@@ -727,14 +768,58 @@ final class PaneClusterView: PaneOverlayView {
         for placement in placed {
             switch placement.segment.role {
             case .attention:
-                let dot = NSRect(
+                // A filled capsule wearing a glyph, which is the footer's own
+                // treatment restored (2026-08-15). A bare dot in
+                // `attentionColour` drew here until then and carried no
+                // legibility guarantee at all: the accent is not bounded against
+                // the pill, and measured across the shipped catalog it cleared
+                // 3:1 on 67.7% of rows flat and 26.2% under glass. The guarantee
+                // lives in `ink(on:)` below, which is bounded against the fill
+                // the glyph sits on, so it holds for every theme rather than for
+                // the ones anybody sampled.
+                //
+                // Fill against stroke is what separates `asking` from
+                // `acknowledged`; both wear `!`, because they are the same
+                // request and what differs is whether it has been seen.
+                let capsule = NSRect(
                     x: placement.x,
-                    y: (bounds.height - PaneClusterMetrics.dotDiameter) / 2,
-                    width: PaneClusterMetrics.dotDiameter,
-                    height: PaneClusterMetrics.dotDiameter
+                    y: (bounds.height - PaneChromeMetrics.capsuleHeight) / 2,
+                    width: placement.width,
+                    height: PaneChromeMetrics.capsuleHeight
                 )
-                nsColor(attentionColour).setFill()
-                NSBezierPath(ovalIn: dot).fill()
+                let radius = capsule.height / 2
+                if placement.segment.isAcknowledged {
+                    // Inset by half the line width so the stroke lands inside
+                    // the capsule rather than straddling its edge, which is what
+                    // the pill's own focus stroke does a few lines below.
+                    let path = NSBezierPath(
+                        roundedRect: capsule.insetBy(dx: 0.5, dy: 0.5),
+                        xRadius: radius - 0.5,
+                        yRadius: radius - 0.5
+                    )
+                    path.lineWidth = 1
+                    nsColor(attentionColour).setStroke()
+                    path.stroke()
+                } else {
+                    nsColor(attentionColour).setFill()
+                    NSBezierPath(roundedRect: capsule, xRadius: radius, yRadius: radius).fill()
+                }
+
+                // The glyph's ink is `ink(on:)` of what it actually sits on: the
+                // fill where there is one, the pill where the capsule is only
+                // stroked. Asking a bounded function about the wrong surface
+                // would be a guarantee against a colour that is not there.
+                let under = placement.segment.isAcknowledged ? pillInk : attentionColour
+                let glyph = attributed(
+                    placement.segment.text,
+                    ink: theme.ink(on: under),
+                    font: Self.capsuleGlyphFont
+                )
+                let size = glyph.size()
+                glyph.draw(at: NSPoint(
+                    x: capsule.midX - size.width / 2,
+                    y: capsule.midY - size.height / 2
+                ))
             case .notice:
                 // The one segment whose ink is graded rather than taken
                 // ungraded from the theme, and the exception has a reason the

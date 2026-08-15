@@ -45,8 +45,43 @@ import Testing
         )
         #expect(roles(status) == [.place, .changes, .agent, .attention])
 
-        // The dot draws, not reads: attention carries no text of its own.
-        #expect(segment(.attention, in: status)?.text == "")
+        // The attention segment carries its level's glyph, which is how the
+        // level reaches the view at all. It was `""` until 2026-08-15, when the
+        // capsule was found drawing one colourless dot for three levels it was
+        // handed and never read; the glyph rides in `text` so the width falls
+        // out of measuring it, the way every other segment works.
+        #expect(segment(.attention, in: status)?.text == "!")
+        #expect(segment(.attention, in: status)?.isAcknowledged == false)
+    }
+
+    /// Each level's mark, and the one that wears none.
+    ///
+    /// `asking` and `acknowledged` share `!` on purpose: they are the same
+    /// request and what separates them is whether it has been seen, which the
+    /// capsule says by being filled or stroked rather than by changing the
+    /// glyph. Asserted here so a future pass cannot quietly give them different
+    /// glyphs and leave the fill distinction drawing nothing.
+    @Test func eachLevelWearsItsOwnMark() {
+        #expect(PaneClusterSegments.attentionGlyph(for: .none) == nil)
+        #expect(PaneClusterSegments.attentionGlyph(for: .asking) == "!")
+        #expect(PaneClusterSegments.attentionGlyph(for: .acknowledged) == "!")
+        #expect(PaneClusterSegments.attentionGlyph(for: .done) == "\u{2713}")
+    }
+
+    /// `isAcknowledged` is the only thing separating two levels that wear the
+    /// same glyph, so it is asserted end to end from a status rather than on the
+    /// glyph function alone.
+    @Test func onlyAnAcknowledgedPaneMarksItsSegmentAcknowledged() {
+        let asking = Sample.status(
+            agent: .init(label: "claude", wantsAttention: true, isAcknowledged: false)
+        )
+        let acknowledged = Sample.status(
+            agent: .init(label: "claude", wantsAttention: true, isAcknowledged: true)
+        )
+        #expect(segment(.attention, in: asking)?.isAcknowledged == false)
+        #expect(segment(.attention, in: acknowledged)?.isAcknowledged == true)
+        // Same glyph, different capsule: the pair the view draws differently.
+        #expect(segment(.attention, in: asking)?.text == segment(.attention, in: acknowledged)?.text)
     }
 
     @Test func changesTextReusesTheSharedMarkerAssembly() {

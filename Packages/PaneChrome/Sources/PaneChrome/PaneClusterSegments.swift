@@ -33,13 +33,27 @@ public extension PaneClusterSegmentRole {
 public struct PaneClusterSegment: Sendable, Equatable {
     public var role: PaneClusterSegmentRole
 
-    /// Empty for ``PaneClusterSegmentRole/attention``; the dot draws, not
-    /// reads.
+    /// What the segment says. For ``PaneClusterSegmentRole/attention`` this is
+    /// the level's glyph (see
+    /// ``PaneClusterSegments/attentionGlyph(for:)``); it was empty, and the
+    /// attention mark a colourless dot, until 2026-08-15.
     public var text: String
 
-    public init(role: PaneClusterSegmentRole, text: String) {
+    /// Whether an asking pane has been looked at since it started asking, which
+    /// is the one thing the glyph cannot say: `asking` and `acknowledged` are
+    /// the same request and wear the same `!`, separated by whether the capsule
+    /// under it is filled or stroked.
+    ///
+    /// A field on the segment rather than a second input on the view, so the
+    /// capsule has exactly one source of truth about attention and no two
+    /// channels that could disagree. False for every other role and for a level
+    /// that is not `acknowledged`.
+    public var isAcknowledged: Bool
+
+    public init(role: PaneClusterSegmentRole, text: String, isAcknowledged: Bool = false) {
         self.role = role
         self.text = text
+        self.isAcknowledged = isAcknowledged
     }
 }
 
@@ -177,17 +191,52 @@ public enum PaneClusterSegments {
             segments.append(PaneClusterSegment(role: .agent, text: agent.label))
         }
 
-        // The footer's own predicate, inherited: `PaneStatusBarView.capsuleGlyph(ink:)`
-        // draws a mark for every ``PaneStatus/Attention`` level except `.none`
-        // (`!` for asking and acknowledged, `✓` for done), and
+        // The footer's own predicate, inherited: a mark is drawn for every
+        // ``PaneStatus/Attention`` level except `.none`, and
         // ``PaneStatus/attention`` is the one derivation of the level, so every
         // surface reading it agrees about when attention shows. The predicate
         // outlived the footer because it was never about that view: it is the
         // rule that `.none` is the only level with nothing to draw.
-        if status.attention != .none {
-            segments.append(PaneClusterSegment(role: .attention, text: ""))
+        //
+        // **The glyph rides in `text`, and that is the seam rather than a
+        // convenience** (2026-08-15). It carried `""` from the footer's deletion
+        // until then, because `PaneStatusBarView.capsuleGlyph(ink:)` drew the
+        // `!`/`✓` pair and went with that view, leaving the capsule drawing one
+        // colourless dot for three levels it was handed and never read. Putting
+        // the glyph here means the level crosses to the view through the field
+        // every other segment already uses, so the width falls out of measuring
+        // the text the way `place` and `agent` do, and no second channel has to
+        // agree with this one. See
+        // `vault/projects/baia/specs/2026-08-15-what-the-capsule-says-about-attention.md`.
+        if let glyph = PaneClusterSegments.attentionGlyph(for: status.attention) {
+            segments.append(PaneClusterSegment(
+                role: .attention,
+                text: glyph,
+                isAcknowledged: status.attention == .acknowledged
+            ))
         }
 
         return segments
+    }
+
+    /// The mark a level wears, or nil for the level that wears none.
+    ///
+    /// The pair is `PaneStatusBarView.capsuleGlyph(ink:)`'s, restored rather
+    /// than redesigned: `!` for a pane that is asking, whether or not the owner
+    /// has been in it since, and `✓` for one that finished unseen. What
+    /// separates `asking` from `acknowledged` is the capsule under the glyph
+    /// (filled against stroked), not the glyph itself, because both levels are
+    /// the same request and the difference between them is whether it has been
+    /// looked at.
+    ///
+    /// One function rather than a `switch` at the call site, so the predicate
+    /// "which levels draw a mark" has one home. `.none` returning nil is that
+    /// predicate: it is the only level with nothing to say.
+    static func attentionGlyph(for attention: PaneStatus.Attention) -> String? {
+        switch attention {
+        case .none: nil
+        case .asking, .acknowledged: "!"
+        case .done: "\u{2713}"
+        }
     }
 }
