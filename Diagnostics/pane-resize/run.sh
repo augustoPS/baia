@@ -111,9 +111,25 @@ mutate enforce '/super.viewDidLayout()/{n;s/applyRatio()/_ = ratio/;}'
 # The position clamp removed, so a stored ratio the minimum refuses is chased on
 # every layout pass. This is the crash class, and the control is expected to die
 # rather than to print a wrong number.
+#
+# **The refusal bound has to go with it, and that is not belt-and-braces: it is
+# the second half of one control** (2026-08-14). The clamp alone stopped being
+# fatal when `refusals` shipped on 2026-07-31, and for a year of probe runs
+# nobody noticed, because a control that quietly stops killing looks exactly
+# like a control that passes. Measured that day, both variants built from this
+# same extracted slice: clamp removed alone exits 0 and prints every arm green,
+# with the divider still reported at 96.0 in all six cases; clamp and bound
+# removed together die at 133, SIGTRAP, with stdout still buffered so nothing
+# prints at all. The bound is what turns an unbounded ask into three asks, so
+# damaging the clamp while it stands damages nothing observable.
+#
+# The `starve` arm is therefore about the pair, not about the clamp: the crash
+# needs a position AppKit refuses *and* a loop willing to re-ask forever. Delete
+# either sed below and `fatal_control` will catch it, which is the point.
 mutate reachable \
   's/^        guard highest >= lowest else { return nil }$//' \
-  's/^        return min(max(thickness \* ratio, lowest), highest)$/        return thickness * ratio/'
+  's/^        return min(max(thickness \* ratio, lowest), highest)$/        return thickness * ratio/' \
+  's/^        guard refusals < Self.refusalLimit else { return }$//'
 
 # `run` takes an axis, a mode and a mechanism. The `broken` mode is the built-in
 # control: it disconnects the write-back the way the code stood before the fix,
@@ -158,6 +174,12 @@ control() {
 # prints nothing at all. Any signal will do: what must not happen is a clean exit
 # 1 from a printed FAIL, which would mean the layout loop had stopped being fatal
 # and `starve` had stopped testing it.
+#
+# That is not hypothetical and this guard earned its keep: it caught exactly that
+# on 2026-08-14, having been silently true since `refusals` shipped on
+# 2026-07-31. The fix was to damage the bound alongside the clamp rather than to
+# weaken this assertion, because what stops the process dying is now a deliberate
+# guard in the shipped code and not an accident. See the `mutate reachable` note.
 fatal_control() {
   local name=$1
   shift

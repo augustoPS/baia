@@ -33,6 +33,13 @@ the minimum's margin, because a position `setPosition` refuses is one the next
 layout pass asks for again forever, and the process is still alive to print at
 all, because that loop ends in `NSGenericException` and a dead app.
 
+Read that second claim as historical from 2026-07-31 on. The shipped code bounds
+the re-asking at three refusals per thickness (`applyRatio`'s `refusals`), so an
+unreachable position no longer kills anything on its own; it leaves the divider
+where AppKit put it, which is the trade that fix took knowingly. The arm still
+means what it says, but only because its control now damages the bound as well
+as the clamp. See `reachable` below.
+
 `click` parks a divider off its stored ratio, which is what any window shrunk
 after a drag does, and posts one `mouseDown` with no drag behind it. Nothing may
 be written, the model must still hold what it held, and re-widening must put the
@@ -73,13 +80,29 @@ nothing is a control that passes for reasons unrelated to the arm.
 | `pin` | `recordDrag` no longer updates the stored ratio, which is the original `let` bug | the drag survives to mouse-up and past the layout pass |
 | `enforce` | `viewDidLayout` no longer calls `applyRatio` | the pre-fix arms, which have nothing left to re-pin them |
 | `moved` | the click test compares against the stored ratio instead of where the gesture began | `click` |
-| `reachable` | the position clamp in `reachablePosition` removed | `starve`, fatally |
+| `reachable` | the position clamp in `reachablePosition` **and** the `refusals` bound in `applyRatio`, both | `starve`, fatally |
 
 `reachable` is the one whose damage kills the process instead of printing a wrong
 number, which is the whole crash class, so `run.sh` asserts that it was killed by
 a signal rather than merely that it exited non-zero. It currently dies with
 status 133, SIGTRAP, inside the first layout pass with stdout still buffered,
 which is why it prints nothing at all.
+
+**It damages two lines rather than one, and that is the arm's meaning rather than
+extra caution** (2026-08-14). The clamp alone stopped being fatal when the
+`refusals` bound shipped on 2026-07-31 as the fix for this very crash, and the
+control went on passing quietly for every run in between, which is how a control
+that has stopped killing looks from outside. Measured both ways from the same
+extracted slice: clamp removed alone exits 0 with every arm green and the divider
+still reported at 96.0 in all six cases; clamp and bound removed together die at
+133. So the crash needs both a position AppKit refuses and a loop willing to
+re-ask forever, and `starve` is about that pair. Deleting either `sed` in the
+`mutate reachable` block makes `fatal_control` refuse the run, which was checked
+by doing it rather than assumed.
+
+The guard is what caught this: `fatal_control` was written to reject a clean exit
+where a signal was expected, and it did so the first time the shipped code made
+the damage survivable. A weaker assertion would have said the arm still passed.
 
 ## What it does not reach
 
