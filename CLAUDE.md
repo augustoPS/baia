@@ -113,6 +113,21 @@ the keyboard; `override-wires` is the strictest, opening no window at all.
 Whatever the list holds, a command pairing a safe probe with a real driver is
 still denied.
 
+**Where the guard binds, since grepping the wrong file once concluded it bound
+nothing (2026-08-15).** It is registered in three places, none of them
+`~/.claude/settings.json`. `seed-worktree-settings.sh` substitutes `__REPO__`
+into `executor-settings.json` and `reviewer-settings.json` and writes the result
+to each worktree's `.claude/settings.json`, so every observer-pane executor and
+reviewer runs behind it. `baia/.claude/settings.json` registers it for
+interactive sessions working on baia from inside a pane, which is the case the
+worktree seeding never covered and where the risk is identical. In all three the
+guard sits behind `rtk hook claude` and reads the rewritten string, which is why
+its `START` pattern carries the `rtk` and `rtk proxy` arms.
+
+Project settings load at session start, so a session already running when
+`settings.json` changed is not behind the guard. `guard-test.sh` checks the
+script; nothing checks that a live session registered it.
+
 Naming them matters because the blanket version cost something. The wave-five
 reviewer needed the theme-catalog sweep, was refused by the guard, and
 hand-transcribed its `swiftc` lines into a single Bash call instead, which
