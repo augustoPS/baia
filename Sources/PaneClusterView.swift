@@ -788,7 +788,18 @@ final class PaneClusterView: PaneOverlayView {
                     height: PaneChromeMetrics.capsuleHeight
                 )
                 let radius = capsule.height / 2
-                if placement.segment.isAcknowledged {
+                if placement.segment.isFinished {
+                    // No capsule at all, and the pill's own ink rather than the
+                    // accent: a finish is a notification, not a request, so it
+                    // does not wear the colour that means "answer me". This is
+                    // the bar's own treatment (`case .done` drew its glyph
+                    // straight onto the bar surface) and the spec's "a calm ink,
+                    // not the attention colour".
+                    //
+                    // Caught by eye and not by the probe, which asserts only that
+                    // the levels *differ*: a red filled capsule with a tick
+                    // differs from the other two and was wrong anyway.
+                } else if placement.segment.isAcknowledged {
                     // Inset by half the line width so the stroke lands inside
                     // the capsule rather than straddling its edge, which is what
                     // the pill's own focus stroke does a few lines below.
@@ -809,7 +820,9 @@ final class PaneClusterView: PaneOverlayView {
                 // fill where there is one, the pill where the capsule is only
                 // stroked. Asking a bounded function about the wrong surface
                 // would be a guarantee against a colour that is not there.
-                let under = placement.segment.isAcknowledged ? pillInk : attentionColour
+                let under = placement.segment.isAcknowledged || placement.segment.isFinished
+                    ? pillInk
+                    : attentionColour
                 let glyph = attributed(
                     placement.segment.text,
                     ink: theme.ink(on: under),

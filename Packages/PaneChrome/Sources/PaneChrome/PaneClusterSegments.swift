@@ -50,10 +50,26 @@ public struct PaneClusterSegment: Sendable, Equatable {
     /// that is not `acknowledged`.
     public var isAcknowledged: Bool
 
-    public init(role: PaneClusterSegmentRole, text: String, isAcknowledged: Bool = false) {
+    /// Whether this is a pane that finished rather than one that is asking.
+    ///
+    /// Separate from ``isAcknowledged`` because the two say different things and
+    /// the drawing differs in kind rather than in degree: an asking pane wears a
+    /// capsule in the attention colour, filled or stroked by whether it has been
+    /// seen, and a finished pane wears no capsule at all and takes the pill's own
+    /// ink. A finish is a notification, not a request, so it does not wear the
+    /// colour that means "answer me".
+    public var isFinished: Bool
+
+    public init(
+        role: PaneClusterSegmentRole,
+        text: String,
+        isAcknowledged: Bool = false,
+        isFinished: Bool = false
+    ) {
         self.role = role
         self.text = text
         self.isAcknowledged = isAcknowledged
+        self.isFinished = isFinished
     }
 }
 
@@ -212,7 +228,8 @@ public enum PaneClusterSegments {
             segments.append(PaneClusterSegment(
                 role: .attention,
                 text: glyph,
-                isAcknowledged: status.attention == .acknowledged
+                isAcknowledged: status.attention == .acknowledged,
+                isFinished: status.attention == .done
             ))
         }
 

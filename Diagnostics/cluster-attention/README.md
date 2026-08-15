@@ -1,6 +1,6 @@
 # Cluster attention probe
 
-`./run.sh` from anywhere. Three arms, each followed by a control that damages the
+`./run.sh` from anywhere. Four arms, each followed by a control that damages the
 drawing and must fail. Nothing is captured from the screen, no window is made
 key, and no app is launched: every reading comes from a bitmap this process
 rasterizes through `cacheDisplay(in:to:)`.
@@ -30,6 +30,7 @@ with it.
 | arm | claim | control |
 |---|---|---|
 | `levels` | the three levels differ from each other in pixels | all three rendered as `asking`, which is what shipped |
+| `calm` | no pixel of a `done` segment is the attention colour | `done` rendered as `asking` |
 | `anchor` | the attention segment's rect is identical at every level | one level's glyph widened |
 | `ink` | the glyph is `theme.ink(on:)` of what it sits on | `run.sh` rewrites that call to `theme.foreground` |
 
@@ -37,6 +38,14 @@ with it.
 treatment: whatever the levels are drawn as, they may not be drawn the same. A
 test asserting "asking is a filled red capsule" would need rewriting by the next
 design pass and would pass meanwhile.
+
+`calm` exists because `levels` passed a wrong drawing. That arm asserts only
+that the levels differ, and the first implementation gave `done` a capsule filled
+in alert red, which differs from the other two and is still a finished pane
+shouting for attention. It took the owner's eye on a capture to see it, and the
+arm now states the half a difference test cannot: a finish is a notification
+rather than a request, so it wears none of the colour that means "answer me".
+Clean reads 0 attention-coloured pixels, the control 244.
 
 `anchor` is the spec's criterion 2 and the half of an earlier ruling that
 survived its reversal. `approvalAnchorRect()` anchors the approval popover to

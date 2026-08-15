@@ -59,7 +59,7 @@ compile damaged-ink "$OUT/damaged/PaneClusterView.swift" "$ROOT/Sources/PaneOver
 # legitimate where the damage is to the *fixture* rather than to the drawing
 # (rendering every level as `asking`, widening one level's text). `ink` needs a
 # damaged view, so it takes the mutated binary.
-for arm in levels anchor; do
+for arm in levels calm anchor; do
   "$OUT/clusterattentiontest-clean" "$arm"
   echo
   if "$OUT/clusterattentiontest-clean" "$arm" break; then
@@ -80,4 +80,4 @@ fi
 echo "(the ink control failed, as it must)"
 echo
 
-echo "all three arms pass and all three controls fail"
+echo "all four arms pass and all four controls fail"

@@ -8,13 +8,19 @@
 // the capsule read. Spec:
 // `vault/projects/baia/specs/2026-08-15-what-the-capsule-says-about-attention.md`.
 //
-// Three arms, each with a `break` variant that damages the drawing rather than
+// Four arms, each with a `break` variant that damages the drawing rather than
 // the resolution:
 //
 //   levels    the three drawn levels differ from each other in pixels
+//   calm      a finished pane wears no part of the attention colour
 //   anchor    the attention segment's rect is the same at every level
 //   ink       the glyph on the fill is `theme.ink(on: fill)`, which is the
 //             measured legibility guarantee rather than a colour chosen here
+//
+// `calm` exists because `levels` passed a wrong drawing: it asserts only that
+// the levels differ, and a `done` capsule filled in alert red differs from the
+// other two while being a finished pane shouting for attention. The owner's eye
+// on a capture caught it. Difference is not correctness.
 //
 // Why pixels rather than a unit test over the enum. The package tests already
 // assert that `PaneStatus.Attention` resolves correctly, and every one of them
@@ -187,6 +193,49 @@ func check(_ condition: Bool, _ label: String) {
     check(differs(renders[.asking]!, renders[.done]!), "asking differs from done")
 }
 
+// MARK: - calm
+
+/// Does `done` stay out of the attention colour?
+///
+/// A finish is a notification rather than a request, so it may not wear the
+/// colour that means "answer me". The bar drew its `✓` straight onto its own
+/// surface for exactly this reason, and the spec's level table says "a calm ink,
+/// not the attention colour".
+///
+/// **Written because the `levels` arm passed a drawing that was wrong.** That
+/// arm asserts only that the three levels *differ*, and the first implementation
+/// gave `done` a filled capsule in the alert colour, which differs from the other
+/// two and is still a finished pane shouting in red. It took the owner's eye on a
+/// capture to see it. "Different" is not "correct", and this arm is the half the
+/// difference test cannot state.
+///
+/// The control draws `done` in the attention colour, which is the exact mistake
+/// that shipped for one commit.
+@MainActor func calmArm(breakIt: Bool) {
+    print("=== a finished pane does not shout ===")
+    let theme = PaneTheme.darkPastel
+    let view = makeView(breakIt ? .asking : .done, theme: theme)
+    guard let render = rasterize(view), let rect = attentionRect(view) else {
+        check(false, "the done level rasterized")
+        return
+    }
+    let attention = theme.attentionColour(view.attentionAccent, behavior: view.alertBehavior)
+
+    // No pixel of the segment may carry the attention colour. Asserted over the
+    // whole box rather than at a sampled point: the failure being guarded is a
+    // *fill*, so it would be found anywhere, and a zero count is the honest
+    // claim about a colour that must be absent entirely.
+    var hits = 0
+    for y in Int(rect.minY)..<Int(rect.maxY) {
+        for x in Int(rect.minX)..<Int(rect.maxX)
+            where matches(render.pixel(x: x, y: y), attention, tolerance: 6)
+        {
+            hits += 1
+        }
+    }
+    check(hits == 0, "no pixel of a done segment is the attention colour \(attention.hexString), found \(hits)")
+}
+
 // MARK: - anchor
 
 /// Is the attention segment's rect the same at every level?
@@ -315,10 +364,11 @@ let breakIt = CommandLine.arguments.contains("break")
 MainActor.assumeIsolated {
     switch arm {
     case "levels": levelsArm(breakIt: breakIt)
+    case "calm": calmArm(breakIt: breakIt)
     case "anchor": anchorArm(breakIt: breakIt)
     case "ink": inkArm(breakIt: breakIt)
     default:
-        print("usage: clusterattentiontest <levels|anchor|ink> [break]")
+        print("usage: clusterattentiontest <levels|calm|anchor|ink> [break]")
         exit(2)
     }
 }
