@@ -1,0 +1,23 @@
+{
+  "0": "App Surfaces & Window Probes",
+  "1": "Workspace Layout & Pane Tree",
+  "2": "Git Workspace & Project Anchor",
+  "3": "Chrome Style & Design Overrides",
+  "4": "Pane Theme & Cluster Chrome",
+  "5": "Control Wire & Agent Mailbox",
+  "6": "Control Server & Peering Auth",
+  "7": "Control Verbs & CLI Adapter",
+  "8": "CLI Arguments & Git Parsers",
+  "9": "App Delegate & Workspace Menu",
+  "10": "Settings Store & JSON Values",
+  "11": "Terminal Pane Controller",
+  "12": "Pane Status & Activity Runs",
+  "13": "Control Channel Probes",
+  "14": "Overlay & Cluster Card Views",
+  "15": "Command Palette & Find Panel",
+  "16": "Git Status Changes & Marks",
+  "17": "Theme Refresh & File Tree",
+  "18": "Fuzzy Matcher & Palette Rows",
+  "19": "Chrome Appearance Tests",
+  "999": "Lone Wolves"
+}

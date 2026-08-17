@@ -1,0 +1,17 @@
+# Vendored and generated trees. graphify reads this file, not .gitignore.
+#
+# upstream/ is libghostty-spm, recreated by `make upstream` from the revision
+# and patch beside it. 124 of baia's 493 Swift files live there; graphing them
+# buries baia's own communities under vendored Ghostty source.
+upstream/
+
+# Build products and generated project files.
+.build/
+DerivedData/
+baia.xcodeproj/
+graphify-out/
+
+# Design conversation traffic, not code.
+design/inbox/
+design/handoffs/
+verify-out/

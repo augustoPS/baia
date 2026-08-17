@@ -48,3 +48,14 @@ upstream/libghostty-spm/
 __pycache__/
 *.pyc
 .superpowers/
+
+# The graphify code graph, rebuilt from the AST by `python3 -m graphify update .`
+# and derived rather than tracked: graph.json alone is 8.7MB and every rebuild
+# rewrites it. The community labels are the exception. They are hand-approved
+# prose, they are what makes the graph navigable in Obsidian, and a rebuild in a
+# fresh clone would silently fall back to "Community 0" without them. The
+# membership snapshot beside them stays local, since it is a baseline for the
+# alignment check on this machine's graph rather than a shared fact.
+graphify-out/**
+!graphify-out/
+!graphify-out/.community_labels.json
