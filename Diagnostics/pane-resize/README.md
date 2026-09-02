@@ -80,7 +80,7 @@ nothing is a control that passes for reasons unrelated to the arm.
 | `pin` | `recordDrag` no longer updates the stored ratio, which is the original `let` bug | the drag survives to mouse-up and past the layout pass |
 | `enforce` | `viewDidLayout` no longer calls `applyRatio` | the pre-fix arms, which have nothing left to re-pin them |
 | `moved` | the click test compares against the stored ratio instead of where the gesture began | `click` |
-| `reachable` | the position clamp in `reachablePosition` **and** the `refusals` bound in `applyRatio`, both | `starve`, fatally |
+| `reachable` | the position clamp in `SplitSeat.reachablePosition` **and** the `refusals` bound in `SplitSeat.decide`, both, in a shadow copy of `WorkspaceLayout` the control is linked against (since 2026-09-02, when the seat decision left the controller) | `starve`, fatally |
 
 `reachable` is the one whose damage kills the process instead of printing a wrong
 number, which is the whole crash class, so `run.sh` asserts that it was killed by

@@ -43,11 +43,14 @@ echo "extracted $(grep -c '' "$OUT/panesplit_extracted.swift") lines from Source
 # Warnings are kept out of the transcript because a damaged copy leaves bindings
 # unused and would bury the arms in noise, but the log is printed whenever the
 # build actually fails.
+# The third argument names the lib directory to link against, and defaults to
+# the clean one; the `reachable` control links a damaged `WorkspaceLayout`.
 compile() {
   local log="$OUT/build-$1.log"
+  local lib=${3:-$LIB}
   if ! swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/dragtest-$1" \
-    -I "$LIB" -L "$LIB" -lBaiaSettings -lPaneChrome -lWorkspaceLayout \
-    -Xlinker -rpath -Xlinker "$LIB" \
+    -I "$lib" -L "$lib" -lBaiaSettings -lPaneChrome -lWorkspaceLayout \
+    -Xlinker -rpath -Xlinker "$lib" \
     "$HERE/dragtest.swift" "$2" > "$log" 2>&1
   then
     cat "$log" >&2
@@ -60,8 +63,8 @@ compile clean "$OUT/panesplit_extracted.swift"
 # A negative control: the same slice of the shipped file with one line of the
 # write-back path damaged, so an arm that cannot fail is caught being unable to.
 #
-# The damage lands in `recordDrag` and `reachablePosition` themselves, not in
-# something they call. The footer-corners probe was written the other way round
+# The damage lands in `recordDrag` and `SplitSeat.reachablePosition` themselves,
+# not in something they call. The footer-corners probe was written the other way round
 # once, verifying a geometry helper while the code consuming it was covered by
 # nothing, and its controls still failed, which is exactly what made it look
 # sound.
@@ -126,10 +129,46 @@ mutate enforce '/super.viewDidLayout()/{n;s/applyRatio()/_ = ratio/;}'
 # The `starve` arm is therefore about the pair, not about the clamp: the crash
 # needs a position AppKit refuses *and* a loop willing to re-ask forever. Delete
 # either sed below and `fatal_control` will catch it, which is the point.
-mutate reachable \
+#
+# **The clamp and the bound moved out of the controller on 2026-09-02**, into
+# `SplitSeat` in `WorkspaceLayout` (the split seat is a pure decision; the
+# controller keeps `setPosition` and the measurement). A mutation seam has to
+# move with the module it disables, so this control damages a shadow copy of the
+# package source and links the extracted, undamaged controller against that
+# rebuilt library. Sedding the extracted slice would change nothing, and the
+# no-op guard would refuse the run, which is what it is for.
+mutate_seat() {
+  local name=$1
+  shift
+  local shadow="$OUT/shadow-$name"
+  local lib="$OUT/lib-$name"
+  rm -rf "$shadow" "$lib"
+  mkdir -p "$shadow/Packages/WorkspaceLayout/Sources" "$lib"
+  cp -R "$ROOT/Packages/WorkspaceLayout/Sources/WorkspaceLayout" "$shadow/Packages/WorkspaceLayout/Sources/"
+  local file="$shadow/Packages/WorkspaceLayout/Sources/WorkspaceLayout/SplitSeat.swift"
+  cp "$file" "$OUT/seat-$name.orig"
+  local script
+  for script in "$@"; do
+    sed -i '' "$script" "$file"
+  done
+  if cmp -s "$OUT/seat-$name.orig" "$file"; then
+    echo "MUTATION '$name' CHANGED NOTHING: the line it targets has moved or been"
+    echo "rewritten in Packages/WorkspaceLayout/Sources/WorkspaceLayout/SplitSeat.swift,"
+    echo "so the control below would fail for a reason that has nothing to do with the arm."
+    exit 1
+  fi
+  # The clean dependencies, then `WorkspaceLayout` rebuilt from the damaged copy
+  # over them. `build_packages` reads `$ROOT`, so it is pointed at the shadow
+  # for that one call and nothing else.
+  cp "$LIB"/* "$lib"/
+  (ROOT="$shadow" build_packages "$lib" WorkspaceLayout)
+  compile "$name" "$OUT/panesplit_extracted.swift" "$lib"
+}
+
+mutate_seat reachable \
   's/^        guard highest >= lowest else { return nil }$//' \
   's/^        return min(max(thickness \* ratio, lowest), highest)$/        return thickness * ratio/' \
-  's/^        guard refusals < Self.refusalLimit else { return }$//'
+  's/^        guard refusals < Self.refusalLimit else { return .spent }$//'
 
 # `run` takes an axis, a mode and a mechanism. The `broken` mode is the built-in
 # control: it disconnects the write-back the way the code stood before the fix,

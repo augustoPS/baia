@@ -46,6 +46,7 @@ import Testing
     /// width may be fine at another.
     @Test func aDifferentThicknessAtTheSameRatioRequestsAgain() {
         var seat = spentSeat()
+        #expect(seat.decide(thickness: 671, ratio: 0.5, current: 200, dividerThickness: 1) == .spent)
         #expect(
             seat.decide(
                 thickness: 800,
@@ -60,6 +61,7 @@ import Testing
     /// this split has been refused so far.
     @Test func ratioChangedRequestsAgainAtTheSameThickness() {
         var seat = spentSeat()
+        #expect(seat.decide(thickness: 671, ratio: 0.5, current: 200, dividerThickness: 1) == .spent)
         seat.ratioChanged()
         #expect(
             seat.decide(
@@ -170,6 +172,27 @@ import Testing
             seat.decide(thickness: thickness, ratio: ratio, current: 200, dividerThickness: divider)
                 == .request(position: target)
         )
+    }
+
+    /// A request that landed is not a refusal. Two misses, one landing, and the
+    /// budget is whole again: two more misses still leave an ask, where a seat
+    /// that counted the landing would be spent.
+    @Test func aLandedRequestResetsTheCount() {
+        var seat = SplitSeat()
+        let ask = { (seat: inout SplitSeat) -> SplitSeat.Decision in
+            seat.decide(thickness: 671, ratio: 0.5, current: 200, dividerThickness: 1)
+        }
+        for _ in 0 ..< 2 {
+            #expect(ask(&seat) == .request(position: 335.5))
+            seat.observed(landed: false)
+        }
+        #expect(ask(&seat) == .request(position: 335.5))
+        seat.observed(landed: true)
+        for _ in 0 ..< 2 {
+            #expect(ask(&seat) == .request(position: 335.5))
+            seat.observed(landed: false)
+        }
+        #expect(ask(&seat) == .request(position: 335.5))
     }
 
     /// The exact fit: two minimums plus the divider is the smallest split that
