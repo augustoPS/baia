@@ -2,81 +2,31 @@ import AppKit
 import BaiaSettings
 import PaneChrome
 
-/// Something a host can put on screen.
-///
-/// The whole point of the split: a surface knows how to draw itself into a rect and
-/// nothing about where the rect is, and the host knows how to produce a rect and
-/// nothing about what goes in it. That is what lets the sidebar show a surface,
-/// swap it, or show none, without the surface knowing which of those is
-/// happening. It stacked two until the owner's 2026-08-12 ruling removed the
-/// CHANGES section, and the host's arithmetic still stacks any number.
-@MainActor
-protocol WorkspaceSurface: AnyObject {
-    /// What the host installs. Never added to a pane's view hierarchy: a view
-    /// inside a pane that takes first responder disables every ghostty binding in
-    /// that pane, silently.
-    var view: NSView { get }
+// The `WorkspaceSurface` protocol stood here until Task 6, and it names why the
+// file keeps this name rather than one describing only what is left in it.
+//
+// It let the sidebar host swap what it showed, or show nothing, without either
+// side knowing which of those was happening: a surface drew itself into a rect
+// with no idea where the rect came from, and the host produced a rect with no
+// idea what would fill it. That seam earned its keep while the column could
+// hold more than one surface — CHANGES above FILES, stacked — because the host's
+// fan-outs (`theme`, `backgroundOpacity`, `resolvedChrome`, `fillMaterial`) ran
+// over a list of them without caring which conformer sat at which index.
+//
+// The owner's 2026-08-12 ruling removed CHANGES, and `FilesSurface` has been
+// the column's only surface since. A protocol satisfied by exactly one
+// conformer is not a seam any more, it is a detour: `SidebarHost` held
+// `sections: [Section]` and cast back to `FilesSurface` everywhere it needed
+// the type it actually had, `AppDelegate.surfaces(for:tree:)` boxed a concrete
+// `FilesSurface` into `[any WorkspaceSurface]` on the way out, and
+// `refreshSidebar` looped a one-element array to reach the single conformer
+// inside it. Task 6 removed the protocol, its list, and every cast built to see
+// through it: `SidebarHost.files` is `FilesSurface?`, `AppDelegate.surfaces`
+// returns `FilesSurface?`, and `FilesSurface` itself declares no protocol
+// conformance any more, keeping every property this file's other two types —
+// ``SurfaceMessage`` and ``SurfaceTitleView`` — still read it for.
 
-    // `title` stood here until the FILES ruling (2026-08-12, option C). It was
-    // what the host's own chrome drew above a surface, so that two surfaces could
-    // not each invent a heading in their own weight and inset. `SidebarHost` was
-    // its only reader, through `section.heading.title`, and with no heading in
-    // the column a surface naming itself is a string nothing draws.
-    // `SurfaceTitleView.title` survives, because `SettingsPreviewColumn` sets it
-    // directly to show how a heading is themed.
-
-    var theme: PaneTheme { get set }
-
-    // `headingCount` and `headingTotals` stood here until 2026-08-12. Design v3
-    // §4.1 asked for a count on Changes alone and design v5 §5 gave that heading
-    // its `+n −n`; `FILES` answered nil to both, because a file tree counts paths
-    // rather than lines and how many files a repository contains is not a
-    // question anyone has. The owner's ruling that day removed the CHANGES
-    // section, which left every surface in the column answering nil forever, so
-    // the two requirements went with the section that was the reason for them.
-    // `SurfaceTitleView` keeps `count` and `totals`: `SettingsPreviewColumn`
-    // still sets them directly to show how a heading is themed.
-
-    /// What the terminal's own background is drawn at, so a surface is filled with
-    /// the same material a pane is.
-    ///
-    /// Design v3 §1: the sidebar is another compartment rather than a panel, so it
-    /// takes the work's material rather than ``PaneTheme/panelBackground``, which
-    /// keeps the surfaces that float. A number rather than a colour because the
-    /// theme cannot know it: it comes from `backgroundOpacity`, which is a setting
-    /// and reaches ghostty as a config override.
-    var backgroundOpacity: Double { get set }
-
-    /// What the surface's own scroll background draws.
-    ///
-    /// `theme.background` at ``backgroundOpacity`` on both flat and glass now,
-    /// exactly what Plan 1 shipped either way.
-    ///
-    /// **Task 2 (untint the chrome) superseded Task 5's original clause here.**
-    /// Glass used to swap in the material set's own `fillSidebar`, scaled by
-    /// ``backgroundOpacity`` — an `rgba` fill on what the task calls the
-    /// sidebar's glass path, even though this surface has no
-    /// `NSGlassEffectView` of its own the way the footer, palette and popover
-    /// do. Task 2 drops that fill along with theirs. ``resolvedChrome`` stays
-    /// on the protocol and still triggers a repaint on change, because a
-    /// caller assigning it while the app is configured for glass is real
-    /// (a theme or opacity edit has to reach the screen), even though flat
-    /// and glass now paint identically.
-    var resolvedChrome: ResolvedChrome { get set }
-
-    /// Which of the four fill roles this column's glass is tinted with, or nil
-    /// for untinted.
-    ///
-    /// **Added on the owner's 2026-08-12 tinted-glass ruling, and it is a
-    /// pass-through rather than a new decision.** `SidebarHost.fillMaterial`
-    /// already holds `chrome.surfaces.sidebar` for the column's own plane; this
-    /// is how a surface that owns glass of its own — today `FilesSurface`'s
-    /// floating `git init` pill, which is the ruling — reads the *same* value
-    /// instead of inventing an override key. A surface with no glass ignores it.
-    var fillMaterial: DesignOverrides.Chrome.Material? { get set }
-}
-
-/// What a section draws when it has no rows.
+/// What a surface draws when it has no rows.
 ///
 /// Design v3 §6. **"Nothing changed" and "not a repository" are different answers
 /// and were drawn identically**, character for character, at the same position in

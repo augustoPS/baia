@@ -20,7 +20,7 @@ import PaneChrome
 /// requested. The scroll view is safe for the same reason: `NSScrollView` and
 /// `NSClipView` do not take first responder either.
 @MainActor
-final class FilesSurface: NSObject, WorkspaceSurface {
+final class FilesSurface: NSObject {
     var view: NSView { scrollView }
 
     // `title` was "Files" here until the FILES ruling (2026-08-12, option C),
@@ -40,7 +40,10 @@ final class FilesSurface: NSObject, WorkspaceSurface {
         didSet { fill() }
     }
 
-    /// Flat or glass, per Task 5. See ``WorkspaceSurface/resolvedChrome``.
+    /// Flat or glass, per Task 5. Pushed by `SidebarHost`, whose own property of
+    /// the same name this mirrors: the sidebar's the only host `FilesSurface`
+    /// has, since Task 6 dropped the shared interface a second host would have
+    /// gone through.
     ///
     /// Reaches the floating offer as well as the scroll background since the
     /// owner's 2026-08-12 tinted-glass ruling: the pill owns a real

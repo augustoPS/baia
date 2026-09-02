@@ -376,7 +376,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // The composed value, not the committed one, so a dialled opacity
             // reaches the column rather than only the wells — the shape every
             // neighbour here reads. In Release `effectiveSettings` *is*
-            // `settings`. It reaches the sections and, since the wash retired
+            // `settings`. It reaches the surface and, since the wash retired
             // on 2026-08-08, nothing else under glass.
             backgroundOpacity: configuration.effectiveSettings.backgroundOpacity,
             resolvedChrome: configuration.resolvedChrome
@@ -394,20 +394,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return host
     }
 
-    /// The surfaces for a content, built fresh.
+    /// The surface for a content, built fresh, or nil.
     ///
     /// One surface or none since 2026-08-12. The column used to stack a CHANGES
-    /// section above this tree, and the owner's ruling that day removed it: the
+    /// surface above this tree, and the owner's ruling that day removed it: the
     /// capsule's changes card already lists the changed files with their status
-    /// letters and hands each one to a diff split, so the section was a second
-    /// copy of the same list in the same window. The tree still goes last for
-    /// the reason it always did, which is now also the reason it goes alone: the
-    /// last section is given whatever height is left, and the tree is the one
-    /// that wants it.
+    /// letters and hands each one to a diff split, so it was a second copy of
+    /// the same list in the same window. Task 6 made that "one or none" the
+    /// type rather than an invariant on a list: the column's surface is a
+    /// plain `FilesSurface?`, with no shared interface left for it to satisfy.
     private func surfaces(
         for content: SidebarContent,
         tree: PaneTreeController
-    ) -> [any WorkspaceSurface] {
+    ) -> FilesSurface? {
+        switch content {
+        // Off is an empty column rather than a missing one. The host stays the
+        // window's content view either way, so nothing is ever reparented.
+        case .off: return nil
+        case .files: break
+        }
         let files = FilesSurface()
         // `weak tree` is not decoration. The surface is held by the sidebar
         // host, which is held by the window controller, which holds the tree, so a
@@ -425,12 +430,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self, let tree else { return }
             offerInit(of: tree)
         }
-        switch content {
-        case .files: return [files]
-        // Off is an empty column rather than a missing one. The host stays the
-        // window's content view either way, so nothing is ever reparented.
-        case .off: return []
-        }
+        return files
     }
 
     /// The one place a workspace window is built and wired.
@@ -657,13 +657,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// **A toggle since 2026-08-12, and a four-state cycle before it.** It used
     /// to walk `off → changes → files → both → off`, matched against the surface
     /// titles the column was showing. The owner's ruling that day removed the
-    /// CHANGES section, which left two states, and a cycle through two states is
-    /// a toggle. Reading the section count rather than the titles follows from
-    /// that: with one surface left there is no title worth matching, and the
-    /// string match was the arm that broke silently whenever a title moved.
+    /// CHANGES surface, which left two states, and a cycle through two states is
+    /// a toggle. Reading whether the column holds a surface rather than matching
+    /// titles follows from that: with one surface left there is no title worth
+    /// matching, and the string match was the arm that broke silently whenever a
+    /// title moved.
     @objc func toggleSurfacePanels(_: Any?) {
         guard let window = focused ?? windows.first else { return }
-        let next: SidebarContent = window.sidebar.sections.isEmpty ? .files : .off
+        let next: SidebarContent = window.sidebar.files == nil ? .files : .off
         // The window's own tree, not the focused one: this rebuilds the surfaces
         // of one window, and a click in them has to reach that window's panes.
         window.sidebar.show(surfaces(for: next, tree: window.tree))
@@ -846,48 +847,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // answering for what the section is pointed at.
         let anchorPath = anchor?.url.path(percentEncoded: false)
 
-        // The CHANGES section was fed here too until 2026-08-12, from
+        // The CHANGES surface was fed here too until 2026-08-12, from
         // `gitStatus.changes` and `gitStatus.stats`. The owner's ruling that day
         // removed it. `files.changes` below is not what went: the tree's own
         // per-file dirty marks are the tree's annotation on a row it was already
         // drawing, not a second list of changed files.
-        for section in controller.sidebar.sections {
-            if let files = section.surface as? FilesSurface {
-                // Inside a repository git lists the files; outside one the
-                // directory is walked. The mode follows the anchor rather than a
-                // control, because repo-or-local has one right answer at any
-                // moment and it is a fact about the pane, not a preference.
-                //
-                // `Anchor.Kind` has said as much all along: a plain anchor exists
-                // "so a file tree always has a root". Until now this discarded it.
-                //
-                // **And the column was told a boolean that discarded it too**,
-                // which is the bug the owner's 2026-08-12 ruling on the `git init`
-                // offer exposed. `files.hasRoot = anchor != nil` was assigned
-                // here, and a plain directory resolves an anchor perfectly well,
-                // so the surface could not tell a walked tree from a listed one:
-                // the offer keyed on that boolean appeared only when nothing
-                // resolved at all. The three cases this branch already
-                // distinguishes are now the three cases the surface is told, so
-                // the state the column draws from is the state this decides.
-                switch anchor?.kind {
-                case .repository: files.listing = .repository
-                case .plain: files.listing = .directory
-                case nil: files.listing = .absent
-                }
-                if let root {
-                    // Optional because the cache can miss: the read is async and a
-                    // first refresh arrives before it lands.
-                    files.tree = fileTrees.tree(for: root) ?? []
-                    readFileTree(at: root)
-                } else if let plain = anchor?.url {
-                    files.tree = DirectoryTree.tree(at: plain)
-                } else {
-                    files.tree = []
-                }
-                files.changes = pane?.gitStatus.changes ?? []
-                files.anchorPath = anchorPath
+        if let files = controller.sidebar.files {
+            // Inside a repository git lists the files; outside one the
+            // directory is walked. The mode follows the anchor rather than a
+            // control, because repo-or-local has one right answer at any
+            // moment and it is a fact about the pane, not a preference.
+            //
+            // `Anchor.Kind` has said as much all along: a plain anchor exists
+            // "so a file tree always has a root". Until now this discarded it.
+            //
+            // **And the column was told a boolean that discarded it too**,
+            // which is the bug the owner's 2026-08-12 ruling on the `git init`
+            // offer exposed. `files.hasRoot = anchor != nil` was assigned
+            // here, and a plain directory resolves an anchor perfectly well,
+            // so the surface could not tell a walked tree from a listed one:
+            // the offer keyed on that boolean appeared only when nothing
+            // resolved at all. The three cases this branch already
+            // distinguishes are now the three cases the surface is told, so
+            // the state the column draws from is the state this decides.
+            switch anchor?.kind {
+            case .repository: files.listing = .repository
+            case .plain: files.listing = .directory
+            case nil: files.listing = .absent
             }
+            if let root {
+                // Optional because the cache can miss: the read is async and a
+                // first refresh arrives before it lands.
+                files.tree = fileTrees.tree(for: root) ?? []
+                readFileTree(at: root)
+            } else if let plain = anchor?.url {
+                files.tree = DirectoryTree.tree(at: plain)
+            } else {
+                files.tree = []
+            }
+            files.changes = pane?.gitStatus.changes ?? []
+            files.anchorPath = anchorPath
         }
         controller.sidebar.anchorName = anchor?.displayName
         // `sidebar.sessionStatus` was pushed here too until 2026-08-12, feeding

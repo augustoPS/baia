@@ -57,7 +57,7 @@ private final class TitlebarBandGlass: NSGlassEffectView {
 // column now shows ``SidebarGlassBacking`` untinted with nothing painted over
 // it, which is precisely what that flip showed him.
 //
-// `backgroundOpacity` therefore reaches the sections and nothing else on the
+// `backgroundOpacity` therefore reaches the surface and nothing else on the
 // glass path, deliberately: the material is what the column is, and a knob
 // about the terminal's own background does not get to re-tint it. The flat
 // path is untouched — the wash only ever existed above a glass view — and its
@@ -83,34 +83,19 @@ private final class TitlebarBandGlass: NSGlassEffectView {
 final class SidebarHost: NSViewController {
     let tree: PaneTreeController
 
-    /// The stacked sections, top to bottom.
+    /// The column's one surface, or none.
     ///
-    /// **A list, holding at most one since 2026-08-12.** It stacked a short
-    /// glanceable changes list above the long browsable tree until the owner's
-    /// ruling that day removed the CHANGES section, the capsule's changes card
-    /// having already listed the same files. The list shape stays because the
-    /// stacking arithmetic is what makes a column of sections a column rather
-    /// than a special case: with one section the layout below hands it the whole
-    /// height, and with none the column closes.
-    private(set) var sections: [Section] = []
-
-    /// A surface the host stacks.
-    ///
-    /// **It carried a ``SurfaceTitleView`` until the FILES ruling (2026-08-12,
-    /// option C).** The host drew one heading per section, and with the CHANGES
-    /// section already gone that was one heading over one tree, naming a column
-    /// that has nothing else in it. Neither reference project titles its primary
-    /// column, and after the titlebar merge an empty top is what lets the band
-    /// and the column read as one surface from the traffic lights down, so the
-    /// heading retired and the tree runs to the top of the content region.
-    ///
-    /// A struct with one stored property rather than a bare `any WorkspaceSurface`
-    /// in the array, for the reason the list shape itself survives: this is the
-    /// seam a second section would come back through, and collapsing it now would
-    /// be a rename of every `section.surface` in this file for no behaviour.
-    struct Section {
-        let surface: any WorkspaceSurface
-    }
+    /// **A single optional since Task 6, and a list holding at most one since
+    /// 2026-08-12 before that.** It stacked a short glanceable changes list above
+    /// the long browsable tree until the owner's ruling that day removed the
+    /// CHANGES section, the capsule's changes card having already listed the same
+    /// files, which left the list shape carrying an invariant — at most one — that
+    /// nothing in the type enforced. `SidebarContent` names exactly two states,
+    /// `.files` and `.off`, and `FilesSurface` is the column's only surface, so
+    /// the protocol this held against and the fan-out it needed both went with the
+    /// second section: what a column shows now is `Optional<FilesSurface>`, not a
+    /// list some caller happens to keep at length one.
+    private(set) var files: FilesSurface?
 
     /// Points taken from the panes.
     ///
@@ -150,33 +135,24 @@ final class SidebarHost: NSViewController {
     ///
     /// Read and written through the host for the reason ``geometry`` is: the
     /// delegate writes the session file and knows what a window is, and the
-    /// sections are the host's business. Nothing outside gets to go hunting
-    /// through `sections` for a surface to cast.
+    /// column's surface is the host's business. Nothing outside gets to go
+    /// hunting through it for a surface to cast.
     var fileTreeExpansions: [String: [String]] {
-        get {
-            sections.lazy.compactMap { $0.surface as? FilesSurface }.first?
-                .fileTreeExpansions ?? [:]
-        }
-        set {
-            for section in sections {
-                (section.surface as? FilesSurface)?.fileTreeExpansions = newValue
-            }
-        }
+        get { files?.fileTreeExpansions ?? [:] }
+        set { files?.fileTreeExpansions = newValue }
     }
 
     var theme: PaneTheme {
         didSet {
             // The same guard ``resolvedChrome`` below carries. Written
             // unconditionally by `AppDelegate.settingsDidChange()` on every
-            // announcement, and this didSet fans out to every section and the
+            // announcement, and this didSet fans out to the surface and the
             // divider layer, so an unmoved theme was doing all of that for
             // nothing once per settings-file save — and would do it once per
             // control event under the design panel. The header, the action row
             // and the headings were the other fan-out targets until 2026-08-12.
             guard theme != oldValue else { return }
-            for section in sections {
-                section.surface.theme = theme
-            }
+            files?.theme = theme
             divider.layer?.backgroundColor = nsColor(theme.hairline).cgColor
         }
     }
@@ -193,7 +169,7 @@ final class SidebarHost: NSViewController {
     // `AppDelegate.newTab(_:)` does under the `New Tab` item the keycap was
     // reading its own caption off. A row that has to look up the menu's binding
     // to caption itself is a second button for the menu's command, so the owner
-    // ruled it out and the sections took its 32 pt. `onNewSession` and
+    // ruled it out and the tree took its 32 pt. `onNewSession` and
     // `newSessionKeycap` were this host's two passthroughs to it and went with
     // it; `AppDelegate` keeps `newTab(_:)`, which is the surviving path.
 
@@ -230,25 +206,23 @@ final class SidebarHost: NSViewController {
     // day removed the section, so the function had two nils to copy and was
     // removed with it. The heading itself followed later the same day.
 
-    /// What the sections fill their bodies at, so the column is the same material
-    /// as the panes it sits beside. Design v3 §1.
+    /// What the column's surface fills its body at, so the column is the same
+    /// material as the panes it sits beside. Design v3 §1.
     ///
-    /// Held here rather than read by each surface, because it is a property of the
-    /// window's material and not of a list of files, and because the two sections
-    /// disagreeing about it is exactly the seam a design pass would then be asked
-    /// to explain.
+    /// Held here rather than read by the surface itself, because it is a
+    /// property of the window's material and not of a list of files.
     var backgroundOpacity: Double = 1 {
         didSet {
             // Guarded like its two neighbours, and like
             // `WorkspaceWindowController.backgroundOpacity`, which is the same
             // key one surface over and has always had it.
             guard backgroundOpacity != oldValue else { return }
-            // The sections and nothing else. Under glass they draw no fill, so
+            // The surface and nothing else. Under glass it draws no fill, so
             // this key reaches no sidebar pixel at all on that path — which is
             // the settled answer rather than an oversight. The wash that used to
             // carry it here retired on the owner's 2026-08-08 ruling; see the
             // note where `SidebarGlassWash` stood, at the top of this file.
-            for section in sections { section.surface.backgroundOpacity = backgroundOpacity }
+            files?.backgroundOpacity = backgroundOpacity
         }
     }
 
@@ -268,16 +242,16 @@ final class SidebarHost: NSViewController {
     /// verdict rejects the `NSSplitViewController` restructure this could have
     /// reached for instead.
     ///
-    /// Pushed straight through to every ``Section/surface`` exactly as before,
-    /// the same shape as ``theme`` and ``backgroundOpacity`` immediately above:
-    /// the surfaces still decide their own fill (now: none at all under glass,
-    /// so nothing opaque sits between this glass and what it samples — see
+    /// Pushed straight through to ``files`` exactly as before, the same shape as
+    /// ``theme`` and ``backgroundOpacity`` immediately above: the surface still
+    /// decides its own fill (now: none at all under glass, so nothing opaque
+    /// sits between this glass and what it samples — see
     /// ``FilesSurface/fill()``), this host only carries the resolution down and
     /// now also owns the glass itself.
     var resolvedChrome: ResolvedChrome = .flat {
         didSet {
             guard resolvedChrome != oldValue else { return }
-            for section in sections { section.surface.resolvedChrome = resolvedChrome }
+            files?.resolvedChrome = resolvedChrome
             applyResolvedChrome()
         }
     }
@@ -294,13 +268,13 @@ final class SidebarHost: NSViewController {
     ///
     /// Inside ``glassContainer`` since 2026-08-12 rather than a direct subview
     /// of `view`, which is what lets it merge with ``bandGlass``. The container
-    /// is what goes in below `tree.view` and every section, so this still sits
+    /// is what goes in below `tree.view` and the surface, so this still sits
     /// behind the whole hierarchy in z-order — `NSGlassEffectView.style =
     /// .regular` samples what the window server has already composited beneath
     /// it, which for a transparent window is the desktop, not this app's own
     /// views, so being behind them in z-order is what "sampling the desktop"
-    /// actually requires; a glass view stacked *above* the sections would
-    /// sample the sections instead and read as an opaque tint over them.
+    /// actually requires; a glass view stacked *above* the surface would
+    /// sample the surface instead and read as an opaque tint over it.
     ///
     /// **It spans the band as well as the column**, which is the merge. Its
     /// frame takes the host's whole height while everything the column *draws*
@@ -398,14 +372,14 @@ final class SidebarHost: NSViewController {
         didSet {
             guard fillMaterial != oldValue else { return }
             updateGlassTint()
-            // **And down into the sections, since 2026-08-12.** A surface used to
-            // own no glass, so this key stopped at the column's own plane. The
-            // owner's tinted-glass ruling gave `FilesSurface`'s floating `git
+            // **And down into the surface, since 2026-08-12.** `FilesSurface`
+            // used to own no glass, so this key stopped at the column's own
+            // plane. The owner's tinted-glass ruling gave its floating `git
             // init` pill a real `NSGlassEffectView`, and ruled that it follows
             // the sidebar's tint rather than taking a key of its own — so the
             // same value reaches both, from one property, and the pill cannot
             // disagree with the plane it floats over.
-            for section in sections { section.surface.fillMaterial = fillMaterial }
+            files?.fillMaterial = fillMaterial
         }
     }
 
@@ -432,24 +406,6 @@ final class SidebarHost: NSViewController {
 
     private let divider = NSView()
 
-    /// The draggable split between two stacked sections.
-    ///
-    /// Only meaningful with two of them, and hidden otherwise. Dragging it changes
-    /// heights inside a column whose width never moves, so it resizes no ghostty grid
-    /// and signals no process: the only thing a sidebar does that costs a reflow is
-    /// taking width from the panes in the first place.
-    /// `onTouch` was wired alongside this until the FILES ruling (2026-08-12,
-    /// option C). It reported hover and drag to the heading *below* the split,
-    /// which drew the 2 pt reply along its own top edge; the heading's fixed
-    /// height was the whole reason the mark lived there rather than in a grab
-    /// strip that would then be a control that changes height. With no heading
-    /// there is nothing to report to. Unreachable either way while one section is
-    /// in the column, since this strip is hidden below two, and it comes back
-    /// with the affordance a second section would need.
-    private lazy var sectionDivider = DividerGrabView(axis: .vertical) { [weak self] delta in
-        self?.dragSplit(by: delta)
-    }
-
     /// The grab area over the sidebar's own edge.
     ///
     /// The one drag that costs something. Widening takes room from the panes, which
@@ -461,22 +417,22 @@ final class SidebarHost: NSViewController {
         self?.dragWidth(by: delta)
     }
 
-    /// How tall the first section is when two are stacked.
+    /// How tall the first section was when two were stacked.
     ///
-    /// Starts at a value rather than at a share of the column, from when two
+    /// Started at a value rather than at a share of the column, from when two
     /// asymmetrical surfaces stacked here: a changes list was a handful of rows
     /// against a whole repository, so an even split left half the column holding
-    /// three lines. Unreachable while the column holds one section (the 2026-08-12
-    /// ruling), and kept with the split machinery around it, which the session file
-    /// still carries and a second section would need again.
-    /// Read by ``geometry`` and written by a drag. Not private for that reason
-    /// alone: the clamp that keeps it usable lives in layout, where the column's
-    /// height is known.
+    /// three lines. Dead since the 2026-08-12 ruling left one section in the
+    /// column and dead again, structurally, since Task 6 made the column's
+    /// surface a plain `FilesSurface?` rather than a list a second entry could
+    /// ever join. Kept only because ``geometry`` round-trips it through the
+    /// session file's `splitHeight` key, which predates both rulings; nothing
+    /// reads it for layout any more, and no drag writes it.
     private(set) var firstSectionHeight: Double = SidebarGeometry.default.splitHeight
 
     init(
         tree: PaneTreeController,
-        surfaces: [any WorkspaceSurface],
+        surfaces: FilesSurface?,
         theme: PaneTheme,
         backgroundOpacity: Double,
         resolvedChrome: ResolvedChrome
@@ -486,28 +442,22 @@ final class SidebarHost: NSViewController {
         self.backgroundOpacity = backgroundOpacity
         self.resolvedChrome = resolvedChrome
         super.init(nibName: nil, bundle: nil)
-        sections = surfaces.map(Section.init(surface:))
+        files = surfaces
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not from a nib") }
 
-    /// Replaces what the column is showing. An empty list closes it.
-    ///
-    /// The whole stack at once rather than one section at a time, because the states
-    /// worth being in are named sets rather than a pile of independent toggles, and
-    /// swapping the set is what the config key already says.
+    /// Replaces what the column is showing. `nil` closes it.
     ///
     /// Closing is a width of zero rather than a host that goes away. A host that came
     /// and went would have to swap the window's `contentViewController`, and that
     /// reparents every ghostty surface, which resizes every grid and signals every
     /// process. At zero width nothing is reparented and the cost is the ordinary
     /// reflow a width change already carries, which was measured clean.
-    func show(_ surfaces: [any WorkspaceSurface]) {
-        for section in sections {
-            section.surface.view.removeFromSuperview()
-        }
-        sections = surfaces.map(Section.init(surface:))
+    func show(_ surfaces: FilesSurface?) {
+        files?.view.removeFromSuperview()
+        files = surfaces
         install()
         view.needsLayout = true
     }
@@ -534,9 +484,6 @@ final class SidebarHost: NSViewController {
         divider.layer?.backgroundColor = nsColor(theme.hairline).cgColor
         view.addSubview(divider)
 
-        sectionDivider.wantsLayer = true
-        view.addSubview(sectionDivider)
-
         widthDivider.wantsLayer = true
         view.addSubview(widthDivider)
 
@@ -554,26 +501,26 @@ final class SidebarHost: NSViewController {
     // footers, which is where that argument was always load-bearing.
 
     private func install() {
-        for section in sections {
-            section.surface.theme = theme
-            section.surface.backgroundOpacity = backgroundOpacity
-            section.surface.resolvedChrome = resolvedChrome
+        if let files {
+            files.theme = theme
+            files.backgroundOpacity = backgroundOpacity
+            files.resolvedChrome = resolvedChrome
             // Alongside the three above rather than only in the `didSet`, for the
-            // reason each of them is here: `show(_:)` installs surfaces that were
-            // constructed at their own defaults, and a section that missed this
-            // would carry an untinted pill under a dialled column until the next
-            // time the dial moved.
-            section.surface.fillMaterial = fillMaterial
-            view.addSubview(section.surface.view)
+            // reason each of them is here: `show(_:)` installs a surface that was
+            // constructed at its own defaults, and missing this would carry an
+            // untinted pill under a dialled column until the next time the dial
+            // moved.
+            files.fillMaterial = fillMaterial
+            view.addSubview(files.view)
         }
         raiseGrabStrips()
         // `show(_:)` calls `install()` after `viewDidLoad` has already built
-        // `glassContainer`, and every newly installed section view is added
-        // above it in z-order by the `addSubview` call just above — no
-        // restack needed here for the glass to keep reading as what is behind
-        // the column rather than as a layer painted over it. The container is
-        // the one subview of `view` that holds glass now, so raising a section
-        // above it raises it above both planes at once.
+        // `glassContainer`, and a newly installed surface view is added above it
+        // in z-order by the `addSubview` call just above — no restack needed
+        // here for the glass to keep reading as what is behind the column
+        // rather than as a layer painted over it. The container is the one
+        // subview of `view` that holds glass now, so raising the surface above
+        // it raises it above both planes at once.
     }
 
     /// Creates or tears down ``glassBacking`` to match ``resolvedChrome``.
@@ -649,24 +596,20 @@ final class SidebarHost: NSViewController {
         view.needsLayout = true
     }
 
-    /// **Both strips go back on top every time a section is installed.**
+    /// **The strip goes back on top every time the surface is installed.**
     ///
-    /// `viewDidLoad` adds them before any section exists, so every `install()`
-    /// buried them under a scroll view and a heading. Cursor rects do not consult
-    /// the view order and hit testing does, which is the whole signature this was
-    /// found by: the pointer turned into a resize arrow over a strip that could not
+    /// `viewDidLoad` adds it before the surface exists, so every `install()`
+    /// buried it under the scroll view. Cursor rects do not consult the view
+    /// order and hit testing does, which is the whole signature this was found
+    /// by: the pointer turned into a resize arrow over a strip that could not
     /// be clicked.
     ///
     /// The sidebar's own edge hid it by half. Its right half lies over `tree.view`,
     /// which is added before it and stays below, so dragging the column worked as
     /// long as the grab started on the pane's side of the hairline and did nothing
-    /// on the sidebar's. The split between two stacked sections had no such half,
-    /// with a surface above it on one side and a heading on the other, so all seven
-    /// points of it were dead.
+    /// on the sidebar's.
     private func raiseGrabStrips() {
-        for strip in [sectionDivider, widthDivider] {
-            view.addSubview(strip, positioned: .above, relativeTo: nil)
-        }
+        view.addSubview(widthDivider, positioned: .above, relativeTo: nil)
     }
 
     /// Laid out by hand rather than with constraints, the way the panel's three
@@ -690,7 +633,7 @@ final class SidebarHost: NSViewController {
         //
         // - `bounds` (full, band included): the column's glass, which is the
         //   whole reason for the split, and the band's glass above it.
-        // - `content` (band excluded): everything else. The sections, both
+        // - `content` (band excluded): everything else. The surface, both
         //   dividers and the pane tree all lay out inside it and
         //   therefore sit exactly where they sat before the style-mask change.
         //   The column's *content* stays below the band even though its *glass*
@@ -703,7 +646,7 @@ final class SidebarHost: NSViewController {
             width: bounds.width,
             height: max(0, bounds.height - bandHeight)
         )
-        let sidebarWidth = sections.isEmpty
+        let sidebarWidth = files == nil
             ? 0
             : min(width, max(0, content.width - Self.minimumPaneWidth))
 
@@ -805,7 +748,7 @@ final class SidebarHost: NSViewController {
         // themselves inside it.
         glassContainer?.frame = bounds
 
-        // The sections, and this is where holding the band back is visible: the
+        // The surface, and this is where holding the band back is visible: the
         // tree's first row lands at `content.maxY`, rather than up in the band
         // beside the window title.
         //
@@ -867,68 +810,24 @@ final class SidebarHost: NSViewController {
         )
     }
 
-    /// Stacks the sections from the top down.
+    /// Sizes the column's one surface to fill it.
     ///
-    /// Every section but the last is capped rather than given an equal share, and
-    /// the last takes whatever is left. That rule is why the tree goes last, and
-    /// since the 2026-08-12 ruling left it alone in the column it is also why the
-    /// space the CHANGES section vacated closed on its own: one section is the
-    /// last section, so the tree is handed the whole height with no arithmetic
-    /// here changing at all.
+    /// **A single surface takes the whole column, always.** Stacking two
+    /// surfaces at a split needed a "last section takes what is left" rule; a
+    /// lone `FilesSurface?` needs no rule at all, since there is only ever the
+    /// one term. That was already true the moment the 2026-08-12 ruling left one
+    /// section in the column — the space the CHANGES section vacated closed on
+    /// its own then — and Task 6 is what removed the machinery that used to make
+    /// it a special case of a general stack rather than the only case there is.
     ///
     /// **`SurfaceTitleView.height` came out of every term on the FILES ruling
-    /// (2026-08-12, option C), and that is the whole of the layout change.** Each
-    /// section used to be a 28 pt heading with a body under it, so the first
-    /// section began 28 pt below the top of the column and the last body was
-    /// `available - 28`. With no heading the body *is* the section: the tree now
-    /// starts at `column.maxY` and runs to `column.minY`, which is what "no gap
-    /// and no empty strip above the tree" means arithmetically. The subtraction
-    /// closed rather than being rebalanced into another term, the same way the
-    /// session header and the action row closed that morning.
+    /// (2026-08-12, option C).** The surface used to be a 28 pt heading with a
+    /// body under it, so the body was `column.height - 28`. With no heading the
+    /// body *is* the surface: it now runs the full height of `column`, which is
+    /// what "no gap and no empty strip above the tree" means arithmetically.
     private func layoutSections(in column: NSRect) {
-        sectionDivider.isHidden = sections.count < 2
-        guard !sections.isEmpty else { return }
-
-        firstSectionHeight = clampedSplit(firstSectionHeight, in: column)
-        var top = column.maxY
-
-        for (index, section) in sections.enumerated() {
-            let isLast = index == sections.count - 1
-            let available = top - column.minY
-            let bodyHeight = isLast ? available : min(firstSectionHeight, available)
-
-            section.surface.view.frame = NSRect(
-                x: column.minX,
-                y: top - bodyHeight,
-                width: column.width,
-                height: bodyHeight
-            )
-            top -= bodyHeight
-
-            if !isLast {
-                sectionDivider.frame = NSRect(
-                    x: column.minX,
-                    y: top - Self.grabHeight / 2,
-                    width: column.width,
-                    height: Self.grabHeight
-                )
-            }
-        }
-    }
-
-    /// Keeps both sections usable however far the drag went.
-    ///
-    /// A split that let either side reach zero would leave a section with no
-    /// height at all, which reads as a surface that broke rather than one that was
-    /// dragged shut.
-    ///
-    /// The per-section chrome term went with the headings (2026-08-12, option C):
-    /// the column's whole height is now body, so what a drag divides is
-    /// `column.height` itself rather than what two headings left of it.
-    private func clampedSplit(_ height: Double, in column: NSRect) -> Double {
-        guard sections.count > 1 else { return height }
-        let usable = max(0, column.height)
-        return min(max(Self.minimumSectionHeight, height), max(Self.minimumSectionHeight, usable - Self.minimumSectionHeight))
+        guard let files else { return }
+        files.view.frame = column
     }
 
     /// Down is negative in this coordinate space, and dragging down should make the
@@ -940,12 +839,6 @@ final class SidebarHost: NSViewController {
     /// a path.
     private func dragWidth(by delta: Double) {
         width = max(Self.minimumWidth, width + delta)
-    }
-
-    private func dragSplit(by delta: Double) {
-        firstSectionHeight -= delta
-        view.needsLayout = true
-        onGeometryChange?()
     }
 
     private func nsColor(_ rgb: RGB) -> NSColor {
@@ -970,8 +863,11 @@ final class SidebarHost: NSViewController {
     // that day removed both rows, and a height naming a view that is gone is a
     // term the layout would carry forward without a subject.
 
-    /// How little a stacked section may be dragged to.
-    private static let minimumSectionHeight: Double = 48
+    // `minimumSectionHeight` stood here until Task 6. It clamped a drag between
+    // two stacked surfaces, through `clampedSplit`, which went with the last
+    // reader that could ever call it: the strip that dragged the split between
+    // them, removed along with the list a second surface would have joined. A
+    // single `FilesSurface?` has nothing to clamp between.
 
     /// How narrow the column may be dragged.
     ///
