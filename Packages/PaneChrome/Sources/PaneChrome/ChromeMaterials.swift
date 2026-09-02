@@ -269,6 +269,68 @@ public enum ChromeMaterials {
         )
     }
 
+    /// ``BaiaSettings/ChromeStyle/sheer``'s fills: the same roles as ``Dark`` and
+    /// ``Light`` at a fraction of their alpha, so the native material still
+    /// blurs but tints almost nothing.
+    ///
+    /// **Not transcribed from `materials.css`.** The vitreous token files carry
+    /// one dark set and one light set and no sheer variant, so unlike every fill
+    /// above these numbers have no CSS line to point at. They are derived
+    /// instead, and the derivation is the whole of their justification: each
+    /// alpha is its ``Dark``/``Light`` counterpart scaled to roughly a quarter,
+    /// keeping the hue and the relative ordering of the four roles (`thick` >
+    /// `menu` > `chrome` > `sidebar`) while dropping the tint far enough that
+    /// what reads is the blur rather than the fill.
+    ///
+    /// **A quarter is a starting point, not a measurement.** ``Dark`` and
+    /// ``Light`` were transcribed from a design system; these were picked to be
+    /// obviously in the right region and adjusted by eye. The legibility floor
+    /// sheer needs is a separate question and an unanswered one: glass's wash
+    /// floor of 0.47 was measured against the brightest backdrop on record
+    /// (`PaneWash.floor`), and sheer has no equivalent yet. Until it does, a
+    /// bright desktop under sheer is the case nothing in this package has
+    /// checked.
+    ///
+    /// The rims and shadows are **not** scaled. They are depth cues rather than
+    /// tint, they are what separates a pane edge from the desktop showing
+    /// through it, and a style this transparent needs them more than the other
+    /// two rather than less.
+    public enum Sheer {
+        /// ``Dark``'s roles at roughly a quarter alpha.
+        public enum Dark {
+            /// ``ChromeMaterials/Dark/fillChrome`` at 0.44 → 0.11.
+            public static let fillChrome = RGBA(red: 18, green: 20, blue: 24, alpha: 0.11)
+
+            /// ``ChromeMaterials/Dark/fillSidebar`` at 0.34 → 0.09.
+            public static let fillSidebar = RGBA(red: 18, green: 20, blue: 24, alpha: 0.09)
+
+            /// ``ChromeMaterials/Dark/fillThick`` at 0.52 → 0.13.
+            public static let fillThick = RGBA(red: 22, green: 24, blue: 28, alpha: 0.13)
+
+            /// ``ChromeMaterials/Dark/fillMenu`` at 0.58 → 0.15.
+            ///
+            /// The menu keeps the most of any role here, and deliberately: a
+            /// command palette over a bright desktop is a reading surface with
+            /// text on it, not a pane edge.
+            public static let fillMenu = RGBA(red: 30, green: 32, blue: 37, alpha: 0.15)
+        }
+
+        /// ``Light``'s roles at roughly a quarter alpha.
+        public enum Light {
+            /// ``ChromeMaterials/Light/fillChrome`` at 0.74 → 0.19.
+            public static let fillChrome = RGBA(red: 252, green: 252, blue: 254, alpha: 0.19)
+
+            /// ``ChromeMaterials/Light/fillSidebar`` at 0.60 → 0.15.
+            public static let fillSidebar = RGBA(red: 250, green: 250, blue: 252, alpha: 0.15)
+
+            /// ``ChromeMaterials/Light/fillThick`` at 0.88 → 0.22.
+            public static let fillThick = RGBA(red: 255, green: 255, blue: 255, alpha: 0.22)
+
+            /// ``ChromeMaterials/Light/fillMenu`` at 0.86 → 0.22.
+            public static let fillMenu = RGBA(red: 255, green: 255, blue: 255, alpha: 0.22)
+        }
+    }
+
     /// The focused pane's lift, under glass: `PaneLiftView`'s ring, inner
     /// highlight and shadow (Task 6).
     ///

@@ -20,24 +20,24 @@ import Testing
 
     @Test func flatSettingResolvesToFlatRegardlessOfAppearance() {
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
-        #expect(resolvedStyle(setting: .flat, materialIsDark: true, appearance: appearance) == .flat)
+        #expect(resolvedStyle(setting: .solid, materialIsDark: true, appearance: appearance) == .flat)
     }
 
     @Test func flatSettingResolvesToFlatInLightToo() {
         let appearance = ChromeAppearance(isDark: false, reduceTransparency: false, reduceMotion: false)
-        #expect(resolvedStyle(setting: .flat, materialIsDark: false, appearance: appearance) == .flat)
+        #expect(resolvedStyle(setting: .solid, materialIsDark: false, appearance: appearance) == .flat)
     }
 
     // MARK: - Glass setting, ordinary path
 
     @Test func glassSettingResolvesToGlassWhenTransparencyIsNotReduced() {
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
-        #expect(resolvedStyle(setting: .glass, materialIsDark: true, appearance: appearance) == .glass(.dark))
+        #expect(resolvedStyle(setting: .liquidGlass, materialIsDark: true, appearance: appearance) == .glass(.dark))
     }
 
     @Test func glassSettingPicksTheLightMaterialSetUnderALightAppearance() {
         let appearance = ChromeAppearance(isDark: false, reduceTransparency: false, reduceMotion: false)
-        #expect(resolvedStyle(setting: .glass, materialIsDark: false, appearance: appearance) == .glass(.light))
+        #expect(resolvedStyle(setting: .liquidGlass, materialIsDark: false, appearance: appearance) == .glass(.light))
     }
 
     // MARK: - The material set follows `materialIsDark`, never the system appearance
@@ -50,7 +50,7 @@ import Testing
         // footer and sidebar over dark panes, which is the same mismatch
         // `windowIsDark(paneTheme:)` was added to fix one surface over.
         let lightSystem = ChromeAppearance(isDark: false, reduceTransparency: false, reduceMotion: false)
-        #expect(resolvedStyle(setting: .glass, materialIsDark: true, appearance: lightSystem) == .glass(.dark))
+        #expect(resolvedStyle(setting: .liquidGlass, materialIsDark: true, appearance: lightSystem) == .glass(.dark))
     }
 
     @Test func aLightThemeUnderADarkSystemStillPicksTheLightMaterialSet() {
@@ -58,7 +58,7 @@ import Testing
         // fall out of it: a rule written as "follow the theme unless the system
         // is dark" would pass one of these two and fail the other.
         let darkSystem = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
-        #expect(resolvedStyle(setting: .glass, materialIsDark: false, appearance: darkSystem) == .glass(.light))
+        #expect(resolvedStyle(setting: .liquidGlass, materialIsDark: false, appearance: darkSystem) == .glass(.light))
     }
 
     @Test func theSystemAppearanceMovingAloneDoesNotMoveTheMaterialSet() {
@@ -70,12 +70,12 @@ import Testing
         let darkSystem = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
         let lightSystem = ChromeAppearance(isDark: false, reduceTransparency: false, reduceMotion: false)
         #expect(
-            resolvedStyle(setting: .glass, materialIsDark: true, appearance: darkSystem)
-                == resolvedStyle(setting: .glass, materialIsDark: true, appearance: lightSystem)
+            resolvedStyle(setting: .liquidGlass, materialIsDark: true, appearance: darkSystem)
+                == resolvedStyle(setting: .liquidGlass, materialIsDark: true, appearance: lightSystem)
         )
         #expect(
-            resolvedStyle(setting: .glass, materialIsDark: false, appearance: darkSystem)
-                == resolvedStyle(setting: .glass, materialIsDark: false, appearance: lightSystem)
+            resolvedStyle(setting: .liquidGlass, materialIsDark: false, appearance: darkSystem)
+                == resolvedStyle(setting: .liquidGlass, materialIsDark: false, appearance: lightSystem)
         )
     }
 
@@ -93,8 +93,8 @@ import Testing
                 reduceTransparency: false,
                 reduceMotion: false
             )
-            #expect(resolvedStyle(setting: .glass, materialIsDark: true, appearance: appearance) == .glass(.dark))
-            #expect(resolvedStyle(setting: .glass, materialIsDark: false, appearance: appearance) == .glass(.light))
+            #expect(resolvedStyle(setting: .liquidGlass, materialIsDark: true, appearance: appearance) == .glass(.dark))
+            #expect(resolvedStyle(setting: .liquidGlass, materialIsDark: false, appearance: appearance) == .glass(.light))
         }
     }
 
@@ -102,12 +102,12 @@ import Testing
 
     @Test func reduceTransparencyForcesFlatUnderGlassInDark() {
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: true, reduceMotion: false)
-        #expect(resolvedStyle(setting: .glass, materialIsDark: true, appearance: appearance) == .flat)
+        #expect(resolvedStyle(setting: .liquidGlass, materialIsDark: true, appearance: appearance) == .flat)
     }
 
     @Test func reduceTransparencyForcesFlatUnderGlassInLight() {
         let appearance = ChromeAppearance(isDark: false, reduceTransparency: true, reduceMotion: false)
-        #expect(resolvedStyle(setting: .glass, materialIsDark: false, appearance: appearance) == .flat)
+        #expect(resolvedStyle(setting: .liquidGlass, materialIsDark: false, appearance: appearance) == .flat)
     }
 
     @Test func reduceTransparencyForcesFlatForEitherMaterialDarknessAndEitherSystemAppearance() {
@@ -123,7 +123,7 @@ import Testing
                     reduceMotion: false
                 )
                 #expect(
-                    resolvedStyle(setting: .glass, materialIsDark: materialIsDark, appearance: appearance) == .flat
+                    resolvedStyle(setting: .liquidGlass, materialIsDark: materialIsDark, appearance: appearance) == .flat
                 )
             }
         }
@@ -144,12 +144,12 @@ import Testing
     /// fails the four-way test above.
     @Test func anOverriddenGlassStyleStillResolvesFlatUnderReduceTransparency() {
         var flatCommitted = Settings.defaultSettings
-        flatCommitted.chromeStyle = .flat
+        flatCommitted.chromeStyle = .solid
         var overrides = DesignOverrides()
-        overrides.chromeStyle = .glass
+        overrides.chromeStyle = .liquidGlass
 
         let composed = flatCommitted.applying(overrides)
-        #expect(composed.chromeStyle == .glass)
+        #expect(composed.chromeStyle == .liquidGlass)
 
         for materialIsDark in [true, false] {
             let appearance = ChromeAppearance(
@@ -172,9 +172,9 @@ import Testing
     /// quietly failed to apply.
     @Test func anOverriddenGlassStyleResolvesGlassWhenTransparencyIsNotReduced() {
         var flatCommitted = Settings.defaultSettings
-        flatCommitted.chromeStyle = .flat
+        flatCommitted.chromeStyle = .solid
         var overrides = DesignOverrides()
-        overrides.chromeStyle = .glass
+        overrides.chromeStyle = .liquidGlass
 
         let composed = flatCommitted.applying(overrides)
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
@@ -200,9 +200,10 @@ import Testing
         #expect(composed.backgroundOpacity == 0.42)
 
         let reduced = ChromeAppearance(isDark: true, reduceTransparency: true, reduceMotion: false)
-        #expect(!windowIsTransparent(backgroundOpacity: composed.backgroundOpacity, appearance: reduced))
+        #expect(!windowIsTransparent(style: .liquidGlass, backgroundOpacity: composed.backgroundOpacity, appearance: reduced))
         #expect(
             windowBlurRadius(
+                style: .liquidGlass,
                 backgroundBlur: composed.backgroundBlur,
                 backgroundOpacity: composed.backgroundOpacity,
                 appearance: reduced,
@@ -211,28 +212,28 @@ import Testing
         )
 
         let normal = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
-        #expect(windowIsTransparent(backgroundOpacity: composed.backgroundOpacity, appearance: normal))
+        #expect(windowIsTransparent(style: .liquidGlass, backgroundOpacity: composed.backgroundOpacity, appearance: normal))
     }
 
     @Test func reduceTransparencyIsInertUnderFlat() {
         // Flat plus Reduce Transparency is still flat: the flag has nothing to
         // override when the setting already draws nothing translucent.
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: true, reduceMotion: false)
-        #expect(resolvedStyle(setting: .flat, materialIsDark: true, appearance: appearance) == .flat)
+        #expect(resolvedStyle(setting: .solid, materialIsDark: true, appearance: appearance) == .flat)
     }
 
-    // MARK: - Window transparency follows the opacity setting, not the chrome
+    // MARK: - Window transparency follows opacity, except that solid is opaque
 
     @Test func aTranslucentBackgroundMakesTheWindowTransparent() {
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
-        #expect(windowIsTransparent(backgroundOpacity: 0.42, appearance: appearance))
+        #expect(windowIsTransparent(style: .liquidGlass, backgroundOpacity: 0.42, appearance: appearance))
     }
 
     @Test func anOpaqueBackgroundLeavesTheWindowOpaque() {
         // Nothing to see through, so a non-opaque window would be a compositing
         // cost with no visible effect.
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
-        #expect(!windowIsTransparent(backgroundOpacity: 1, appearance: appearance))
+        #expect(!windowIsTransparent(style: .liquidGlass, backgroundOpacity: 1, appearance: appearance))
     }
 
     @Test func reduceTransparencyForcesTheWindowOpaqueEvenAtALowOpacity() {
@@ -241,18 +242,65 @@ import Testing
         // both, or someone who turns it on gets flat chrome over a window the
         // desktop still shows through.
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: true, reduceMotion: false)
-        #expect(!windowIsTransparent(backgroundOpacity: 0.42, appearance: appearance))
+        #expect(!windowIsTransparent(style: .liquidGlass, backgroundOpacity: 0.42, appearance: appearance))
     }
 
-    @Test func windowTransparencyIgnoresTheChromeStyleEntirely() {
-        // Owner decision, 2026-08-07: this follows `backgroundOpacity`, so flat
-        // chrome over translucent wells is a supported look. The function takes
-        // no `ChromeStyle` at all, which is what makes that unforgettable; this
-        // pins that the same opacity answers the same way whatever the chrome
-        // beside it resolved to.
+    @Test func windowTransparencyStillFollowsOpacityForTheSeeThroughStyles() {
+        // What survives of the 2026-08-07 decision. Ghostty parity: a
+        // translucent background is a terminal setting, so an owner who dials
+        // opacity down under either glass style gets the translucent wells they
+        // asked for, and the material is what keeps them readable.
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
-        #expect(resolvedStyle(setting: .flat, materialIsDark: true, appearance: appearance) == .flat)
-        #expect(windowIsTransparent(backgroundOpacity: 0.42, appearance: appearance))
+        #expect(windowIsTransparent(style: .liquidGlass, backgroundOpacity: 0.42, appearance: appearance))
+        #expect(windowIsTransparent(style: .sheer, backgroundOpacity: 0.42, appearance: appearance))
+    }
+
+    @Test func solidIsOpaqueAtEveryOpacity() {
+        // What retired of it (owner, 2026-08-15). `flat` had no material to
+        // diffuse the desktop, so it inherited the window's transparency with
+        // nothing between the wallpaper and the text; captures at opacity 0 and
+        // 0.5 over a bright wallpaper swallowed whole lines of the transcript.
+        // `solid` is the answer, and it has to hold at the bottom of the slider
+        // as well as the top or it is not one.
+        let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
+        for opacity in [0.0, 0.25, 0.42, 0.5, 0.99, 1.0] {
+            #expect(!windowIsTransparent(style: .solid, backgroundOpacity: opacity, appearance: appearance))
+        }
+    }
+
+    @Test func theSettingsPredicateAgreesWithTheWindowRule() {
+        // `ChromeStyle.usesBackgroundOpacity` is what the settings surface hides
+        // the Opacity and Blur rows on; `windowIsTransparent` is what actually
+        // makes solid opaque. They live in different packages and nothing but
+        // this ties them together, so a change to either alone shows up as a
+        // slider that is on screen and inert, or hidden while still doing
+        // something. Asserted as the equivalence rather than case by case, so a
+        // fourth style has to satisfy it rather than be remembered.
+        let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
+        for style in ChromeStyle.allCases {
+            #expect(
+                style.usesBackgroundOpacity
+                    == windowIsTransparent(style: style, backgroundOpacity: 0.42, appearance: appearance)
+            )
+        }
+    }
+
+    @Test func solidTakesTheCompositorBlurDownWithIt() {
+        // The free inheritance the doc comment claims: solid forces the window
+        // opaque, there is nothing showing through to blur, and `windowBlurRadius`
+        // reads that rather than restating the rule. Asserted with
+        // `backgroundBlur: true` so a regression that stopped inheriting would
+        // show as a live blur rather than as a setting that happened to be off.
+        let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
+        #expect(
+            windowBlurRadius(
+                style: .solid,
+                backgroundBlur: true,
+                backgroundOpacity: 0.42,
+                appearance: appearance,
+                paneGlassActive: false
+            ) == 0
+        )
     }
 
     @Test func theTwoAccessibilityGatesAgreeUnderReduceTransparency() {
@@ -260,8 +308,8 @@ import Testing
         // expectation over both so a change to either that leaves the other
         // behind fails here rather than on screen.
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: true, reduceMotion: false)
-        #expect(resolvedStyle(setting: .glass, materialIsDark: true, appearance: appearance) == .flat)
-        #expect(!windowIsTransparent(backgroundOpacity: 0.42, appearance: appearance))
+        #expect(resolvedStyle(setting: .liquidGlass, materialIsDark: true, appearance: appearance) == .flat)
+        #expect(!windowIsTransparent(style: .liquidGlass, backgroundOpacity: 0.42, appearance: appearance))
     }
 
     // MARK: - The window's own chrome follows the pane theme, never the system appearance
@@ -332,6 +380,7 @@ import Testing
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
         #expect(
             windowBlurRadius(
+                style: .liquidGlass,
                 backgroundBlur: true,
                 backgroundOpacity: 0.42,
                 appearance: appearance,
@@ -351,9 +400,10 @@ import Testing
 
     @Test func theBlurSettingOffMeansNoBlurEvenThroughATransparentWindow() {
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
-        #expect(windowIsTransparent(backgroundOpacity: 0.42, appearance: appearance))
+        #expect(windowIsTransparent(style: .liquidGlass, backgroundOpacity: 0.42, appearance: appearance))
         #expect(
             windowBlurRadius(
+                style: .liquidGlass,
                 backgroundBlur: false,
                 backgroundOpacity: 0.42,
                 appearance: appearance,
@@ -369,6 +419,7 @@ import Testing
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
         #expect(
             windowBlurRadius(
+                style: .liquidGlass,
                 backgroundBlur: true,
                 backgroundOpacity: 1,
                 appearance: appearance,
@@ -383,9 +434,10 @@ import Testing
         // resolves to opaque here. Kept beside the other two so all three
         // accessibility answers are visible at once.
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: true, reduceMotion: false)
-        #expect(!windowIsTransparent(backgroundOpacity: 0.42, appearance: appearance))
+        #expect(!windowIsTransparent(style: .liquidGlass, backgroundOpacity: 0.42, appearance: appearance))
         #expect(
             windowBlurRadius(
+                style: .liquidGlass,
                 backgroundBlur: true,
                 backgroundOpacity: 0.42,
                 appearance: appearance,
@@ -401,10 +453,11 @@ import Testing
         // screen: flat chrome, an opaque window, and no backdrop blur are one
         // answer to one setting.
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: true, reduceMotion: false)
-        #expect(resolvedStyle(setting: .glass, materialIsDark: true, appearance: appearance) == .flat)
-        #expect(!windowIsTransparent(backgroundOpacity: 0.42, appearance: appearance))
+        #expect(resolvedStyle(setting: .liquidGlass, materialIsDark: true, appearance: appearance) == .flat)
+        #expect(!windowIsTransparent(style: .liquidGlass, backgroundOpacity: 0.42, appearance: appearance))
         #expect(
             windowBlurRadius(
+                style: .liquidGlass,
                 backgroundBlur: true,
                 backgroundOpacity: 0.42,
                 appearance: appearance,
@@ -418,9 +471,10 @@ import Testing
         // this follows the terminal settings, so flat chrome over blurred,
         // translucent wells is a supported look rather than a contradiction.
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
-        #expect(resolvedStyle(setting: .flat, materialIsDark: true, appearance: appearance) == .flat)
+        #expect(resolvedStyle(setting: .solid, materialIsDark: true, appearance: appearance) == .flat)
         #expect(
             windowBlurRadius(
+                style: .liquidGlass,
                 backgroundBlur: true,
                 backgroundOpacity: 0.42,
                 appearance: appearance,
@@ -441,6 +495,7 @@ import Testing
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
         #expect(
             windowBlurRadius(
+                style: .liquidGlass,
                 backgroundBlur: true,
                 backgroundOpacity: 0.42,
                 appearance: appearance,
@@ -457,6 +512,7 @@ import Testing
         let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
         #expect(
             windowBlurRadius(
+                style: .liquidGlass,
                 backgroundBlur: true,
                 backgroundOpacity: 0.42,
                 appearance: appearance,
@@ -474,8 +530,8 @@ import Testing
         let withMotion = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
         let reduced = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: true)
         #expect(
-            resolvedStyle(setting: .glass, materialIsDark: true, appearance: withMotion)
-                == resolvedStyle(setting: .glass, materialIsDark: true, appearance: reduced)
+            resolvedStyle(setting: .liquidGlass, materialIsDark: true, appearance: withMotion)
+                == resolvedStyle(setting: .liquidGlass, materialIsDark: true, appearance: reduced)
         )
     }
 

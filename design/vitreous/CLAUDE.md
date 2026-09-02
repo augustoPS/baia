@@ -30,6 +30,14 @@ over any prose, including this file.
 13. **Support all three appearances**: `[data-appearance="dark"|"light"]` and `[data-glass="tinted"]`.
     Tinted is still glass (wallpaper faintly visible, saturation up), never a flat dark theme, and it
     changes no layout, metric or color role.
+
+    **The app's chrome styles are a different axis and this folder has no tokens for two of them**
+    (2026-08-15). baia ships `solid`, `liquidGlass` and `sheer`; only the middle one corresponds to
+    what these tokens describe. `solid` is opaque chrome and lets no wallpaper through at all, and
+    `sheer` is the platform material at roughly a quarter of the tint in `tokens/`, derived in
+    `ChromeMaterials.Sheer` rather than transcribed from here. Neither has a CSS counterpart. If this
+    system ever grows one, the Swift side is the source of record for those two and this folder is
+    the one that has to catch up.
 14. **Two motion settings**: `[data-motion="low"]` default (ease `cubic-bezier(.32,.72,0,1)`, press
     .98), `"high"` springy (press .955). Hover brightens and never moves. Focus is a 1px accent stroke
     plus a 3px ring. Honour reduce-motion.
@@ -49,5 +57,14 @@ adjectives.** Empty states say what would be here and what to do.
 - Reproduce `backdrop-filter` math by hand on Apple platforms; use the platform materials.
 - Reimplement the menu bar or Dock in a real app — those kits are context only.
 - Add colors, radii, type sizes or spacing values that are not in `tokens/`.
-- Claim or imply this is Apple's Liquid Glass. It is an original interpretation, ships no Apple assets,
-  and must be checked against the current Human Interface Guidelines before shipping.
+- Claim or imply **this design system** is Apple's Liquid Glass. It is an original interpretation, ships
+  no Apple assets, and must be checked against the current Human Interface Guidelines before shipping.
+  The rule is about the CSS in this folder, which reimplements the look by hand: calling that Liquid
+  Glass would be claiming Apple's design as this system's own.
+
+  **It does not reach a surface that uses the real material** (owner, 2026-08-15). baia's
+  `liquidGlass` chrome style is an `NSGlassEffectView` — the platform's own material, the thing rule 49
+  above tells you to use instead of hand-rolled `backdrop-filter` math — so naming it after what it
+  actually is states a fact rather than making a claim. The picker label "Liquid Glass" is allowed on
+  exactly that ground and on no other: a hand-drawn approximation may not borrow the name, and if the
+  chrome ever stops using the platform material the name has to go with it.

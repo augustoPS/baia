@@ -96,7 +96,7 @@ import Testing
             attentionStyle: .quiet,
             attentionAccent: .accent,
             alertBehavior: .derive,
-            chromeStyle: .glass,
+            chromeStyle: .liquidGlass,
             sidebar: .files,
             controlChannelEnabled: false,
             controlAllowRun: true,

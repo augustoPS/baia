@@ -292,13 +292,18 @@ public enum SettingsDecoder {
             }
         }
 
-        // A rejected value falls back to flat, the rendering this key's absence
-        // has always meant, rather than to whatever `ChromeStyle`'s declaration
-        // order would leave `defaultSettings` at. Flat is already the default, so
-        // this only matters for the report: `settings.chromeStyle` and
-        // `invalidKeys` both have to say the file's value did not apply.
+        // Through `ChromeStyle.named(_:)` rather than `init(rawValue:)`, so the
+        // pre-2026-08-15 spellings `flat` and `glass` keep applying instead of
+        // being rejected as invalid. A config that predates the rename renders
+        // exactly as it did; see that table's own doc comment for why each old
+        // spelling points where it does.
+        //
+        // A genuinely unrecognised value leaves `defaultSettings`' style in place
+        // and reports itself, which is what `invalidKeys` is for: both
+        // `settings.chromeStyle` and the report have to say the file's value did
+        // not apply.
         if let style = reader.text("chromeStyle") {
-            if let style = ChromeStyle(rawValue: style) {
+            if let style = ChromeStyle.named(style) {
                 settings.chromeStyle = style
             } else {
                 reader.reject("chromeStyle")

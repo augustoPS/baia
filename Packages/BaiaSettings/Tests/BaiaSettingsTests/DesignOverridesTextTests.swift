@@ -158,7 +158,7 @@
             let text = DesignOverridesText.commentedJSON(everythingDialled())
 
             #expect(text.contains("\"backgroundBlur\": true,"))
-            #expect(text.contains("\"chromeStyle\": \"glass\","))
+            #expect(text.contains("\"chromeStyle\": \"liquidGlass\","))
             #expect(text.contains("\"chrome.inks.busyDotHex\": \"#00ff00\","))
             // `chrome.cluster.mode` was the fifth line asserted here, a second
             // enum beside the surface material. It retired on 2026-08-13 with
@@ -490,7 +490,12 @@
         static let sampleLiteralsByKey: [String: String] = [
             "backgroundOpacity": "0.5",
             "backgroundBlur": "true",
-            "chromeStyle": "\"glass\"",
+            // A current spelling, deliberately. Unlike `SettingsDecoder`, this
+            // parser resolves through `init(rawValue:)` and so does not accept
+            // the retired `flat`/`glass`, which is right: the design panel
+            // round-trips its own emitter's output rather than reading a config
+            // file someone wrote by hand before the 2026-08-15 rename.
+            "chromeStyle": "\"\(ChromeStyle.liquidGlass.rawValue)\"",
             "attentionStyle": "\"\(AttentionStyle.allCases[0].rawValue)\"",
             "attentionAccent": "\"\(AttentionAccent.allCases[0].rawValue)\"",
             "focusAccent": "\"\(FocusAccent.allCases[0].rawValue)\"",
@@ -532,7 +537,7 @@
             var overrides = DesignOverrides()
             overrides.backgroundOpacity = 0.5
             overrides.backgroundBlur = true
-            overrides.chromeStyle = .glass
+            overrides.chromeStyle = .liquidGlass
             overrides.attentionStyle = AttentionStyle.allCases[0]
             overrides.attentionAccent = AttentionAccent.allCases[0]
             overrides.focusAccent = FocusAccent.allCases[0]

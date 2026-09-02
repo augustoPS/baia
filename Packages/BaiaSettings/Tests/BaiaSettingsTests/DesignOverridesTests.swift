@@ -22,7 +22,7 @@ import Testing
         var settings = Settings.defaultSettings
         settings.backgroundOpacity = 0.9
         settings.backgroundBlur = false
-        settings.chromeStyle = .flat
+        settings.chromeStyle = .solid
         settings.attentionStyle = .quiet
         settings.attentionAccent = .accent
         settings.focusAccent = .bone
@@ -70,9 +70,9 @@ import Testing
 
     @Test func aSetChromeStyleWins() {
         var overrides = DesignOverrides()
-        overrides.chromeStyle = .flat
-        #expect(Settings.defaultSettings.chromeStyle == .glass)
-        #expect(Settings.defaultSettings.applying(overrides).chromeStyle == .flat)
+        overrides.chromeStyle = .solid
+        #expect(Settings.defaultSettings.chromeStyle == .liquidGlass)
+        #expect(Settings.defaultSettings.applying(overrides).chromeStyle == .solid)
     }
 
     @Test func aSetAttentionStyleWins() {
@@ -109,9 +109,9 @@ import Testing
         // rather than "replace the fields that are set" passes every single-field
         // test above and fails this one.
         var overrides = DesignOverrides()
-        overrides.chromeStyle = .flat
+        overrides.chromeStyle = .solid
         let composed = Settings.defaultSettings.applying(overrides)
-        #expect(composed.chromeStyle == .flat)
+        #expect(composed.chromeStyle == .solid)
         #expect(composed.backgroundOpacity == Settings.defaultSettings.backgroundOpacity)
         #expect(composed.backgroundBlur == Settings.defaultSettings.backgroundBlur)
         #expect(composed.attentionStyle == Settings.defaultSettings.attentionStyle)
@@ -124,7 +124,7 @@ import Testing
         var overrides = DesignOverrides()
         overrides.backgroundOpacity = 0.55
         overrides.backgroundBlur = false
-        overrides.chromeStyle = .flat
+        overrides.chromeStyle = .solid
         overrides.attentionStyle = .quiet
         overrides.attentionAccent = .accent
         overrides.focusAccent = .sea
@@ -133,7 +133,7 @@ import Testing
         let composed = Settings.defaultSettings.applying(overrides)
         #expect(composed.backgroundOpacity == 0.55)
         #expect(!composed.backgroundBlur)
-        #expect(composed.chromeStyle == .flat)
+        #expect(composed.chromeStyle == .solid)
         #expect(composed.attentionStyle == .quiet)
         #expect(composed.attentionAccent == .accent)
         #expect(composed.focusAccent == .sea)
@@ -163,7 +163,7 @@ import Testing
         // fails the moment somebody adds the field the doc contract forbids.
         var overrides = DesignOverrides()
         overrides.backgroundOpacity = 0.3
-        overrides.chromeStyle = .flat
+        overrides.chromeStyle = .solid
         let composed = Settings.defaultSettings.applying(overrides)
         #expect(composed.fontSize == Settings.defaultSettings.fontSize)
         #expect(composed.fontFamily == Settings.defaultSettings.fontFamily)
@@ -190,7 +190,7 @@ import Testing
         var overrides = DesignOverrides()
         overrides.backgroundOpacity = 0.3
         overrides.backgroundBlur = false
-        overrides.chromeStyle = .flat
+        overrides.chromeStyle = .solid
         overrides.focusAccent = .bone
         // `paneWashFloor` sits in this arm because it is the knob nearest to
         // looking like geometry and is not: the wash is a repaint over the
@@ -455,10 +455,10 @@ import Testing
         // dials across the two halves in one sitting.
         var overrides = DesignOverrides()
         overrides.chrome.lift.enabled = false
-        overrides.chromeStyle = .flat
+        overrides.chromeStyle = .solid
 
         let composed = Settings.defaultSettings.applying(overrides)
-        #expect(composed.chromeStyle == .flat)
+        #expect(composed.chromeStyle == .solid)
         #expect(composed.backgroundOpacity == Settings.defaultSettings.backgroundOpacity)
         #expect(overrides.chrome.lift.enabled == false)
     }

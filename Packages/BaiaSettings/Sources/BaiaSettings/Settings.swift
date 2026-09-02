@@ -229,7 +229,7 @@ public struct Settings: Sendable, Equatable {
         // audit and the glass live pass in hand. Reduce Transparency still
         // forces flat through `resolvedStyle`, so this default never costs
         // legibility.
-        chromeStyle: .glass,
+        chromeStyle: .liquidGlass,
         sidebar: .off,
         controlChannelEnabled: true,
         controlAllowRun: false,

@@ -149,30 +149,50 @@ struct SettingsView: View {
                         }
                     }
                     TextField("Background", text: $model.draft.backgroundHex)
+                    // Above opacity rather than below it since 2026-08-15,
+                    // because the style now decides whether the opacity row
+                    // exists at all: `solid` is opaque at every slider position,
+                    // so the slider is hidden under it. A control that appears
+                    // and disappears reads as a consequence of the one above it
+                    // and as a glitch when it sits underneath.
+                    Picker("Chrome style", selection: $model.draft.chromeStyle) {
+                        ForEach(ChromeStyle.allCases, id: \.self) { value in
+                            Text(value.displayName).tag(value)
+                        }
+                    }
                     // Opacity and blur are shown and cannot be judged here. Both
                     // act on the window against the desktop, and the sample has
                     // the settings window behind it, so both will flatter.
-                    LabeledContent("Opacity") {
-                        HStack {
-                            // Quantized to 0.01 through the binding rather than
-                            // through `step:`. Without the rounding a drag
-                            // writes the full Double into a file meant to be
-                            // read and edited by hand, and the writer
-                            // round-trips it faithfully: a real config came
-                            // back carrying `"backgroundOpacity":
-                            // 0.6008831521739131`. With `step:` it also drew
-                            // 101 tick marks. See ``quantized(_:by:)``.
-                            Slider(value: Self.quantized($model.draft.backgroundOpacity, by: 0.01), in: 0 ... 1)
-                            Text(model.draft.backgroundOpacity, format: .number.precision(.fractionLength(2)))
-                                .monospacedDigit()
-                                .frame(width: 44, alignment: .trailing)
+                    //
+                    // Hidden rather than disabled under `solid`: the setting is
+                    // inert there, and a slider that moves while nothing happens
+                    // is worse than one that is not on screen. The draft value is
+                    // left alone rather than zeroed, so switching back to a
+                    // see-through style restores the opacity the owner last
+                    // chose instead of silently resetting it.
+                    if model.draft.chromeStyle.usesBackgroundOpacity {
+                        LabeledContent("Opacity") {
+                            HStack {
+                                // Quantized to 0.01 through the binding rather than
+                                // through `step:`. Without the rounding a drag
+                                // writes the full Double into a file meant to be
+                                // read and edited by hand, and the writer
+                                // round-trips it faithfully: a real config came
+                                // back carrying `"backgroundOpacity":
+                                // 0.6008831521739131`. With `step:` it also drew
+                                // 101 tick marks. See ``quantized(_:by:)``.
+                                Slider(value: Self.quantized($model.draft.backgroundOpacity, by: 0.01), in: 0 ... 1)
+                                Text(model.draft.backgroundOpacity, format: .number.precision(.fractionLength(2)))
+                                    .monospacedDigit()
+                                    .frame(width: 44, alignment: .trailing)
+                            }
                         }
-                    }
-                    Toggle("Blur behind window", isOn: $model.draft.backgroundBlur)
-                    Picker("Chrome style", selection: $model.draft.chromeStyle) {
-                        ForEach(ChromeStyle.allCases, id: \.self) { value in
-                            Text(value.rawValue.capitalized).tag(value)
-                        }
+                        // Blur rides in the same group for the same reason:
+                        // `windowBlurRadius` gates on `windowIsTransparent`, so
+                        // under `solid` it returns 0 whatever this toggle says.
+                        // Two inert controls hidden by one predicate rather than
+                        // one hidden and one left to lie.
+                        Toggle("Blur behind window", isOn: $model.draft.backgroundBlur)
                     }
                 } header: {
                     heading(.theme)

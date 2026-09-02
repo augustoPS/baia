@@ -102,7 +102,7 @@ final class ConfigurationCenter {
     /// in it; the accessibility guard lives one layer down in
     /// `PaneChrome.resolvedStyle(setting:materialIsDark:appearance:)`, above
     /// its material branch, and reads the live observer *after* this composition
-    /// has happened. So `chromeStyle: .glass` dialled on a machine with Reduce
+    /// has happened. So `chromeStyle: .liquidGlass` dialled on a machine with Reduce
     /// Transparency on changes the setting and correctly changes nothing on
     /// screen. `PaneChromeTests` pins that ordering from the package side.
     ///
@@ -314,16 +314,20 @@ final class ConfigurationCenter {
     /// Whether the workspace window should be non-opaque right now.
     ///
     /// The companion of ``resolvedChrome`` immediately above, and the same
-    /// shape: `PaneChrome.windowIsTransparent(backgroundOpacity:appearance:)`
+    /// shape:
+    /// `PaneChrome.windowIsTransparent(style:backgroundOpacity:appearance:)`
     /// makes the decision and carries the tests, this is the one line that
-    /// calls it with the two live inputs. Deliberately reads
-    /// `backgroundOpacity` rather than `chromeStyle` — window transparency
-    /// follows the opacity setting, not the chrome style (owner decision,
-    /// 2026-08-07); see that function's own doc comment. Through
-    /// ``effectiveSettings``, so a dialled opacity moves the window the same
-    /// way a committed one does.
+    /// calls it with the three live inputs.
+    ///
+    /// **Reads `chromeStyle` as well as `backgroundOpacity` since 2026-08-15.**
+    /// The 2026-08-07 decision that this followed opacity alone survives for the
+    /// two see-through styles and is retired for `solid`, which is opaque at
+    /// every slider position; that function's own doc comment carries what broke
+    /// it. Through ``effectiveSettings``, so a dialled style or opacity moves the
+    /// window the same way a committed one does.
     var windowIsTransparent: Bool {
         PaneChrome.windowIsTransparent(
+            style: effectiveSettings.chromeStyle,
             backgroundOpacity: effectiveSettings.backgroundOpacity,
             appearance: appearanceObserver.appearance
         )
@@ -354,13 +358,13 @@ final class ConfigurationCenter {
     /// window right now, or `0` for no blur.
     ///
     /// The third of these one-line derivations and the same shape as the two
-    /// above: `PaneChrome.windowBlurRadius(backgroundBlur:backgroundOpacity:appearance:paneGlassActive:)`
-    /// holds the rule and the tests, and this passes it the four live inputs.
-    /// It reads `backgroundBlur` *and* `backgroundOpacity` (both off
-    /// ``effectiveSettings``, like its two neighbours) because blur is gated on
-    /// the window being transparent at all — see that function's own doc
-    /// comment — which is also how Reduce Transparency reaches it without this
-    /// line mentioning the flag.
+    /// above: `PaneChrome.windowBlurRadius(style:backgroundBlur:backgroundOpacity:appearance:paneGlassActive:)`
+    /// holds the rule and the tests, and this passes it the five live inputs.
+    /// It reads `chromeStyle`, `backgroundBlur` *and* `backgroundOpacity` (all
+    /// off ``effectiveSettings``, like its two neighbours) because blur is gated
+    /// on the window being transparent at all — see that function's own doc
+    /// comment — which is also how both Reduce Transparency and `solid` reach it
+    /// without this line mentioning either.
     ///
     /// The fourth input is the live ``resolvedChrome``, read here rather than
     /// stored: glass panes turn the compositor blur off entirely, because the
@@ -373,6 +377,7 @@ final class ConfigurationCenter {
     /// compositor pass appearing or disappearing where nobody can see it.
     var windowBlurRadius: Int {
         PaneChrome.windowBlurRadius(
+            style: effectiveSettings.chromeStyle,
             backgroundBlur: effectiveSettings.backgroundBlur,
             backgroundOpacity: effectiveSettings.backgroundOpacity,
             appearance: appearanceObserver.appearance,

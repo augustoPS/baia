@@ -110,6 +110,44 @@ public struct MaterialSet: Sendable, Equatable {
         shadowWindow: ChromeMaterials.Light.shadowWindow,
         shadowPopover: ChromeMaterials.Light.shadowPopover
     )
+
+    /// ``BaiaSettings/ChromeStyle/sheer`` under a dark theme.
+    ///
+    /// **Four constants rather than a style dimension on this type**, chosen
+    /// 2026-08-15 for being the duller change: `dark`/`light` are an
+    /// *appearance* pair picked by `materialIsDark`, and sheer is a *style* that
+    /// has to work in both, so it is a second axis rather than a third sibling.
+    /// Spelling it as four flat constants leaves
+    /// ``resolvedStyle(setting:materialIsDark:appearance:)``'s selection shape
+    /// untouched; giving `MaterialSet` a style dimension would model it better
+    /// and touch every construction site to do it.
+    ///
+    /// Fills come from ``ChromeMaterials/Sheer``; the rims and shadows are the
+    /// unscaled `Dark` values, because they are depth cues rather than tint and
+    /// the most transparent style is where a pane edge needs them most.
+    public static let sheerDark = MaterialSet(
+        fillChrome: ChromeMaterials.Sheer.Dark.fillChrome,
+        fillSidebar: ChromeMaterials.Sheer.Dark.fillSidebar,
+        fillThick: ChromeMaterials.Sheer.Dark.fillThick,
+        fillMenu: ChromeMaterials.Sheer.Dark.fillMenu,
+        rimTopAlpha: ChromeMaterials.Dark.rimTopAlpha,
+        rimBottomAlpha: ChromeMaterials.Dark.rimBottomAlpha,
+        shadowWindow: ChromeMaterials.Dark.shadowWindow,
+        shadowPopover: ChromeMaterials.Dark.shadowPopover
+    )
+
+    /// ``BaiaSettings/ChromeStyle/sheer`` under a light theme. See
+    /// ``sheerDark`` for why these are four constants.
+    public static let sheerLight = MaterialSet(
+        fillChrome: ChromeMaterials.Sheer.Light.fillChrome,
+        fillSidebar: ChromeMaterials.Sheer.Light.fillSidebar,
+        fillThick: ChromeMaterials.Sheer.Light.fillThick,
+        fillMenu: ChromeMaterials.Sheer.Light.fillMenu,
+        rimTopAlpha: ChromeMaterials.Light.rimTopAlpha,
+        rimBottomAlpha: ChromeMaterials.Light.rimBottomAlpha,
+        shadowWindow: ChromeMaterials.Light.shadowWindow,
+        shadowPopover: ChromeMaterials.Light.shadowPopover
+    )
 }
 
 /// What a frame draws, after
@@ -173,35 +211,58 @@ public func resolvedStyle(
     appearance: ChromeAppearance
 ) -> ResolvedChrome {
     switch setting {
-    case .flat:
+    case .solid:
         return .flat
-    case .glass:
+    case .liquidGlass:
         guard !appearance.reduceTransparency else { return .flat }
         return .glass(materialIsDark ? .dark : .light)
+    case .sheer:
+        // Reduce Transparency outranks this the same way it outranks
+        // `liquidGlass`, and it matters more here: sheer is the style that lets
+        // the most desktop through, so the accessibility setting that exists to
+        // stop exactly that cannot be the one style it fails to reach.
+        guard !appearance.reduceTransparency else { return .flat }
+        return .glass(materialIsDark ? .sheerDark : .sheerLight)
     }
 }
 
 /// Whether the workspace window itself should be non-opaque, so what it draws
 /// composites against the desktop rather than against a fill of its own.
 ///
-/// **Driven by ``BaiaSettings/Settings/backgroundOpacity``, not by
-/// ``BaiaSettings/ChromeStyle``** (owner decision, 2026-08-07). Ghostty parity
-/// is the rationale: a translucent background is a *terminal* setting, and the
-/// settings have always promised one, so someone running flat chrome with
-/// `backgroundOpacity: 0.42` gets the translucent wells they asked for. Flat
-/// chrome over translucent wells is the vitreous look rather than a
-/// contradiction. This does not disturb the "flat renders byte-identically"
-/// invariant ``ResolvedChrome/flat`` states: that invariant is scoped to the
-/// chrome *drawing* paths — which fills, rims and backing views a surface
-/// creates — and this decides none of them. It sets two window compositing
-/// flags the drawing code never reads.
+/// **Driven by ``BaiaSettings/Settings/backgroundOpacity`` for the two
+/// see-through styles, and by ``BaiaSettings/ChromeStyle`` for
+/// ``BaiaSettings/ChromeStyle/solid``.**
+///
+/// The 2026-08-07 decision was that opacity alone drove this and the chrome
+/// style never did, on ghostty parity: a translucent background is a *terminal*
+/// setting, so someone running flat chrome at `backgroundOpacity: 0.42` got the
+/// translucent wells they asked for. **Half of that is retired (owner,
+/// 2026-08-15) and the half that survives is the reason it was right.**
+///
+/// What broke it: `flat` had no material to diffuse the desktop, so it inherited
+/// the window's transparency with nothing standing between the wallpaper and the
+/// text. Captured at opacity 0 and 0.5 over a bright wallpaper on 2026-08-15, the
+/// terminal body was see-through enough to swallow whole lines of the
+/// transcript. "Flat chrome over translucent wells is the vitreous look" holds
+/// only where something diffuses the well, and flat was the one style where
+/// nothing did.
+///
+/// So ``BaiaSettings/ChromeStyle/solid`` is opaque at every opacity, and the
+/// slider is hidden under it rather than ignored quietly. The parity argument
+/// keeps its force for ``BaiaSettings/ChromeStyle/liquidGlass`` and
+/// ``BaiaSettings/ChromeStyle/sheer``, where the material is what makes a
+/// translucent well readable and the slider is the tint control.
+///
+/// This still decides no drawing. It sets two window compositing flags the
+/// drawing code never reads; which fills, rims and backing views a surface
+/// creates is ``resolvedStyle(setting:materialIsDark:appearance:)``'s business.
 ///
 /// **Reduce Transparency forces opaque, and that is deliberately the same
 /// override ``resolvedStyle(setting:materialIsDark:appearance:)`` makes one
 /// function above.**
 /// Both gates read `appearance.reduceTransparency` and both resolve toward the
 /// solid answer, so someone who turns the accessibility setting on gets a
-/// window with nothing showing through it *and* flat chrome, rather than one
+/// window with nothing showing through it *and* solid chrome, rather than one
 /// of the two. They are kept adjacent, and pinned together by
 /// `ChromeAppearanceTests`, precisely so a change to one is not made without
 /// seeing the other.
@@ -209,8 +270,13 @@ public func resolvedStyle(
 /// At `backgroundOpacity == 1` the window stays opaque, which is what it has
 /// always been: there is nothing to see through, and a non-opaque window is a
 /// compositing cost with no visible effect.
-public func windowIsTransparent(backgroundOpacity: Double, appearance: ChromeAppearance) -> Bool {
+public func windowIsTransparent(
+    style: ChromeStyle,
+    backgroundOpacity: Double,
+    appearance: ChromeAppearance
+) -> Bool {
     guard !appearance.reduceTransparency else { return false }
+    guard style != .solid else { return false }
     return backgroundOpacity < 1
 }
 
@@ -265,7 +331,8 @@ public func windowIsDark(paneTheme: PaneTheme) -> Bool {
 /// The radius the compositor should blur what shows *through* a transparent
 /// workspace window, or `0` for no blur at all.
 ///
-/// The companion of ``windowIsTransparent(backgroundOpacity:appearance:)``
+/// The companion of
+/// ``windowIsTransparent(style:backgroundOpacity:appearance:)``
 /// directly above, and deliberately built on top of it rather than beside it:
 /// blur is what the desktop looks like *behind* this window, so there is
 /// nothing to blur unless the window is letting the desktop through. A blurred
@@ -288,7 +355,12 @@ public func windowIsDark(paneTheme: PaneTheme) -> Bool {
 /// retention against the compositor's 3.7%).
 ///
 /// ``parityBlurRadius`` is the value, and its own doc comment carries why 20.
+/// **``BaiaSettings/ChromeStyle/solid`` reaches `0` through the same free
+/// inheritance the Reduce Transparency override already had** (2026-08-15).
+/// Solid forces the window opaque one function up, so there is nothing showing
+/// through to blur, and the gate below reads that rather than restating it.
 public func windowBlurRadius(
+    style: ChromeStyle,
     backgroundBlur: Bool,
     backgroundOpacity: Double,
     appearance: ChromeAppearance,
@@ -301,7 +373,11 @@ public func windowBlurRadius(
     // so leaving it on buys a window-server pass per frame for nothing.
     guard !paneGlassActive else { return 0 }
     guard backgroundBlur else { return 0 }
-    guard windowIsTransparent(backgroundOpacity: backgroundOpacity, appearance: appearance) else {
+    guard windowIsTransparent(
+        style: style,
+        backgroundOpacity: backgroundOpacity,
+        appearance: appearance
+    ) else {
         return 0
     }
     return parityBlurRadius

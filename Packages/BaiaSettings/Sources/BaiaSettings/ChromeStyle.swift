@@ -1,27 +1,118 @@
 import Foundation
 
-/// Whether the chrome renders flat or asks for the v5 glass materials.
+/// How much of the desktop the chrome lets through: none, the native material's
+/// worth, or nearly all of it.
 ///
-/// **Flat is the spec.** It is what Plan 1 shipped, and every frame `chromeStyle:
-/// "flat"` draws must stay byte-identical to that, which is also why it is the
-/// default: installing a release that reads this key must not move a pixel for a
-/// config file that predates it. `glass` is additive and reversible per frame, and
-/// Reduce Transparency forces flat regardless of what this says.
+/// Three styles rather than the two this shipped with, and the two old spellings
+/// still decode: see ``named(_:)``. `flat` became ``solid`` and `glass` became
+/// ``liquidGlass``, both renames of a case whose rendering did not change.
+///
+/// **"Flat is the spec, byte-identical to Plan 1" was the rule here and is
+/// retired** (owner, 2026-08-15: no configuration or app definition is set in
+/// stone). ``solid`` is free to draw its own opaque backing, which is the whole
+/// point of it: the old `flat` inherited window transparency from
+/// `backgroundOpacity` and had no material to diffuse the desktop, so at a low
+/// opacity the wallpaper came through the terminal body and swallowed text.
+/// Captures at opacity 0 and 0.5 on 2026-08-15 are what retired the rule.
+///
+/// Reduce Transparency forces ``solid`` regardless of what this says, which is
+/// the one override that outranks the setting.
 ///
 /// Never reaches ghostty, so a rename here costs nothing outside baia's own config
 /// file: unlike ``CursorStyle``, nothing downstream can reject a spelling this type
 /// stops using.
 public enum ChromeStyle: String, Sendable, Equatable, CaseIterable {
-    /// The shipped rendering: solid fills, the drawn hairline and capsule, no
-    /// backing material anywhere in the chrome.
-    case flat
+    /// Fully opaque, in dark and light mode. Solid fills, the drawn hairline and
+    /// capsule, no backing material anywhere in the chrome.
+    ///
+    /// **Opaque at every `backgroundOpacity`**, which is what separates it from
+    /// the `flat` it was renamed from. The opacity slider is hidden under this
+    /// style rather than ignored quietly, so the setting that does nothing is
+    /// also the setting you cannot reach.
+    case solid
 
-    /// The v5 material lift: translucent backing views under the pane and
-    /// sidebar, the focus lift's ring and shadow. Resolved against Reduce
-    /// Transparency and the system appearance by `PaneChrome`'s
-    /// `resolvedStyle(setting:materialIsDark:appearance:)`, not read directly by anything that
-    /// draws state ink.
-    case glass
+    /// The native material: translucent backing views under the pane and
+    /// sidebar, the focus lift's ring and shadow. Tint is `backgroundOpacity`
+    /// rather than a style of its own, so "tinted glass" is this case at a
+    /// slider position.
+    ///
+    /// Resolved against Reduce Transparency and the system appearance by
+    /// `PaneChrome`'s `resolvedStyle(setting:materialIsDark:appearance:)`, not
+    /// read directly by anything that draws state ink.
+    case liquidGlass
+
+    /// Nearly all the way through: transparent, with only enough blur to keep
+    /// text readable.
+    ///
+    /// Drawn through the same `NSGlassEffectView` path as ``liquidGlass`` with a
+    /// material set whose fills are near-zero, rather than a compositing path of
+    /// its own. That is why it is a `MaterialSet` and not a `ResolvedChrome`
+    /// case: the view class is fixed at its declaration and the material decides
+    /// only what it is filled with.
+    ///
+    /// **The style with the least protecting it.** ``liquidGlass`` has the
+    /// material to diffuse whatever is behind it and ``solid`` admits nothing;
+    /// this one inherits the exposure that retired `flat`, so whatever legibility
+    /// floor it needs has to be measured rather than assumed.
+    case sheer
+}
+
+public extension ChromeStyle {
+    /// What the settings picker calls this style.
+    ///
+    /// Here rather than in the view, because `rawValue.capitalized` renders
+    /// ``liquidGlass`` as "Liquidglass" and the fix belongs beside the spelling
+    /// it is fixing rather than in whichever surface happens to display it.
+    ///
+    /// Deliberately not derived by splitting camel case. That would produce the
+    /// right answer for all three of these and would still be a rule to
+    /// re-verify at every new case, where a table is a rule that cannot be
+    /// wrong. Three entries do not need an algorithm.
+    var displayName: String {
+        switch self {
+        case .solid: "Solid"
+        case .liquidGlass: "Liquid Glass"
+        case .sheer: "Sheer"
+        }
+    }
+
+    /// Whether ``BaiaSettings/Settings/backgroundOpacity`` does anything under
+    /// this style.
+    ///
+    /// False for ``solid`` alone, which is opaque at every slider position since
+    /// 2026-08-15. The settings surface hides the slider on this rather than
+    /// disabling it: a control that moves and changes nothing is worse than one
+    /// that is not there, and this is the predicate rather than a `== .solid`
+    /// spelled at whichever view asks.
+    var usesBackgroundOpacity: Bool {
+        self != .solid
+    }
+
+    /// The case a config file's spelling names, including spellings this type no
+    /// longer uses.
+    ///
+    /// `SettingsDecoder` reads `chromeStyle` through here rather than through
+    /// `init(rawValue:)`, so a file written before the 2026-08-15 rename keeps
+    /// applying instead of falling back to the default and reporting itself
+    /// invalid. Same contract ``FocusAccent/named(_:)`` carries.
+    static func named(_ spelling: String) -> ChromeStyle? {
+        ChromeStyle(rawValue: spelling) ?? retiredSpellings[spelling]
+    }
+
+    /// Spellings that were once a case's `rawValue` and still have to decode.
+    ///
+    /// Every entry names the case that renders **what the old spelling always
+    /// rendered**, which is the rule ``FocusAccent`` states at length and the one
+    /// failure this table cannot detect for itself. `flat` was opaque fills with
+    /// no material, which is ``solid``; `glass` was the native material, which is
+    /// ``liquidGlass``. Neither is ``sheer``, and pointing either at it would
+    /// change the owner's chrome with nothing anywhere saying why.
+    ///
+    /// A new spelling never belongs here. Only a name that has already shipped.
+    private static let retiredSpellings: [String: ChromeStyle] = [
+        "flat": .solid,
+        "glass": .liquidGlass,
+    ]
 }
 
 /// Which derivation the focus colour is resolved from.

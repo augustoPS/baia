@@ -395,7 +395,7 @@
             addChoice(
                 to: stack, label: "Chrome style", cases: ChromeStyle.allCases,
                 get: { $0.chromeStyle }, set: { $0.chromeStyle = $1 },
-                help: "Reduce Transparency still forces flat downstream, so dialling glass on a machine with the flag set changes the setting and correctly changes nothing on screen."
+                help: "Reduce Transparency still forces solid downstream, so dialling either glass style on a machine with the flag set changes the setting and correctly changes nothing on screen. Solid also ignores Opacity and Blur, which the Settings window hides under it and this panel does not."
             )
             addChoice(
                 to: stack, label: "Attention style", cases: AttentionStyle.allCases,

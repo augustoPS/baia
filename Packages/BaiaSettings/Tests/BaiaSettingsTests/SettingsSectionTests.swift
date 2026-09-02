@@ -28,7 +28,7 @@ import Testing
         settings.windowPadding = 31
         settings.windowPaddingBalance = !Settings.defaultSettings.windowPaddingBalance
         settings.transparentTitlebar = !Settings.defaultSettings.transparentTitlebar
-        settings.chromeStyle = .glass
+        settings.chromeStyle = .liquidGlass
         settings.focusAccent = .twilight
         settings.attentionStyle = .quiet
         settings.attentionAccent = .accent
