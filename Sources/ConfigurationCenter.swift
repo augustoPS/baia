@@ -382,64 +382,23 @@ final class ConfigurationCenter {
 
     // MARK: - Derivations
 
-    /// The theme currently in effect.
-    var terminalTheme: TerminalTheme { SettingsDerivations.terminalTheme(from: effectiveSettings) }
-
-    /// The session configuration currently in effect.
-    var terminalConfiguration: TerminalConfiguration {
-        SettingsDerivations.terminalConfiguration(from: effectiveSettings)
-    }
-
-    // **`glassCompensatedTerminalConfiguration` stood here until 2026-08-13.**
-    // It was `terminalConfiguration` with `window-padding-y` raised by
-    // `PaneChromeMetrics.glassWindowPaddingBump` — arrangement (B) from the
-    // glass-backdrop spike — for a glass pane whose surface extended under the
-    // footer bar, so the grid kept its inset while the bar floated over the
-    // surface's last points. It was reached from exactly one place, the
-    // `.fullHeightWithBump` arm of the switch in `apply(to:)`, and that arm was
-    // already unreachable: a pane spawning under glass answered
-    // `.fullHeightClear` and took `glassClearTerminalConfiguration` instead.
+    // **`terminalTheme`, `terminalConfiguration`, and
+    // `glassClearTerminalConfiguration` stood here until this pane-appearance
+    // deepening.** All three were folded into `PaneChrome.PaneAppearance`,
+    // built once by `PaneAppearance.make(settings:overrides:isDarkAppearance:)`
+    // and carried on the value `apply(to:)` now hands the pane, because none
+    // of the three had a reader outside that method: `grep` for each name
+    // across `Sources/` found only `ConfigurationCenter.swift` itself. See
+    // `PaneAppearance`'s own doc comment for what replaced them, including the
+    // glass-clear derivation's `background-opacity` zeroing and why appending
+    // it after the theme's own overrides is safe (ghostty's config parser
+    // takes the last value it reads for a scalar key).
     //
-    // Deleting it therefore moves no padding on any live pane, which was
-    // verified rather than argued — see the note in `PaneClusterLayout.swift`
-    // for the `fatalError` trap and the 44 x 106 measurement. With the footer
-    // gone there is no bar floating over a surface for a bump to clear, so
-    // nothing will want this again in its current form.
-    //
-    // **This was `glassWindowPaddingBump`'s last consumer in shipping code.**
-    // The constant survived that deletion step and now lives on
-    // `PaneChromeMetrics`, because `Diagnostics/glass-backdrop` still measures
-    // its arithmetic against a real PTY on every run: the +11 that holds a grid
-    // at 82x23 where the naive +22 costs a row. Nothing adds it to a live
-    // pane's padding today.
-
-    /// A glass pane's `background-opacity` zeroing, with no padding bump: the
-    /// one configuration a glass pane is handed now that no footer floats over
-    /// any surface.
-    ///
-    /// Under glass the well belongs to the plane and the wash, so the pane's
-    /// own Metal layer must stop painting a second one over them. That doubled
-    /// well is the difference between what `Diagnostics/pane-glass-legibility`
-    /// measured and what would otherwise ship. The settings key keeps its value
-    /// and its other readers — ``windowIsTransparent`` and the wash both still
-    /// resolve off `effectiveSettings.backgroundOpacity`; this zeroes the
-    /// *surface*, not the setting.
-    ///
-    /// `background-opacity` is appended after everything `terminalOverrides`
-    /// already renders, which is what makes it safe to compose: ghostty's
-    /// config parser takes the *last* value it reads for a scalar key, the same
-    /// rule `SettingsDerivations.terminalTheme` leans on to fold a background
-    /// override on top of a theme.
-    ///
-    /// The padding is untouched, so the settings-derived `window-padding-y`
-    /// stands and this pane's grid is the same size a flat pane's would be.
-    /// A pane is handed this or ``terminalConfiguration`` once, at spawn,
-    /// frozen through `TerminalPaneController.isSpawnedUnderGlass`, and is
-    /// never moved between them; see `spawnedUnderGlass`'s doc comment for why
-    /// a running pane must not change configuration.
-    var glassClearTerminalConfiguration: TerminalConfiguration {
-        terminalConfiguration.backgroundOpacity(0)
-    }
+    // `paneTheme` and `resolvedChrome` immediately below stay: the palette,
+    // the two floating panels, the sidebar, the titlebar band and the find
+    // panel all read them from `AppDelegate.settingsDidChange()`, so deleting
+    // either would be deleting a live wire this deepening was not asked to
+    // touch.
 
     /// The configuration and theme `settings` would produce, without applying them.
     ///
@@ -536,106 +495,20 @@ final class ConfigurationCenter {
         store.write(settings)
     }
 
+    /// Builds this instant's ``PaneChrome/PaneAppearance`` and hands it to
+    /// `pane.apply(_:)`, which owns the ordering, the diff log, and which
+    /// terminal configuration a spawn-frozen pane takes. The ordering
+    /// comments this method used to carry one assignment at a time now live
+    /// on `TerminalPaneController.apply(_:)`, next to the lines they explain.
+    ///
+    /// `isDarkAppearance: appearanceObserver.appearance.isDark` is the one
+    /// live input `PaneAppearance.make` cannot derive from `Settings` alone.
     private func apply(to pane: TerminalPaneController) {
-        pane.theme = paneTheme
-        pane.attentionStyle = effectiveSettings.attentionStyle
-        // Straight through, the way `attentionStyle` and `focusAccent` are. The
-        // resolution is `PaneTheme.attentionColour(_:behavior:)`, which has tests;
-        // a line here that decided anything about these two would not, and that is
-        // exactly how `focusAccent` came to be decoded, stored, and never read.
-        pane.attentionAccent = effectiveSettings.attentionAccent
-        pane.alertBehavior = effectiveSettings.alertBehavior
-        pane.gitPollInterval = effectiveSettings.gitPollSeconds
-        pane.activityPollInterval = effectiveSettings.activityPollSeconds
-        // `resolvedChrome` is computed fresh from the same two live inputs this
-        // method already closes over (`settings` and the appearance observer's
-        // last value), so it stays correct whether `apply` runs from `register`,
-        // a settings reload, or an appearance change.
-        pane.resolvedChrome = resolvedChrome
-        // The focused pane's lift and the lens rim, from the chrome extras.
-        // Both resolve to today's rendering with nothing dialled — the lift to
-        // its constants, the rim to absent — and in Release neither can be
-        // anything else. Assigned here rather than at pane construction so a
-        // dial reaches panes that are already open, which is every pane the
-        // owner is looking at while he dials.
-        pane.liftParameters = .from(chromeOverrides.lift)
-        pane.rimParameters = .from(chromeOverrides.rim)
-        // The pane wash's two inputs: the owner's one opacity knob and the
-        // floor override under it (`ChromeMaterials.PaneWash.opacity`). Both
-        // are appearance-only. They reach a view drawn behind the surface at
-        // the pane's full bounds and never the surface's frame or padding, so
-        // neither can move a live grid the way a padding change would.
-        pane.backgroundOpacity = effectiveSettings.backgroundOpacity
-        pane.paneWashFloor = chromeOverrides.paneWashFloor
-        // The pane cluster's two dials (`chrome.cluster.*`). Both are
-        // appearance-only on a running pane: the capsule is an overlay pinned
-        // over the surface, so neither reaches the grid.
-        //
-        // **A third assignment stood here until 2026-08-13:
-        // `pane.clusterMode = chromeOverrides.cluster.resolvedMode`.** The
-        // dial behind it retired with the gate, so the pane's `clusterMode`
-        // is now a constant the property initialises itself to and this
-        // method has nothing to feed it. What that assignment did at spawn
-        // beyond gating the capsule — freezing `bottomArrangementAtSpawn`,
-        // read below to pick the configuration — it did by being in place
-        // before that read, and a constant is in place earlier still.
-        pane.clusterCornerInset = chromeOverrides.cluster.cornerInset
-        pane.clusterOpacity = chromeOverrides.cluster.opacity
-        // The footer's glass tint was assigned here until 2026-08-09, from
-        // `chromeOverrides.surfaces.footer`. Both went with the glass view they
-        // wrote to; see `DesignOverrides.Chrome`.
-        //
-        // Both go through the controller rather than through the view.
-        // Assigning `view.configuration` or `view.controller` has a `didSet`
-        // that tears the surface down and respawns the shell, losing the
-        // scrollback and whatever was running in the pane.
-        //
-        // **Which configuration, not just whether one applies.** Reading
-        // `pane.bottomArrangementAtSpawn` here rather than branching on the
-        // live `resolvedChrome` assigned above is
-        // deliberate: that property is frozen at this pane's first
-        // configuration (see `spawnedUnderGlass`'s doc comment), so a pane
-        // spawned under flat keeps taking `terminalConfiguration` even after
-        // a live toggle moves `resolvedChrome` to glass, and a pane spawned
-        // under glass keeps its `+glassWindowPaddingBump` even after a toggle
-        // moves back to flat. Either direction, changing which configuration
-        // an already-running pane receives would move its `window-padding-y`
-        // on a live surface, which is a live grid resize — the SIGWINCH
-        // hazard arrangement (B) was built to avoid, not to relocate to a
-        // settings reload.
-        //
-        // **This was a three-armed switch on `pane.bottomArrangementAtSpawn`
-        // until 2026-08-13, and the arrangement enum is now deleted.** Two of
-        // its arms named a footer — one for the surface stopping above the bar,
-        // one adding `+glassWindowPaddingBump` to clear a bar floating over the
-        // surface's last points — and the footer view is gone, so both were
-        // unreachable: every pane spawns with the capsule alone, which answered
-        // `.fullHeightClear` whatever the chrome. The bumped arm was the reason
-        // this deletion was gated on a measurement (a changed
-        // `window-padding-y` is a live grid resize), and the measurement is why
-        // it is safe: a glass pane was already taking the un-bumped
-        // configuration through `.fullHeightClear`, so no live padding moves.
-        //
-        // What survives is the glass distinction the clear case made, read
-        // straight off `isSpawnedUnderGlass` instead of through an arrangement
-        // that no longer varies. Under glass the well belongs to the plane and
-        // the wash, so the surface's own `background-opacity` goes to zero
-        // rather than painting a second one over them; under flat the surface
-        // keeps the settings-derived opacity.
-        //
-        // The freeze is unchanged and still load-bearing. `isSpawnedUnderGlass`
-        // is frozen at this pane's first chrome resolution, so a pane spawned
-        // under flat keeps `terminalConfiguration` even after a live toggle
-        // moves `resolvedChrome` to glass, and vice versa. Handing an
-        // already-running pane a different configuration would change its
-        // surface under it; the toggle takes effect for the next pane opened.
-        // This is the first read of the frozen fact, and it runs at
-        // registration — after `resolvedChrome` is assigned above, before the
-        // view loads — which is what "at spawn" means concretely.
-        let spawnConfiguration = pane.isSpawnedUnderGlass
-            ? glassClearTerminalConfiguration
-            : terminalConfiguration
-        pane.applyTerminalConfiguration(spawnConfiguration, theme: terminalTheme)
+        pane.apply(PaneAppearance.make(
+            settings: effectiveSettings,
+            overrides: chromeOverrides,
+            isDarkAppearance: appearanceObserver.appearance.isDark
+        ))
     }
 
     // MARK: - Watching

@@ -2,6 +2,7 @@ import AppKit
 import BaiaSettings
 import GhosttyTerminal
 import GitWorkspace
+import os
 import PaneChrome
 import PaneControl
 import PaneSearch
@@ -165,7 +166,7 @@ final class TerminalPaneController: NSViewController {
     /// way other live dials reach views that already exist; when the capsule is
     /// not installed the value waits here and ``installClusterView()`` reads it
     /// at pin time.
-    var clusterCornerInset: Double? {
+    private var clusterCornerInset: Double? {
         didSet {
             guard clusterCornerInset != oldValue else { return }
             for constraint in clusterEdgeConstraints {
@@ -183,7 +184,7 @@ final class TerminalPaneController: NSViewController {
     /// `chrome.cluster.opacity`, straight through to the capsule for
     /// ``liftParameters``' reason: nothing here reads it back, and the view
     /// keeps its own equality guard.
-    var clusterOpacity: Double? {
+    private var clusterOpacity: Double? {
         get { clusterView.fillOpacity }
         set { clusterView.fillOpacity = newValue }
     }
@@ -316,7 +317,7 @@ final class TerminalPaneController: NSViewController {
     /// Under glass it drives the wash (floored); the surface's own
     /// `background-opacity` is zeroed for glass-spawned panes so the well is
     /// not painted twice. Appearance only: no didSet here touches geometry.
-    var backgroundOpacity: Double = 1 {
+    private var backgroundOpacity: Double = 1 {
         didSet {
             guard backgroundOpacity != oldValue else { return }
             updateGlassWashColour()
@@ -325,7 +326,7 @@ final class TerminalPaneController: NSViewController {
 
     /// `chrome.paneWashFloor`, nil for the `ChromeMaterials.PaneWash.floor`
     /// constant. Pushed beside the other chrome extras.
-    var paneWashFloor: Double? {
+    private var paneWashFloor: Double? {
         didSet {
             guard paneWashFloor != oldValue else { return }
             updateGlassWashColour()
@@ -335,14 +336,14 @@ final class TerminalPaneController: NSViewController {
     /// The palette everything in this pane derives from. One property rather than
     /// one per view, so a theme change cannot land on the capsule and miss the
     /// scrim.
-    var theme: PaneTheme = .darkPastel {
+    private var theme: PaneTheme = .darkPastel {
         didSet {
             guard theme != oldValue else { return }
             applyPresentation()
         }
     }
 
-    var attentionStyle: AttentionStyle = .loud {
+    private var attentionStyle: AttentionStyle = .loud {
         didSet {
             guard attentionStyle != oldValue else { return }
             // The frame is gated on `loud` too, so a live config edit that
@@ -359,7 +360,7 @@ final class TerminalPaneController: NSViewController {
     /// glass to decide ``liftView``'s ``PaneLiftView/isVisible``, and a pure
     /// passthrough would leave that read with nowhere to come from except
     /// unwrapping the value back out of a view it had just been handed to.
-    var resolvedChrome: ResolvedChrome = .flat {
+    private var resolvedChrome: ResolvedChrome = .flat {
         didSet {
             guard resolvedChrome != oldValue else { return }
             clusterView.resolvedChrome = resolvedChrome
@@ -379,12 +380,12 @@ final class TerminalPaneController: NSViewController {
     /// Both default to the shipped rendering (``PaneLiftParameters/shipped``,
     /// ``PaneRimParameters/off``), so a pane whose configuration never sets
     /// these draws exactly what it always drew.
-    var liftParameters: PaneLiftParameters {
+    private var liftParameters: PaneLiftParameters {
         get { liftView.parameters }
         set { liftView.parameters = newValue }
     }
 
-    var rimParameters: PaneRimParameters {
+    private var rimParameters: PaneRimParameters {
         get { liftView.rim }
         set { liftView.rim = newValue }
     }
@@ -402,7 +403,7 @@ final class TerminalPaneController: NSViewController {
     /// is: the frame around the whole pane is drawn in the same colour, and a
     /// setting that moved one of the two would leave half of the loud treatment
     /// behind.
-    var attentionAccent: AttentionAccent = .alert {
+    private var attentionAccent: AttentionAccent = .alert {
         didSet {
             guard attentionAccent != oldValue else { return }
             clusterView.attentionAccent = attentionAccent
@@ -410,7 +411,7 @@ final class TerminalPaneController: NSViewController {
         }
     }
 
-    var alertBehavior: AlertBehavior = .stock {
+    private var alertBehavior: AlertBehavior = .stock {
         didSet {
             guard alertBehavior != oldValue else { return }
             clusterView.alertBehavior = alertBehavior
@@ -470,6 +471,170 @@ final class TerminalPaneController: NSViewController {
         // the surface rather than on a view this can repaint, so it is pushed
         // through the controller here rather than from `applyPresentation`.
         applyTerminalConfiguration()
+    }
+
+    /// The last ``PaneChrome/PaneAppearance`` this pane was given, or nil
+    /// before its first ``apply(_:)``.
+    ///
+    /// Read-only outward face for `DesignPanelController`'s dials (Task 3
+    /// Step 4): a dial that wants to move one field builds a modified copy of
+    /// this value, or of `PaneAppearance.make(...)` when this is nil, and
+    /// calls `apply(_:)` with the whole thing, rather than reaching for a
+    /// setter this controller no longer exposes.
+    private(set) var lastAppliedAppearance: PaneAppearance?
+
+    /// The diff instrument the 2026-07-30 sighting lacked: a live config edit
+    /// reported reaching new panes but not ones already open, and nothing was
+    /// logging what a pane was actually handed on each pass.
+    private static let appearanceLog = Logger(subsystem: "gutons.baia", category: "appearance")
+
+    /// The one entry point for everything ``PaneAppearance`` carries.
+    ///
+    /// Assigns the thirteen fields in the order `ConfigurationCenter.apply(to:)`
+    /// used to assign them one property at a time, then picks whichever
+    /// terminal configuration ``isSpawnedUnderGlass`` says this pane spawned
+    /// under and calls ``applyTerminalConfiguration(_:theme:)``, then
+    /// ``applyPresentation()`` exactly once. The setters themselves are
+    /// private now; this is the only place that writes them, which is what
+    /// makes "the ordering lives in one method" true rather than aspirational.
+    func apply(_ appearance: PaneAppearance) {
+        if let lastAppliedAppearance, lastAppliedAppearance != appearance {
+            Self.appearanceLog.debug(
+                "\(self.paneID.rawValue.uuidString, privacy: .public): \(Self.changedFields(from: lastAppliedAppearance, to: appearance), privacy: .public)"
+            )
+        }
+        lastAppliedAppearance = appearance
+
+        theme = appearance.theme
+        attentionStyle = appearance.attentionStyle
+        // Straight through, the way `attentionStyle` and `focusAccent` are. The
+        // resolution is `PaneTheme.attentionColour(_:behavior:)`, which has tests;
+        // a line here that decided anything about these two would not, and that is
+        // exactly how `focusAccent` came to be decoded, stored, and never read.
+        attentionAccent = appearance.attentionAccent
+        alertBehavior = appearance.alertBehavior
+        gitPollInterval = appearance.gitPollInterval
+        activityPollInterval = appearance.activityPollInterval
+        // `resolvedChrome` arrives already resolved from the same two live
+        // inputs `PaneAppearance.make` closed over (`settings` and the
+        // appearance observer's last value), so it stays correct whether
+        // `apply` runs from `register`, a settings reload, or an appearance
+        // change.
+        resolvedChrome = appearance.resolvedChrome
+        // The focused pane's lift and the lens rim, from the chrome extras.
+        // Both resolve to today's rendering with nothing dialled — the lift to
+        // its constants, the rim to absent — and in Release neither can be
+        // anything else. Assigned here rather than at pane construction so a
+        // dial reaches panes that are already open, which is every pane the
+        // owner is looking at while he dials.
+        liftParameters = appearance.liftParameters
+        rimParameters = appearance.rimParameters
+        // The pane wash's two inputs: the owner's one opacity knob and the
+        // floor override under it (`ChromeMaterials.PaneWash.opacity`). Both
+        // are appearance-only. They reach a view drawn behind the surface at
+        // the pane's full bounds and never the surface's frame or padding, so
+        // neither can move a live grid the way a padding change would.
+        backgroundOpacity = appearance.backgroundOpacity
+        paneWashFloor = appearance.paneWashFloor
+        // The pane cluster's two dials (`chrome.cluster.*`). Both are
+        // appearance-only on a running pane: the capsule is an overlay pinned
+        // over the surface, so neither reaches the grid.
+        //
+        // **A third assignment stood here until 2026-08-13:
+        // `pane.clusterMode = chromeOverrides.cluster.resolvedMode`.** The
+        // dial behind it retired with the gate, so the pane's `clusterMode`
+        // is now a constant the property initialises itself to and this
+        // method has nothing to feed it. What that assignment did at spawn
+        // beyond gating the capsule — freezing `bottomArrangementAtSpawn`,
+        // read below to pick the configuration — it did by being in place
+        // before that read, and a constant is in place earlier still.
+        clusterCornerInset = appearance.clusterCornerInset
+        clusterOpacity = appearance.clusterOpacity
+        // The footer's glass tint was assigned here until 2026-08-09, from
+        // `chromeOverrides.surfaces.footer`. Both went with the glass view they
+        // wrote to; see `DesignOverrides.Chrome`.
+        //
+        // Both go through the controller rather than through the view.
+        // Assigning `view.configuration` or `view.controller` has a `didSet`
+        // that tears the surface down and respawns the shell, losing the
+        // scrollback and whatever was running in the pane.
+        //
+        // **Which configuration, not just whether one applies.** Reading
+        // `isSpawnedUnderGlass` here rather than branching on the live
+        // `resolvedChrome` assigned above is deliberate: that property is
+        // frozen at this pane's first configuration (see `spawnedUnderGlass`'s
+        // doc comment), so a pane spawned under flat keeps taking
+        // `appearance.terminalConfiguration` even after a live toggle moves
+        // `resolvedChrome` to glass, and a pane spawned under glass keeps its
+        // `+glassWindowPaddingBump` even after a toggle moves back to flat.
+        // Either direction, changing which configuration an already-running
+        // pane receives would move its `window-padding-y` on a live surface,
+        // which is a live grid resize — the SIGWINCH hazard arrangement (B)
+        // was built to avoid, not to relocate to a settings reload.
+        //
+        // **This was a three-armed switch on `pane.bottomArrangementAtSpawn`
+        // until 2026-08-13, and the arrangement enum is now deleted.** Two of
+        // its arms named a footer — one for the surface stopping above the bar,
+        // one adding `+glassWindowPaddingBump` to clear a bar floating over the
+        // surface's last points — and the footer view is gone, so both were
+        // unreachable: every pane spawns with the capsule alone, which answered
+        // `.fullHeightClear` whatever the chrome. The bumped arm was the reason
+        // this deletion was gated on a measurement (a changed
+        // `window-padding-y` is a live grid resize), and the measurement is why
+        // it is safe: a glass pane was already taking the un-bumped
+        // configuration through `.fullHeightClear`, so no live padding moves.
+        //
+        // What survives is the glass distinction the clear case made, read
+        // straight off `isSpawnedUnderGlass` instead of through an arrangement
+        // that no longer varies. Under glass the well belongs to the plane and
+        // the wash, so the surface's own `background-opacity` goes to zero
+        // rather than painting a second one over them; under flat the surface
+        // keeps the settings-derived opacity.
+        //
+        // The freeze is unchanged and still load-bearing. `isSpawnedUnderGlass`
+        // is frozen at this pane's first chrome resolution, so a pane spawned
+        // under flat keeps `appearance.terminalConfiguration` even after a live
+        // toggle moves `resolvedChrome` to glass, and vice versa. Handing an
+        // already-running pane a different configuration would change its
+        // surface under it; the toggle takes effect for the next pane opened.
+        // This is the first read of the frozen fact, and it runs at
+        // registration — after `resolvedChrome` is assigned above, before the
+        // view loads — which is what "at spawn" means concretely.
+        let spawnConfiguration = isSpawnedUnderGlass
+            ? appearance.glassClearTerminalConfiguration
+            : appearance.terminalConfiguration
+        applyTerminalConfiguration(spawnConfiguration, theme: appearance.terminalTheme)
+        applyPresentation()
+    }
+
+    /// The thirteen field names that moved between `lastAppliedAppearance` and
+    /// `appearance`, comma-joined, for ``apply(_:)``'s diff log.
+    ///
+    /// String names rather than a `CaseIterable` key path list: `PaneAppearance`
+    /// mixes enums, optionals and value types with no shared protocol to
+    /// enumerate over, and a log line is the only consumer, so a plain
+    /// comparison per field costs nothing a key path would have saved.
+    private static func changedFields(from previous: PaneAppearance, to next: PaneAppearance) -> String {
+        var changed: [String] = []
+        if previous.theme != next.theme { changed.append("theme") }
+        if previous.attentionStyle != next.attentionStyle { changed.append("attentionStyle") }
+        if previous.attentionAccent != next.attentionAccent { changed.append("attentionAccent") }
+        if previous.alertBehavior != next.alertBehavior { changed.append("alertBehavior") }
+        if previous.gitPollInterval != next.gitPollInterval { changed.append("gitPollInterval") }
+        if previous.activityPollInterval != next.activityPollInterval { changed.append("activityPollInterval") }
+        if previous.resolvedChrome != next.resolvedChrome { changed.append("resolvedChrome") }
+        if previous.liftParameters != next.liftParameters { changed.append("liftParameters") }
+        if previous.rimParameters != next.rimParameters { changed.append("rimParameters") }
+        if previous.backgroundOpacity != next.backgroundOpacity { changed.append("backgroundOpacity") }
+        if previous.paneWashFloor != next.paneWashFloor { changed.append("paneWashFloor") }
+        if previous.clusterCornerInset != next.clusterCornerInset { changed.append("clusterCornerInset") }
+        if previous.clusterOpacity != next.clusterOpacity { changed.append("clusterOpacity") }
+        if previous.terminalTheme != next.terminalTheme { changed.append("terminalTheme") }
+        if previous.terminalConfiguration != next.terminalConfiguration { changed.append("terminalConfiguration") }
+        if previous.glassClearTerminalConfiguration != next.glassClearTerminalConfiguration {
+            changed.append("glassClearTerminalConfiguration")
+        }
+        return changed.joined(separator: ", ")
     }
 
     /// Pushes focus, window activation, theme and attention into the three views
@@ -864,12 +1029,12 @@ final class TerminalPaneController: NSViewController {
 
     private static let rowSearchBound = 64
 
-    var gitPollInterval: TimeInterval {
+    private var gitPollInterval: TimeInterval {
         get { gitStatus.pollInterval }
         set { gitStatus.pollInterval = newValue }
     }
 
-    var activityPollInterval: TimeInterval {
+    private var activityPollInterval: TimeInterval {
         get { activityTracker.pollInterval }
         set { activityTracker.pollInterval = newValue }
     }
