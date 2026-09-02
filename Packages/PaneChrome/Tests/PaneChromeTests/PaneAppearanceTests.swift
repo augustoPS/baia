@@ -73,7 +73,7 @@ import Testing
 
     @Test func resolvedChromeMovesWithChromeStyle() {
         var other = baseSettings
-        other.chromeStyle = other.chromeStyle == .glass ? .flat : .glass
+        other.chromeStyle = other.chromeStyle == .liquidGlass ? .solid : .liquidGlass
         let a = PaneAppearance.make(settings: baseSettings, overrides: baseOverrides, materialIsDark: true, appearance: baseAppearance)
         let b = PaneAppearance.make(settings: other, overrides: baseOverrides, materialIsDark: true, appearance: baseAppearance)
         #expect(a.resolvedChrome != b.resolvedChrome)
@@ -182,7 +182,7 @@ import Testing
     /// even when the live appearance disagrees.
     @Test func materialSetFollowsMaterialIsDarkNotAppearanceIsDark() {
         var settings = baseSettings
-        settings.chromeStyle = .glass
+        settings.chromeStyle = .liquidGlass
         let a = PaneAppearance.make(
             settings: settings,
             overrides: baseOverrides,
@@ -198,7 +198,7 @@ import Testing
     /// `appearance.reduceTransparency`; this pins that it still reaches here.
     @Test func reduceTransparencyForcesFlatRegardlessOfMaterialIsDark() {
         var settings = baseSettings
-        settings.chromeStyle = .glass
+        settings.chromeStyle = .liquidGlass
         let a = PaneAppearance.make(
             settings: settings,
             overrides: baseOverrides,
