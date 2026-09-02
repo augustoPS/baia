@@ -1,4 +1,5 @@
 import AppKit
+import PaneChrome
 
 /// One row of a cluster card, drawn rather than an `NSControl`.
 ///
@@ -169,49 +170,12 @@ final class ClusterCardRowView: NSView {
 /// system colours.
 @MainActor
 final class ClusterPlaceCardView: NSView {
-    /// The card's facts, assembled by the caller.
-    struct Model {
-        var repositoryName: String
-
-        /// The linked worktree's name, or nil for a main checkout, where the
-        /// row is absent rather than restating ``repositoryName``.
-        var worktreeName: String?
-
-        /// `head ↑a↓b`, the footer's own spelling, or nil outside a
-        /// repository.
-        var branch: String?
-
-        /// The operation the repository is halfway through (`REBASE`,
-        /// `CHERRY-PICK`, …), or nil when it is not.
-        ///
-        /// **The pill says this too, and that is the stated exception to one
-        /// home per fact.** The capsule's own rule is that a fact lives in one
-        /// place, and the linked-worktree prefix obeys it by living here alone.
-        /// This one is drawn twice on purpose, because the two draws answer
-        /// different questions: the pill's segment is the *alarm* — it must be
-        /// readable without a click, since it is what explains why the branch
-        /// beside it has become a bare commit hash — and this row is the
-        /// *caption*, the operation named next to the branch and the repository
-        /// it applies to, where a reader who clicked through to understand the
-        /// hash finds the two facts adjacent. Dropping the row would leave the
-        /// place card describing a checkout while silently omitting the reason
-        /// it is in the state it is in; dropping the segment would put the fact
-        /// behind a click, which is exactly what a fact that changes the meaning
-        /// of the pill's other facts cannot be.
-        ///
-        /// **Twice drawn, once decided.** The caller fills this from
-        /// ``PaneChrome/PaneStatus/Git/displayableOperation``, the predicate the
-        /// pill's segment is also built from, so "is there an operation to show"
-        /// is answered in one place for both. Nil here therefore means the same
-        /// thing it means on the pill, blanks included — this row read the raw
-        /// field until 2026-08-13 and drew a captioned empty box for `"   "`.
-        var operation: String?
-
-        /// The pane's working directory, tilde-abbreviated for display. The
-        /// full path stays with the caller, whose Copy path closure is the
-        /// one place that needs it.
-        var workingDirectory: String
-    }
+    /// The card's facts, assembled by ``PaneChrome/ClusterPlaceCardModel/make(anchorDisplayName:isLinkedWorktree:mainCheckoutName:git:workingDirectoryPath:home:)``
+    /// (`Task 4`). Was this view's own nested `Model` until then; moved to
+    /// `PaneChrome` so the derivation — the branch marker string, the
+    /// linked-worktree repository-name substitution — can be tested without
+    /// AppKit.
+    typealias Model = ClusterPlaceCardModel
 
     var onCopyPath: (() -> Void)?
     var onReveal: (() -> Void)?

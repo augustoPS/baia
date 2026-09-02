@@ -79,51 +79,13 @@ final class TerminalPaneController: NSViewController {
     /// wrong once a window holds several panes.
     var onProcessClose: (() -> Void)?
 
-    /// Raised when the footer's attention capsule is clicked while it has
-    /// something to open. Design v5 §6's approval popover: only the app
-    /// delegate owns a panel, so this pane's job ends at naming where the
-    /// popover should anchor and what it should say, and handing back the
-    /// click.
-    ///
-    /// **Nothing raises it since 2026-08-13, and the chain below it is left
-    /// whole deliberately.** The footer's `onCapsuleClick` was its only
-    /// caller; the delivery path it feeds (pane → `PaneTreeController` →
-    /// `WorkspaceWindowController` → `AppDelegate.presentApprovalPopover`) is
-    /// four files of live wiring for a standalone panel that no click now
-    /// reaches. The question it answered has not gone unanswered: the capsule's
-    /// attention segment opens ``presentAttentionCard(_:anchoredTo:in:)``
-    /// instead, behind the identical `ApprovalPopover.presents(for:)` gate,
-    /// carrying the same title rule, the same `body(for:)` and the same single
-    /// answering keystroke — that method's doc comment calls it "a second door
-    /// into the same room", and since this step it is the only door.
-    ///
-    /// Retiring the chain is its own step with its own argument to make (the
-    /// popover and the embedded card are not pixel-identical, and which one the
-    /// owner wants is a design call, not a deletion). It stays wired rather
-    /// than half-removed so that call is made once, against a tree where the
-    /// popover can still be re-reached by restoring one closure.
-    var onApprovalRequested: ((ApprovalRequest) -> Void)?
-
     /// Raised when a cluster card hands work to the terminal: a new pane
-    /// split beside this one, running `command` at `workingDirectory`. The
-    /// same one-way shape as ``onApprovalRequested`` and for the same reason:
-    /// a pane owns no workspace, so its job ends at naming what it wants, and
+    /// split beside this one, running `command` at `workingDirectory`. A pane
+    /// owns no workspace, so its job ends at naming what it wants, and
     /// `PaneTreeController` (the one thing holding one) makes the pane
     /// through the same `split(pane:axis:workingDirectory:command:createdBy:)`
     /// the channel's `baia split --command` lands on.
     var onSplitCommandRequested: ((_ command: String, _ workingDirectory: String?) -> Void)?
-
-    /// Everything the approval popover needs from the pane that was clicked,
-    /// gathered at the one place that knows all three: the frame this view
-    /// converted out of its own coordinates, the anchor's display name, and
-    /// the agent's reported message.
-    struct ApprovalRequest {
-        /// In the pane's window's own coordinate space, ready for
-        /// `NSWindow.convertToScreen`.
-        var capsuleFrame: NSRect
-        var title: String
-        var message: String?
-    }
 
     /// Non-private: the Pane menu actions drive the pin through it.
     lazy var anchorTracker = PaneAnchorTracker(
@@ -773,62 +735,6 @@ final class TerminalPaneController: NSViewController {
         ]
         NSLayoutConstraint.activate(edges)
         clusterEdgeConstraints = edges
-    }
-
-    /// Where the approval popover anchors, in the pane's window's own
-    /// coordinates — the space ``ApprovalRequest/capsuleFrame`` promises and
-    /// `ApprovalPopoverController.origin(forAnchor:size:in:)` hands to
-    /// `convertToScreen`.
-    ///
-    /// One rule, and one only since 2026-08-13. It took a `footerCapsule`
-    /// rect and converted that instead whenever the footer was the chrome
-    /// carrying attention; the footer is deleted, and the sole caller that
-    /// had a footer rect to hand went with it. The anchor is the chrome that
-    /// carries attention, the cluster capsule's attention-segment rect. If the
-    /// capsule is not installed at all (unreachable, since ``applyClusterMode()``
-    /// installs it on every pane, but a nil-window `convert` would answer
-    /// garbage rather than fail) the pane's top-right corner — where the
-    /// capsule would sit — keeps the popover on the pane it speaks for instead
-    /// of anchored at a zero rect.
-    ///
-    /// **``PaneClusterView/approvalAnchorRect()`` and not
-    /// ``PaneClusterView/segmentRect(for:)``, and the difference is a notice.**
-    /// The dot's absence from the placement has two causes that want two
-    /// answers. It may never have been placed — a request arriving before the
-    /// status poll adds the segment — and then nothing knows where it goes and
-    /// the capsule's whole frame stands in, which is a fine stand-in because a
-    /// resting pill is a few dozen points wide and the dot is about to appear
-    /// inside it. Or a notice has taken the pill for three seconds, and then the
-    /// whole frame is a *sentence*, up to the pane's full width: the popover
-    /// would anchor to a rect hundreds of points wide, land visibly displaced,
-    /// and be left hanging over empty pane when the sentence cleared and the
-    /// pill shrank. `approvalAnchorRect()` separates the two by reserving where
-    /// the dot returns to, and that one fact also covers the reverse ordering —
-    /// a notice firing under a popover already anchored to the dot leaves that
-    /// popover over the place the dot comes back to, three seconds later, with
-    /// nothing needing to re-anchor.
-    ///
-    /// Re-anchoring is what this deliberately does not do. ``ApprovalRequest``
-    /// is one-way by design (see ``onApprovalRequested``): a pane names where
-    /// the popover should go and the app delegate owns the panel, so a pane
-    /// cannot move or dismiss one. Nor should a refused sidebar click dismiss
-    /// an approval the owner is mid-answering — the notice explains a click
-    /// that did nothing, and taking away a prompt over it would be the larger
-    /// surprise. Naming the returning dot needs no wire and no dismissal.
-    ///
-    /// Callerless since 2026-08-13, with ``onApprovalRequested`` — it is the
-    /// anchor half of that chain and retires in the same step, for the reason
-    /// that property carries. Kept private and unused rather than deleted so
-    /// the chain comes out in one piece or not at all.
-    private func approvalPopoverAnchor() -> NSRect {
-        guard clusterView.superview != nil else {
-            return view.convert(
-                NSRect(x: view.bounds.maxX, y: view.bounds.maxY, width: 0, height: 0),
-                to: nil
-            )
-        }
-        let rect = clusterView.approvalAnchorRect() ?? clusterView.bounds
-        return clusterView.convert(rect, to: nil)
     }
 
     /// Clips the plane and the wash to the pane's window corners, the
@@ -1742,8 +1648,7 @@ final class TerminalPaneController: NSViewController {
         }
         guard let window = view.window else { return }
         // The view hands the rect in its own coordinates; the controller's
-        // contract is host-window coordinates, the same conversion
-        // ``approvalPopoverAnchor()`` makes for the popover's own anchor.
+        // contract is host-window coordinates.
         let anchor = clusterView.convert(segmentRect, to: nil)
         // The same derivation `ConfigurationCenter.windowIsDark` feeds the
         // approval popover's `isDark` from, read off this pane's own theme
@@ -1770,6 +1675,28 @@ final class TerminalPaneController: NSViewController {
         }
     }
 
+    /// Shows a card and records which segment summoned it, the one sequence
+    /// every presenter below runs and the only place it is written.
+    ///
+    /// After `show`, never before: switching cards makes `show` dismiss the
+    /// one already up, and that dismissal fires the OLD card's `onDismiss`,
+    /// which nils the role. A role assigned first would be consumed by the
+    /// old card's teardown and the toggle would go blind, the same
+    /// consumed-by-old-teardown race `ClusterCardController`'s
+    /// `onDismiss`-as-parameter shape exists to close. `activeRole` — the
+    /// capsule's hot wash on the summoning segment (owner ruling, 2026-08-12)
+    /// — rides the same rule for the same reason, and is cleared in the same
+    /// `onDismiss`, so the wash cannot outlive its card or be wiped by the
+    /// outgoing one's teardown.
+    private func presentCard(_ content: NSView, role: PaneClusterSegmentRole, anchoredTo anchor: NSRect, in window: NSWindow) {
+        clusterCards.show(content: content, anchoredTo: anchor, in: window) { [weak self] in
+            self?.clusterCardRole = nil
+            self?.clusterView.activeRole = nil
+        }
+        clusterCardRole = role
+        clusterView.activeRole = role
+    }
+
     /// Builds and presents the place card from what this pane already holds:
     /// the anchor, and the same `PaneStatus.Git` the capsule's place segment
     /// was built from.
@@ -1786,65 +1713,39 @@ final class TerminalPaneController: NSViewController {
             .homeDirectoryForCurrentUser
             .path(percentEncoded: false)
 
-        var repositoryName = paneAnchor.displayName
-        var worktreeName: String?
-        if git?.isLinkedWorktree == true {
-            // In a linked worktree the anchor *is* the worktree, so its name
-            // fills that row and the repository row wants the main checkout's
-            // name instead. The worktree's git directory is
-            // `<main>/.git/worktrees/<name>`, so the main root is three
-            // components up; when the pointer cannot be resolved the
-            // worktree's own name stands, which is what the tab already
-            // shows.
-            worktreeName = paneAnchor.displayName
-            if let root = Anchor.repositoryRoot(of: paneAnchor),
-               let gitDirectory = GitDirectory.url(forRepositoryRoot: root) {
-                repositoryName = gitDirectory
-                    .deletingLastPathComponent() // worktrees/
-                    .deletingLastPathComponent() // .git/
-                    .deletingLastPathComponent() // the main checkout
-                    .lastPathComponent
-            }
-        }
+        // In a linked worktree the anchor *is* the worktree, so its name fills
+        // ``ClusterPlaceCardModel/worktreeName`` and the repository row wants
+        // the main checkout's name instead —
+        // ``GitWorkspace/GitDirectory/mainCheckoutName(forLinkedWorktreeRoot:)``'s
+        // three-components-up walk, or the worktree's own name when the
+        // pointer cannot be resolved, which is what the tab already shows.
+        let mainCheckoutName = Anchor.repositoryRoot(of: paneAnchor)
+            .flatMap { GitDirectory.mainCheckoutName(forLinkedWorktreeRoot: $0) }
 
-        // `head ↑a↓b`, the marker spelling exactly: the counts joined unspaced
-        // the way `PaneGitRuns.markerText` joins its
-        // runs, one space between the head and the group, and the same
-        // no-upstream suppression, because stale counts against a branch
-        // with nowhere to push are worse than none.
-        let branch: String? = git.flatMap { git in
-            guard !git.head.isEmpty else { return nil }
-            var markers = ""
-            if git.hasUpstream {
-                if git.ahead > 0 { markers += "↑\(git.ahead)" }
-                if git.behind > 0 { markers += "↓\(git.behind)" }
-            }
-            return markers.isEmpty ? git.head : "\(git.head) \(markers)"
-        }
-
-        let card = ClusterPlaceCardView(model: .init(
-            repositoryName: repositoryName,
-            worktreeName: worktreeName,
-            branch: branch,
-            // ``PaneChrome/PaneStatus/Git/displayableOperation``: the same
-            // *predicate* the pill's segment is built from, not merely the same
-            // field. Sharing the input is not sharing the derivation, and this
-            // line proved it — it read `git?.operation` raw while
-            // `PaneClusterSegments.build` applied `isBlank`, so a poller handing
-            // over `"   "` drew no pill segment and grew a card row captioned
-            // `operation` with a blank value in it (found 2026-08-13).
-            //
-            // What is guaranteed now is narrow and worth stating exactly: both
-            // surfaces call one function on one value, so for a given
-            // `PaneStatus.Git` either both draw the operation and draw the same
-            // string, or neither draws it. The card can still *lack* a row the
-            // pill has, and does — the pill takes segments only while a notice is
-            // not up, and the stale-facts rule nils `git` here for a plain
-            // directory the same way it drops the pill's git segments. Agreement
-            // on the blank case is pinned by
-            // `PaneClusterSegmentsTests.theCardAndThePillAgreeOnWhatCountsAsAnOperation`.
-            operation: git?.displayableOperation,
-            workingDirectory: PaneStatus.abbreviated(directoryPath, home: home)
+        // ``PaneChrome/PaneStatus/Git/displayableOperation``: the same
+        // *predicate* the pill's segment is built from, not merely the same
+        // field. Sharing the input is not sharing the derivation, and this
+        // line proved it — it read `git?.operation` raw while
+        // `PaneClusterSegments.build` applied `isBlank`, so a poller handing
+        // over `"   "` drew no pill segment and grew a card row captioned
+        // `operation` with a blank value in it (found 2026-08-13).
+        //
+        // What is guaranteed now is narrow and worth stating exactly: both
+        // surfaces call one function on one value, so for a given
+        // `PaneStatus.Git` either both draw the operation and draw the same
+        // string, or neither draws it. The card can still *lack* a row the
+        // pill has, and does — the pill takes segments only while a notice is
+        // not up, and the stale-facts rule nils `git` here for a plain
+        // directory the same way it drops the pill's git segments. Agreement
+        // on the blank case is pinned by
+        // `PaneClusterSegmentsTests.theCardAndThePillAgreeOnWhatCountsAsAnOperation`.
+        let card = ClusterPlaceCardView(model: .make(
+            anchorDisplayName: paneAnchor.displayName,
+            isLinkedWorktree: git?.isLinkedWorktree == true,
+            mainCheckoutName: mainCheckoutName,
+            git: git,
+            workingDirectoryPath: directoryPath,
+            home: home
         ))
         // The effects live here rather than in the card, the sidebar's own
         // split: a row raises a closure, the owner acts. Both act on the full
@@ -1863,22 +1764,7 @@ final class TerminalPaneController: NSViewController {
         }
         card.onClose = { [weak self] in self?.clusterCards.dismiss() }
 
-        clusterCards.show(content: card, anchoredTo: anchor, in: window) { [weak self] in
-            self?.clusterCardRole = nil
-            self?.clusterView.activeRole = nil
-        }
-        // After `show`, never before: switching cards makes `show` dismiss
-        // the one already up, and that dismissal fires the OLD card's
-        // `onDismiss`, which nils the role. A role assigned first would be
-        // consumed by the old card's teardown and the toggle would go blind,
-        // the same consumed-by-old-teardown race `ClusterCardController`'s
-        // `onDismiss`-as-parameter shape exists to close. `activeRole` — the
-        // capsule's hot wash on the summoning segment (owner ruling,
-        // 2026-08-12) — rides the same rule for the same reason, and is
-        // cleared in the same `onDismiss`, so the wash cannot outlive its
-        // card or be wiped by the outgoing one's teardown.
-        clusterCardRole = .place
-        clusterView.activeRole = .place
+        presentCard(card, role: .place, anchoredTo: anchor, in: window)
     }
 
     /// Presents the changes card, then runs the poller's own porcelain read
@@ -1915,16 +1801,7 @@ final class TerminalPaneController: NSViewController {
         }
         card.onClose = { [weak self] in self?.clusterCards.dismiss() }
 
-        clusterCards.show(content: card, anchoredTo: anchor, in: window) { [weak self] in
-            self?.clusterCardRole = nil
-            self?.clusterView.activeRole = nil
-        }
-        // After `show`, for `presentPlaceCard`'s reason: assigned first,
-        // these would be consumed by the outgoing card's teardown inside
-        // `show` and the toggle would go blind. `activeRole` rides the same
-        // rule (see `presentPlaceCard`).
-        clusterCardRole = .changes
-        clusterView.activeRole = .changes
+        presentCard(card, role: .changes, anchoredTo: anchor, in: window)
         changesCard = card
         changesCardHeadExists = true
 
@@ -1955,21 +1832,22 @@ final class TerminalPaneController: NSViewController {
     /// them and the optionals below already make each row absent rather than
     /// blank.
     ///
-    /// The approval embeds from the same per-pane state the standalone
-    /// popover presents. There is no stored pending-approval object anywhere:
-    /// `AppDelegate.presentApprovalPopover` builds its popover at click time
-    /// from the pane's `attentionMessage` and answers through
-    /// `pane.send(ApprovalPopover.bytes(for:))`, so this card is a second
-    /// door into the same room — the gate is `ApprovalPopover.presents(for:)`
-    /// (the popover's own), the title is the `agent · repo` derivation below,
-    /// the body is the same `body(for:)` fallback, and the answer is the same
-    /// one keystroke, written here directly because the pane already owns
+    /// The model comes from
+    /// ``PaneChrome/ClusterAttentionCardModel/make(status:attentionMessage:)``,
+    /// which applies `ApprovalPopover.presents(for:)` as its own gate and the
+    /// `agent · repo` title rule; this method's job ends at handing over
+    /// `status` and `attentionMessage` and wiring the card's effects. There is
+    /// no stored pending-approval object anywhere: the model is rebuilt at
+    /// click time from the pane's own state and the answer goes straight to
+    /// `pane.send(ApprovalPopover.bytes(for:))`, because the pane already owns
     /// `send(_:)`.
     ///
-    /// **It is the only door as of 2026-08-13.** The title rule came from the
-    /// footer's `onCapsuleClick` wire, copied here to keep the two doors
-    /// titling one question the same way; that wire went with the footer, so
-    /// this is now where the rule lives rather than where it is echoed.
+    /// This is the only door onto an approval: the standalone popover and its
+    /// controller (design v5 §6) retired in Task 4, and every fact they
+    /// carried — the gate, the title rule, the `body(for:)` fallback, the
+    /// single answering keystroke — lives in ``PaneChrome/ClusterAttentionCardModel``
+    /// and ``PaneChrome/ApprovalPopover`` now, in one copy rather than echoed
+    /// between two doors.
     ///
     /// - Parameter role: which of the two segments summoned the card, stored
     ///   as the toggle's memory. Tracking the summoning segment rather than a
@@ -1979,59 +1857,27 @@ final class TerminalPaneController: NSViewController {
     private func presentAttentionCard(
         _ role: PaneClusterSegmentRole, anchoredTo anchor: NSRect, in window: NSWindow
     ) {
-        let agent = status?.agent
-        let attention = status?.attention ?? .none
-
-        var approval: ClusterAttentionCardView.Model.Approval?
-        if ApprovalPopover.presents(for: attention) {
-            // `agent · repo`, or the bare repo name when nothing is running
-            // under this pane to give the card an agent half of the title.
-            // Inherited verbatim from the footer's `onCapsuleClick`, which
-            // held it until that wire was deleted.
-            let anchorName = status?.anchorName ?? "baia"
-            let agentLabel = agent?.label
-            approval = .init(
-                title: agentLabel.map { "\($0) · \(anchorName)" } ?? anchorName,
-                message: ApprovalPopover.body(for: attentionMessage)
-            )
-        }
-
         let card = ClusterAttentionCardView(
-            model: .init(
-                agentLabel: agent.flatMap { $0.label.isEmpty ? nil : $0.label },
-                state: agent.map { $0.isBusy ? "working" : "waiting" },
-                attention: PaneStatus.Attention.name(of: attention),
-                approval: approval
-            ),
+            model: .make(status: status, attentionMessage: attentionMessage),
             theme: theme
         )
         card.onApprovalAction = { [weak self, weak card] action in
             guard let self else { return }
-            // One answer only: `ApprovalPopoverController.dismiss()` nils
-            // `onAction` so a double commit sends nothing, and the card
-            // keeps the same discipline by clearing its own handler before
-            // acting.
+            // One answer only: `card?.onApprovalAction = nil` before acting
+            // means a double commit (a button click racing ⏎/⎋) sends
+            // nothing the second time.
             card?.onApprovalAction = nil
-            // Dismiss before the bytes, `ApprovalPopoverController.commit`'s
-            // own ordering: key is back with the host window before the
-            // keystroke lands in the pane.
+            // Dismiss before the bytes: key is back with the host window
+            // before the keystroke lands in the pane.
             clusterCards.dismiss()
             send(ApprovalPopover.bytes(for: action))
         }
         card.onClose = { [weak self] in self?.clusterCards.dismiss() }
 
-        clusterCards.show(content: card, anchoredTo: anchor, in: window) { [weak self] in
-            self?.clusterCardRole = nil
-            self?.clusterView.activeRole = nil
-        }
-        // After `show`, for `presentPlaceCard`'s reason: assigned first, the
-        // role would be consumed by the outgoing card's teardown inside
-        // `show` and the toggle would go blind. `activeRole` rides the same
-        // rule (see `presentPlaceCard`); the wash lands on the summoning
-        // segment — `.attention` or `.agent`, whichever was clicked — the
-        // same per-segment memory the toggle keeps.
-        clusterCardRole = role
-        clusterView.activeRole = role
+        // `role` here is `.attention` or `.agent`, whichever segment was
+        // clicked — ``presentCard(_:role:anchoredTo:in:)`` carries the wash
+        // to that same segment, the per-segment memory the toggle keeps.
+        presentCard(card, role: role, anchoredTo: anchor, in: window)
     }
 
     /// Hands a card's command to the terminal and dismisses the card.

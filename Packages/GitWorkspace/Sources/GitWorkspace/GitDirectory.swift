@@ -73,6 +73,23 @@ public enum GitDirectory {
         return directory.deletingLastPathComponent().lastPathComponent == "worktrees"
     }
 
+    /// The main checkout's name for a linked worktree root, or nil when the
+    /// worktree's git directory cannot be resolved.
+    ///
+    /// A linked worktree's git directory is `<main>/.git/worktrees/<name>`, so
+    /// the main root is three components up: past `<name>`, past `worktrees`,
+    /// past `.git`. The caller's own name for `root` (its `displayName`) is
+    /// what stands in when this returns nil, which is the worktree's own name
+    /// rather than a repository row left blank.
+    public static func mainCheckoutName(forLinkedWorktreeRoot root: URL) -> String? {
+        guard let gitDirectory = url(forRepositoryRoot: root) else { return nil }
+        return gitDirectory
+            .deletingLastPathComponent() // worktrees/
+            .deletingLastPathComponent() // .git/
+            .deletingLastPathComponent() // the main checkout
+            .lastPathComponent
+    }
+
     /// The path a `.git` file points at, or nil when the file holds no
     /// `gitdir:` line.
     ///

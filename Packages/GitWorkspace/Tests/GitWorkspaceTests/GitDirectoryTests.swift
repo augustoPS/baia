@@ -154,4 +154,17 @@ import Testing
         let plain = try fixture.directory("notes")
         #expect(!GitDirectory.isLinkedWorktree(repositoryRoot: plain))
     }
+
+    @Test func mainCheckoutNameWalksThreeComponentsUpFromTheWorktreeGitDirectory() throws {
+        // `<main>/.git/worktrees/<name>` is the shape git writes; the main
+        // checkout is the root three components above that pointer target.
+        let target = try fixture.directory("baia/.git/worktrees/wave2-card-models")
+        let tree = try fixture.worktree("wave2-card-models", pointingAt: target.path(percentEncoded: false))
+        #expect(GitDirectory.mainCheckoutName(forLinkedWorktreeRoot: tree) == "baia")
+    }
+
+    @Test func mainCheckoutNameIsNilWhenTheGitDirectoryCannotBeResolved() throws {
+        let plain = try fixture.directory("notes")
+        #expect(GitDirectory.mainCheckoutName(forLinkedWorktreeRoot: plain) == nil)
+    }
 }
