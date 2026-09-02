@@ -953,15 +953,9 @@ final class PaneTreeController: NSViewController {
 /// the divider's autolayout constraints, and a terminal view has no intrinsic
 /// size to fall back on when those are wrong.
 final class PaneSplitController: NSSplitViewController {
-    /// The narrowest either pane may be, in points, and therefore how close to an
-    /// edge a divider can ever sit. A pane narrower than this cannot show a
-    /// useful terminal, and a pane at zero width is an invisible live shell.
-    ///
-    /// Shared with ``applyRatio()`` rather than written only on the items,
-    /// because a ratio whose position falls inside this margin is a target
-    /// `NSSplitView` will refuse, and asking for it again on every layout pass is
-    /// a loop the process does not survive.
-    static let minimumPaneThickness: CGFloat = 96
+    /// The narrowest either pane may be. The number and the reasoning live on
+    /// ``SplitSeat/minimumPaneThickness``; this is the `CGFloat` the items take.
+    static let minimumPaneThickness = CGFloat(SplitSeat.minimumPaneThickness)
 
     private let axis: SplitAxis
 
@@ -990,6 +984,10 @@ final class PaneSplitController: NSSplitViewController {
     /// value nothing could ever change, so every drag was undone by the layout
     /// pass the drag itself triggered.
     private var ratio: Double
+
+    /// Where this divider may sit for the stored ratio, and whether to keep
+    /// asking AppKit for it. The decision, not the divider.
+    private var seat = SplitSeat()
 
     /// Which split in the tree this controller renders, so a finished drag can
     /// name it. Pane ids cannot: the divider between a pane and a nested column
@@ -1080,15 +1078,13 @@ final class PaneSplitController: NSSplitViewController {
     /// The stored value is assigned even when the view is not loaded yet, since
     /// that is what `viewDidLayout` reads on its first pass. `applyRatio()` is the
     /// same enforcement a layout pass runs, so a keyboard resize cannot reach a
-    /// position a drag could not: it goes through ``reachablePosition(in:)``, which
-    /// is what keeps a split too small to seat both minimums from asking for a
+    /// position a drag could not: it goes through ``SplitSeat/decide(thickness:ratio:current:dividerThickness:)``,
+    /// which is what keeps a split too small to seat both minimums from asking for a
     /// position `NSSplitView` refuses on every pass until AppKit gives up and the
     /// process dies.
     func setRatio(_ ratio: Double) {
         self.ratio = ratio
-        // The owner asking for something is worth three more attempts, whatever
-        // this split has been refused so far. See ``refusals``.
-        refusals = 0
+        seat.ratioChanged()
         guard isViewLoaded else { return }
         applyRatio()
     }
@@ -1149,107 +1145,23 @@ final class PaneSplitController: NSSplitViewController {
         guard splitViewItems.count == 2 else { return }
         let thickness = splitView.isVertical ? splitView.bounds.width : splitView.bounds.height
         guard thickness > 0 else { return }
-        guard let target = reachablePosition(in: thickness) else { return }
-        // A new size earns fresh attempts. See ``refusals``.
-        if refusedAt != thickness {
-            refusedAt = thickness
-            refusals = 0
-        }
-        guard refusals < Self.refusalLimit else { return }
         let current = firstChildThickness
-        // A half point of tolerance. Reassigning the position on every layout
-        // pass would fight the user's own divider drag, since a drag triggers
-        // the layout that would immediately undo it.
-        guard abs(current - target) > 0.5 else {
-            refusals = 0
+        switch seat.decide(
+            thickness: Double(thickness),
+            ratio: ratio,
+            current: Double(current),
+            dividerThickness: Double(splitView.dividerThickness)
+        ) {
+        case .settled, .spent, .noLegalSeat:
             return
+        case let .request(position):
+            let target = CGFloat(position)
+            splitView.setPosition(target, ofDividerAt: 0)
+            // Whether it landed is readable immediately: `setPosition` lays the split
+            // out before it returns, which is what made a miss countable at all.
+            seat.observed(landed: abs(firstChildThickness - target) <= CGFloat(SplitSeat.tolerance))
         }
-        splitView.setPosition(target, ofDividerAt: 0)
-        // Whether it landed is readable immediately: `setPosition` lays the split
-        // out before it returns, which is what made the refusals visible at all.
-        refusals = abs(firstChildThickness - target) > 0.5 ? refusals + 1 : 0
     }
-
-    /// Where the divider can actually sit for the stored ratio, or nil when the
-    /// split is too small to give both panes their minimum and there is no legal
-    /// position at all.
-    ///
-    /// This is the difference between a divider that stops at the edge of the
-    /// last usable column and a dead app. `NSSplitViewItem.minimumThickness`
-    /// refuses any position inside its margin, so once `thickness * ratio` falls
-    /// there, `setPosition` never lands, `current` never equals `target`, and
-    /// every layout pass asks again. Each refused request re-dirties layout, and
-    /// for a nested split, which its parent re-lays out on every pass anyway,
-    /// that never converges: AppKit gives up with `NSGenericException`, "the
-    /// window has been marked as needing another Update Constraints in Window
-    /// pass", and the process dies. It is reachable two ways, both ordinary. Drag
-    /// a nested divider near its stop and then make the window smaller. Or do
-    /// that, quit, and relaunch into the saved frame, which is worse: the crash
-    /// arrives during construction, every launch reads the same session file, and
-    /// the only way out is deleting it by hand.
-    ///
-    /// Clamping the applied position and not the stored ratio is deliberate. The
-    /// tree keeps what the user asked for, so re-widening the window restores the
-    /// arrangement instead of a value bent to fit the smallest it ever got.
-    private func reachablePosition(in thickness: CGFloat) -> CGFloat? {
-        let lowest = Self.minimumPaneThickness
-        let highest = thickness - Self.minimumPaneThickness - splitView.dividerThickness
-        guard highest >= lowest else { return nil }
-        return min(max(thickness * ratio, lowest), highest)
-    }
-
-    /// The least `controller` can be given along this split's axis.
-    ///
-    /// **Not 96 points, which is what this took it to be until 2026-07-31 and is
-    /// the whole of that day's crash.** A side holding a spine of three panes needs
-    /// three minimums and the two dividers between them, so a position that leaves
-    /// it 145 points is one `NSSplitView` refuses however legal it looks here. The
-    /// refusal is invisible from this side: `setPosition` returns, `current` never
-    /// reaches `target`, and the next layout pass asks for the same number again.
-    /// The app was caught doing that 16,769 times in a row before AppKit gave up on
-    /// the update-constraints pass count.
-    ///
-    /// Counted through the view hierarchy rather than the tree, because this
-    /// controller has no tree: it is handed a ratio and a path and knows only what
-    /// is beneath it. A child split the *other* way is one slot however deep it
-    /// goes, for the reason ``PaneTree/equalized`` counts the same way: its panes
-    /// stack across this axis rather than along it, so they share whatever this side
-    /// is given. `isVertical` describes the divider, not the arrangement, so two
-    /// splits share an axis exactly when it matches.
-    ///
-    /// How many times running this split has asked for a position and not been
-    /// given it, and the thickness those asks were made at.
-    ///
-    /// **The loop is asking forever, not asking wrongly, and a bound is the only
-    /// guard that needs to know nothing about why.** ``reachablePosition(in:)``
-    /// decides what to ask for; whether AppKit grants it depends on the minimums of
-    /// everything nested below. Two attempts at computing those from this side were
-    /// both wrong: the first took a subtree's minimum to be one pane's 96 points,
-    /// the second counted panes along this axis and still returned 96 for a column,
-    /// which holds only when every row in that column is a single pane. A model of
-    /// AppKit's constraint solver that is close is still a model that spins.
-    ///
-    /// A third attempt remembered the exact position refused and skipped that one
-    /// ask. Construction defeated it in a minute: the thickness changes on every
-    /// pass while the hierarchy is still being built, so the pair never repeated and
-    /// nothing was ever suppressed. The count does not care. Three refusals at one
-    /// size and this split stops asking until something deliberate happens.
-    ///
-    /// Deliberate is a new size or a new ratio. A resize resets the count, because a
-    /// position that was impossible at one width may be fine at another, and
-    /// ``setRatio(_:)`` resets it because the owner asking for something is worth
-    /// three more attempts. Everything else, including every layout pass a refusal
-    /// itself provokes, is bounded.
-    ///
-    /// Caught on 2026-07-31 by instrumenting the shipped app after five probe cases
-    /// failed to reproduce it: 3,560 identical lines, `[1, 0]` at thickness 671
-    /// asking for 335.5 and being given something else, every pass until AppKit gave
-    /// up on the update-constraints count.
-    private var refusals = 0
-    private var refusedAt: CGFloat?
-
-    /// Three, which is generous for something that either lands or does not.
-    private static let refusalLimit = 3
 
     /// Where the divider ended up, measured the one way both halves of this
     /// controller agree on.
