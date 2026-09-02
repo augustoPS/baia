@@ -233,7 +233,9 @@ import Testing
         // reads for a scalar key, which is what makes the fold safe.
         #expect(clear.count == flat.count + 1)
         #expect(Array(clear.dropLast()) == flat)
-        #expect(clear.last?.hasPrefix("background-opacity =") == true)
+        // The value, not only the key: `backgroundOpacity(1)` would pass a
+        // prefix check and double the well the deleted comment warned about.
+        #expect(clear.last == "background-opacity = 0")
     }
 
     // MARK: - Determinism
