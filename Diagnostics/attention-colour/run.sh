@@ -38,6 +38,9 @@ build_module WorkspaceLayout -lPaneControl
 PANE_CHROME_SOURCES=()
 for source in Packages/PaneChrome/Sources/PaneChrome/*.swift; do
   [ "$(basename "$source")" = SettingsDerivations.swift ] && continue
+  # `PaneAppearance.swift` imports `GhosttyTerminal` too (2026-09-02); see
+  # `package_excludes` in `lib/build-packages.sh`.
+  [ "$(basename "$source")" = PaneAppearance.swift ] && continue
   PANE_CHROME_SOURCES+=("$source")
 done
 swiftc -swift-version 6 -emit-library -emit-module \
