@@ -757,10 +757,9 @@ final class SidebarHost: NSViewController {
         // day: a 28 pt session header at the top, a 32 pt action row at the
         // bottom, and a 28 pt FILES heading between the header and the rows. The
         // owner's rulings removed all three, and each closed by subtraction
-        // rather than by rebalancing a term. `layoutSections` puts the first
-        // section flush against the top of what it is given and gives the last
-        // whatever is left at the bottom, so with one section the tree takes the
-        // whole of `content`. That the top edge is `content`'s rather than
+        // rather than by rebalancing a term. `layoutSections` gives the column's
+        // one surface the whole of what it is given, so the tree takes the whole
+        // of `content`. That the top edge is `content`'s rather than
         // `bounds`'s is the merge's doing and what keeps the rows out of the
         // titlebar band; the bottom edge the two rects share, so the tree reaches
         // the window's floor either way.
