@@ -73,6 +73,13 @@ import Testing
 
     /// A split too small to give both panes their minimum has no legal position
     /// at all, and that answer is not a refusal.
+    ///
+    /// Interleaving no-legal-seat answers with legal ones at the SAME thickness
+    /// pins the count without reading it: the thickness never changes, so no
+    /// new-size reset can hide a refusal the no-legal-seat path quietly added.
+    /// Three such answers plus two real refusals must still leave the budget
+    /// unspent, which holds only if no-legal-seat counts nothing and resets
+    /// nothing.
     @Test func noLegalSeatCountsNoRefusal() {
         var seat = SplitSeat()
         let divider = 1.0
@@ -85,36 +92,101 @@ import Testing
                 dividerThickness: divider
             ) == .noLegalSeat
         )
-        #expect(seat.refusals == 0)
+
+        let thickness = 671.0
+        let target = 335.5
+        #expect(
+            seat.decide(thickness: thickness, ratio: 0.5, current: 200, dividerThickness: divider)
+                == .request(position: target)
+        )
+        seat.observed(landed: false)
+        // Same thickness, but a divider as thick as the split: no legal seat.
+        for _ in 0 ..< 3 {
+            #expect(
+                seat.decide(thickness: thickness, ratio: 0.5, current: 200, dividerThickness: thickness)
+                    == .noLegalSeat
+            )
+        }
+        #expect(
+            seat.decide(thickness: thickness, ratio: 0.5, current: 200, dividerThickness: divider)
+                == .request(position: target)
+        )
+        seat.observed(landed: false)
+        // Two real refusals so far. A third ask is still granted; a fourth
+        // would be `.spent`, so any count the no-legal-seat path added or
+        // reset shows up here.
+        #expect(
+            seat.decide(thickness: thickness, ratio: 0.5, current: 200, dividerThickness: divider)
+                == .request(position: target)
+        )
+        seat.observed(landed: false)
+        #expect(
+            seat.decide(thickness: thickness, ratio: 0.5, current: 200, dividerThickness: divider)
+                == .spent
+        )
     }
 
     /// Within a half point, the seat has landed. A non-zero count is spent
     /// intention, not a stuck ask, and it resets.
+    ///
+    /// The band is pinned from both sides: a first child 0.6 points off the
+    /// target is still a request, 0.4 points off settles. The reset is pinned
+    /// without reading the count: two refusals, a settle, then two more
+    /// refusals must leave one ask in the budget, which holds only if the
+    /// settle zeroed it. The settle comes before the third refusal because
+    /// `.spent` is decided ahead of `.settled`: a spent split stops asking
+    /// even when the seat would have landed.
     @Test func currentWithinToleranceSettlesAndResetsTheCount() {
         var seat = SplitSeat()
         let thickness = 671.0
         let ratio = 0.5
         let divider = 1.0
-        #expect(
-            seat.decide(
-                thickness: thickness,
-                ratio: ratio,
-                current: 200,
-                dividerThickness: divider
-            ) == .request(position: 335.5)
-        )
-        seat.observed(landed: false)
-        #expect(seat.refusals == 1)
+        let target = 335.5
 
         #expect(
-            seat.decide(
-                thickness: thickness,
-                ratio: ratio,
-                current: 335.5,
-                dividerThickness: divider
-            ) == .settled
+            seat.decide(thickness: thickness, ratio: ratio, current: 200, dividerThickness: divider)
+                == .request(position: target)
         )
-        #expect(seat.refusals == 0)
+        seat.observed(landed: false)
+        #expect(
+            seat.decide(thickness: thickness, ratio: ratio, current: target + 0.6, dividerThickness: divider)
+                == .request(position: target)
+        )
+        seat.observed(landed: false)
+
+        #expect(
+            seat.decide(thickness: thickness, ratio: ratio, current: target + 0.4, dividerThickness: divider)
+                == .settled
+        )
+
+        for _ in 0 ..< 2 {
+            #expect(
+                seat.decide(thickness: thickness, ratio: ratio, current: 200, dividerThickness: divider)
+                    == .request(position: target)
+            )
+            seat.observed(landed: false)
+        }
+        #expect(
+            seat.decide(thickness: thickness, ratio: ratio, current: 200, dividerThickness: divider)
+                == .request(position: target)
+        )
+    }
+
+    /// The exact fit: two minimums plus the divider is the smallest split that
+    /// still has a seat, and its one legal position is the minimum itself.
+    /// One point less has none.
+    @Test func exactFitHasOneLegalSeatAndOnePointLessHasNone() {
+        var seat = SplitSeat()
+        let divider = 8.0
+        let exact = SplitSeat.minimumPaneThickness * 2 + divider
+        #expect(
+            seat.decide(thickness: exact, ratio: 0.5, current: 0, dividerThickness: divider)
+                == .request(position: SplitSeat.minimumPaneThickness)
+        )
+        #expect(
+            seat.decide(thickness: exact - 1, ratio: 0.5, current: 0, dividerThickness: divider)
+                == .noLegalSeat
+        )
     }
 
     /// Clamping the applied position and not the stored ratio is deliberate.
@@ -145,7 +217,6 @@ import Testing
                 dividerThickness: divider
             ) == .request(position: highest)
         )
-        #expect(highest == 296)
     }
 }
 

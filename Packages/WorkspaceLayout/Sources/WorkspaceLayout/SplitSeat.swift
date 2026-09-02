@@ -69,8 +69,8 @@ public struct SplitSeat: Equatable, Sendable {
     /// stack across this axis rather than along it, so they share whatever this side
     /// is given. `isVertical` describes the divider, not the arrangement, so two
     /// splits share an axis exactly when it matches.
-    public private(set) var refusals = 0
-    public private(set) var refusedAt: Double?
+    private var refusals = 0
+    private var refusedAt: Double?
 
     public init() {}
 

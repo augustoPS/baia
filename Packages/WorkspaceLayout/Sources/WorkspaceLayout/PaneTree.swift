@@ -240,7 +240,7 @@ public indirect enum PaneTree: Sendable, Equatable, Codable {
         // clamps again on the way in, so every ratio a held key can ever write is
         // one ``clampedRatio(_:)`` already admits. A keyboard resize therefore
         // reaches no arrangement a mouse drag could not, which is what keeps it
-        // clear of the layout loop `PaneSplitController.reachablePosition(in:)`
+        // clear of the layout loop `SplitSeat.decide(thickness:ratio:current:dividerThickness:)`
         // guards against.
         return replacingRatio(at: path, with: current + direction.growth.sign * delta)
     }
