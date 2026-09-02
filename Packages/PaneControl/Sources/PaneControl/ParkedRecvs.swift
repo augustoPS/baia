@@ -97,6 +97,8 @@ struct ParkedRecvs<Deadline> {
     /// being mutated is the shape of that bug.
     public var ids: [Int] { waiters.keys.sorted() }
 
+    public func isParked(_ id: Int) -> Bool { waiters[id] != nil }
+
     public subscript(id: Int) -> Waiter? { waiters[id] }
 
     /// Installs a waiter, or reports that the connection already had one.

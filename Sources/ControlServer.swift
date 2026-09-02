@@ -389,33 +389,26 @@ final class ControlServer {
         return true
     }
 
-    /// Every parked connection attributed to one pane.
-    ///
-    /// A pool bookkeeping helper, not a long-poll rule: which connections belong
-    /// to a pane is `ControlServer`'s own state, so this reads `connections` and
-    /// asks `longPoll.isParked` per id rather than reaching into the table.
+    /// Every parked connection attributed to one pane, by the waiter's own
+    /// pane. `admit` may move a connection to another pane after its waiter was
+    /// parked, and the waiter must still be found when the first pane closes;
+    /// `LongPoll.parkedIds(of:)` records why.
     private func parkedIds(of pane: ControlPaneID) -> [Int] {
-        connections.filter { $0.value.pane == pane && longPoll.isParked($0.key) }.keys.sorted()
+        longPoll.parkedIds(of: pane)
     }
 
-    /// The oldest parked connection, optionally restricted to one pane.
-    ///
-    /// A pool-eviction helper, not a long-poll rule: which connection to give up
-    /// under pressure is the pool's question, so it is answered here from state
-    /// `ControlServer` already owns, through `longPoll.isParked` alone.
+    /// The oldest parked connection, optionally restricted to one pane, by the
+    /// waiter's own pane for the same reason.
     private func oldestParked(of pane: ControlPaneID?) -> Int? {
-        connections
-            .filter { longPoll.isParked($0.key) && (pane == nil || $0.value.pane == pane) }
-            .keys
-            .min()
+        longPoll.oldestParked(of: pane)
     }
 
     private func forget(_ id: Int) {
         // No response and no resolution: the client is already gone, so the
         // waiter is dropped rather than answered. `evict` still cancels its
         // deadline and removes it from the table; the response it builds is
-        // never written, because `transport.send` no-ops once `connections[id]`
-        // is already gone below.
+        // discarded here rather than written, because there is nobody left to
+        // write it to.
         _ = longPoll.evict(id: id, head: graph.currentSequence)
         connections[id] = nil
         if connections.isEmpty {

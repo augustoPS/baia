@@ -40,6 +40,16 @@ public final class LongPoll<Cancellable> {
     }
 
     private var waiters = ParkedRecvs<Cancellable>()
+
+    /// The one message a pipelined second wait is answered with, whichever
+    /// path refuses it.
+    private static var secondWaitRefused: ControlResponse {
+        .failure(
+            .refused,
+            "this connection is already waiting. One long poll per connection: "
+                + "let this one answer, or send the next on its own connection."
+        )
+    }
     private let schedule: (Int, @escaping @MainActor () -> Void) -> Cancellable
     private let cancel: (Cancellable) -> Void
 
@@ -59,6 +69,27 @@ public final class LongPoll<Cancellable> {
 
     public func isParked(_ id: Int) -> Bool {
         waiters[id] != nil
+    }
+
+    /// Every connection parked on one pane, oldest first.
+    ///
+    /// **The waiter's pane, frozen at `park`, not the connection's current
+    /// pane.** `ControlServer.admit` may reattribute a connection to another
+    /// pane on a later request while its waiter still stands under the first,
+    /// and a waiter whose pane closes must be found and evicted whichever pane
+    /// the connection has since been admitted to. Reading the pool's table for
+    /// this answered `badToken` to exactly that waiter. The rule stood in
+    /// `ControlServer` before the move and is restored here (2026-09-02).
+    public func parkedIds(of pane: ControlPaneID) -> [Int] {
+        waiters.ids(of: pane)
+    }
+
+    /// The oldest parked connection, optionally restricted to one pane, by the
+    /// waiter's own pane for the reason ``parkedIds(of:)`` gives. Oldest by
+    /// connection id, which is minted in accept order and never reused within a
+    /// run.
+    public func oldestParked(of pane: ControlPaneID?) -> Int? {
+        waiters.oldest(of: pane)
     }
 
     // MARK: The long poll
@@ -85,6 +116,16 @@ public final class LongPoll<Cancellable> {
         seconds: Int,
         kind: ParkedKind
     ) -> ParkOutcome {
+        // Decided before a deadline exists. A refused wait schedules nothing,
+        // so there is nothing to cancel and the incumbent's own deadline stands
+        // untouched. Before the move this read "never submitted, so cancelling
+        // is bookkeeping": the controller built its work item, asked the table,
+        // and queued it only on `.parked`. The clock seam arms a deadline the
+        // moment `schedule` returns it, so building one first would have armed
+        // a timer for a wait that was never installed. Asking the table first
+        // keeps the invariant the old comment stated (2026-09-02).
+        guard !waiters.isParked(id) else { return .refused(Self.secondWaitRefused) }
+
         let deadline = schedule(seconds) { [weak self] in
             self?.onDeadline?(id)
         }
@@ -94,16 +135,11 @@ public final class LongPoll<Cancellable> {
         )
         switch waiters.park(id, waiter) {
         case .alreadyParked:
-            // Never submitted, so cancelling is bookkeeping rather than a race:
-            // it says out loud that this deadline will not be resolving anybody.
+            // Unreachable after the guard above. Answered the same way rather
+            // than trapped, because a wrong answer here is one refused wait and
+            // a trap is a dead control server.
             cancel(deadline)
-            return .refused(
-                .failure(
-                    .refused,
-                    "this connection is already waiting. One long poll per connection: "
-                        + "let this one answer, or send the next on its own connection."
-                )
-            )
+            return .refused(Self.secondWaitRefused)
 
         case .parked:
             // Capped at sixty by `wait(from:)`, which is where the cap belongs:
@@ -222,9 +258,12 @@ public final class LongPoll<Cancellable> {
     /// exactly as it was on the way in. A pane that lost its capability while
     /// parked gets the honest answer rather than a drain nobody checked.
     private func resolveByDraining(_ id: Int, graph: inout PaneGraph) -> Answer? {
-        // The deadline installed by `park` calls this for either sort, so a
-        // subscriber's timeout is handed to the reader rather than draining a
-        // mailbox it never asked about.
+        // A fired deadline arrives through `expire`, which routes by kind before
+        // it gets here, so a subscriber's timeout reaches the reader and never
+        // this drain. The kind is checked here as well, so a caller that
+        // arrives by any other path still cannot drain a mailbox a subscriber
+        // never asked about. (Before the move the deadline called this
+        // directly for either sort; the routing is now `expire`'s.)
         guard waiters[id]?.kind == .recv else {
             return resolveByReading(id, graph: &graph)
         }

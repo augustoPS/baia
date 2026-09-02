@@ -113,12 +113,10 @@ import Testing
         // The incumbent is untouched: it is still parked, under the newcomer's
         // refusal.
         #expect(poll.isParked(1))
-        // The newcomer's deadline was constructed (park always builds one before
-        // it knows whether the table will accept it) and then cancelled rather
-        // than armed against a waiter that was never installed.
-        #expect(scheduler.recorded.count == 2)
-        #expect(scheduler.recorded[1].deadline.cancelled)
-        // The incumbent's own deadline is untouched.
+        // A refused wait schedules nothing: the table is asked before a
+        // deadline exists, so the only deadline the clock ever saw is the
+        // incumbent's, and it is untouched.
+        #expect(scheduler.recorded.count == 1)
         #expect(scheduler.recorded[0].deadline.cancelled == false)
     }
 
@@ -286,15 +284,15 @@ import Testing
 
     // MARK: park on an unknown connection
 
+    /// The plan's sixth case reads "park on an unknown connection is a no-op".
+    /// The no-op is `ControlServer`'s: `recv` and `subscribe` guard
+    /// `connections[id] != nil` before ever calling `park`, on the pool's side
+    /// of the seam, where the table of live connections is. What this layer can
+    /// prove is the half it owns: an id it has never seen is an ordinary first
+    /// park, nothing about "unknown" is special here, and so the guard has to
+    /// stay on the pool's side rather than be repeated behind the interface.
     @MainActor
-    @Test func parkOnAnUnknownConnectionIsANoOp() {
-        // `LongPoll` itself knows nothing about which connections exist: that is
-        // `ControlServer`'s table. What "unknown connection" means at this layer
-        // is a connection id never parked before, and parking it behaves exactly
-        // like any first park: nothing about "unknown" makes it special here,
-        // which is itself the fact worth proving, since `ControlServer.recv` and
-        // `.subscribe` guard `connections[id] != nil` before ever calling
-        // `park`, and this layer does not need to repeat that guard to behave.
+    @Test func parkKnowsNothingAboutWhichConnectionsExist() {
         let scheduler = RecordingScheduler()
         var graph = PaneGraph()
         let mine = Self.pane()
@@ -314,5 +312,43 @@ import Testing
             ) == .parked
         )
         #expect(poll.isParked(999))
+    }
+
+    // MARK: eviction keys off the waiter's pane
+
+    /// A waiter belongs to the pane it was parked under, whatever the pool later
+    /// says about its connection, so a pane closing finds every waiter parked
+    /// under it and none parked under another.
+    @MainActor
+    @Test func parkedIdsAndOldestAreKeyedByTheWaitersPane() {
+        let scheduler = RecordingScheduler()
+        var graph = PaneGraph()
+        let first = Self.pane()
+        let second = Self.pane()
+        #expect(graph.open(pane: first, createdBy: nil, secret: Self.secret("a")) == true)
+        #expect(graph.open(pane: second, createdBy: nil, secret: Self.secret("b")) == true)
+
+        let poll = Self.makePoll(
+            scheduler: scheduler,
+            graph: { graph },
+            setGraph: { graph = $0 },
+            collect: { _ in }
+        )
+
+        #expect(poll.parkedIds(of: first).isEmpty)
+        #expect(poll.oldestParked(of: nil) == nil)
+        #expect(poll.park(id: 7, pane: first, token: Self.secret("a").rawValue, seconds: 60, kind: .recv) == .parked)
+        #expect(poll.park(id: 3, pane: second, token: Self.secret("b").rawValue, seconds: 60, kind: .recv) == .parked)
+        #expect(poll.park(id: 9, pane: first, token: Self.secret("a").rawValue, seconds: 60, kind: .recv) == .parked)
+
+        #expect(poll.parkedIds(of: first) == [7, 9])
+        #expect(poll.parkedIds(of: second) == [3])
+        #expect(poll.oldestParked(of: first) == 7)
+        #expect(poll.oldestParked(of: second) == 3)
+        #expect(poll.oldestParked(of: nil) == 3)
+
+        _ = poll.evict(id: 7, head: graph.currentSequence)
+        #expect(poll.parkedIds(of: first) == [9])
+        #expect(poll.oldestParked(of: first) == 9)
     }
 }
