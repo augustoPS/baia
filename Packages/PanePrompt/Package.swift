@@ -7,8 +7,11 @@ let package = Package(
     products: [
         .library(name: "PanePrompt", targets: ["PanePrompt"]),
     ],
+    dependencies: [
+        .package(path: "../ProjectAnchor"),
+    ],
     targets: [
-        .target(name: "PanePrompt"),
+        .target(name: "PanePrompt", dependencies: ["ProjectAnchor"]),
         .testTarget(name: "PanePromptTests", dependencies: ["PanePrompt"]),
     ]
 )

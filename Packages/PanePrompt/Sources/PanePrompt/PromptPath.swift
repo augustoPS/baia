@@ -1,4 +1,5 @@
 import Foundation
+import ProjectAnchor
 
 /// Turns a path a sidebar row is showing into the exact bytes to put on a pane's
 /// prompt, or refuses to.
@@ -71,6 +72,74 @@ public enum PromptPath {
         /// Exactly the bytes to write to the pty, trailing space included.
         case send([UInt8])
         case refuse(Refusal)
+    }
+
+    /// What a click on a sidebar row does, given the pane's anchor and its rendered
+    /// path.
+    public enum Decision: Sendable, Equatable {
+        /// Exactly the bytes to write to the pty, trailing space included.
+        case send([UInt8])
+        /// The row cannot be held by a shell at all; the reason belongs on the
+        /// pane's capsule.
+        case refuse(Refusal)
+        /// The row resolves and the shell could hold it, but the pane it would
+        /// land on is not a repository. Nothing is sent and nothing is refused.
+        case inert
+    }
+
+    /// The whole click decision: whether a row's path reaches the prompt, is
+    /// refused with a reason, or lands on neither because the pane cannot hold a
+    /// send at all.
+    ///
+    /// Sequences the same three calls `AppDelegate.sendToPrompt` used to make
+    /// directly, in the order that recovers a refusal's reason before asking
+    /// whether the pane may receive it: ``ProjectAnchor/Anchor/refusalRoot(of:)``,
+    /// then ``resolve(repositoryRelativePath:repositoryRoot:workingDirectory:)``,
+    /// then ``ProjectAnchor/Anchor/promptRoot(of:)``.
+    public static func decision(
+        anchor: Anchor?,
+        repositoryRelativePath path: [UInt8],
+        workingDirectory: URL?
+    ) -> Decision {
+        // **Resolved against any anchor, sent only from a repository.** The two
+        // roots and the argument for keeping them apart live in
+        // ``ProjectAnchor/Anchor/refusalRoot(of:)``, where a test can reach them.
+        // This guard read `kind == .repository` until 2026-08-13 and returned
+        // *before* ``resolve`` ran, so a row a shell could not hold was refused
+        // with no reason and `showNotice` was never asked for. Resolving first is
+        // what recovers the reason; `promptRoot` below is what keeps a bare shell
+        // pane send-inert, which is the owner's ruling and not a consequence of
+        // where the guard sits.
+        guard let root = Anchor.refusalRoot(of: anchor) else {
+            return .inert
+        }
+
+        // **Both directories through the same resolution, or they never match.**
+        // `ProcessWorkingDirectory` asks the kernel, which answers with a fully
+        // resolved path (`/private/var/folders/...`), while the anchor's root has
+        // been through `resolvingSymlinksInPath()` in `GitRepositoryLocator`,
+        // which on macOS *strips* a leading `/private` when the result exists. The
+        // two spellings of one directory then share no prefix, so a repository
+        // under `$TMPDIR`, `/tmp` or `/var` sent every path absolute: caught on
+        // 2026-07-29 by the fixture, which lives in exactly that place.
+        switch resolve(
+            repositoryRelativePath: path,
+            repositoryRoot: root.resolvingSymlinksInPath().path(percentEncoded: false),
+            workingDirectory: workingDirectory?
+                .resolvingSymlinksInPath().path(percentEncoded: false)
+        ) {
+        case let .send(bytes):
+            // **The pane's affordance, asked after the path is known to be
+            // sendable.** A bare shell pane resolves its rows so a refusal can name
+            // itself, and stops here: nothing reaches its prompt. The row still
+            // flashes, because the click was declined either way.
+            guard Anchor.promptRoot(of: anchor) != nil else {
+                return .inert
+            }
+            return .send(bytes)
+        case let .refuse(reason):
+            return .refuse(reason)
+        }
     }
 
     /// What clicking a row sends, given the path it shows, the repository that

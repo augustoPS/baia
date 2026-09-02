@@ -927,41 +927,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @discardableResult
     private func sendToPrompt(_ path: RepositoryPath, of tree: PaneTreeController) -> Bool {
         guard let pane = tree.focusedPane else { return false }
-        // **Resolved against any anchor, sent only from a repository.** The two
-        // roots and the argument for keeping them apart live in
-        // ``ProjectAnchor/Anchor/refusalRoot(of:)``, where a test can reach them.
-        // This guard read `kind == .repository` until 2026-08-13 and returned
-        // *before* ``PromptPath/resolve`` ran, so a row a shell could not hold was
-        // refused with no reason and `showNotice` was never asked for. Resolving
-        // first is what recovers the reason; `promptRoot` below is what keeps a
-        // bare shell pane send-inert, which is the owner's ruling and not a
-        // consequence of where the guard sits.
-        guard let root = Anchor.refusalRoot(of: pane.anchorTracker.anchor) else {
-            return false
-        }
-
-        // **Both directories through the same resolution, or they never match.**
-        // `ProcessWorkingDirectory` asks the kernel, which answers with a fully
-        // resolved path (`/private/var/folders/...`), while the anchor's root has
-        // been through `resolvingSymlinksInPath()` in `GitRepositoryLocator`,
-        // which on macOS *strips* a leading `/private` when the result exists. The
-        // two spellings of one directory then share no prefix, so a repository
-        // under `$TMPDIR`, `/tmp` or `/var` sent every path absolute: caught on
-        // 2026-07-29 by the fixture, which lives in exactly that place.
-        switch PromptPath.resolve(
+        switch PromptPath.decision(
+            anchor: pane.anchorTracker.anchor,
             repositoryRelativePath: path.bytes,
-            repositoryRoot: root.resolvingSymlinksInPath().path(percentEncoded: false),
-            workingDirectory: pane.anchorTracker.workingDirectory?
-                .resolvingSymlinksInPath().path(percentEncoded: false)
+            workingDirectory: pane.anchorTracker.workingDirectory
         ) {
         case let .send(bytes):
-            // **The pane's affordance, asked after the path is known to be
-            // sendable.** A bare shell pane resolves its rows so a refusal can name
-            // itself, and stops here: nothing reaches its prompt. The row still
-            // flashes, because the click was declined either way.
-            guard Anchor.promptRoot(of: pane.anchorTracker.anchor) != nil else {
-                return false
-            }
             pane.send(bytes)
             return true
         case let .refuse(reason):
@@ -972,6 +943,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // survives the pointer having moved on.
             pane.showNotice(reason.notice)
             NSSound.beep()
+            return false
+        case .inert:
             return false
         }
     }
