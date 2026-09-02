@@ -15,7 +15,7 @@ public enum ManagedHeader {
     /// What this build ships. Bumped when the script changes in a way an existing
     /// install should be told about, which is not every edit: a comment fix is not
     /// a reason to tell somebody their install is stale.
-    public static let currentVersion = 1
+    public static let currentVersion = 2 // 2: StopFailure registered, stdin read before any guard (2026-09-01)
 
     /// The key the version sits behind, and the only line here that is parsed.
     /// The others are for the human who opens the file.

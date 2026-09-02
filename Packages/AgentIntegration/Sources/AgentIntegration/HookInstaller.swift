@@ -77,6 +77,9 @@ public enum HookInstaller {
             HookEntry(event: "PreToolUse", matcher: "^AskUserQuestion$", command: command),
             HookEntry(event: "PostToolUse", matcher: "^AskUserQuestion$", command: command),
             HookEntry(event: "Stop", matcher: nil, command: command),
+            // A turn ending on an API error emits `StopFailure` and never `Stop`;
+            // unregistered, the pane stays `working` until the next turn.
+            HookEntry(event: "StopFailure", matcher: nil, command: command),
             HookEntry(event: "SessionEnd", matcher: nil, command: command),
         ]
     }

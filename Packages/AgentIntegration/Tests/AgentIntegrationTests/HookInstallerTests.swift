@@ -115,7 +115,7 @@ import Testing
     /// something `PaneActivity` already knows.
     @Test func onlyTheEventsThePollersCannotSeeAreRegistered() {
         let entries = HookInstaller.entries(scriptPath: "/x/baia-agent-state.sh")
-        #expect(entries.map(\.event) == ["PreToolUse", "PostToolUse", "Stop", "SessionEnd"])
+        #expect(entries.map(\.event) == ["PreToolUse", "PostToolUse", "Stop", "StopFailure", "SessionEnd"])
         #expect(entries[0].matcher == "^AskUserQuestion$")
         #expect(entries[1].matcher == "^AskUserQuestion$")
         #expect(entries[2].matcher == nil)

@@ -62,6 +62,30 @@ import Testing
         }
     }
 
+    /// **Stdin is read before any guard can exit.** A hook that exits without
+    /// reading its payload hands the agent a broken pipe mid-write, and a `cat`
+    /// found only through PATH is one stripped PATH away from exit 127; the read
+    /// goes through `command -p cat` and precedes the first `|| exit 0`.
+    @Test func stdinIsReadBeforeAnyGuardCanExit() {
+        let lines = HookScript.body.split(separator: "\n", omittingEmptySubsequences: false)
+        let read = lines.firstIndex(where: { $0.contains("command -p cat") })
+        // The header comment names the guard idiom; only code counts.
+        let firstGuard = lines.firstIndex(where: { $0.contains("|| exit 0") && !$0.trimmingCharacters(in: .whitespaces).hasPrefix("#") })
+        guard let read, let firstGuard else {
+            Issue.record("the stdin read or the first guard is gone")
+            return
+        }
+        #expect(read < firstGuard, "a guard at line \(firstGuard + 1) can exit before stdin is read at line \(read + 1)")
+    }
+
+    /// A turn that ends on an API error emits `StopFailure` and never `Stop`.
+    /// Without this arm the pane stays `working` until the next turn.
+    @Test func stopFailureMapsToIdle() {
+        let decision = HookScript.body.split(separator: "\n").first { $0.contains("\"StopFailure\"") && $0.contains("elif") }
+        #expect(decision != nil, "StopFailure is not in the decision")
+        #expect(HookInstaller.entries(scriptPath: "/x").contains { $0.event == "StopFailure" && $0.matcher == nil })
+    }
+
     /// The sequence is a clock. A counter restarted with the session would be
     /// superseded for the rest of the run, because `ReportStore` keeps ordering
     /// across a release and an expiry.
