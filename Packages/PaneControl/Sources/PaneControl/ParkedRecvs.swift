@@ -34,7 +34,7 @@ public enum ParkedKind: Sendable, Equatable {
 /// import: the server parks a `DispatchWorkItem`, a test parks whatever it likes,
 /// and neither is this type's business. Cancelling one is the caller's job, which
 /// is why every removal hands the waiter back instead of dropping it.
-public struct ParkedRecvs<Deadline> {
+struct ParkedRecvs<Deadline> {
     /// A `recv` that found nothing and asked to wait.
     ///
     /// The token is held for the length of the wait, and holding it is the lesser

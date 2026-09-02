@@ -87,10 +87,31 @@ final class ControlServer {
 
     private var connections: [Int: ConnectionState] = [:]
 
-    /// One parked `recv` per connection, and the rule that a second one is
-    /// answered rather than swallowed. The table is in the pure package because
-    /// the rule is decidable without a descriptor, so `make test` decides it.
-    private var waiters = ParkedRecvs<DispatchWorkItem>()
+    /// One parked `recv` or `subscribe` per connection, and the rule that a
+    /// second one is answered rather than swallowed. Behind `LongPoll` because
+    /// the rule is decidable without a real clock, so `make test` decides it;
+    /// this side supplies the one thing the package cannot: a scheduler.
+    private lazy var longPoll: LongPoll<DispatchWorkItem> = {
+        let main = DispatchQueue.main
+        let poll = LongPoll<DispatchWorkItem>(
+            schedule: { seconds, action in
+                // `DispatchWorkItem(block:)` wants a plain, non-isolated block, so
+                // the hop back onto the main actor is explicit here rather than
+                // implicit in the conversion, matching ``hop(_:)`` above.
+                let item = DispatchWorkItem {
+                    MainActor.assumeIsolated(action)
+                }
+                main.asyncAfter(deadline: .now() + .seconds(seconds), execute: item)
+                return item
+            },
+            cancel: { $0.cancel() }
+        )
+        poll.onDeadline = { [weak self] id in
+            guard let self else { return }
+            self.apply(self.longPoll.expire(id: id, graph: &self.graph))
+        }
+        return poll
+    }()
 
     /// Sweeps the idle cap. Alive only while there are connections, because a
     /// timer that ticks for the life of the app to look at an empty dictionary is
@@ -146,10 +167,13 @@ final class ControlServer {
     /// through the same serial queue those responses were queued on, so the write
     /// is attempted before the descriptor goes.
     func stop() {
-        // `ids` is an array, not a live key view, because resolving a waiter
-        // removes it. Every loop over `waiters` here relies on that.
-        for id in waiters.ids {
-            resolveEmpty(id)
+        // `Array(connections.keys)`, not a live view, because evicting a waiter
+        // removes its connection. Every loop over `connections` for eviction
+        // relies on that.
+        for id in Array(connections.keys) where longPoll.isParked(id) {
+            if let answer = longPoll.evict(id: id, head: graph.currentSequence) {
+                apply([answer])
+            }
         }
         sweep?.invalidate()
         sweep = nil
@@ -181,7 +205,7 @@ final class ControlServer {
                 .paneOpened, pane: pane, createdBy: createdBy,
                 message: nil, activity: nil, source: nil
             )
-            wakeSubscribers()
+            apply(longPoll.wakeSubscribers(graph: &graph))
         }
         return registered
     }
@@ -194,8 +218,10 @@ final class ControlServer {
     /// and then be answered `badToken`, which tells a script that its own token
     /// went bad rather than that its pane closed.
     func forgetPane(_ pane: ControlPaneID) {
-        for id in waiters.ids(of: pane) {
-            resolveEmpty(id)
+        for id in parkedIds(of: pane) {
+            if let answer = longPoll.evict(id: id, head: graph.currentSequence) {
+                apply([answer])
+            }
         }
         // **Before `graph.close`, and this order is the design.** `close` deletes
         // the parentage and the peer edges, so an emit after it would compute an
@@ -207,7 +233,7 @@ final class ControlServer {
             message: nil, activity: nil, source: nil
         )
         graph.close(pane: pane)
-        wakeSubscribers()
+        apply(longPoll.wakeSubscribers(graph: &graph))
     }
 
     /// Records something observable about a live pane, and wakes whoever was
@@ -241,7 +267,7 @@ final class ControlServer {
             kind, pane: pane, createdBy: nil,
             message: message, activity: activity, source: source
         )
-        wakeSubscribers()
+        apply(longPoll.wakeSubscribers(graph: &graph))
     }
 
     /// Follows the two settings keys.
@@ -255,8 +281,10 @@ final class ControlServer {
         guard channelEnabled != isChannelEnabled else { return }
         isChannelEnabled = channelEnabled
         guard channelEnabled == false else { return }
-        for id in waiters.ids {
-            resolveEmpty(id)
+        for id in connections.keys.sorted() where longPoll.isParked(id) {
+            if let answer = longPoll.evict(id: id, head: graph.currentSequence) {
+                apply([answer])
+            }
         }
     }
 
@@ -295,7 +323,7 @@ final class ControlServer {
             // on nothing, so it is the evictable one, and it is resolved with an
             // empty answer rather than dropped: a long-poll client already handles
             // a timeout and a re-poll.
-            guard let victim = waiters.oldest(of: nil) else {
+            guard let victim = oldestParked(of: nil) else {
                 // One frame, then closed. A connection silently dropped at a full
                 // pool is indistinguishable from an app that died, and the two
                 // want opposite things from the person reading the error.
@@ -310,7 +338,9 @@ final class ControlServer {
                 )
                 return
             }
-            resolveEmpty(victim)
+            if let answer = longPoll.evict(id: victim, head: graph.currentSequence) {
+                apply([answer])
+            }
         }
 
         connections[id] = ConnectionState(pane: nil, lastRequest: Date())
@@ -337,8 +367,10 @@ final class ControlServer {
 
         let held = connections.filter { $0.key != id && $0.value.pane == actor }.count
         if held >= ControlWire.maxConnectionsPerPane {
-            if let victim = waiters.oldest(of: actor) {
-                resolveEmpty(victim)
+            if let victim = oldestParked(of: actor) {
+                if let answer = longPoll.evict(id: victim, head: graph.currentSequence) {
+                    apply([answer])
+                }
             } else {
                 respond(
                     .failure(
@@ -357,10 +389,34 @@ final class ControlServer {
         return true
     }
 
+    /// Every parked connection attributed to one pane.
+    ///
+    /// A pool bookkeeping helper, not a long-poll rule: which connections belong
+    /// to a pane is `ControlServer`'s own state, so this reads `connections` and
+    /// asks `longPoll.isParked` per id rather than reaching into the table.
+    private func parkedIds(of pane: ControlPaneID) -> [Int] {
+        connections.filter { $0.value.pane == pane && longPoll.isParked($0.key) }.keys.sorted()
+    }
+
+    /// The oldest parked connection, optionally restricted to one pane.
+    ///
+    /// A pool-eviction helper, not a long-poll rule: which connection to give up
+    /// under pressure is the pool's question, so it is answered here from state
+    /// `ControlServer` already owns, through `longPoll.isParked` alone.
+    private func oldestParked(of pane: ControlPaneID?) -> Int? {
+        connections
+            .filter { longPoll.isParked($0.key) && (pane == nil || $0.value.pane == pane) }
+            .keys
+            .min()
+    }
+
     private func forget(_ id: Int) {
         // No response and no resolution: the client is already gone, so the
-        // waiter is dropped rather than answered.
-        waiters.remove(id)?.deadline.cancel()
+        // waiter is dropped rather than answered. `evict` still cancels its
+        // deadline and removes it from the table; the response it builds is
+        // never written, because `transport.send` no-ops once `connections[id]`
+        // is already gone below.
+        _ = longPoll.evict(id: id, head: graph.currentSequence)
         connections[id] = nil
         if connections.isEmpty {
             sweep?.invalidate()
@@ -391,7 +447,7 @@ final class ControlServer {
         // Collected before anything is written, because closing a connection
         // takes it out of the dictionary this is walking.
         let stale = connections
-            .filter { $0.value.lastRequest < cutoff && waiters[$0.key] == nil }
+            .filter { $0.value.lastRequest < cutoff && longPoll.isParked($0.key) == false }
             .keys
 
         for id in stale {
@@ -830,7 +886,7 @@ final class ControlServer {
             // its own deadline, which is the whole point of the long poll: a
             // message that arrived a second in should not wait out the other
             // fifty-nine.
-            wake(recipient)
+            apply(longPoll.wake(pane: recipient, graph: &graph))
             respond(.success(), to: id)
         }
     }
@@ -850,10 +906,6 @@ final class ControlServer {
     }
 
     // MARK: The long poll
-
-    /// A long poll that found nothing, carrying the cancellable that answers it
-    /// at its deadline.
-    private typealias ParkedRecv = ParkedRecvs<DispatchWorkItem>.Waiter
 
     /// How long this request asked to wait, capped, or nil when it asked for no
     /// wait at all.
@@ -876,7 +928,15 @@ final class ControlServer {
                 respond(.answer(for: drain), to: id)
                 return
             }
-            park(id, pane: actor, token: request.token, seconds: seconds, kind: .recv)
+            guard connections[id] != nil else { return }
+            switch longPoll.park(
+                id: id, pane: actor, token: request.token, seconds: seconds, kind: .recv
+            ) {
+            case .parked:
+                break
+            case let .refused(response):
+                respond(response, to: id)
+            }
         }
     }
 
@@ -915,203 +975,37 @@ final class ControlServer {
                 respond(.answer(for: batch), to: id)
                 return
             }
-            park(
-                id,
+            guard connections[id] != nil else { return }
+            switch longPoll.park(
+                id: id,
                 pane: actor,
                 token: request.token,
                 seconds: seconds,
                 kind: .subscribe(from: cursor, kinds: kinds)
-            )
-        }
-    }
-
-    /// Parks a long poll that found nothing, or refuses it because this
-    /// connection is already waiting on one.
-    ///
-    /// **A second `--wait` pipelined on one connection is answered, not
-    /// swallowed.** NDJSON is a pipelinable wire and the spec keeps it
-    /// `nc`-drivable on purpose, so two `recv --wait` frames can arrive before
-    /// either has been answered. Overwriting the first waiter left its request
-    /// with no response at all and its deadline still armed, to fire later and
-    /// resolve the *second* waiter early. Rule 5 allows one request with no
-    /// response, the over-cap line, and it is spent.
-    ///
-    /// Refusing the newcomer rather than resolving the incumbent, because
-    /// resolving an incumbent closes its connection, and its connection is the
-    /// newcomer's connection too: the newcomer would then have nowhere to be
-    /// answered on, which is the same defect wearing a different hat.
-    private func park(
-        _ id: Int,
-        pane: ControlPaneID,
-        token: String,
-        seconds: Int,
-        kind: ParkedKind
-    ) {
-        guard connections[id] != nil else { return }
-
-        let deadline = DispatchWorkItem { [weak self] in
-            MainActor.assumeIsolated {
-                self?.resolveByDraining(id)
-            }
-        }
-
-        let waiter = ParkedRecv(pane: pane, token: token, deadline: deadline, kind: kind)
-        switch waiters.park(id, waiter) {
-        case .alreadyParked:
-            // Never submitted, so cancelling is bookkeeping rather than a race:
-            // it says out loud that this deadline will not be resolving anybody.
-            deadline.cancel()
-            respond(
-                .failure(
-                    .refused,
-                    "this connection is already waiting. One long poll per connection: "
-                        + "let this one answer, or send the next on its own connection."
-                ),
-                to: id
-            )
-            return
-
-        case .parked:
-            // Capped at sixty by `wait(from:)`, which is where the cap belongs:
-            // an uncapped long poll is a pool slot held forever by whoever asks
-            // for it.
-            DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(seconds), execute: deadline)
-        }
-    }
-
-    /// Wakes every parked `recv` on a pane, for a message that just landed.
-    ///
-    /// Subscribers are woken by ``wakeSubscribers()`` instead: a mailbox delivery
-    /// is addressed at one pane, and an event is not addressed at all.
-    private func wake(_ pane: ControlPaneID) {
-        for id in waiters.ids(of: pane) where waiters[id]?.kind == .recv {
-            resolveByDraining(id)
-        }
-    }
-
-    /// Wakes every parked `subscribe` that now has something to read.
-    ///
-    /// Called after each emit. Walks the parked table, capped at sixteen
-    /// connections, and re-reads the ring for each: that read is a filter over at
-    /// most 512 entries, so the sweep is bounded by the two caps rather than by
-    /// workspace size or by how chatty the panes are.
-    ///
-    /// A subscriber whose events were all filtered out is left parked, which is
-    /// the difference between an edge-triggered subscription and a heartbeat.
-    private func wakeSubscribers() {
-        for id in waiters.ids {
-            guard let waiter = waiters[id] else { continue }
-            guard case let .subscribe(from, kinds) = waiter.kind else { continue }
-            switch graph.subscribe(token: waiter.token, from: from, kinds: kinds) {
-            case .denied:
-                // Its token went bad while parked. Resolved through the same path
-                // a live one takes, so the client is told rather than left to time
-                // out against a capability that no longer exists.
-                resolveByReading(id)
-            case let .ok(batch):
-                guard batch.events.isEmpty == false else { continue }
-                resolveByReading(id)
+            ) {
+            case .parked:
+                break
+            case let .refused(response):
+                respond(response, to: id)
             }
         }
     }
 
-    /// Answers a parked `recv` with whatever is in the mailbox now.
+    /// Applies every answer a long-poll resolution produced: writes the
+    /// response, restarts the idle clock when the answer says to, and drops the
+    /// connection when the answer says to close it.
     ///
-    /// Goes back through `recv(token:)`, so the wait is authorised on the way out
-    /// exactly as it was on the way in. A pane that lost its capability while
-    /// parked gets the honest answer rather than a drain nobody checked.
-    private func resolveByDraining(_ id: Int) {
-        // The deadline installed by `park` calls this for either sort, so a
-        // subscriber's timeout is handed to the reader rather than draining a
-        // mailbox it never asked about.
-        guard waiters[id]?.kind == .recv else {
-            resolveByReading(id)
-            return
-        }
-        guard let waiter = waiters.remove(id) else { return }
-        waiter.deadline.cancel()
-
-        // **The idle clock restarts when the long poll is answered, not when it
-        // was parked.** `received` stamped it when the `recv` frame arrived, and
-        // the waiter was exempt from the sweep only while it was in `waiters`, so
-        // a `recv --wait 60` answered at t=60 would look sixty seconds stale to
-        // the very next five second tick and be sent an unsolicited `refused` and
-        // closed within five seconds of a successful answer. This connection did
-        // not sit thirty seconds without completing a request; it completed one.
-        connections[id]?.lastRequest = Date()
-
-        switch graph.recv(token: waiter.token) {
-        case let .denied(error):
-            respond(ControlResponse.failure(error), to: id)
-        case let .ok(drain):
-            respond(.answer(for: drain), to: id)
-        }
-    }
-
-    /// Answers a parked `subscribe` with whatever the ring holds now.
-    ///
-    /// Goes back through `graph.subscribe`, so the wait is authorised on the way
-    /// out exactly as it was on the way in, matching ``resolveByDraining(_:)``.
-    private func resolveByReading(_ id: Int) {
-        // **The kind is checked before the waiter is taken out**, so a `recv`
-        // arriving here by some future routing mistake is left where the drain
-        // path can still find it. The order used to be the other way round: the
-        // waiter was removed and its deadline cancelled, and then the kind check
-        // returned, leaving a request with no response, no deadline to fire, and
-        // a connection held until the idle sweep noticed. Unreachable today,
-        // because `resolveByDraining` sends only what is not a `recv` here, and
-        // one line of ordering is cheaper than depending on that staying true.
-        guard case let .subscribe(from, kinds) = waiters[id]?.kind else { return }
-        guard let waiter = waiters.remove(id) else { return }
-        waiter.deadline.cancel()
-
-        // The idle clock restarts when the long poll is answered, for
-        // ``resolveByDraining(_:)``'s reason: this connection did not sit thirty
-        // seconds without completing a request, it completed one.
-        connections[id]?.lastRequest = Date()
-
-        switch graph.subscribe(token: waiter.token, from: from, kinds: kinds) {
-        case let .denied(error):
-            respond(ControlResponse.failure(error), to: id)
-        case let .ok(batch):
-            respond(.answer(for: batch), to: id)
-        }
-    }
-
-    /// Resolves a parked waiter of either sort without touching what it was
-    /// waiting on, and closes it.
-    ///
-    /// For the resolutions that are not about new data: the pane closed, the
-    /// channel was switched off, the app is going away, or the slot was needed.
-    /// An empty answer of the right shape rather than a bare EOF, because a
-    /// client that already handles a timeout and a re-poll handles this, and a
-    /// client that saw EOF would report the app as broken.
-    ///
-    /// The close is what makes an eviction an eviction. Resolving the wait alone
-    /// would answer the request and leave the slot exactly as occupied as it was,
-    /// so the connection is dropped from the pool here rather than when the
-    /// client notices, which is a hop later and one connection over the cap.
-    private func resolveEmpty(_ id: Int) {
-        guard let waiter = waiters.remove(id) else { return }
-        waiter.deadline.cancel()
-        // No idle stamp on the way out, unlike ``resolveByDraining(_:)``: the
-        // connection leaves the pool on the next line, so there is no clock left
-        // for the sweep to read and writing one would be a value deleted by the
-        // statement under it.
-        connections[id] = nil
-
-        switch waiter.kind {
-        case .recv:
-            respond(.answer(for: Drain.empty), to: id, thenClose: true)
-        case .subscribe:
-            // At the current head, not at the waiter's cursor: the caller is being
-            // told "nothing more from me", and handing back a stale cursor would
-            // make its next call re-read whatever landed while it waited.
-            respond(
-                .answer(for: EventBatch.empty(at: graph.currentSequence)),
-                to: id,
-                thenClose: true
-            )
+    /// One place for the bookkeeping every resolution path shares, so `LongPoll`
+    /// itself never touches `connections` or the transport.
+    private func apply(_ answers: [LongPoll<DispatchWorkItem>.Answer]) {
+        for answer in answers {
+            if answer.restartIdleClock {
+                connections[answer.connection]?.lastRequest = Date()
+            }
+            respond(answer.response, to: answer.connection, thenClose: answer.close)
+            if answer.close {
+                connections[answer.connection] = nil
+            }
         }
     }
 
