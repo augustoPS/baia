@@ -64,9 +64,16 @@ package_deps() {
 # An exclusion is a claim that no probe needs the file. If one ever does, it
 # links `GhosttyTerminal` and stops being headless, which is a decision worth
 # making explicitly rather than discovering through a Metal crash.
+#
+# `PaneAppearance.swift` is the second such file (2026-09-02): it carries the
+# terminal theme and both terminal configurations, so it imports
+# `GhosttyTerminal` for the same reason `SettingsDerivations` does. The two
+# value types the overlay probes construct, `PaneLiftParameters` and
+# `PaneRimParameters`, live beside it in `PaneOverlayParameters.swift` with
+# `BaiaSettings` alone, precisely so this exclusion costs the probes nothing.
 package_excludes() {
   case "$1" in
-    PaneChrome) printf 'SettingsDerivations.swift' ;;
+    PaneChrome) printf 'SettingsDerivations.swift PaneAppearance.swift' ;;
     *)          printf '' ;;
   esac
 }
