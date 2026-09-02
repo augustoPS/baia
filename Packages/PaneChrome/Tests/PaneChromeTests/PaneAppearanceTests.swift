@@ -214,15 +214,26 @@ import Testing
     /// appended at zero, and nothing else: appending it after everything the
     /// flat configuration already renders is what makes the fold safe, since
     /// ghostty's config parser takes the last value it reads for a scalar key.
+    ///
+    /// Checked against the rendered configurations rather than by re-applying
+    /// `.backgroundOpacity(0)` to the flat one: that comparison restates
+    /// `make`'s own implementation and passes even if the fold were done some
+    /// other, wrong way that still composed with itself. `rendered` is one
+    /// ghostty config line per command (`TerminalConfiguration.rendered`,
+    /// upstream/libghostty-spm), so the rule under test, "exactly one line
+    /// appended, and it's the opacity", is pinned directly.
     @Test func glassClearDiffersFromFlatOnlyByBackgroundOpacity() {
         let appearance = PaneAppearance.make(
             settings: baseSettings, overrides: baseOverrides, materialIsDark: true, appearance: baseAppearance
         )
-        #expect(appearance.glassClearTerminalConfiguration != appearance.terminalConfiguration)
-        #expect(
-            appearance.glassClearTerminalConfiguration
-                == appearance.terminalConfiguration.backgroundOpacity(0)
-        )
+        let flat = appearance.terminalConfiguration.rendered.split(separator: "\n").map(String.init)
+        let clear = appearance.glassClearTerminalConfiguration.rendered.split(separator: "\n").map(String.init)
+        // The clear configuration is the flat one with one line appended, and
+        // that line is the opacity zeroing: ghostty takes the last value it
+        // reads for a scalar key, which is what makes the fold safe.
+        #expect(clear.count == flat.count + 1)
+        #expect(Array(clear.dropLast()) == flat)
+        #expect(clear.last?.hasPrefix("background-opacity =") == true)
     }
 
     // MARK: - Determinism

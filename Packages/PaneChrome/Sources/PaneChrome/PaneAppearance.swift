@@ -15,7 +15,9 @@ import GhosttyTerminal
 /// sites.** `draw(_:)` and `updateShadowPath()` both need the ring and the
 /// shadow reach, and a fallback spelled twice is a fallback that can be spelled
 /// two ways. It is also what keeps ``PaneLiftView`` free of any import beyond
-/// what it already has — `Diagnostics/footer-corners` compiles this file
+/// what it already has — a constraint described in `Sources/PaneOverlayView.swift`,
+/// which is no longer this file, since this type has since moved out of it;
+/// `Diagnostics/footer-corners` compiles that file
 /// verbatim against `PaneChrome`, `BaiaSettings` and `WorkspaceLayout` alone,
 /// and a `DesignOverrides` read inside the view would be a fourth edge that
 /// probe cannot link.
@@ -27,8 +29,9 @@ import GhosttyTerminal
 /// **Moved into `PaneChrome` from `Sources/PaneOverlayView.swift`** so
 /// ``PaneAppearance/make(settings:overrides:materialIsDark:appearance:)`` can carry a
 /// resolved value without reaching for an app-target type. Verbatim, with its
-/// doc comment; only the access level changed, from `struct`/`static`/`var` to
-/// `public`.
+/// doc comment; the access level changed, from `struct`/`static`/`var` to
+/// `public`, and `Sendable` was added on the move, since the type now crosses
+/// a module boundary it did not cross before.
 public struct PaneLiftParameters: Sendable, Equatable {
     public var enabled: Bool
     public var ringSpread: Double
@@ -39,6 +42,32 @@ public struct PaneLiftParameters: Sendable, Equatable {
     public var shadowDropBlur: Double
     public var shadowDropAlpha: Double
     public var duration: Double
+
+    /// Explicit, because a public struct's memberwise initializer is only
+    /// internal: `Diagnostics/override-wires/wiretest.swift:149` constructs
+    /// this type field by field from outside `PaneChrome`, across the module
+    /// boundary the move just crossed.
+    public init(
+        enabled: Bool,
+        ringSpread: Double,
+        ringAlpha: Double,
+        innerHighlightOffsetY: Double,
+        innerHighlightAlpha: Double,
+        shadowDropOffsetY: Double,
+        shadowDropBlur: Double,
+        shadowDropAlpha: Double,
+        duration: Double
+    ) {
+        self.enabled = enabled
+        self.ringSpread = ringSpread
+        self.ringAlpha = ringAlpha
+        self.innerHighlightOffsetY = innerHighlightOffsetY
+        self.innerHighlightAlpha = innerHighlightAlpha
+        self.shadowDropOffsetY = shadowDropOffsetY
+        self.shadowDropBlur = shadowDropBlur
+        self.shadowDropAlpha = shadowDropAlpha
+        self.duration = duration
+    }
 
     /// The constants, unmoved: what every pane draws until something is dialled.
     ///
@@ -95,7 +124,8 @@ public struct PaneLiftParameters: Sendable, Equatable {
 /// switch off independently of the one he asked for.
 ///
 /// Moved into `PaneChrome` alongside ``PaneLiftParameters``, for the same
-/// reason and verbatim but for access level.
+/// reason and verbatim but for access level, and `Sendable` was added on the
+/// move for the same reason as that type's: it now crosses a module boundary.
 public struct PaneRimParameters: Sendable, Equatable {
     public var enabled: Bool
 
@@ -108,6 +138,14 @@ public struct PaneRimParameters: Sendable, Equatable {
     /// machine in front of the owner and that machine is in one appearance at a
     /// time.
     public var topAlpha: Double
+
+    /// Explicit, for the same cross-module reason as ``PaneLiftParameters``'s:
+    /// the memberwise initializer a public struct gets for free is internal,
+    /// not public.
+    public init(enabled: Bool, topAlpha: Double) {
+        self.enabled = enabled
+        self.topAlpha = topAlpha
+    }
 
     /// The edge's thickness, in points: `inset 0 0.5px 0`. Not dialable, and
     /// deliberately so — it is a hairline the token names, and the override
