@@ -25,7 +25,7 @@ import GhosttyTerminal
 /// the hue: a coloured lift is a different effect, not this one turned up.
 ///
 /// **Moved into `PaneChrome` from `Sources/PaneOverlayView.swift`** so
-/// ``PaneAppearance/make(settings:overrides:isDarkAppearance:)`` can carry a
+/// ``PaneAppearance/make(settings:overrides:materialIsDark:appearance:)`` can carry a
 /// resolved value without reaching for an app-target type. Verbatim, with its
 /// doc comment; only the access level changed, from `struct`/`static`/`var` to
 /// `public`.
@@ -204,20 +204,25 @@ public struct PaneAppearance: Equatable {
         self.glassClearTerminalConfiguration = glassClearTerminalConfiguration
     }
 
-    /// Builds the value `settings` plus the debug design panel's `overrides`
-    /// and the live `isDarkAppearance` flag mean, from the derivations that
-    /// already exist on ``SettingsDerivations`` and
+    /// Builds the value `settings` plus the debug design panel's `overrides`,
+    /// the theme-derived `materialIsDark`, and the live `appearance` mean,
+    /// from the derivations that already exist on ``SettingsDerivations`` and
     /// ``resolvedStyle(setting:materialIsDark:appearance:)``.
     ///
-    /// `isDarkAppearance` is `AppearanceObserver.isDark` — the system's
-    /// effective appearance — passed straight through as both
-    /// `resolvedStyle`'s `materialIsDark` and its `ChromeAppearance.isDark`.
-    /// Reduce Transparency and Reduce Motion are not inputs here: this
-    /// function has no other source for them, and the accessibility gate they
-    /// carry stays live at the one call site that has the real
-    /// `AppearanceObserver` to read (``resolvedStyle(setting:materialIsDark:appearance:)``
-    /// still forces `.flat` under Reduce Transparency; this just cannot ask
-    /// for that flag itself).
+    /// **`materialIsDark` must be the theme-derived `windowIsDark`, never the
+    /// observer's own `isDark`.** `ConfigurationCenter.resolvedChrome`
+    /// (`Sources/ConfigurationCenter.swift:276-286`) states the invariant this
+    /// parameter carries: chrome matches the theme and never the system, so
+    /// the value passed here must be `windowIsDark(paneTheme:)`, the same
+    /// derivation `resolvedChrome` itself passes as `materialIsDark`. Passing
+    /// `appearance.isDark` instead would let a dark theme under a light system
+    /// appearance draw light glass, the exact mismatch that comment records.
+    ///
+    /// `appearance` still reaches ``resolvedStyle(setting:materialIsDark:appearance:)``
+    /// in full: Reduce Transparency keeps its authority there to force
+    /// `.flat` regardless of `materialIsDark`, and Reduce Motion rides along
+    /// on the same value for whatever downstream reads it, per
+    /// ``ChromeAppearance``'s own doc comment.
     ///
     /// `background-opacity` is appended after everything the terminal
     /// configuration already renders for ``glassClearTerminalConfiguration``,
@@ -226,16 +231,12 @@ public struct PaneAppearance: Equatable {
     public static func make(
         settings: Settings,
         overrides: DesignOverrides.Chrome,
-        isDarkAppearance: Bool
+        materialIsDark: Bool,
+        appearance: ChromeAppearance
     ) -> PaneAppearance {
-        let appearance = ChromeAppearance(
-            isDark: isDarkAppearance,
-            reduceTransparency: false,
-            reduceMotion: false
-        )
         let resolvedChrome = resolvedStyle(
             setting: settings.chromeStyle,
-            materialIsDark: isDarkAppearance,
+            materialIsDark: materialIsDark,
             appearance: appearance
         )
 

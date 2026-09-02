@@ -385,7 +385,7 @@ final class ConfigurationCenter {
     // **`terminalTheme`, `terminalConfiguration`, and
     // `glassClearTerminalConfiguration` stood here until this pane-appearance
     // deepening.** All three were folded into `PaneChrome.PaneAppearance`,
-    // built once by `PaneAppearance.make(settings:overrides:isDarkAppearance:)`
+    // built once by `PaneAppearance.make(settings:overrides:materialIsDark:appearance:)`
     // and carried on the value `apply(to:)` now hands the pane, because none
     // of the three had a reader outside that method: `grep` for each name
     // across `Sources/` found only `ConfigurationCenter.swift` itself. See
@@ -501,13 +501,18 @@ final class ConfigurationCenter {
     /// comments this method used to carry one assignment at a time now live
     /// on `TerminalPaneController.apply(_:)`, next to the lines they explain.
     ///
-    /// `isDarkAppearance: appearanceObserver.appearance.isDark` is the one
-    /// live input `PaneAppearance.make` cannot derive from `Settings` alone.
+    /// `materialIsDark: windowIsDark` and `appearance: appearanceObserver.appearance`
+    /// are the two live inputs `PaneAppearance.make` cannot derive from
+    /// `Settings` alone. Passing `windowIsDark` here, the same value
+    /// ``resolvedChrome`` above passes, is what keeps a pane's glass and the
+    /// window chrome around it on one derivation: both come from the theme,
+    /// never from the system's own appearance.
     private func apply(to pane: TerminalPaneController) {
         pane.apply(PaneAppearance.make(
             settings: effectiveSettings,
             overrides: chromeOverrides,
-            isDarkAppearance: appearanceObserver.appearance.isDark
+            materialIsDark: windowIsDark,
+            appearance: appearanceObserver.appearance
         ))
     }
 
