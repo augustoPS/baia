@@ -168,6 +168,11 @@ final class ControlAdapter: ControlWorkspaceBridge {
         return placed.pane.readScreenLines()
     }
 
+    func explain(_ pane: ControlPaneID) -> PaneExplanation? {
+        guard let placed = placement(of: pane) else { return nil }
+        return placed.pane.explain(paneID: pane.description)
+    }
+
     /// Puts one pane beside another, both of them already authorised.
     ///
     /// **One window, and the refusal for two is not a refusal this type invents.**
@@ -258,7 +263,7 @@ final class ControlAdapter: ControlWorkspaceBridge {
             return accept(report: args, on: placed)
 
         case .whoami, .list, .peers, .publish, .connect, .send, .recv, .subscribe, .revoke, .run,
-             .read, .move, .layoutExport, .layoutApply:
+             .read, .move, .layoutExport, .layoutApply, .explain:
             // Unreachable: the server routes these to the graph, or to one of the
             // bridge's other methods, and never here. The arm exists because the
             // switch has no `default:` and never will.

@@ -3,6 +3,7 @@ import BaiaSettings
 import GhosttyTerminal
 import GitWorkspace
 import os
+import PaneActivity
 import PaneChrome
 import PaneControl
 import PaneSearch
@@ -1505,6 +1506,66 @@ final class TerminalPaneController: NSViewController {
         reports.accept(report)
         pushReportToTracker()
         activityTracker.onChange?()
+    }
+
+    /// What `baia explain` answers about this pane. Values copied across, no
+    /// decision made: the reasons are the packages' own words, the report is
+    /// the store's last statement with its liveness read now, and the attention
+    /// word is the one `PaneRecord.attention` shows.
+    func explain(paneID: String) -> PaneExplanation {
+        let now = Date()
+        let (activity, attention) = activityTracker.explain()
+        let report = reports.last.map { held in
+            PaneExplanation.Report(
+                state: held.state,
+                message: held.message,
+                seq: held.seq,
+                live: reports.live(at: now) != nil,
+                secondsLeft: Int(held.expires.timeIntervalSince(now).rounded(.down))
+            )
+        }
+        let reading: String = switch activity?.activity {
+        case .none: "cannot tell"
+        case .idleShell: "idle"
+        case .unnameable: "cannot tell"
+        case .agent, .build, .command: "running"
+        }
+        return PaneExplanation(
+            pane: paneID,
+            hasForeground: activity != nil,
+            processes: (activity?.processes ?? []).map { verdict in
+                PaneExplanation.Process(
+                    pid: verdict.pid,
+                    parentPid: verdict.parentPid,
+                    depth: verdict.depth,
+                    matched: verdict.matched,
+                    verdict: Self.word(for: verdict.verdict),
+                    won: verdict.won
+                )
+            },
+            activity: activity?.activity.label,
+            activityReading: reading,
+            activityReason: activity?.reason
+                ?? "the pane has no foreground process right now, which the poll skips rather than reading as idle",
+            report: report,
+            latch: attention.latch.name,
+            seen: attention.seen,
+            attention: PaneStatus.Attention.name(of: lastAttention),
+            attentionDecidedBy: attention.authority.rawValue,
+            attentionReason: attention.reason
+        )
+    }
+
+    private static func word(for verdict: ActivityExplanation.Verdict) -> String {
+        switch verdict {
+        case .paneShell: "pane shell"
+        case .shell: "shell"
+        case .agent: "agent"
+        case .build: "build"
+        case .command: "command"
+        case .unnameable: "unnameable"
+        case .outsidePane: "outside the pane"
+        }
     }
 
     /// Hands authority back to the pollers and publishes whatever they now say.

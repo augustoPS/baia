@@ -71,6 +71,13 @@ protocol ControlWorkspaceBridge: AnyObject {
     /// `ScreenRead.tail`, which is pure and tested.
     func readLines(from pane: ControlPaneID) -> [String]?
 
+    /// Why `list` says what it says about `pane`, or nil when no window holds it.
+    ///
+    /// Scoped before the call, like ``record(for:)``: the server resolved the
+    /// target through the one resolver and an implementation explains whatever
+    /// it is asked about.
+    func explain(_ pane: ControlPaneID) -> PaneExplanation?
+
     /// Puts one pane beside another, and answers with the frame the caller gets.
     ///
     /// **Both ids arrive authorised**, each one run past the resolver separately,

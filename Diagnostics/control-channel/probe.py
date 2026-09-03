@@ -55,7 +55,7 @@ UUID_PATTERN = re.compile(
 VERBS = [
     "split", "close", "focus", "zoom", "resize", "equalize",
     "whoami", "list", "publish", "connect", "peers", "send", "recv", "revoke", "run",
-    "subscribe", "layout-export", "layout-apply",
+    "subscribe", "layout-export", "layout-apply", "explain",
 ]
 
 
@@ -182,6 +182,13 @@ class Probe:
         if not isinstance(records, list):
             return None
         return sorted(record.get("pane") for record in records)
+
+    @staticmethod
+    def explained_pane(response):
+        explanation = (response.get("result") or {}).get("explanation")
+        if not isinstance(explanation, dict):
+            return None
+        return explanation.get("pane")
 
     @staticmethod
     def events(response):
@@ -707,6 +714,21 @@ def main():
         "whoami still names one pane after that pane has created another",
         probe.named_panes(probe.request(live[alpha], "whoami")),
         [alpha],
+    )
+    probe.check(
+        "explain with no target explains the calling pane",
+        probe.explained_pane(probe.request(live[alpha], "explain")),
+        alpha,
+    )
+    probe.check(
+        "explain names a pane the caller created",
+        probe.explained_pane(probe.request(live[alpha], "explain", {"peer": child})),
+        child,
+    )
+    probe.check(
+        "explain on a pane outside the caller's scope is unauthorized",
+        probe.code(probe.request(live[alpha], "explain", {"peer": bravo})),
+        "unauthorized",
     )
 
     print()

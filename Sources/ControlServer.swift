@@ -530,6 +530,9 @@ final class ControlServer {
         case .list:
             introspect(request, on: id, subjects: { self.graph.scope(of: $0) })
 
+        case .explain:
+            explain(request, on: id)
+
         case .peers:
             introspect(request, on: id, subjects: { actor in
                 self.graph.peers(of: actor).sorted { $0.description < $1.description }
@@ -630,6 +633,37 @@ final class ControlServer {
                 .success(ControlResult(lines: answer.lines, truncated: answer.truncated)),
                 to: id
             )
+        }
+    }
+
+    /// `list`'s evidence for one pane. Routed like `read` and scoped like `list`.
+    ///
+    /// No target means the caller, which `authorize` resolves as `target ?? actor`
+    /// for `.scopedRead`. A malformed id is `unauthorized` and not `badFrame`, for
+    /// `read`'s reason: a caller able to tell a malformed id from an out-of-scope
+    /// one could probe the shape of the namespace.
+    private func explain(_ request: ControlRequest, on id: Int) {
+        var target: ControlPaneID?
+        if let named = request.args.peer {
+            guard let parsed = ControlPaneID(uuidString: named) else {
+                respond(.failure(.unauthorized, "no pane you may explain"), to: id)
+                return
+            }
+            target = parsed
+        }
+        switch graph.authorize(token: request.token, verb: .explain, target: target) {
+        case let .denied(error):
+            respond(ControlResponse.failure(error), to: id)
+        case let .allowed(_, subject):
+            guard let bridge else {
+                respond(.failure(.internal, "baia has no workspace to explain"), to: id)
+                return
+            }
+            guard let explanation = bridge.explain(subject) else {
+                respond(.failure(.refused, "no window holds that pane yet"), to: id)
+                return
+            }
+            respond(.success(ControlResult(explanation: explanation)), to: id)
         }
     }
 

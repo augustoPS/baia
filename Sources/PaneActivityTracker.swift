@@ -244,6 +244,21 @@ final class PaneActivityTracker {
         }
     }
 
+    /// The evidence behind ``classifiedLabel`` and ``wantsAttention``, read now.
+    ///
+    /// **A fresh snapshot rather than the last poll's**, because the poll keeps
+    /// only its conclusion and a two-second-old tree would explain a label the
+    /// pane may no longer show. Nil activity is the same window ``poll()`` skips:
+    /// no foreground process, or no shell above it, which is mid-exec and not
+    /// idle. Read-only: nothing here moves `activity` or the latch.
+    func explain() -> (activity: ActivityExplanation?, attention: AttentionExplanation) {
+        let attention = self.attention.explanation
+        guard let foreground = foregroundPid() else { return (nil, attention) }
+        let tree = ProcessTree.snapshot(under: ProcessInfo.processInfo.processIdentifier)
+        guard let shell = ProcessTree.shellPid(above: foreground, in: tree) else { return (nil, attention) }
+        return (PaneActivityClassifier.explain(tree: tree, shellPid: shell), attention)
+    }
+
     private func paneAgent() -> PaneStatus.Agent? {
         let label = activity.label
         let attention = resolvedAttention
