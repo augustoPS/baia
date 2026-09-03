@@ -354,6 +354,72 @@ import Testing
         #expect(Rendering.render(ControlResult(), for: try call("layout", "apply")).isEmpty)
     }
 
+    // MARK: explain
+
+    private func explanation(
+        hasForeground: Bool = true,
+        report: PaneExplanation.Report? = PaneExplanation.Report(state: .blocked, message: "which branch?", seq: 17, live: true, secondsLeft: 240)
+    ) -> PaneExplanation {
+        PaneExplanation(
+            pane: "pane-1",
+            hasForeground: hasForeground,
+            processes: hasForeground ? [
+                PaneExplanation.Process(pid: 100, parentPid: 10, depth: 0, matched: nil, verdict: "pane shell", won: false),
+                PaneExplanation.Process(pid: 200, parentPid: 100, depth: 1, matched: "claude", verdict: "agent", won: true),
+                PaneExplanation.Process(pid: 300, parentPid: 200, depth: 2, matched: "npm", verdict: "build", won: false),
+            ] : [],
+            activity: "claude",
+            activityReading: "running",
+            activityReason: "claude won as the agent at depth 1 (pid 200)",
+            report: report,
+            latch: "none",
+            seen: false,
+            attention: "asking",
+            attentionDecidedBy: "report",
+            attentionReason: "the pane reported blocked and the owner has not been in the pane since"
+        )
+    }
+
+    /// Every line on stdout, the same labelled-row shape `list` uses, and the
+    /// two reasons under the field they explain.
+    @Test func explainRendersTheEvidenceAndTheReasonsOnStdout() throws {
+        let lines = Rendering.render(result(explanation: explanation()), for: try call("explain"))
+        #expect(lines.allSatisfy { $0.stream == .out })
+        let text = lines.map(\.text)
+        #expect(text.contains("pane       pane-1"))
+        #expect(text.contains("activity   claude"))
+        #expect(text.contains { $0.contains("claude won as the agent") })
+        #expect(text.contains { $0.contains("200") && $0.contains("agent") && $0.contains("claude") && $0.contains("won") })
+        #expect(text.contains { $0.contains("300") && $0.contains("build") && $0.contains("npm") && !$0.contains("won") })
+        #expect(text.contains { $0.hasPrefix("report     blocked") && $0.contains("which branch?") && $0.contains("seq 17") && $0.contains("240s") })
+        #expect(text.contains("latch      none"))
+        #expect(text.contains("seen       no"))
+        #expect(text.contains("attention  asking"))
+        #expect(text.contains { $0.contains("authority: report") })
+        #expect(text.contains { $0.contains("reported blocked") })
+    }
+
+    @Test func explainSaysWhenThereIsNoReportAndWhenThereIsNoForeground() throws {
+        let none = Rendering.render(result(explanation: explanation(report: nil)), for: try call("explain"))
+        #expect(none.map(\.text).contains("report     none"))
+
+        let blind = Rendering.render(result(explanation: explanation(hasForeground: false)), for: try call("explain"))
+        #expect(blind.map(\.text).contains { $0.contains("no foreground process") })
+    }
+
+    @Test func anExpiredReportIsShownAsExpired() throws {
+        let expired = PaneExplanation.Report(state: .idle, message: nil, seq: 3, live: false, secondsLeft: 0)
+        let lines = Rendering.render(result(explanation: explanation(report: expired)), for: try call("explain"))
+        #expect(lines.map(\.text).contains { $0.hasPrefix("report     idle") && $0.contains("expired") })
+    }
+
+    @Test func explainJsonIsTheWireObject() throws {
+        let lines = Rendering.render(result(explanation: explanation()), for: try call("explain", "--json"))
+        #expect(lines.count == 1)
+        #expect(lines[0].stream == .out)
+        #expect(lines[0].text.contains("\"attentionDecidedBy\""))
+    }
+
     // MARK: Fixtures
 
     private func rendered(_ verb: String, _ result: ControlResult) -> [String] {
@@ -389,7 +455,8 @@ import Testing
         dropped: Int? = nil,
         events: [ControlEvent]? = nil,
         gap: Bool? = nil,
-        seq: UInt64? = nil
+        seq: UInt64? = nil,
+        explanation: PaneExplanation? = nil
     ) -> ControlResult {
         ControlResult(
             pane: pane,
@@ -402,7 +469,8 @@ import Testing
             dropped: dropped,
             events: events,
             gap: gap,
-            seq: seq
+            seq: seq,
+            explanation: explanation
         )
     }
 

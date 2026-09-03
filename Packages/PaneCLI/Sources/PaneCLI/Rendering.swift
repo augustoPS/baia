@@ -124,6 +124,41 @@ public enum Rendering {
                 out("seq \(seq)")
             }
 
+        // One field per line like `list`, with a reason line under each derived
+        // field. Everything on stdout: this is the answer, and there is no note
+        // to keep off a pipe.
+        case .explain:
+            guard let e = result.explanation else { break }
+            out(row("pane", e.pane))
+            out(row("activity", e.activity ?? (e.activityReading == "cannot tell" ? "cannot tell" : "idle")))
+            out(row("", e.activityReason))
+            if e.hasForeground {
+                out(row("processes", "pid  ppid  depth  verdict  matched"))
+                for p in e.processes {
+                    let depth = p.depth.map(String.init) ?? "-"
+                    var line = "  \(p.pid)  \(p.parentPid)  \(depth)  \(p.verdict)"
+                    if let token = p.matched { line += "  \(token)" }
+                    if p.won { line += "  (won)" }
+                    out(row("", line))
+                }
+            } else {
+                out(row("processes", "none: the pane has no foreground process right now, which the poll skips rather than reading as idle"))
+            }
+            if let r = e.report {
+                var line = r.state.rawValue
+                if let message = r.message { line += " \"\(message)\"" }
+                if let seq = r.seq { line += "  seq \(seq)" }
+                line += r.live ? "  live, \(r.secondsLeft)s left" : "  expired"
+                out(row("report", line))
+            } else {
+                out(row("report", "none"))
+            }
+            out(row("latch", e.latch))
+            out(row("seen", e.seen ? "yes" : "no"))
+            out(row("attention", e.attention ?? "none"))
+            out(row("", "authority: \(e.attentionDecidedBy)"))
+            out(row("", e.attentionReason))
+
         case .publish:
             if let ticket = result.rendezvous {
                 out(ticket)

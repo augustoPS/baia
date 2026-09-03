@@ -252,6 +252,25 @@ import PaneControl
 
     // MARK: Introspection
 
+    /// Bare, it explains the caller: the target stays nil and the server resolves
+    /// `target ?? actor`. A typo cannot become oneself, because the target is set
+    /// only from an operand that was typed.
+    @Test func explainDefaultsToTheCallingPane() {
+        let call = invocation(Arguments.parse(["explain"]))
+        #expect(call?.verb == .explain)
+        #expect(call?.args.peer == nil)
+    }
+
+    @Test func explainTakesAPaneAndJson() {
+        let call = invocation(Arguments.parse(["explain", "pane-2", "--json"]))
+        #expect(call?.args.peer == "pane-2")
+        #expect(call?.json == true)
+    }
+
+    @Test func explainRefusesTwoPanes() {
+        #expect(isUsage(Arguments.parse(["explain", "pane-1", "pane-2"])))
+    }
+
     @Test func whoamiAndPeersTakeOnlyJson() {
         for verb in ["whoami", "peers"] {
             #expect(invocation(Arguments.parse([verb]))?.json == false)

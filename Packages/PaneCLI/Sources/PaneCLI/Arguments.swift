@@ -406,6 +406,24 @@ public enum Arguments {
                 return .usage("--tree and --json render the same records two ways. Pick one.")
             }
 
+        case .explain:
+            // One optional positional. Optional where `read`'s is required, and
+            // the case comment on `ControlVerb.explain` says why: nothing typed
+            // means the caller, and a typo is `unauthorized`, never oneself.
+            while let token = tokens.take() {
+                switch token {
+                case "--json":
+                    call.json = true
+                case _ where token.hasPrefix("--"):
+                    return .usage(unexpected(token, verb))
+                default:
+                    guard call.args.peer == nil else {
+                        return .usage("explain takes one pane")
+                    }
+                    call.args.peer = token
+                }
+            }
+
         case .publish:
             while let token = tokens.take() {
                 switch token {
