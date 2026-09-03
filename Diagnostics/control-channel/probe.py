@@ -191,6 +191,30 @@ class Probe:
         return explanation.get("pane")
 
     @staticmethod
+    def explanation_shape(response):
+        """More than the echoed id: the fields a body-blind check would miss.
+
+        `explained_pane` alone passes for a wrong body from the wrong pane, an
+        empty reason, or a deleted malformed-id arm, because the id it reads is
+        the one the adapter fills from the request rather than from what it
+        found. This reads the fields that only exist if `explain` actually ran:
+        the three-way activity reading, the attention authority word, and both
+        reasons being non-empty prose.
+        """
+        explanation = (response.get("result") or {}).get("explanation")
+        if not isinstance(explanation, dict):
+            return None
+        return (
+            explanation.get("pane"),
+            isinstance(explanation.get("hasForeground"), bool),
+            explanation.get("activityReading") in ("running", "idle", "cannot tell"),
+            isinstance(explanation.get("attentionDecidedBy"), str)
+            and explanation["attentionDecidedBy"] in ("report", "latch", "none"),
+            bool(explanation.get("activityReason")),
+            bool(explanation.get("attentionReason")),
+        )
+
+    @staticmethod
     def events(response):
         """The events a `subscribe` answered with, or None when it answered none.
 
@@ -591,14 +615,12 @@ def main():
     # The scope decision, stated as a count rather than as a path. The three
     # seeded panes are the owner's and share one directory, so what separates a
     # correct export from a leaking one here is how many leaves carry it.
+    carrying = [leaf["cwd"] for leaf in panes_in_document if leaf.get("cwd")]
     probe.check(
         "and exactly one of them carries a working directory, which is alpha's own",
         [
-            len([leaf for leaf in panes_in_document if leaf.get("cwd")]),
-            probe.same_path(
-                next(leaf["cwd"] for leaf in panes_in_document if leaf.get("cwd")),
-                probe.scratch,
-            ),
+            len(carrying),
+            probe.same_path(carrying[0], probe.scratch) if carrying else False,
         ],
         [1, True],
     )
@@ -717,17 +739,22 @@ def main():
     )
     probe.check(
         "explain with no target explains the calling pane",
-        probe.explained_pane(probe.request(live[alpha], "explain")),
-        alpha,
+        probe.explanation_shape(probe.request(live[alpha], "explain")),
+        (alpha, True, True, True, True, True),
     )
     probe.check(
         "explain names a pane the caller created",
-        probe.explained_pane(probe.request(live[alpha], "explain", {"peer": child})),
-        child,
+        probe.explanation_shape(probe.request(live[alpha], "explain", {"peer": child})),
+        (child, True, True, True, True, True),
     )
     probe.check(
         "explain on a pane outside the caller's scope is unauthorized",
         probe.code(probe.request(live[alpha], "explain", {"peer": bravo})),
+        "unauthorized",
+    )
+    probe.check(
+        "explain on a malformed id is unauthorized, the same answer as out of scope",
+        probe.code(probe.request(live[alpha], "explain", {"peer": "not-a-uuid"})),
         "unauthorized",
     )
 
