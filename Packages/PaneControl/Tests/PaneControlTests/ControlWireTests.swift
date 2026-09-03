@@ -31,6 +31,9 @@ import Testing
         case .cwd: ControlArgs(cwd: "/Users/x/Projects/website")
         case .whoami: ControlArgs()
         case .list: ControlArgs()
+        // Optional, unlike `read`'s use of the same field: an absent `peer` means
+        // "explain me", not a typo that silently became a read of oneself.
+        case .explain: ControlArgs(peer: paneID)
         case .publish: ControlArgs(name: "reviewer", rotate: true)
         case .connect: ControlArgs(name: "reviewer", rendezvous: "an-admission-ticket")
         case .peers: ControlArgs()

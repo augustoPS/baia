@@ -107,7 +107,33 @@ import Testing
                 first: .pane(cwd: "/Users/x/Projects/baia"),
                 second: .pane(cwd: nil)
             ),
-        ])
+        ]),
+        // `explain`'s answer: list's two derived fields with their evidence,
+        // which goes through the same walk as everything else that names a
+        // process or quotes a pane's own words.
+        explanation: PaneExplanation(
+            pane: paneID,
+            hasForeground: true,
+            processes: [
+                PaneExplanation.Process(
+                    pid: 100, parentPid: 10, depth: 0, matched: nil, verdict: "pane shell", won: false
+                ),
+                PaneExplanation.Process(
+                    pid: 200, parentPid: 100, depth: 1, matched: "claude", verdict: "agent", won: true
+                ),
+            ],
+            activity: "claude",
+            activityReading: "running",
+            activityReason: "the winning process matched an agent token",
+            report: PaneExplanation.Report(
+                state: .blocked, message: "which branch?", seq: 17, live: true, secondsLeft: 240
+            ),
+            latch: "none",
+            seen: false,
+            attention: "asking",
+            attentionDecidedBy: "report",
+            attentionReason: "the live report is blocked"
+        )
     )
 
     static let error = ControlError(code: .refused, message: "why it failed")
@@ -133,6 +159,13 @@ import Testing
         // contents. If these two rows ever disappear, the descent broke.
         "(cwd: Optional<String>)",
         "(axis: ControlAxis, ratio: Double, first: ControlLayoutNode, second: ControlLayoutNode)",
+        "PaneExplanation",
+        // Reflection spells a nested type by its bare name rather than
+        // `PaneExplanation.Process` or `PaneExplanation.Report`, so that is the
+        // spelling pinned here, read off the walk's own failure rather than
+        // guessed.
+        "Process",
+        "Report",
     ]
 
     // MARK: Reflection
@@ -353,6 +386,13 @@ import Testing
         assertFullyPopulated(ControlMessage(from: Self.paneID, text: "a body"), "ControlMessage")
         assertFullyPopulated(Self.event, "ControlEvent")
         assertFullyPopulated(Self.error, "ControlError")
+        guard let explanation = Self.result.explanation, let report = explanation.report else {
+            Issue.record("the sample explanation is missing a field the walk needs populated")
+            return
+        }
+        assertFullyPopulated(explanation, "PaneExplanation")
+        assertFullyPopulated(explanation.processes[1], "PaneExplanation.Process")
+        assertFullyPopulated(report, "PaneExplanation.Report")
     }
 
     func assertFullyPopulated(_ value: some Encodable, _ name: String) {

@@ -149,6 +149,9 @@ public struct ControlResult: Sendable, Equatable, Codable {
     /// no directory on it.
     public var layout: ControlLayout?
 
+    /// `explain`: `list`'s derived fields with their evidence.
+    public var explanation: PaneExplanation?
+
     public init(
         pane: String? = nil,
         name: String? = nil,
@@ -163,7 +166,8 @@ public struct ControlResult: Sendable, Equatable, Codable {
         seq: UInt64? = nil,
         lines: [String]? = nil,
         truncated: Bool? = nil,
-        layout: ControlLayout? = nil
+        layout: ControlLayout? = nil,
+        explanation: PaneExplanation? = nil
     ) {
         self.pane = pane
         self.name = name
@@ -179,6 +183,7 @@ public struct ControlResult: Sendable, Equatable, Codable {
         self.lines = lines
         self.truncated = truncated
         self.layout = layout
+        self.explanation = explanation
     }
 }
 

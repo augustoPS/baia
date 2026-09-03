@@ -247,6 +247,7 @@ import Testing
         .subscribe: selfOnlyRow,
         .layoutApply: selfOnlyRow,
         .list: scopedReadRow,
+        .explain: scopedReadRow,
         .layoutExport: scopedReadRow,
         .send: peerEdgeRow,
         .revoke: peerEdgeRow,

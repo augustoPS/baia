@@ -139,4 +139,14 @@ import Testing
         store.release()
         #expect(store.accept(report(.idle, seq: 6)) == .superseded)
     }
+
+    @Test func theLastStatementSurvivesExpiryAndRelease() {
+        var store = ReportStore()
+        let report = PaneReport(state: .blocked, message: "m", seq: 1, expires: Date(timeIntervalSinceNow: 60))
+        _ = store.accept(report)
+        store.release()
+        #expect(store.live(at: Date()) == nil)
+        #expect(store.last?.state == .blocked)
+        #expect(store.last?.seq == 1)
+    }
 }

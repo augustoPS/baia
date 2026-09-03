@@ -43,6 +43,25 @@ public enum ControlVerb: String, Sendable, Hashable, Codable, CaseIterable {
     case whoami
     case list
 
+    /// Why `list` says what it says about one pane.
+    ///
+    /// **Read-only, and scoped exactly like `list`**, because its answer is
+    /// `list`'s two derived fields with their evidence attached: the process
+    /// tree the activity came from, the pane's last report, and the rule that
+    /// decided the attention word. No screen content, so no key of its own; no
+    /// pane it could not already name.
+    ///
+    /// Takes an optional target, unlike `read`, which requires one. `read`
+    /// refuses to default because a typo in an id would silently become a read
+    /// of oneself. Here a typo cannot: the CLI sets the target only when an
+    /// operand was typed, a malformed operand answers `unauthorized`, and the
+    /// question "why does my own pane read like this" is the common one.
+    ///
+    /// The answer is one line per process and carries the *token* the classifier
+    /// matched, never the full command line. A peer agreed to be listed, not to
+    /// have its argv read, and argv is where a `curl -H` puts its secret.
+    case explain
+
     // Peering, a communication edge rather than a control edge.
     case publish
     case connect
@@ -185,8 +204,9 @@ public enum ControlVerb: String, Sendable, Hashable, Codable, CaseIterable {
         // Read-only, and scoped exactly like `list` because half its answer *is*
         // `list`'s: a working directory goes out only for a pane `list` would
         // already name. The other half is the window's shape, which carries no id
-        // and no directory. Argued in full on the case itself.
-        case .list, .layoutExport:
+        // and no directory. Argued in full on the case itself. And `explain`,
+        // whose whole answer is `list`'s evidence.
+        case .list, .layoutExport, .explain:
             .scopedRead
         // The first verb to exercise `.descendant` for anything. The scope has
         // been implemented and correct since v1 with no consumer; `run` declares
@@ -212,7 +232,7 @@ public enum ControlVerb: String, Sendable, Hashable, Codable, CaseIterable {
         switch self {
         case .split, .close, .focus, .zoom, .resize, .equalize, .move,
              .whoami, .list, .publish, .connect, .peers, .send, .recv, .revoke,
-             .subscribe, .cwd, .report, .layoutExport, .layoutApply:
+             .subscribe, .cwd, .report, .layoutExport, .layoutApply, .explain:
             .channel
         case .read:
             .allowRead

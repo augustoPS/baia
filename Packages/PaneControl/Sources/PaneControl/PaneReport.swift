@@ -116,4 +116,8 @@ public struct ReportStore: Sendable, Equatable {
         guard let held, held.expires > now else { return nil }
         return held
     }
+
+    /// The last accepted statement, live or not. Evidence for `explain`, which
+    /// has to show an expired report to say why the pollers have authority now.
+    public var last: PaneReport? { held }
 }

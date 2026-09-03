@@ -22,6 +22,7 @@ import Testing
             .cwd: "cwd",
             .whoami: "whoami",
             .list: "list",
+            .explain: "explain",
             .publish: "publish",
             .connect: "connect",
             .peers: "peers",
@@ -87,6 +88,8 @@ import Testing
             // Scoped exactly like `list` because half its answer is `list`'s: a
             // working directory goes out only for a pane `list` would name.
             .layoutExport: .scopedRead,
+            // list's two fields with their evidence, so list's scope.
+            .explain: .scopedRead,
             .send: .peerEdge,
             .revoke: .peerEdge,
             .run: .descendant,
