@@ -83,6 +83,46 @@ public struct PaneAttentionState: Sendable, Equatable {
             .overridden(byReportedFinish: reportedFinish == true && reported != true, seen: seen)
     }
 
+    /// ``attention`` with its inputs and the rule that won.
+    ///
+    /// **Resolved from the same four facts and nothing else**, so `resolved` here
+    /// is `attention` on every path. The reasons restate the rules on
+    /// `overridden(byReportedBlock:message:seen:)` and
+    /// `overridden(byReportedFinish:seen:)` in the words a pane's owner reads,
+    /// and the authority is the first of the three facts the resolution consults:
+    /// a report of any state outranks the latch, and the latch outranks nothing.
+    public var explanation: AttentionExplanation {
+        let resolved = attention
+        let visit = seen ? "the owner has been in the pane since" : "the owner has not been in the pane since"
+        let authority: AttentionExplanation.Authority
+        let reason: String
+        if reported == true {
+            authority = .report
+            let quoted = reportedMessage.map { " (\"\($0)\")" } ?? ""
+            reason = "the pane reported blocked\(quoted) and \(visit), so it reads as \(resolved.name)"
+        } else if reportedFinish == true {
+            authority = .report
+            reason = seen
+                ? "the pane reported idle and has been seen since, so the finish is over and it reads as \(resolved.name)"
+                : "the pane reported idle and has not been seen since, so it reads as done"
+        } else if reported == false {
+            authority = .report
+            let silenced = current == .none ? "" : ", which silences the \(current.name) request the latch holds from a bell or a notification"
+            reason = "the pane reported working\(silenced), so it reads as \(resolved.name)"
+        } else if current != .none {
+            authority = .latch
+            reason = "a bell or a notification raised it and \(visit), so it reads as \(resolved.name)"
+        } else {
+            authority = .none
+            reason = "nothing has asked: no report, and no bell or notification"
+        }
+        return AttentionExplanation(
+            latch: current, reportedBlock: reported, reportedFinish: reportedFinish,
+            reportedMessage: reportedMessage, seen: seen, resolved: resolved,
+            authority: authority, reason: reason
+        )
+    }
+
     /// Records what the pane says about itself.
     ///
     /// Returns true when the resolved attention moved, which is the same contract

@@ -79,6 +79,16 @@ public enum PaneAttention: Sendable, Equatable {
         case let .requested(message), let .acknowledged(message): message
         }
     }
+
+    /// The case as a word, for a reader and never for a comparison.
+    public var name: String {
+        switch self {
+        case .none: "none"
+        case .requested: "requested"
+        case .acknowledged: "acknowledged"
+        case .done: "done"
+        }
+    }
 }
 
 public extension PaneAttention {

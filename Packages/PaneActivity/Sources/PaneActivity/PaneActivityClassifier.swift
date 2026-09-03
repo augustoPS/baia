@@ -25,39 +25,99 @@ public enum PaneActivityClassifier {
     ///    the answer does not depend on array order. ``ProcessTree`` builds
     ///    its array by walking a dictionary, so that order is not stable
     ///    across calls.
+    ///
+    /// Defined as the answer of ``explain(tree:shellPid:)``, so the evidence
+    /// and the verdict come from one loop.
     public static func classify(tree: [ProcessSnapshot], shellPid: pid_t) -> PaneActivity {
+        explain(tree: tree, shellPid: shellPid).activity
+    }
+
+    /// The same walk as ``classify(tree:shellPid:)`` with the evidence kept.
+    public static func explain(tree: [ProcessSnapshot], shellPid: pid_t) -> ActivityExplanation {
         let depths = depthsBelow(shellPid, in: tree)
         var best: Candidate?
+        var contenders = 0
         // Something ran that yielded no identifying token at all. Distinct from a
         // nested shell, which `candidate(_:)` also rejects and which really is
         // idle; only this one means the classifier could not tell.
         var sawUnnameable = false
+        var sawShellBelow = false
+        var verdicts: [ActivityExplanation.ProcessVerdict] = []
+
         for process in tree {
             // The pane's own shell is idle by definition, and it is excluded by
             // pid rather than by name. baia hands over the pid it spawned, so a
             // pane running a shell that is not in `shellNames` must still read
             // as idle rather than as permanently running a command called `nu`.
-            guard process.pid != shellPid, let depth = depths[process.pid] else { continue }
-            guard let (rank, activity) = candidate(process) else {
-                if identifyingTokens(of: process).isEmpty { sawUnnameable = true }
+            if process.pid == shellPid {
+                verdicts.append(.init(pid: process.pid, parentPid: process.parentPid, depth: 0, matched: nil, verdict: .paneShell, won: false))
                 continue
             }
-            let contender = Candidate(
-                rank: rank,
-                depth: depth,
-                pid: process.pid,
-                activity: activity
-            )
+            guard let depth = depths[process.pid] else {
+                verdicts.append(.init(pid: process.pid, parentPid: process.parentPid, depth: nil, matched: nil, verdict: .outsidePane, won: false))
+                continue
+            }
+            let tokens = identifyingTokens(of: process)
+            guard let (rank, activity) = candidate(process) else {
+                if tokens.isEmpty {
+                    sawUnnameable = true
+                    verdicts.append(.init(pid: process.pid, parentPid: process.parentPid, depth: depth, matched: nil, verdict: .unnameable, won: false))
+                } else {
+                    sawShellBelow = true
+                    let shell = tokens.first { shellNames.contains($0) }
+                    verdicts.append(.init(pid: process.pid, parentPid: process.parentPid, depth: depth, matched: shell, verdict: .shell, won: false))
+                }
+                continue
+            }
+            let (verdict, matched): (ActivityExplanation.Verdict, String) = switch activity {
+            case let .agent(name, _): (.agent(name: name), name)
+            case let .build(command): (.build(command: command), command)
+            case let .command(name): (.command(name: name), name)
+            case .idleShell, .unnameable: (.shell, tokens.first ?? "")  // unreachable: `candidate` never returns these
+            }
+            verdicts.append(.init(pid: process.pid, parentPid: process.parentPid, depth: depth, matched: matched, verdict: verdict, won: false))
+            contenders += 1
+            let contender = Candidate(rank: rank, depth: depth, pid: process.pid, activity: activity)
             guard let incumbent = best else {
                 best = contender
                 continue
             }
             if contender.beats(incumbent) { best = contender }
         }
+
+        verdicts.sort { a, b in
+            switch (a.depth, b.depth) {
+            case let (x?, y?): x != y ? x < y : a.pid < b.pid
+            case (nil, nil): a.pid < b.pid
+            case (nil, _): false
+            case (_, nil): true
+            }
+        }
+
         // Idle means nothing is running. Nothing *nameable* running is a
-        // different fact, and it now says so instead of borrowing this answer.
-        if let best { return best.activity }
-        return sawUnnameable ? .unnameable : .idleShell
+        // different fact, and it says so instead of borrowing this answer.
+        guard let best else {
+            let activity: PaneActivity = sawUnnameable ? .unnameable : .idleShell
+            let reason: String = if sawUnnameable {
+                "something is running below the pane's shell that yielded no identifying token, so the classifier cannot tell what it is"
+            } else if sawShellBelow {
+                "only shells are running below the pane's shell, which is idle by definition"
+            } else {
+                "nothing is running below the pane's shell"
+            }
+            return ActivityExplanation(processes: verdicts, activity: activity, reason: reason)
+        }
+
+        if let index = verdicts.firstIndex(where: { $0.pid == best.pid }) {
+            verdicts[index].won = true
+        }
+        let rankWord = ["agent", "build", "command"][best.rank]
+        let label = best.activity.label ?? ""
+        var reason = "\(label) won as the \(rankWord) at depth \(best.depth) (pid \(best.pid))"
+        if contenders > 1 {
+            reason += ", outranking \(contenders - 1) other candidate\(contenders == 2 ? "" : "s"): agent before build before command, then deepest, then highest pid"
+        }
+        return ActivityExplanation(processes: verdicts, activity: best.activity, reason: reason)
     }
 
     /// The agents worth naming.
