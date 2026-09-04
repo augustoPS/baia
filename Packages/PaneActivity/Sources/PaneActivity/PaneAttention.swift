@@ -81,10 +81,15 @@ public enum PaneAttention: Sendable, Equatable {
     }
 
     /// The case as a word, for a reader and never for a comparison.
+    ///
+    /// `.requested` reads as "asking", the chrome's word and not the case's:
+    /// `PaneStatus.Attention.name(of:)` in PaneChrome spells the same level
+    /// `asking`, and a reason quoting the level a pane's owner would recognise
+    /// has to spell it the way the chrome does, not the way the case is named.
     public var name: String {
         switch self {
         case .none: "none"
-        case .requested: "requested"
+        case .requested: "asking"
         case .acknowledged: "acknowledged"
         case .done: "done"
         }

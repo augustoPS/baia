@@ -54,7 +54,7 @@ import Testing
         #expect(e.resolved == .none)
         #expect(e.reason.contains("reported working"))
         #expect(e.reason.contains("silences"))
-        #expect(e.reason.contains("requested"))
+        #expect(e.reason.contains("asking"))
     }
 
     @Test func aReportedFinishUnseenIsDoneAndSeenIsOver() {
@@ -93,7 +93,7 @@ import Testing
 
     @Test func everyAttentionCaseHasAName() {
         #expect(PaneAttention.none.name == "none")
-        #expect(PaneAttention.requested(message: "x").name == "requested")
+        #expect(PaneAttention.requested(message: "x").name == "asking")
         #expect(PaneAttention.acknowledged(message: nil).name == "acknowledged")
         #expect(PaneAttention.done.name == "done")
     }

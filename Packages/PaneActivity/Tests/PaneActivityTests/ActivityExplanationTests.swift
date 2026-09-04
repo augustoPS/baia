@@ -119,4 +119,35 @@ import Testing
         )
         #expect(explanation.processes.map(\.pid) == [100, 200, 300, 50])
     }
+
+    /// The Global Constraint: `explain`'s answer is no wider than `list` plus
+    /// pids. `matched` is the token the classifier keyed on, and it is a token
+    /// and never argv, so a secret sitting anywhere else in a command line never
+    /// reaches it.
+    @Test func matchedIsATokenAndNeverArgv() {
+        let agent = process(
+            pid: 200, parent: 100, name: "claude", path: "/Users/x/.local/bin/claude",
+            arguments: ["claude", "--resume", "secret-session"]
+        )
+        let build = process(
+            pid: 300, parent: 200, name: "npm", arguments: ["npm", "test", "--", "--token", "abc"]
+        )
+        let command = process(
+            pid: 400, parent: 100, name: "curl",
+            arguments: ["curl", "-H", "Authorization: x", "https://example"]
+        )
+        let explanation = PaneActivityClassifier.explain(
+            tree: [paneShell, agent, build, command], shellPid: 100
+        )
+
+        #expect(explanation.processes.first { $0.pid == 200 }?.matched == "claude")
+        #expect(explanation.processes.first { $0.pid == 300 }?.matched == "npm")
+        #expect(explanation.processes.first { $0.pid == 400 }?.matched == "curl")
+
+        for verdict in explanation.processes {
+            #expect(verdict.matched?.contains("secret-session") != true)
+            #expect(verdict.matched?.contains("abc") != true)
+            #expect(verdict.matched?.contains("Authorization") != true)
+        }
+    }
 }
