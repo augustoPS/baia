@@ -234,7 +234,11 @@ final class PaneActivityTracker {
     /// right for the chrome because it draws nothing either way, and wrong for
     /// the control channel, where "running nothing" and "running something I
     /// cannot name" are different claims about the pane.
-    var activityReading: ActivityReading {
+    var activityReading: ActivityReading { Self.reading(of: activity) }
+
+    /// The mapping ``activityReading`` performs, pulled out so ``explain()`` can
+    /// run it on a fresh snapshot's activity rather than the poll's.
+    static func reading(of activity: PaneActivity) -> ActivityReading {
         switch activity {
         case .idleShell: .idle
         case .unnameable: .cannotTell
@@ -250,13 +254,18 @@ final class PaneActivityTracker {
     /// only its conclusion and a two-second-old tree would explain a label the
     /// pane may no longer show. Nil activity is the same window ``poll()`` skips:
     /// no foreground process, or no shell above it, which is mid-exec and not
+    /// idle, and ``reading`` reads `.cannotTell` for it rather than `.idle`,
+    /// because a pane the tracker cannot currently see is not a pane confirmed
     /// idle. Read-only: nothing here moves `activity` or the latch.
-    func explain() -> (activity: ActivityExplanation?, attention: AttentionExplanation) {
+    func explain() -> (activity: ActivityExplanation?, reading: ActivityReading, attention: AttentionExplanation) {
         let attention = self.attention.explanation
-        guard let foreground = foregroundPid() else { return (nil, attention) }
+        guard let foreground = foregroundPid() else { return (nil, .cannotTell, attention) }
         let tree = ProcessTree.snapshot(under: ProcessInfo.processInfo.processIdentifier)
-        guard let shell = ProcessTree.shellPid(above: foreground, in: tree) else { return (nil, attention) }
-        return (PaneActivityClassifier.explain(tree: tree, shellPid: shell), attention)
+        guard let shell = ProcessTree.shellPid(above: foreground, in: tree) else {
+            return (nil, .cannotTell, attention)
+        }
+        let explanation = PaneActivityClassifier.explain(tree: tree, shellPid: shell)
+        return (explanation, Self.reading(of: explanation.activity), attention)
     }
 
     private func paneAgent() -> PaneStatus.Agent? {

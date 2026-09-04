@@ -123,7 +123,7 @@ import Testing
                 ),
             ],
             activity: "claude",
-            activityReading: "running",
+            activityReading: .running,
             activityReason: "the winning process matched an agent token",
             report: PaneExplanation.Report(
                 state: .blocked, message: "which branch?", seq: 17, live: true, secondsLeft: 240

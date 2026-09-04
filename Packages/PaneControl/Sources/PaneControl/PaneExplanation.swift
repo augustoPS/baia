@@ -7,6 +7,14 @@ import Foundation
 /// that own the rules (`PaneActivity`), and the app copies them across; nothing
 /// here decides anything.
 public struct PaneExplanation: Sendable, Equatable, Codable {
+    /// The three-way answer of the classifier: whether something is running,
+    /// nothing is, or it ran and could not be named.
+    public enum Reading: String, Sendable, Equatable, Codable {
+        case running
+        case idle
+        case cannotTell = "cannot tell"
+    }
+
     /// One process the snapshot saw, and what the classifier made of it.
     public struct Process: Sendable, Equatable, Codable {
         public var pid: Int32
@@ -58,11 +66,11 @@ public struct PaneExplanation: Sendable, Equatable, Codable {
     public var processes: [Process]
     /// The label `list` shows, nil when it shows none.
     public var activity: String?
-    /// `running`, `idle`, or `cannot tell`: the three-way answer `subscribe` uses.
-    public var activityReading: String
+    /// The three-way answer of the classifier: `running`, `idle`, or `cannot tell`.
+    public var activityReading: Reading
     public var activityReason: String
     public var report: Report?
-    /// The latch: `none`, `requested`, `acknowledged`, `done`.
+    /// The latch: `none`, `asking`, `acknowledged`, `done`.
     public var latch: String
     public var seen: Bool
     /// The word `list` shows, nil when it shows none.
@@ -73,7 +81,7 @@ public struct PaneExplanation: Sendable, Equatable, Codable {
 
     public init(
         pane: String, hasForeground: Bool, processes: [Process], activity: String?,
-        activityReading: String, activityReason: String, report: Report?, latch: String,
+        activityReading: Reading, activityReason: String, report: Report?, latch: String,
         seen: Bool, attention: String?, attentionDecidedBy: String, attentionReason: String
     ) {
         self.pane = ControlText.oneLine(pane)

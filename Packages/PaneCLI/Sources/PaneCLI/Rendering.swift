@@ -130,7 +130,12 @@ public enum Rendering {
         case .explain:
             guard let e = result.explanation else { break }
             out(row("pane", e.pane))
-            out(row("activity", e.activity ?? (e.activityReading == "cannot tell" ? "cannot tell" : "idle")))
+            let activityLine: String = switch e.activityReading {
+            case .idle: e.activity ?? "idle"
+            case .cannotTell: e.activity ?? "cannot tell"
+            case .running: e.activity ?? "running"
+            }
+            out(row("activity", activityLine))
             out(row("", e.activityReason))
             if e.hasForeground {
                 out(row("processes", "pid  ppid  depth  verdict  matched"))
@@ -142,7 +147,10 @@ public enum Rendering {
                     out(row("", line))
                 }
             } else {
-                out(row("processes", "none: the pane has no foreground process right now, which the poll skips rather than reading as idle"))
+                // The no-foreground sentence stays in `activityReason`, printed
+                // above under `activity`. Printing it again here would say the
+                // same thing twice.
+                out(row("processes", "none"))
             }
             if let r = e.report {
                 var line = r.state.rawValue

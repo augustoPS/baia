@@ -1514,7 +1514,7 @@ final class TerminalPaneController: NSViewController {
     /// word is the one `PaneRecord.attention` shows.
     func explain(paneID: String) -> PaneExplanation {
         let now = Date()
-        let (activity, attention) = activityTracker.explain()
+        let (activity, reading, attention) = activityTracker.explain()
         let report = reports.last.map { held in
             PaneExplanation.Report(
                 state: held.state,
@@ -1523,12 +1523,6 @@ final class TerminalPaneController: NSViewController {
                 live: reports.live(at: now) != nil,
                 secondsLeft: Int(held.expires.timeIntervalSince(now).rounded(.down))
             )
-        }
-        let reading: String = switch activity?.activity {
-        case .none: "cannot tell"
-        case .idleShell: "idle"
-        case .unnameable: "cannot tell"
-        case .agent, .build, .command: "running"
         }
         return PaneExplanation(
             pane: paneID,
@@ -1544,7 +1538,7 @@ final class TerminalPaneController: NSViewController {
                 )
             },
             activity: activity?.activity.label,
-            activityReading: reading,
+            activityReading: reading.explained,
             activityReason: activity?.reason
                 ?? "the pane has no foreground process right now, which the poll skips rather than reading as idle",
             report: report,

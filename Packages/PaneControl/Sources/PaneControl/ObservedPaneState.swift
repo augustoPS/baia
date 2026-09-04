@@ -26,6 +26,18 @@ public enum ActivityReading: Sendable, Equatable {
     case cannotTell
 }
 
+public extension ActivityReading {
+    /// This reading, spelled for the wire. The one place the poller's reading is
+    /// spelled as ``PaneExplanation/Reading``.
+    var explained: PaneExplanation.Reading {
+        switch self {
+        case .running: .running
+        case .idle: .idle
+        case .cannotTell: .cannotTell
+        }
+    }
+}
+
 /// The last values a pane published, and the rule that turns a poll into events.
 ///
 /// **This is where "edge-triggered, never level-triggered" is actually decided**,

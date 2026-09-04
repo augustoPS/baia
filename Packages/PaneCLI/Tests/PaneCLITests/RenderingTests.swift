@@ -358,9 +358,13 @@ import Testing
 
     private func explanation(
         hasForeground: Bool = true,
-        report: PaneExplanation.Report? = PaneExplanation.Report(state: .blocked, message: "which branch?", seq: 17, live: true, secondsLeft: 240)
+        report: PaneExplanation.Report? = PaneExplanation.Report(state: .blocked, message: "which branch?", seq: 17, live: true, secondsLeft: 240),
+        activityOverride: String? = "claude",
+        activityReadingOverride: PaneExplanation.Reading = .running
     ) -> PaneExplanation {
-        PaneExplanation(
+        let resolvedActivity = hasForeground ? activityOverride : nil
+        let resolvedReading = hasForeground ? activityReadingOverride : .cannotTell
+        return PaneExplanation(
             pane: "pane-1",
             hasForeground: hasForeground,
             processes: hasForeground ? [
@@ -368,9 +372,11 @@ import Testing
                 PaneExplanation.Process(pid: 200, parentPid: 100, depth: 1, matched: "claude", verdict: "agent", won: true),
                 PaneExplanation.Process(pid: 300, parentPid: 200, depth: 2, matched: "npm", verdict: "build", won: false),
             ] : [],
-            activity: "claude",
-            activityReading: "running",
-            activityReason: "claude won as the agent at depth 1 (pid 200)",
+            activity: resolvedActivity,
+            activityReading: resolvedReading,
+            activityReason: hasForeground
+                ? "claude won as the agent at depth 1 (pid 200)"
+                : "the pane has no foreground process right now, which the poll skips rather than reading as idle",
             report: report,
             latch: "none",
             seen: false,
@@ -404,7 +410,13 @@ import Testing
         #expect(none.map(\.text).contains("report     none"))
 
         let blind = Rendering.render(result(explanation: explanation(hasForeground: false)), for: try call("explain"))
-        #expect(blind.map(\.text).contains { $0.contains("no foreground process") })
+        let text = blind.map(\.text)
+        let expectedProcessesRow = "processes".padding(toLength: 11, withPad: " ", startingAt: 0) + "none"
+        #expect(text.first { $0.hasPrefix("processes") } == expectedProcessesRow)
+        // The reason line printed under `activity`, which is the only place the
+        // no-foreground sentence appears: the `processes` row above says only
+        // `none` and does not repeat it.
+        #expect(text.contains { $0.contains("no foreground process") })
     }
 
     @Test func anExpiredReportIsShownAsExpired() throws {
@@ -418,6 +430,22 @@ import Testing
         #expect(lines.count == 1)
         #expect(lines[0].stream == .out)
         #expect(lines[0].text.contains("\"attentionDecidedBy\""))
+    }
+
+    /// A nil `activity` with an `.idle` reading renders `idle`, and a nil
+    /// `activity` with a `.cannotTell` reading renders `cannot tell`. The label
+    /// is nil for both, which is why the row has to switch on the reading and
+    /// not on the label.
+    @Test func explainRendersIdleWhenActivityIsNilAndTheReadingIsIdle() throws {
+        let idle = explanation(activityOverride: nil, activityReadingOverride: .idle)
+        let lines = Rendering.render(result(explanation: idle), for: try call("explain"))
+        #expect(lines.map(\.text).contains { $0.hasPrefix("activity") && $0.contains("idle") })
+    }
+
+    @Test func explainRendersCannotTellWhenActivityIsNilAndTheReadingIsCannotTell() throws {
+        let cannotTell = explanation(activityOverride: nil, activityReadingOverride: .cannotTell)
+        let lines = Rendering.render(result(explanation: cannotTell), for: try call("explain"))
+        #expect(lines.map(\.text).contains { $0.hasPrefix("activity") && $0.contains("cannot tell") })
     }
 
     // MARK: Fixtures

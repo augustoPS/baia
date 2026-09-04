@@ -15,7 +15,7 @@ import Testing
                 PaneExplanation.Process(pid: 200, parentPid: 100, depth: 1, matched: matched, verdict: "agent", won: true),
             ],
             activity: "claude",
-            activityReading: "running",
+            activityReading: .running,
             activityReason: reason,
             report: PaneExplanation.Report(state: .blocked, message: message, seq: 17, live: true, secondsLeft: 240),
             latch: "none",
