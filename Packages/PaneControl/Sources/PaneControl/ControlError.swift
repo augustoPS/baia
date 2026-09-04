@@ -110,7 +110,10 @@ public struct ControlError: Sendable, Hashable, Codable {
     /// direction. The layout verbs reach nobody at all. A caller sent to check
     /// its parentage by a `send` that only ever reaches peers is being sent to
     /// debug the wrong thing.
-    static func unauthorized(_ scope: ControlScope) -> ControlError {
+    ///
+    /// Public so the server can answer a malformed id with the same words the
+    /// resolver uses for an out-of-scope one.
+    public static func unauthorized(_ scope: ControlScope) -> ControlError {
         let reach = switch scope {
         case .selfOnly:
             "That verb acts on the calling pane and reaches no other."

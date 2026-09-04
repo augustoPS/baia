@@ -639,14 +639,17 @@ final class ControlServer {
     /// `list`'s evidence for one pane. Routed like `read` and scoped like `list`.
     ///
     /// No target means the caller, which `authorize` resolves as `target ?? actor`
-    /// for `.scopedRead`. A malformed id is `unauthorized` and not `badFrame`, for
-    /// `read`'s reason: a caller able to tell a malformed id from an out-of-scope
-    /// one could probe the shape of the namespace.
+    /// for `.scopedRead`. A malformed id gets the same object an out-of-scope
+    /// pane gets, built from `ControlError.unauthorized(.scopedRead)` rather than
+    /// typed out again here, so neither the code nor the words tell the two
+    /// answers apart. A caller able to tell a malformed id from an out-of-scope
+    /// one could probe the shape of the namespace, which is the leak `authorize`
+    /// refuses in every other verb.
     private func explain(_ request: ControlRequest, on id: Int) {
         var target: ControlPaneID?
         if let named = request.args.peer {
             guard let parsed = ControlPaneID(uuidString: named) else {
-                respond(.failure(.unauthorized, "no pane you may explain"), to: id)
+                respond(ControlResponse.failure(ControlError.unauthorized(.scopedRead)), to: id)
                 return
             }
             target = parsed

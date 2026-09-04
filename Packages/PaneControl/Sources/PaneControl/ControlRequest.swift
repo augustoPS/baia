@@ -105,9 +105,10 @@ public struct ControlArgs: Sendable, Equatable, Codable {
     public var rendezvous: String?
 
     /// `send`, `revoke`: the peer's display pane id. `read`: the pane to read.
-    /// `move`: the pane to move.
+    /// `move`: the pane to move. `explain`: the pane to explain, optional where
+    /// the other four are required.
     ///
-    /// One field for four verbs, the way ``text`` serves `send` and `report`: it
+    /// One field for five verbs, the way ``text`` serves `send` and `report`: it
     /// is the pane this request is about, and what the caller has to stand in to
     /// name it is the verb's scope rather than the field's spelling.
     public var peer: String?

@@ -184,22 +184,15 @@ class Probe:
         return sorted(record.get("pane") for record in records)
 
     @staticmethod
-    def explained_pane(response):
-        explanation = (response.get("result") or {}).get("explanation")
-        if not isinstance(explanation, dict):
-            return None
-        return explanation.get("pane")
-
-    @staticmethod
     def explanation_shape(response):
         """More than the echoed id: the fields a body-blind check would miss.
 
-        `explained_pane` alone passes for a wrong body from the wrong pane, an
-        empty reason, or a deleted malformed-id arm, because the id it reads is
-        the one the adapter fills from the request rather than from what it
-        found. This reads the fields that only exist if `explain` actually ran:
-        the three-way activity reading, the attention authority word, and both
-        reasons being non-empty prose.
+        A check that read only the echoed id would pass for a wrong body from
+        the wrong pane, an empty reason, or a deleted malformed-id arm, because
+        the id is the one the adapter fills from the request rather than from
+        what it found. This reads the fields that only exist if `explain`
+        actually ran: the three-way activity reading, the attention authority
+        word, and both reasons being non-empty prose.
         """
         explanation = (response.get("result") or {}).get("explanation")
         if not isinstance(explanation, dict):
@@ -747,15 +740,16 @@ def main():
         probe.explanation_shape(probe.request(live[alpha], "explain", {"peer": child})),
         (child, True, True, True, True, True),
     )
+    out_of_scope = probe.request(live[alpha], "explain", {"peer": bravo})
     probe.check(
         "explain on a pane outside the caller's scope is unauthorized",
-        probe.code(probe.request(live[alpha], "explain", {"peer": bravo})),
+        probe.code(out_of_scope),
         "unauthorized",
     )
     probe.check(
         "explain on a malformed id is unauthorized, the same answer as out of scope",
-        probe.code(probe.request(live[alpha], "explain", {"peer": "not-a-uuid"})),
-        "unauthorized",
+        probe.request(live[alpha], "explain", {"peer": "not-a-uuid"}).get("error"),
+        out_of_scope.get("error"),
     )
 
     print()
