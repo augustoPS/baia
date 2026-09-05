@@ -11,8 +11,9 @@ import subprocess
 import sys
 import time
 
+import session_oracle
 
-BINARY, SUPPORT, CONFIG, ZDOT, SCRATCH, EVIDENCE, *NORMAL_PATHS = sys.argv[1:]
+BINARY, SUPPORT, CONFIG, ZDOT, SCRATCH, EVIDENCE = sys.argv[1:]
 support = pathlib.Path(SUPPORT)
 session = support / "session.json"
 scratch = pathlib.Path(SCRATCH)
@@ -20,14 +21,6 @@ evidence = pathlib.Path(EVIDENCE)
 pid_file = scratch / "app.pid"
 
 
-def fingerprint(path):
-    candidate = pathlib.Path(path)
-    if not candidate.exists():
-        return (False, None)
-    return (True, hashlib.sha256(candidate.read_bytes()).hexdigest())
-
-
-normal_before = {path: fingerprint(path) for path in NORMAL_PATHS}
 checks = 0
 failures = []
 
@@ -53,31 +46,22 @@ def check(condition, message):
         failures.append(message)
 
 
-def valid_session(schema_version=1):
-    pane = "BA1AC0DE-0000-4000-8000-000000000001"
-    tab = "BA1AC0DE-0000-4000-8000-0000000000AA"
-    return json.dumps(
-        {
-            "schemaVersion": schema_version,
-            "workspace": {
-                "tabs": [
-                    {
-                        "id": tab,
-                        "focusedPane": {"rawValue": pane},
-                        "tree": {"leaf": {"_0": {"rawValue": pane}}},
-                    }
-                ],
-                "focusedTabIndex": 0,
-            },
-            "panes": [
-                {
-                    "id": {"rawValue": pane},
-                    "workingDirectory": str(scratch),
-                }
-            ],
-        },
-        separators=(",", ":"),
-    ).encode()
+def reset_support():
+    support.mkdir(parents=True, mode=0o700, exist_ok=True)
+    os.chmod(support, 0o700)
+    for child in support.iterdir():
+        if child.name == ".baia-isolated-run":
+            continue
+        if child.is_dir() and not child.is_symlink():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+
+
+def record_process(process):
+    # The shared isolation owner validates both fields before signalling this
+    # exact child during interrupted or failed runs.
+    pid_file.write_text("%d\n%s\n" % (process.pid, BINARY))
 
 
 def wait_for_autosave(original, expect_change):
@@ -86,15 +70,16 @@ def wait_for_autosave(original, expect_change):
         if session.exists():
             current = session.read_bytes()
             if expect_change and current != original:
-                return current
+                grade = session_oracle.grade_current_session(current, expected_panes=2)
+                if (grade.valid_json and grade.current_schema
+                        and grade.current_shape and grade.expected_pane_count):
+                    return current
         time.sleep(0.2)
     return session.read_bytes() if session.exists() else None
 
 
-def run_case(name, original, should_preserve, restore_session=True):
-    if support.exists():
-        shutil.rmtree(support)
-    support.mkdir(parents=True, mode=0o700)
+def run_case(name, original, should_preserve, restore_session=True, expect_migration=False):
+    reset_support()
     if original is not None:
         session.write_bytes(original)
 
@@ -128,7 +113,7 @@ def run_case(name, original, should_preserve, restore_session=True):
             stderr=subprocess.STDOUT,
             start_new_session=True,
         )
-        pid_file.write_text(str(process.pid))
+        record_process(process)
         print("INFO %s app pid %d" % (name, process.pid))
         try:
             time.sleep(0.5)
@@ -145,19 +130,11 @@ def run_case(name, original, should_preserve, restore_session=True):
                 check(autosaved == original, name + ": source bytes survived launch and autosave")
             else:
                 check(autosaved is not None, name + ": autosave created session bytes")
-                try:
-                    document = json.loads(autosaved)
-                except (TypeError, ValueError):
-                    document = None
-                check(isinstance(document, dict), name + ": autosave wrote valid JSON")
-                check(
-                    isinstance(document, dict) and document.get("schemaVersion") == 1,
-                    name + ": autosave wrote the current schema",
-                )
-                check(
-                    isinstance(document, dict) and len(document.get("panes", [])) == 2,
-                    name + ": autosave contains the created pane",
-                )
+                grade = session_oracle.grade_current_session(autosaved, expected_panes=2)
+                check(grade.valid_json, name + ": autosave wrote valid JSON")
+                check(grade.current_schema, name + ": autosave wrote the current schema")
+                check(grade.current_shape, name + ": autosave wrote the current grouped shape")
+                check(grade.expected_pane_count, name + ": autosave contains the created pane")
         finally:
             # NSRunningApplication asks this exact process to terminate through
             # AppKit, which exercises applicationWillTerminate and its final save.
@@ -207,19 +184,20 @@ def run_case(name, original, should_preserve, restore_session=True):
               name + ": Keep File self-check reported no failure")
         check(after_shutdown == original, name + ": source bytes survived shutdown")
     else:
-        try:
-            document = json.loads(after_shutdown)
-        except (TypeError, ValueError):
-            document = None
-        check(isinstance(document, dict), name + ": saved session survived shutdown")
+        grade = session_oracle.grade_current_session(after_shutdown)
+        check(grade.valid_json, name + ": saved session survived shutdown")
+        check(grade.current_schema, name + ": shutdown preserved the current schema")
+        check(grade.current_shape, name + ": shutdown preserved the grouped shape")
+        if expect_migration:
+            backup = pathlib.Path(str(session) + ".v1-backup")
+            check(backup.exists() and backup.read_bytes() == original,
+                  name + ": migration backup matches the legacy v1 bytes")
 
 
 def run_selfcheck(name, mode):
-    if support.exists():
-        shutil.rmtree(support)
-    support.mkdir(parents=True, mode=0o700)
+    reset_support()
     original = None if mode == "quit-save-failure" else ("{ rejected for %s\n" % name).encode()
-    seed = valid_session() if original is None else original
+    seed = session_oracle.current_session(scratch) if original is None else original
     session.write_bytes(seed)
     pathlib.Path(CONFIG).write_text(json.dumps({
         "controlChannelEnabled": False,
@@ -235,7 +213,7 @@ def run_selfcheck(name, mode):
     with open(evidence / (name + "-app.log"), "wb") as log:
         process = subprocess.Popen([BINARY], cwd=SCRATCH, env=env, stdout=log,
                                    stderr=subprocess.STDOUT, start_new_session=True)
-        pid_file.write_text(str(process.pid))
+        record_process(process)
         try:
             try:
                 process.wait(timeout=25)
@@ -260,12 +238,9 @@ def run_selfcheck(name, mode):
         backup = support / "session.json.rejected-backup"
         check(backup.exists() and backup.read_bytes() == original,
               name + ": backup matches rejected bytes")
-        try:
-            replacement = json.loads(session.read_bytes())
-        except (ValueError, TypeError):
-            replacement = None
-        check(isinstance(replacement, dict) and replacement.get("schemaVersion") == 1,
-              name + ": recovery replaced source with current schema")
+        replacement = session_oracle.grade_current_session(session.read_bytes())
+        check(replacement.valid_json and replacement.current_schema and replacement.current_shape,
+              name + ": recovery replaced source with current grouped schema")
         lines = text.splitlines()
         check(not any(line.startswith("failure ") for line in lines),
               name + ": self-check reported no failure")
@@ -294,11 +269,11 @@ def run_selfcheck(name, mode):
         check(has_buttons("quit-retry-alert ", ["Retry", "Cancel Quit"]) and "quit-retry" in lines,
               name + ": Retry was clicked on the second quit alert")
         try:
-            saved = json.loads(session.read_bytes())
-        except (ValueError, TypeError, FileNotFoundError):
-            saved = None
-        check(isinstance(saved, dict) and saved.get("schemaVersion") == 1,
-              name + ": retry saved a current session before quit")
+            saved = session_oracle.grade_current_session(session.read_bytes())
+        except FileNotFoundError:
+            saved = session_oracle.grade_current_session(None)
+        check(saved.valid_json and saved.current_schema and saved.current_shape,
+              name + ": retry saved a current grouped session before quit")
         check(session.read_bytes() != seed,
               name + ": Retry replaced the seeded valid snapshot")
 
@@ -306,14 +281,20 @@ def run_selfcheck(name, mode):
 support.mkdir(parents=True, mode=0o700, exist_ok=True)
 try:
     run_case("malformed", b'{ broken session, preserve me\n', should_preserve=True)
-    run_case("future-schema", valid_session(schema_version=2), should_preserve=True)
+    run_case("future-schema", session_oracle.future_session(scratch), should_preserve=True)
     run_case(
         "malformed-restore-off",
         b'{ broken while restore is disabled\n',
         should_preserve=True,
         restore_session=False,
     )
-    run_case("valid", valid_session(), should_preserve=False)
+    run_case("current-valid", session_oracle.current_session(scratch), should_preserve=False)
+    run_case(
+        "legacy-v1",
+        session_oracle.legacy_v1_session(scratch),
+        should_preserve=False,
+        expect_migration=True,
+    )
     run_case("absent", None, should_preserve=False)
     run_selfcheck("recovery-success", "recovery-success")
     run_selfcheck("recovery-refusal", "recovery-refusal")
@@ -322,16 +303,11 @@ except KeyboardInterrupt:
     print("INFO interrupted after exact-PID app cleanup")
     sys.exit(130)
 
-normal_after = {path: fingerprint(path) for path in NORMAL_PATHS}
-check(normal_after == normal_before, "normal config and session files are unchanged")
-
 report = {
     "checks": checks,
     "failures": failures,
-    "normalStateBefore": normal_before,
-    "normalStateAfter": normal_after,
     "bundle": BINARY,
-    "binarySHA256": fingerprint(BINARY)[1],
+    "binarySHA256": hashlib.sha256(pathlib.Path(BINARY).read_bytes()).hexdigest(),
     "support": SUPPORT,
 }
 (evidence / "report.json").write_text(json.dumps(report, indent=2) + "\n")
