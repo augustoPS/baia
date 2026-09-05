@@ -105,10 +105,8 @@ import Testing
         #expect(parse(#"{"a": "\u00g1"}"#) == nil)
     }
 
-    @Test func keepsARawControlByteInsideAString() {
-        // Invalid JSON, taken anyway. A literal tab pasted into a theme name would
-        // otherwise discard sixteen good settings along with it.
-        #expect(parse("{\"a\": \"x\ty\"}") == .object(["a": .string("x\ty")]))
+    @Test func rejectsARawControlByteInsideAString() {
+        #expect(parse("{\"a\": \"x\ty\"}") == nil)
     }
 
     @Test func rejectsAMalformedNumber() {

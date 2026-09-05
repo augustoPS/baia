@@ -52,7 +52,7 @@ import Testing
         // two accept an ordinary write. The unreadable case is a directory at the
         // path, which `contents(atPath:)` answers nil for.
         #expect(SettingsStore(fileURL: fixture.root.appending(path: "absent.json")).inspect() == .missing)
-        #expect(SettingsStore(fileURL: try fixture.file("blank.json", contents: " \n\t")).inspect() == .missing)
+        #expect(SettingsStore(fileURL: try fixture.file("blank.json", contents: " \n\t")).inspect() == .malformed)
         #expect(SettingsStore(fileURL: try fixture.file("ok.json", contents: "{}")).inspect() == .valid)
         #expect(SettingsStore(fileURL: try fixture.file("bad.json", contents: "{ broken")).inspect() == .malformed)
         #expect(SettingsStore(fileURL: try fixture.file("list.json", contents: "[1, 2]")).inspect() == .notAnObject)
@@ -159,10 +159,10 @@ import Testing
         #expect(try text(url).contains("\"projectRoots\": [\"~/Projects\"]"))
     }
 
-    @Test func patchingABlankFileStartsFromTheStandardDocument() throws {
+    @Test func patchingABlankFileRefusesToReplaceIt() throws {
         let url = try fixture.file("config.json", contents: "\n")
-        _ = try SettingsStore(fileURL: url).patch([.fontSize(15)]).get()
-        #expect(keys(url) == SettingsDecoder.knownKeys)
+        #expect(SettingsStore(fileURL: url).patch([.fontSize(15)]) == .failure(.malformed))
+        #expect(try text(url) == "\n")
     }
 
     @Test func patchingRefusesAnInvalidEditAndWritesNothing() throws {

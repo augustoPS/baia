@@ -19,7 +19,7 @@ import Foundation
 @MainActor
 public final class SettingsTransactionController {
     /// The running settings: what the file last decoded to, or the value a
-    /// gesture is previewing. The baseline every inverse edit is read from.
+    /// gesture is previewing. Inverse edits come from the document replaced.
     public private(set) var settings: Settings
 
     /// The window's undo manager. Settable because the window is built after
@@ -29,6 +29,25 @@ public final class SettingsTransactionController {
     /// The last write that did not land, or nil once one has. Settings shows it
     /// as the persistent recovery state until a later write succeeds.
     public private(set) var lastFailure: SettingsWriteFailure?
+    public var onFailure: ((SettingsWriteFailure) -> Void)?
+
+    // UndoManager consumes an invocation even when persistence fails. Keep
+    // failed edits for an explicit retry after the file has been repaired.
+    private var pendingHistory: [(edit: SettingsEdit, name: String)] = []
+    public var hasPendingHistory: Bool { !pendingHistory.isEmpty }
+
+    @discardableResult
+    public func retryHistory() -> SettingsWriteFailure? {
+        while let pending = pendingHistory.first {
+            if let failure = transact(pending.edit, actionName: pending.name) { return failure }
+            pendingHistory.removeFirst()
+        }
+        return nil
+    }
+
+    public func clearFileFailure() {
+        lastFailure = nil
+    }
 
     private let store: SettingsStore
     private let apply: @MainActor (Settings) -> Void
@@ -63,7 +82,7 @@ public final class SettingsTransactionController {
     /// Validates, writes, applies and registers undo for one edit. Nil means
     /// it landed, or that there was nothing to do.
     ///
-    /// An edit equal to the running value writes nothing and registers nothing.
+    /// An edit equal to the file's value writes nothing and registers nothing.
     /// An invalid edit writes nothing, registers nothing and answers the
     /// validation error, so the control keeps its text and shows the reason.
     @discardableResult
@@ -71,27 +90,27 @@ public final class SettingsTransactionController {
         transact(edit, actionName: actionName)
     }
 
-    private func transact(_ edit: SettingsEdit, actionName: String) -> SettingsWriteFailure? {
+    private func transact(_ edit: SettingsEdit, actionName: String, notifyFailure: Bool = true) -> SettingsWriteFailure? {
         let valid: SettingsEdit
         switch edit.validated() {
         case let .success(value): valid = value
         case let .failure(error): return .validation(error)
         }
 
-        var probe = settings
-        valid.apply(to: &probe)
-        guard probe != settings else { return nil }
-
-        let inverse = SettingsEdit.value(of: valid.key, in: settings)
-        switch store.patch([valid]) {
+        switch store.patchRecordingPrevious([valid]) {
         case let .failure(failure):
             lastFailure = failure
+            if notifyFailure { onFailure?(failure) }
             return failure
-        case let .success(result):
+        case let .success(receipt):
             lastFailure = nil
-            settings = result.settings
-            apply(settings)
-            registerUndo(inverse, actionName: actionName)
+            let inverse = SettingsEdit.value(of: valid.key, in: receipt.previous)
+            let changed = settings != receipt.result.settings
+            settings = receipt.result.settings
+            if changed { apply(settings) }
+            if inverse != SettingsEdit.value(of: valid.key, in: settings) {
+                registerUndo(inverse, actionName: actionName)
+            }
             return nil
         }
     }
@@ -112,7 +131,10 @@ public final class SettingsTransactionController {
         let opensGroup = undoManager.groupingLevel == 0 && !undoManager.groupsByEvent
         if opensGroup { undoManager.beginUndoGrouping() }
         undoManager.registerUndo(withTarget: self) { target in
-            _ = target.transact(inverse, actionName: actionName)
+            if target.transact(inverse, actionName: actionName, notifyFailure: false) != nil {
+                target.pendingHistory.append((inverse, actionName))
+                if let failure = target.lastFailure { target.onFailure?(failure) }
+            }
         }
         undoManager.setActionName(actionName)
         if opensGroup { undoManager.endUndoGrouping() }

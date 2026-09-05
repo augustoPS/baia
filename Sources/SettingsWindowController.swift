@@ -50,6 +50,9 @@ final class SettingsWindowController: NSWindowController {
         window.setFrameAutosaveName("Settings")
         super.init(window: window)
         window.delegate = self
+        transactions.onFailure = { [weak self] _ in
+            self?.refresh()
+        }
 
         toolbar.delegate = self
         toolbar.displayMode = .iconAndLabel
@@ -59,6 +62,11 @@ final class SettingsWindowController: NSWindowController {
 
         banner.onReveal = { [weak self] in self?.revealFile() }
         banner.onRepair = { [weak self] in self?.repair() }
+        banner.onRetry = { [weak self] in
+            guard let self else { return }
+            _ = transactions.retryHistory()
+            refresh()
+        }
         banner.isHidden = true
 
         scrollView.hasVerticalScroller = true
@@ -86,6 +94,11 @@ final class SettingsWindowController: NSWindowController {
         window.contentView = container
 
         center.onSettingsChange { [weak self] in self?.settingsDidChange() }
+        center.onDocumentChange { [weak self] in
+            guard let self else { return }
+            if transactions.documentState() == .valid { transactions.clearFileFailure() }
+            refreshRecoveryState()
+        }
         select(selected)
     }
 
@@ -168,6 +181,7 @@ final class SettingsWindowController: NSWindowController {
             failure: transactions.lastFailure,
             fileURL: transactions.fileURL
         )
+        banner.offerHistoryRetry(transactions.hasPendingHistory)
     }
 
     // MARK: - Recovery
@@ -251,7 +265,7 @@ extension SettingsWindowController: SettingsEditing {
         case let .validation(error)?:
             return error
         case .some:
-            refreshRecoveryState()
+            refresh()
             NSSound.beep()
             return nil
         }
@@ -333,8 +347,10 @@ final class SettingsRecoveryBanner: NSView {
     private let message = NSTextField(wrappingLabelWithString: "")
     private let reveal = NSButton(title: "Reveal File", target: nil, action: nil)
     private let repair = NSButton(title: "Repair Configuration…", target: nil, action: nil)
+    private let retry = NSButton(title: "Retry Failed Undo/Redo", target: nil, action: nil)
     var onReveal: (() -> Void)?
     var onRepair: (() -> Void)?
+    var onRetry: (() -> Void)?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -346,7 +362,10 @@ final class SettingsRecoveryBanner: NSView {
         reveal.action = #selector(revealPressed)
         repair.target = self
         repair.action = #selector(repairPressed)
-        let buttons = NSStackView(views: [reveal, repair])
+        retry.target = self
+        retry.action = #selector(retryPressed)
+        retry.isHidden = true
+        let buttons = NSStackView(views: [reveal, repair, retry])
         buttons.orientation = .horizontal
         buttons.spacing = 8
         let text = NSStackView(views: [message, buttons])
@@ -376,6 +395,16 @@ final class SettingsRecoveryBanner: NSView {
 
     @objc private func revealPressed() { onReveal?() }
     @objc private func repairPressed() { onRepair?() }
+    @objc private func retryPressed() { onRetry?() }
+
+    func offerHistoryRetry(_ pending: Bool) {
+        retry.isHidden = !pending
+        if pending, isHidden {
+            message.stringValue = "An Undo or Redo could not be saved. Retry it when the configuration file is writable."
+            repair.isHidden = true
+            isHidden = false
+        }
+    }
 
     /// Shows the state, or hides when the file is fine and the last write
     /// landed. Repair is offered only for a file that exists and is broken;

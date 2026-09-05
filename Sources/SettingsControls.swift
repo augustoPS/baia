@@ -305,6 +305,17 @@ final class NumberControl: SettingsControlBase, NSTextFieldDelegate {
             show(SettingsValidationError(key: edit(0).key, message: "Enter a number."))
             return
         }
+        // Validate before invoking edit: integer-backed controls must never
+        // convert an unbounded Double to Int.
+        let key = edit(0).key
+        guard value.isFinite, range.contains(value) else {
+            show(SettingsValidationError(key: key, message: "Enter a number between \(range.lowerBound) and \(range.upperBound)."))
+            return
+        }
+        guard key != .discoveryMaxDepth || value == value.rounded() else {
+            show(SettingsValidationError(key: key, message: "Enter a whole number of levels."))
+            return
+        }
         show(editor.commit(edit(value), actionName: actionName))
         if let editorView = notification.userInfo?["NSFieldEditor"] as? NSTextView {
             field.window?.undoManager?.removeAllActions(withTarget: editorView)

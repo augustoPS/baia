@@ -36,6 +36,9 @@ a screenshot of them.
   puts it back; a slider gesture of three frames is one undo step.
 - **Invalid input.** A bad colour answers a validation error, writes nothing,
   and raises no recovery banner.
+- **Numeric text.** Discovery depth is tested through its real text delegate:
+  an oversized integer, a negative number, and a fractional value show errors
+  without writing; valid text commits.
 - **Preview.** The sample pane's resolved chrome and theme equal the centre's
   derivation for the same settings, the sample sidebar follows the setting and
   the chrome, each of the five states sets focus, activation and attention as
@@ -43,6 +46,10 @@ a screenshot of them.
 - **Malformed file.** A write is refused with the bytes untouched, the banner
   shows, repair keeps a byte-identical backup and leaves a valid file, and the
   banner hides.
+- **Failure recovery.** A rejected checkbox change restores its effective value.
+  A failed Undo remains visible and retryable after repair. External corruption
+  and external repair update the open banner through the file watcher. These
+  checks await callbacks without blocking the main queue.
 
 ## What it does not cover
 

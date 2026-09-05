@@ -7,7 +7,7 @@ import Foundation
 /// words in front of the owner and one of them (`unreadable`) is not about the
 /// bytes at all. Only ``missing`` and ``valid`` accept an ordinary write.
 public enum SettingsDocumentState: Sendable, Equatable {
-    /// No file, or a file holding nothing but whitespace. An ordinary write
+    /// No file. An ordinary write
     /// creates the standard document and patches it.
     case missing
     /// A JSON object. An ordinary write patches the requested keys and keeps
@@ -172,6 +172,11 @@ public struct SettingsStore: Sendable {
     /// fires `.rename` and `.delete` on the `ConfigurationCenter` watcher, which
     /// re-arms against the path.
     public func patch(_ edits: [SettingsEdit]) -> Result<SettingsDecodeResult, SettingsWriteFailure> {
+        patchRecordingPrevious(edits).map(\.result)
+    }
+
+    /// The previous value and result come from the same document read.
+    func patchRecordingPrevious(_ edits: [SettingsEdit]) -> Result<(previous: Settings, result: SettingsDecodeResult), SettingsWriteFailure> {
         var validated: [SettingsEdit] = []
         for edit in edits {
             switch edit.validated() {
@@ -181,12 +186,15 @@ public struct SettingsStore: Sendable {
         }
 
         let document: JSONValue
+        let wasMissing: Bool
         switch readDocument() {
         case .missing:
+            wasMissing = true
             // The literal parses by construction; `SettingsStoreTests` decodes it
             // back to the defaults on every run.
             document = JSONValue.parse(Data(Self.defaultFileContents.utf8)) ?? .object([:])
         case let .object(existing):
+            wasMissing = false
             document = existing
         case .unreadable:
             return .failure(.read)
@@ -196,14 +204,26 @@ public struct SettingsStore: Sendable {
             return .failure(.notAnObject)
         }
 
-        guard let patched = SettingsWriter.patch(document, edits: validated) else {
+        guard case let .object(members) = document else { return .failure(.notAnObject) }
+        let changes = validated.filter { edit in
+            let original = members[edit.key.rawValue]
+            if case let .numberLiteral(text)? = original, case let .number(value) = edit.jsonValue {
+                return Double(text) != value
+            }
+            return original != edit.jsonValue
+        }
+        guard let patched = SettingsWriter.patch(document, edits: changes) else {
             return .failure(.notAnObject)
+        }
+        let previous = SettingsDecoder.decode(Data(SettingsWriter.serialize(document).utf8)).settings
+        if changes.isEmpty, !wasMissing {
+            return .success((previous, SettingsDecoder.decode(Data(SettingsWriter.serialize(document).utf8))))
         }
         let bytes = Array(SettingsWriter.serialize(patched).utf8)
         if let failure = writeAtomically(bytes) {
             return .failure(failure)
         }
-        return .success(SettingsDecoder.decode(Data(bytes)))
+        return .success((previous, SettingsDecoder.decode(Data(bytes))))
     }
 
     /// Backs the original bytes up beside the file, then replaces the file with
@@ -257,12 +277,7 @@ public struct SettingsStore: Sendable {
         let path = fileURL.path(percentEncoded: false)
         guard FileManager.default.fileExists(atPath: path) else { return .missing }
         guard let data = FileManager.default.contents(atPath: path) else { return .unreadable }
-        // A file of nothing but whitespace is what `touch` and an emptied editor
-        // buffer leave behind. The decoder reads it as the defaults rather than
-        // as broken, and a write treats it the same way: it starts from the
-        // standard document instead of refusing to touch it.
-        guard data.contains(where: { !JSONValue.isWhitespace($0) }) else { return .missing }
-        guard let parsed = JSONValue.parse(data) else { return .malformed }
+        guard let parsed = JSONValue.parse(data, preservingNumbers: true) else { return .malformed }
         guard case .object = parsed else { return .notAnObject }
         return .object(parsed)
     }

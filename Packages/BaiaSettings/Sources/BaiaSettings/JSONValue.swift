@@ -15,6 +15,8 @@ enum JSONValue: Equatable, Sendable {
     case null
     case bool(Bool)
     case number(Double)
+    // Store reads retain the token, including precision beyond Double.
+    case numberLiteral(String)
     case string(String)
     case array([JSONValue])
     case object([String: JSONValue])
@@ -22,14 +24,14 @@ enum JSONValue: Equatable, Sendable {
 
 extension JSONValue {
     /// Parses `data` as one complete JSON document, or nil when it is not one.
-    static func parse(_ data: Data) -> JSONValue? {
+    static func parse(_ data: Data, preservingNumbers: Bool = false) -> JSONValue? {
         // Invalid UTF-8 is refused up front rather than at the byte that breaks.
         // A config file is small and half of one is not useful, and it lets the
         // parser below treat its input as valid UTF-8 and assemble strings
         // without a second validity check per escape.
         guard let text = String(data: data, encoding: .utf8) else { return nil }
 
-        var parser = Parser(bytes: Array(text.utf8))
+        var parser = Parser(bytes: Array(text.utf8), preservingNumbers: preservingNumbers)
         guard let value = parser.value(depth: 0) else { return nil }
         parser.skipWhitespace()
 
@@ -62,6 +64,8 @@ extension JSONValue {
             return value ? "true" : "false"
         case let .number(value):
             return Self.numberText(value)
+        case let .numberLiteral(text):
+            return text
         case let .string(value):
             return Self.quoted(value)
         case let .array(values):
@@ -134,6 +138,7 @@ extension JSONValue {
     /// string, and the index arithmetic stays a plain integer step.
     private struct Parser {
         let bytes: [UInt8]
+        let preservingNumbers: Bool
         var index = 0
 
         /// Nesting deeper than this is refused. The value parser recurses, so a
@@ -161,7 +166,10 @@ extension JSONValue {
             case UInt8(ascii: "t"): return literal("true") ? .bool(true) : nil
             case UInt8(ascii: "f"): return literal("false") ? .bool(false) : nil
             case UInt8(ascii: "n"): return literal("null") ? .null : nil
-            default: return number().map(JSONValue.number)
+            default:
+                guard let text = number() else { return nil }
+                if preservingNumbers { return .numberLiteral(text) }
+                return Double(text).map(JSONValue.number)
             }
         }
 
@@ -214,10 +222,7 @@ extension JSONValue {
                     return String(decoding: out, as: UTF8.self)
                 }
                 guard byte == UInt8(ascii: "\\") else {
-                    // A raw control byte inside a string is invalid JSON and is
-                    // taken anyway. A literal tab pasted into a theme name would
-                    // otherwise discard the whole file, which is the outcome the
-                    // per-field fallback exists to prevent.
+                    guard byte >= 0x20 else { return nil }
                     out.append(byte)
                     continue
                 }
@@ -281,16 +286,27 @@ extension JSONValue {
             return value
         }
 
-        /// Numbers are handed to `Double(String)` rather than accumulated digit by
-        /// digit, so the sign, the fraction, and the exponent all behave the way
-        /// the rest of Swift does. An exponent too large for a `Double` arrives as
-        /// infinity rather than as a parse failure, which is why
-        /// ``SettingsDecoder`` rejects a non finite number per field.
-        private mutating func number() -> Double? {
+        /// Validate JSON's number grammar while retaining the original token.
+        /// The decoder converts it to Double; the store keeps its exact digits.
+        private mutating func number() -> String? {
             let start = index
-            while let byte = peek(), Self.isNumberByte(byte) { index += 1 }
-            guard start < index else { return nil }
-            return Double(String(decoding: bytes[start ..< index], as: UTF8.self))
+            _ = match("-")
+            if !match("0") {
+                guard let first = peek(), (49 ... 57).contains(first) else { return nil }
+                while let byte = peek(), (48 ... 57).contains(byte) { index += 1 }
+            }
+            if match(".") {
+                let fraction = index
+                while let byte = peek(), (48 ... 57).contains(byte) { index += 1 }
+                guard index > fraction else { return nil }
+            }
+            if match("e") || match("E") {
+                if !match("+") { _ = match("-") }
+                let exponent = index
+                while let byte = peek(), (48 ... 57).contains(byte) { index += 1 }
+                guard index > exponent else { return nil }
+            }
+            return String(decoding: bytes[start ..< index], as: UTF8.self)
         }
 
         private mutating func literal(_ text: String) -> Bool {
@@ -310,15 +326,6 @@ extension JSONValue {
             guard peek() == UInt8(ascii: character) else { return false }
             index += 1
             return true
-        }
-
-        private static func isNumberByte(_ byte: UInt8) -> Bool {
-            if (UInt8(ascii: "0") ... UInt8(ascii: "9")).contains(byte) { return true }
-            return byte == UInt8(ascii: "-")
-                || byte == UInt8(ascii: "+")
-                || byte == UInt8(ascii: ".")
-                || byte == UInt8(ascii: "e")
-                || byte == UInt8(ascii: "E")
         }
 
         private static func hexDigit(_ byte: UInt8) -> UInt32? {

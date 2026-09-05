@@ -37,8 +37,9 @@
             }
             // A second run-loop turn, so the restored session's windows exist
             // and the toolbar has been laid out before anything is asserted.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                run(in: delegate)
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(500))
+                await run(in: delegate)
                 print(failures == 0 ? "settings self-check: all checks passed" : "settings self-check: \(failures) failed")
                 // `BAIA_SETTINGS_HOLD_SECONDS` keeps the window on screen after
                 // the checks, so `screencapture -l <window>` from outside can
@@ -73,7 +74,7 @@
             }
         }
 
-        private static func run(in delegate: AppDelegate) {
+        private static func run(in delegate: AppDelegate) async {
             let center = delegate.configuration
             delegate.showSettings(nil)
             guard let controller = delegate.settingsWindow, let window = controller.window else {
@@ -108,6 +109,23 @@
                       window.toolbar?.selectedItemIdentifier?.rawValue == category.rawValue)
             }
             controller.select(.appearance)
+
+            // Exercise the actual text delegate, not just controller.commit.
+            let workspacePage = controller.page(for: .workspace)
+            if let depth = workspacePage.controls.compactMap({ $0 as? NumberControl }).first,
+               let field = editableField(in: depth.view) {
+                let original = (try? Data(contentsOf: center.store.url)) ?? Data()
+                for text in ["999999999999999999999999", "-1", "2.5"] {
+                    field.stringValue = text
+                    depth.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification, object: field))
+                    check("depth rejects \(text) without writing", depth.hasError && (try? Data(contentsOf: center.store.url)) == original)
+                }
+                field.stringValue = "5"
+                depth.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification, object: field))
+                check("depth accepts valid text", !depth.hasError && center.settings.discoveryMaxDepth == 5)
+            } else {
+                check("discovery depth has an editable number field", false)
+            }
 
             // Responder routing while Settings is key.
             let closeTarget = NSApp.target(forAction: #selector(AppDelegate.closePane(_:))) as AnyObject?
@@ -206,6 +224,21 @@
             // Malformed file: refused, banner up, repair keeps a backup.
             let good = (try? Data(contentsOf: store.url)) ?? Data()
             try? Data("{ broken".utf8).write(to: store.url)
+            check("external corruption updates the open recovery banner",
+                  await waitFor { !controller.banner.isHidden })
+            let notificationPage = controller.page(for: .notifications)
+            let wasEnabled = center.settings.notificationsEnabled
+            if let toggle = notificationPage.controls.first,
+               let button = checkbox(in: toggle.view) {
+                button.performClick(nil)
+                check("a refused toggle returns to its effective value",
+                      (button.state == .on) == wasEnabled && center.settings.notificationsEnabled == wasEnabled)
+            } else {
+                check("notifications has a checkbox", false)
+            }
+            manager.undo()
+            check("a failed undo is visible and retryable",
+                  !controller.banner.isHidden && controller.transactions.hasPendingHistory)
             let refused = controller.commit(.fontSize(21), actionName: "on a broken file")
             check("a write onto a malformed file is refused", refused == nil && controller.transactions.lastFailure == .malformed)
             check("the malformed file's bytes are untouched", (try? Data(contentsOf: store.url)) == Data("{ broken".utf8))
@@ -220,12 +253,44 @@
                 check("repair succeeded", false, failure.message)
             }
             controller.refreshRecoveryState()
-            check("the recovery banner hides after repair", controller.banner.isHidden)
+            _ = controller.transactions.retryHistory()
+            controller.refreshRecoveryState()
+            check("failed history can be retried after repair", !controller.transactions.hasPendingHistory)
+            check("the recovery banner hides after repair and retry", controller.banner.isHidden)
             try? good.write(to: store.url)
+
+            try? Data("{ broken".utf8).write(to: store.url)
+            check("a second malformed save is detected", await waitFor { !controller.banner.isHidden })
+            try? good.write(to: store.url)
+            check("an external repair clears the open banner", await waitFor { controller.banner.isHidden })
 
         }
 
         // MARK: - Helpers
+
+        private static func waitFor(_ condition: () -> Bool) async -> Bool {
+            let deadline = Date().addingTimeInterval(2)
+            while !condition(), Date() < deadline {
+                try? await Task.sleep(for: .milliseconds(10))
+            }
+            return condition()
+        }
+
+        private static func checkbox(in view: NSView) -> NSButton? {
+            if let button = view as? NSButton { return button }
+            for child in view.subviews {
+                if let button = checkbox(in: child) { return button }
+            }
+            return nil
+        }
+
+        private static func editableField(in view: NSView) -> NSTextField? {
+            if let field = view as? NSTextField, field.isEditable { return field }
+            for child in view.subviews {
+                if let field = editableField(in: child) { return field }
+            }
+            return nil
+        }
 
         private static func undoDepth(_ manager: UndoManager) -> Int {
             // `UndoManager` exposes no count; the number of undos until empty is

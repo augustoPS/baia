@@ -794,7 +794,15 @@ final class ConfigurationCenter {
         }
     #endif
 
+    private var documentChangeHandlers: [() -> Void] = []
+
+    func onDocumentChange(_ handler: @escaping () -> Void) {
+        documentChangeHandlers.append(handler)
+    }
+
     private func reload() {
+        defer { for handler in documentChangeHandlers { handler() } }
+        let state = store.inspect()
         let result = store.load()
         // Reported *before* the equality guard, and this ordering is the whole
         // point. What the decoder could not use is a fact about the file, not
@@ -809,6 +817,7 @@ final class ConfigurationCenter {
         // actually rejected something, so a clean file stays silent no matter how
         // often an editor touches it.
         Self.report(result)
+        guard state == .valid || state == .missing else { return }
         // A document the decoder could not read as an object applies nothing,
         // and the running configuration stays on the last value that did apply.
         // Dropping to the defaults here would re-theme every pane on a

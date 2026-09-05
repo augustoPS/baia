@@ -138,6 +138,8 @@ import Testing
 
     @Test func undoThatCannotBeWrittenReportsInsteadOfPretending() throws {
         let controller = makeController()
+        var failures: [SettingsWriteFailure] = []
+        controller.onFailure = { failures.append($0) }
         #expect(store.writeDefaultIfAbsent())
         _ = controller.commit(.fontSize(15), actionName: "x")
         try "{ broken".write(to: store.url, atomically: true, encoding: .utf8)
@@ -146,6 +148,14 @@ import Testing
         #expect(controller.settings.fontSize == 15)
         #expect(controller.lastFailure == .malformed)
         #expect(fileText == "{ broken")
+        #expect(failures == [.malformed])
+        #expect(controller.hasPendingHistory)
+        try "{\"fontSize\":15}".write(to: store.url, atomically: true, encoding: .utf8)
+        #expect(controller.retryHistory() == nil)
+        #expect(!controller.hasPendingHistory)
+        #expect(store.load().settings.fontSize == Settings.defaultSettings.fontSize)
+        undoManager.undo()
+        #expect(store.load().settings.fontSize == 15)
     }
 
     // MARK: - Gestures
@@ -212,6 +222,23 @@ import Testing
     }
 
     // MARK: - External edits
+
+    @Test func undoUsesTheValueReplacedBeforeTheWatcherReloads() throws {
+        let controller = makeController()
+        try "{\"fontSize\":20}".write(to: store.url, atomically: true, encoding: .utf8)
+        #expect(controller.commit(.fontSize(18), actionName: "Font") == nil)
+        undoManager.undo()
+        #expect(store.load().settings.fontSize == 20)
+    }
+
+    @Test func explicitEditEqualToCacheStillReplacesExternalValue() throws {
+        let controller = makeController()
+        try "{\"fontSize\":20}".write(to: store.url, atomically: true, encoding: .utf8)
+        #expect(controller.commit(.fontSize(Settings.defaultSettings.fontSize), actionName: "Font") == nil)
+        #expect(store.load().settings.fontSize == Settings.defaultSettings.fontSize)
+        undoManager.undo()
+        #expect(store.load().settings.fontSize == 20)
+    }
 
     @Test func anExternalEditToAnotherFieldSurvivesTheNextTransaction() throws {
         let controller = makeController()
