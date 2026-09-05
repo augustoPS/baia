@@ -880,7 +880,7 @@ def main():
             )
         else:
             probe.check(
-                "and `baia whoami` runs from that pane and exits 0",
+                "a closed pane's whoami is 0 or badToken (13)",
                 whoami_exit in ("0", "13"),
                 True,
             )

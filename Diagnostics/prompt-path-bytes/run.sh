@@ -3,10 +3,10 @@
 #
 #   ./Diagnostics/prompt-path-bytes/run.sh
 #
-# **Never from inside a baia pane.** It launches and drives `baia-dev.app` with
-# real events and brings it to the front, so a pane running an agent loses the
-# keystrokes. `theme-catalog` and `app-icon` are the two probes safe there; this
-# is not one of them.
+# **Never from inside a baia pane.** It launches and drives an isolated copy of
+# the Debug app with real events and brings it to the front, so a pane running
+# an agent loses the keystrokes. `theme-catalog` and `app-icon` are the two
+# probes safe there; this is not one of them.
 #
 # **The first run on a machine needs a person.** macOS raises an Automation
 # consent dialog the first time a process drives System Events and blocks until
@@ -30,38 +30,33 @@ set -uo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
+ROOT="$REPO"
 cd "$REPO"
 
-APP=".build/Build/Products/Debug/baia-dev.app"
+ISOLATED_LABEL=prompt-path-bytes
+# shellcheck source=../lib/isolated-app.sh
+source "$REPO/Diagnostics/lib/isolated-app.sh"
+isolated_refuse_pane || exit 1
+isolated_install_traps
+isolated_prepare || exit 1
+
+APP="$ISOLATED_APP"
 OUT="verify-out/prompt-path-bytes"
 # Absolute, for the reason path-picker records: the readout line is typed into a
 # pane whose working directory is the fixture, not the repo, so a relative path
 # there writes into a directory that does not exist and fails silently.
 READOUT="$REPO/$OUT"
-CONFIG="$HOME/.config/baia/config.json"
+CONFIG="$ISOLATED_CONFIG"
+isolated_default_config files || exit 1
 
-[ -d "$APP" ] || { echo "ABORT: no build at $APP, run make build first" >&2; exit 1; }
-
-# Sourced before `APP_SESSION` is read. `app-identity.sh` derives the support
-# directory, the session and the socket from the bundle `APP` names, so `APP` has
-# to be set first and this has to come before either is used. Both older driven
-# probes had these three lines above the source and `set -u` killed every run.
 export OUT REPO
 source "$REPO/Diagnostics/lib/drive.sh"
 
-SESSION="$APP_SESSION"
-BAIA_SOCK="$APP_SOCKET"
+SESSION="$ISOLATED_SESSION"
+BAIA_SOCK="$ISOLATED_SOCKET"
 export BAIA_SOCK
 
 mkdir -p "$READOUT"
-
-# The same contract every driven probe keeps: the run rewrites the sidebar key and
-# deletes the session, so both are put back whatever happens, including on a kill.
-CONFIG_BACKUP=$(mktemp)
-SESSION_BACKUP=$(mktemp)
-cp "$CONFIG" "$CONFIG_BACKUP" 2>/dev/null
-cp "$SESSION" "$SESSION_BACKUP" 2>/dev/null
-trap 'cp "$CONFIG_BACKUP" "$CONFIG" 2>/dev/null; cp "$SESSION_BACKUP" "$SESSION" 2>/dev/null; rm -f "$CONFIG_BACKUP" "$SESSION_BACKUP"' EXIT
 
 pass=0
 fail=0
@@ -102,7 +97,12 @@ refuse_prompt() {
 }
 
 launch() {
-    quit_app
+    isolated_stop_owned_process || {
+      if [ "${ISOLATED_PROCESS_RETAINED:-0}" = 1 ]; then
+        echo "isolated prompt-path-bytes app still alive; not relaunching" >&2
+        return 1
+      fi
+    }
     sleep 1.5
     rm -f "$SESSION"
     python3 - "$CONFIG" <<'PY'
@@ -112,7 +112,7 @@ settings = json.load(open(path))
 settings["sidebar"] = "files"
 json.dump(settings, open(path, "w"), indent=2)
 PY
-    open "$APP"
+    isolated_launch || exit 1
     sleep 5
     type_line "cd $FIXTURE"
     # The pane reports its own capability, which is the only way to hold one.
@@ -151,8 +151,6 @@ click_row 68 1          # src/, expands
 click_row 68 2          # src/caf<E9>.txt
 shot 2-refused
 refuse_prompt "a name that is not UTF-8 appends nothing"
-
-quit_app
 
 cat <<EOF
 

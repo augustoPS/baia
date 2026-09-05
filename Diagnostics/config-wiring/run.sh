@@ -12,18 +12,25 @@
 # because "the chrome moved with the surface" is not a pixel assertion.
 set -uo pipefail
 
-APP=".build/Build/Products/Debug/baia-dev.app"
-# Names the app, its executable, its Application Support directory and the
-# pattern that reaches its process and no other copy of baia. Everything below
-# used to spell all four for the Release build while launching this one.
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../lib" && pwd)/app-identity.sh"
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+ROOT=$(cd "$HERE/../.." && pwd)
+cd "$ROOT"
 
-BIN="$APP_EXEC"
-# Deliberately shared between the two builds, unlike the session: both read
-# `~/.config/baia/config.json`, because testing against settings that are not the
-# ones in daily use tests the wrong thing.
-CFG="$HOME/.config/baia/config.json"
-SESSION="$APP_SESSION"
+ISOLATED_LABEL=config-wiring
+# shellcheck source=../lib/isolated-app.sh
+source "$ROOT/Diagnostics/lib/isolated-app.sh"
+isolated_refuse_pane || exit 1
+isolated_install_traps
+isolated_prepare || exit 1
+
+APP="$ISOLATED_APP"
+source "$ROOT/Diagnostics/lib/app-identity.sh"
+
+BIN="$ISOLATED_BINARY"
+# Isolated config, not ~/.config/baia/config.json. First-launch creation is
+# still the check; it writes this run's file.
+CFG="$ISOLATED_CONFIG"
+SESSION="$ISOLATED_SESSION"
 OUT="verify-out"
 LOG="$OUT/stderr.log"
 
@@ -59,16 +66,24 @@ print('locked' if any(u.get('CGSSessionScreenIsLocked') for u in users) else 'un
     esac
 }
 
-stop() { quit_app; sleep 1.5; }
+stop() {
+    isolated_stop_owned_process || {
+      if [ "${ISOLATED_PROCESS_RETAINED:-0}" = 1 ]; then
+        echo "isolated config-wiring app still alive" >&2
+        exit 1
+      fi
+    }
+    sleep 1.5
+}
 
 # Launched attached so the decoder's complaints land somewhere readable. They are
 # the only channel it has: there is no diagnostics surface in the app yet.
 start() {
-    "$BIN" >>"$LOG" 2>&1 &
+    isolated_launch "$LOG" || exit 1
     sleep 5
 }
 
-baia_pid()  { pgrep -f "$APP_EXEC_PATTERN" | head -1; }
+baia_pid()  { printf '%s' "${ISOLATED_CHILD_PID:-}"; }
 shells()    { ps -eo pid,ppid,command | grep "[l]ogin -flp" | awk -v b="$(baia_pid)" '$2==b' | wc -l | tr -d ' '; }
 
 # The shared one, since 2026-08-02. This had its own copy that activated
@@ -143,7 +158,7 @@ open('$CFG.tmp','w').write(json.dumps(d,indent=2))
 
 echo "=== Task 6: config wiring, live ==="
 require_unlocked
-[ -x "$BIN" ] || { echo "ABORT: build first (make build)"; exit 1; }
+[ -x "$BIN" ] || { echo "ABORT: no isolated executable"; exit 1; }
 stop; : > "$LOG"
 
 echo

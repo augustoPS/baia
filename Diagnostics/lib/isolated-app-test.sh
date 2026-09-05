@@ -55,6 +55,14 @@ EOF
 ISOLATED_LABEL=isolated-test
 ISOLATED_SOURCE_APP="$FAKE"
 ISOLATED_EVIDENCE=$(mktemp -d "${TMPDIR:-/tmp}/baia-isolated-evidence.XXXXXX")
+SOURCE_EXEC="$FAKE/Contents/MacOS/baia-dev"
+SOURCE_PLIST="$FAKE/Contents/Info.plist"
+SOURCE_EXEC_HASH=$(/usr/bin/shasum -a 256 "$SOURCE_EXEC" | awk '{print $1}')
+SOURCE_PLIST_HASH=$(/usr/bin/shasum -a 256 "$SOURCE_PLIST" | awk '{print $1}')
+source_unchanged() {
+  [ "$(/usr/bin/shasum -a 256 "$SOURCE_EXEC" | awk '{print $1}')" = "$SOURCE_EXEC_HASH" ] \
+    && [ "$(/usr/bin/shasum -a 256 "$SOURCE_PLIST" | awk '{print $1}')" = "$SOURCE_PLIST_HASH" ]
+}
 # shellcheck source=isolated-app.sh
 source "$HERE/isolated-app.sh"
 
@@ -110,6 +118,27 @@ esac
 [ -x "$ISOLATED_BINARY" ] \
   && pass "copied executable is present" \
   || fail "copied executable is present"
+exec_name=$(/usr/bin/plutil -extract CFBundleExecutable raw -o - "$ISOLATED_APP/Contents/Info.plist")
+bundle_name=$(/usr/bin/plutil -extract CFBundleName raw -o - "$ISOLATED_APP/Contents/Info.plist")
+display_name=$(/usr/bin/plutil -extract CFBundleDisplayName raw -o - "$ISOLATED_APP/Contents/Info.plist")
+[ "$exec_name" != "baia-dev" ] && [ "$exec_name" != "baia" ] \
+  && pass "copied CFBundleExecutable is not the Debug process name" \
+  || fail "copied CFBundleExecutable is not the Debug process name (got $exec_name)"
+[ "$(basename "$ISOLATED_BINARY")" = "$exec_name" ] \
+  && pass "copied binary basename matches CFBundleExecutable" \
+  || fail "copied binary basename matches CFBundleExecutable"
+[ ! -e "$ISOLATED_APP/Contents/MacOS/baia-dev" ] \
+  && pass "copied MacOS directory no longer contains baia-dev" \
+  || fail "copied MacOS directory no longer contains baia-dev"
+[ "$bundle_name" = "$exec_name" ] \
+  && pass "CFBundleName matches the unique executable" \
+  || fail "CFBundleName matches the unique executable (got $bundle_name vs $exec_name)"
+[ "$display_name" = "$exec_name" ] \
+  && pass "CFBundleDisplayName matches the unique executable" \
+  || fail "CFBundleDisplayName matches the unique executable (got $display_name vs $exec_name)"
+source_unchanged \
+  && pass "prepare leaves the source app bytes unchanged" \
+  || fail "prepare leaves the source app bytes unchanged"
 case "$ISOLATED_OUT" in
   *//*) fail "scratch out has no doubled slash (got $ISOLATED_OUT)" ;;
   *) pass "scratch out has no doubled slash" ;;
@@ -146,6 +175,57 @@ name2=$(
 [ -n "$name2" ] && [ "$name1" != "$name2" ] \
   && pass "two live prepares receive distinct support directory names" \
   || fail "two live prepares receive distinct support directory names ($name1 vs $name2)"
+
+exec1=$exec_name
+copy2=$(
+  ROOT="$ROOT"
+  ISOLATED_LABEL=isolated-test
+  ISOLATED_SOURCE_APP="$FAKE"
+  ISOLATED_EVIDENCE=$(mktemp -d "${TMPDIR:-/tmp}/baia-isolated-evidence-exec.XXXXXX")
+  # shellcheck source=isolated-app.sh
+  source "$HERE/isolated-app.sh"
+  isolated_prepare
+  plist="$ISOLATED_APP/Contents/Info.plist"
+  printf '%s\t%s\t%s' \
+    "$(/usr/bin/plutil -extract CFBundleExecutable raw -o - "$plist")" \
+    "$(/usr/bin/plutil -extract CFBundleName raw -o - "$plist")" \
+    "$(/usr/bin/plutil -extract CFBundleDisplayName raw -o - "$plist")"
+  isolated_teardown >/dev/null
+  rm -rf "$ISOLATED_EVIDENCE"
+)
+exec2=$(printf '%s' "$copy2" | awk -F '\t' '{print $1}')
+bundle2=$(printf '%s' "$copy2" | awk -F '\t' '{print $2}')
+display2=$(printf '%s' "$copy2" | awk -F '\t' '{print $3}')
+[ -n "$exec2" ] && [ "$exec1" != "$exec2" ] && [ "$exec2" != "baia-dev" ] \
+  && pass "two live copies receive distinct CFBundleExecutable names" \
+  || fail "two live copies receive distinct CFBundleExecutable names ($exec1 vs $exec2)"
+[ "$bundle2" = "$exec2" ] && [ "$display2" = "$exec2" ] \
+  && pass "second copy Name and DisplayName match its unique executable" \
+  || fail "second copy Name and DisplayName match its unique executable"
+[ "$display_name" != "$display2" ] \
+  && pass "two live copies receive distinct CFBundleDisplayName values" \
+  || fail "two live copies receive distinct CFBundleDisplayName values ($display_name vs $display2)"
+source_unchanged \
+  && pass "a second prepare still leaves the source app bytes unchanged" \
+  || fail "a second prepare still leaves the source app bytes unchanged"
+
+if (
+  ROOT="$ROOT"
+  ISOLATED_LABEL=isolated-force
+  ISOLATED_SOURCE_APP="$FAKE"
+  ISOLATED_FORCE_PREPARE_FAILURE=1
+  unset ISOLATED_EVIDENCE
+  # shellcheck source=isolated-app.sh
+  source "$HERE/isolated-app.sh"
+  isolated_prepare
+); then
+  fail "forced prepare failure is honoured"
+else
+  pass "forced prepare failure is honoured"
+fi
+source_unchanged \
+  && pass "forced prepare failure leaves the source app bytes unchanged" \
+  || fail "forced prepare failure leaves the source app bytes unchanged"
 
 printf 'secret=probe-token\n' > "$ISOLATED_OUT/capability.env"
 
@@ -208,6 +288,70 @@ fi
 [ -d "$ISOLATED_SUPPORT" ] \
   && pass "alive process retains the support directory" \
   || fail "alive process retains the support directory"
+isolated_teardown >/dev/null
+
+# New helpers: default config, pane refusal, launch of the copied fake binary.
+isolated_prepare
+cfg_saved=$ISOLATED_CONFIG
+unset ISOLATED_CONFIG
+if isolated_default_config files 2>/dev/null; then
+  fail "default_config fails when ISOLATED_CONFIG is unset"
+else
+  pass "default_config fails when ISOLATED_CONFIG is unset"
+fi
+ISOLATED_CONFIG=$cfg_saved
+isolated_default_config files
+grep -q '"sidebar": "files"' "$ISOLATED_CONFIG" \
+  && [ "$ISOLATED_CONFIG" != "$HOME/.config/baia/config.json" ] \
+  && pass "default config writes the isolated file" \
+  || fail "default config writes the isolated file"
+bin_saved=$ISOLATED_BINARY
+ISOLATED_BINARY="/no/such/isolated-binary-$$"
+if isolated_launch 2>/dev/null; then
+  fail "launch fails when the copied executable is missing"
+else
+  pass "launch fails when the copied executable is missing"
+fi
+ISOLATED_BINARY=$bin_saved
+printf 'x\n' > "$ISOLATED_OUT/not-a-dir"
+if isolated_launch "$ISOLATED_OUT/not-a-dir/app.log" 2>/dev/null; then
+  fail "launch fails when the log directory cannot be created"
+else
+  pass "launch fails when the log directory cannot be created"
+fi
+mkdir -p "$ISOLATED_OUT/log-is-dir"
+if isolated_launch "$ISOLATED_OUT/log-is-dir" 2>/dev/null; then
+  fail "launch fails when the log file cannot be opened"
+else
+  pass "launch fails when the log file cannot be opened"
+fi
+(
+  BAIA_PANE=probe-pane
+  isolated_refuse_pane
+) && fail "refuse_pane fails when BAIA_PANE is set" \
+  || pass "refuse_pane fails when BAIA_PANE is set"
+unset BAIA_PANE
+isolated_refuse_pane \
+  && pass "refuse_pane succeeds outside a pane" \
+  || fail "refuse_pane succeeds outside a pane"
+
+cat > "$ISOLATED_OUT/pause.c" <<'EOF'
+#include <unistd.h>
+int main(void) { for (;;) pause(); }
+EOF
+cc -o "$ISOLATED_BINARY" "$ISOLATED_OUT/pause.c"
+isolated_launch
+if isolated_app_is_running; then
+  pass "launch records a live copied-binary child"
+else
+  fail "launch records a live copied-binary child"
+fi
+isolated_stop_owned_process || true
+if isolated_app_is_running; then
+  fail "stop ends the launched child"
+else
+  pass "stop ends the launched child"
+fi
 isolated_teardown >/dev/null
 
 # Partial prepare: copy succeeds, executable is missing, created dirs go away.

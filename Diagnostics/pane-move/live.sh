@@ -25,8 +25,7 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 [ -n "${BAIA_PANE:-}" ] || { echo "no BAIA_PANE: run this from inside a baia pane" >&2; exit 2; }
 baia --help 2>/dev/null | grep -q '^  move ' || {
   echo "the running baia has no 'move' verb, so it predates the merge." >&2
-  echo "Quit it and relaunch:" >&2
-  echo "  open $(cd "$HERE/../.." && pwd)/.build/Build/Products/Debug/baia-dev.app" >&2
+  echo "Quit this pane's host app and relaunch the same build that is hosting it." >&2
   exit 2
 }
 

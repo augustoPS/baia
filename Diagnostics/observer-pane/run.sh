@@ -57,7 +57,7 @@ LOG=/tmp/baia-observer
 if ! baia --help 2>/dev/null | grep -q -- '--command'; then
   echo "the running baia's CLI has no 'split --command'." >&2
   echo "It is probably the installed copy. Relaunch the dev build with:" >&2
-  echo "  $REPO/.build/Build/Products/Debug/baia-dev.app/Contents/MacOS/baia-dev &" >&2
+  echo "  relaunch the same baia that is hosting this pane" >&2
   exit 2
 fi
 

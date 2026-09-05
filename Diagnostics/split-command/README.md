@@ -1,7 +1,9 @@
 # Split-command probe
 
 `./run.sh` from anywhere. Seven automated checks plus one capture a human looks
-at. `./run.sh --refusals` runs only the checks that need no app.
+at. `./run.sh --refusals` runs only the checks that need no app. The driving
+half launches an isolated copy rather than typing into a baia that is already
+running.
 
 The question it exists to answer is **what ghostty actually does with the
 `command` config key**, and therefore what a caller of `baia split --command`

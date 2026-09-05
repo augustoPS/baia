@@ -15,9 +15,9 @@ test would still pass.
 ./Diagnostics/pane-move/live.sh
 ```
 
-**Unlike every other probe here**, which quits any running baia and launches its
-own. This one cannot: the pane it needs is the pane it runs in. It opens two
-panes, moves one, and leaves all three on screen for the eye.
+**Unlike the isolated Debug-app launchers**, this one cannot launch a copy: the
+pane it needs is the pane it runs in. It opens two panes, moves one, and leaves
+all three on screen for the eye. It does not pkill or `open` a bundle.
 
 ## The evidence
 

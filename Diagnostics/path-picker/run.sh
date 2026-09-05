@@ -23,42 +23,32 @@ set -uo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
+ROOT="$REPO"
 cd "$REPO"
 
-APP=".build/Build/Products/Debug/baia-dev.app"
+ISOLATED_LABEL=path-picker
+# shellcheck source=../lib/isolated-app.sh
+source "$REPO/Diagnostics/lib/isolated-app.sh"
+isolated_refuse_pane || exit 1
+isolated_install_traps
+isolated_prepare || exit 1
+
+APP="$ISOLATED_APP"
 OUT="verify-out/path-picker"
 # Absolute, because the readout below is typed into a pane whose working
 # directory is the fixture, not the repo. A relative path there wrote into a
 # directory that does not exist and the redirect failed silently, which read as
 # the pane having no capability at all.
 READOUT="$REPO/$OUT"
-CONFIG="$HOME/.config/baia/config.json"
+CONFIG="$ISOLATED_CONFIG"
+isolated_default_config files || exit 1
 
-[ -d "$APP" ] || { echo "ABORT: no build at $APP, run make build first" >&2; exit 1; }
-
-# **Sourced before `APP_SESSION` is read, and it was not.** `app-identity.sh`,
-# which `drive.sh` pulls in, derives the support directory, the session file and
-# the socket from the bundle `APP` names, so `APP` has to be set first and the
-# source has to come before either is used. This block read both fifteen lines
-# above the source, and `set -u` turns that from wrong into fatal: every run died
-# on `APP_SESSION: unbound variable` before it launched anything. Arrived with the
-# identity resolver on 2026-08-02 and was never run afterwards, which is the only
-# reason it stayed. `tree-expansions/run.sh` carried the same three lines and the
-# same defect.
 export OUT REPO
 source "$REPO/Diagnostics/lib/drive.sh"
 
-SESSION="$APP_SESSION"
-BAIA_SOCK="$APP_SOCKET"
+SESSION="$ISOLATED_SESSION"
+BAIA_SOCK="$ISOLATED_SOCKET"
 export BAIA_SOCK
-
-# Same contract capture.sh keeps: the run rewrites the sidebar key and deletes the
-# session, so both are put back whatever happens, including on a kill.
-CONFIG_BACKUP=$(mktemp)
-SESSION_BACKUP=$(mktemp)
-cp "$CONFIG" "$CONFIG_BACKUP" 2>/dev/null
-cp "$SESSION" "$SESSION_BACKUP" 2>/dev/null
-trap 'cp "$CONFIG_BACKUP" "$CONFIG" 2>/dev/null; cp "$SESSION_BACKUP" "$SESSION" 2>/dev/null; rm -f "$CONFIG_BACKUP" "$SESSION_BACKUP"' EXIT
 
 pass=0
 fail=0
@@ -103,7 +93,12 @@ FIXTURE=$("$HERE/fixture.sh" | sed -n 's/^\[+\] fixture at //p')
 echo "  fixture at $FIXTURE"
 
 launch() {
-    quit_app
+    isolated_stop_owned_process || {
+      if [ "${ISOLATED_PROCESS_RETAINED:-0}" = 1 ]; then
+        echo "isolated path-picker app still alive; not relaunching" >&2
+        return 1
+      fi
+    }
     sleep 1.5
     rm -f "$SESSION"
     python3 - "$CONFIG" <<'PY'
@@ -113,7 +108,7 @@ settings = json.load(open(path))
 settings["sidebar"] = "files"
 json.dump(settings, open(path, "w"), indent=2)
 PY
-    open "$APP"
+    isolated_launch || exit 1
     sleep 5
     type_line "cd $FIXTURE"
     # The pane reports its own capability, which is the only way to hold one: a
@@ -173,8 +168,6 @@ echo "5 the escape name refuses too"
 click_row 68 9          # src/esc<ESC>[Dname.txt
 shot 5-escape-refused
 refuse_prompt "and neither does the escape name"
-
-quit_app
 
 cat <<EOF
 

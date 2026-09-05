@@ -26,37 +26,31 @@ set -uo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
+ROOT="$REPO"
 cd "$REPO"
 
-APP=".build/Build/Products/Debug/baia-dev.app"
+ISOLATED_LABEL=tree-expansions
+# shellcheck source=../lib/isolated-app.sh
+source "$REPO/Diagnostics/lib/isolated-app.sh"
+isolated_refuse_pane || exit 1
+isolated_install_traps
+isolated_prepare || exit 1
+
+APP="$ISOLATED_APP"
 OUT="verify-out/tree-expansions"
 # Absolute, for the reason path-picker records: the readout line is typed into a
 # pane whose working directory is the fixture, not the repo, so a relative
 # redirect there writes into a directory that does not exist and fails silently.
 READOUT="$REPO/$OUT"
-CONFIG="$HOME/.config/baia/config.json"
+CONFIG="$ISOLATED_CONFIG"
+isolated_default_config files || exit 1
 
-[ -d "$APP" ] || { echo "ABORT: no build at $APP, run make build first" >&2; exit 1; }
-
-# Sourced before `APP_SESSION` is read, for the reason `path-picker/run.sh`
-# records at the same place: `app-identity.sh` derives the session and the socket
-# from the bundle `APP` names, and `set -u` made reading them early fatal rather
-# than merely early. Both files carried the identical three lines in the identical
-# wrong order.
 export OUT REPO
 source "$REPO/Diagnostics/lib/drive.sh"
 
-SESSION="$APP_SESSION"
-BAIA_SOCK="$APP_SOCKET"
+SESSION="$ISOLATED_SESSION"
+BAIA_SOCK="$ISOLATED_SOCKET"
 export BAIA_SOCK
-
-# The contract every driven probe here keeps: the run rewrites the sidebar key and
-# deletes the session, so both are put back whatever happens, including on a kill.
-CONFIG_BACKUP=$(mktemp)
-SESSION_BACKUP=$(mktemp)
-cp "$CONFIG" "$CONFIG_BACKUP" 2>/dev/null
-cp "$SESSION" "$SESSION_BACKUP" 2>/dev/null
-trap 'cp "$CONFIG_BACKUP" "$CONFIG" 2>/dev/null; cp "$SESSION_BACKUP" "$SESSION" 2>/dev/null; rm -f "$CONFIG_BACKUP" "$SESSION_BACKUP"' EXIT
 
 pass=0
 fail=0
@@ -139,7 +133,12 @@ PLAIN_ROW=10
 SENDS="plain.txt"
 
 echo "1 a closed tree has no row 10, which is what makes row 10 an oracle"
-quit_app
+isolated_stop_owned_process || {
+  if [ "${ISOLATED_PROCESS_RETAINED:-0}" = 1 ]; then
+    echo "isolated tree-expansions app still alive; not relaunching" >&2
+    exit 1
+  fi
+}
 sleep 1.5
 rm -f "$SESSION"
 python3 - "$CONFIG" <<'PY'
@@ -149,7 +148,7 @@ settings = json.load(open(path))
 settings["sidebar"] = "files"
 json.dump(settings, open(path, "w"), indent=2)
 PY
-open "$APP"
+isolated_launch || exit 1
 sleep 5
 type_line "cd $WORKDIR"
 readout_line
@@ -170,8 +169,8 @@ echo "3 the quit records the open set under the resolved anchor"
 # feature and measuring nothing.
 key 'keystroke "q" using command down'
 sleep 3
-if pgrep -f "$APP_EXEC_PATTERN" >/dev/null; then
-    bad "the app quit on command-Q" "no baia process" "still running"
+if isolated_app_is_running; then
+    bad "the app quit on command-Q" "no isolated process" "still running"
 else
     ok "the app quit on command-Q"
 fi
@@ -225,7 +224,7 @@ esac
 echo "  session recorded $RECORDED"
 
 echo "4 the relaunch brings the tree back open"
-open "$APP"
+isolated_launch || exit 1
 sleep 6
 readout_line
 type_raw "ls "

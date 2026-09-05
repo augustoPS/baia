@@ -13,14 +13,17 @@
 # isolated_prepare / isolated_teardown itself, and must not install the EXIT trap
 # (isolated_cleanup exits the process).
 #
-# The copy gets a unique bundle identifier and an exclusively created
-# Application Support directory (mktemp, never a PID-only name). Cleanup signals
-# only a recorded PID whose live command still matches this copy's binary, TERM
-# then bounded wait, KILL only if it is still that binary, then a bounded wait
-# to reap. It never blocks on wait after the KILL bound fails. It deletes only
-# directories this invocation created, identified
-# by a per-run marker. It never names a process and never writes the owner's
-# config, session, or acknowledgement.
+# The copy gets a unique bundle identifier, a uniquely renamed executable,
+# and matching CFBundleExecutable / CFBundleName / CFBundleDisplayName (so AX
+# process name and every display/localized identity are not `baia-dev` and not
+# shared with another copy), plus an exclusively created Application Support
+# directory (mktemp, never a PID-only name). The source app is never rewritten.
+# Cleanup signals only a recorded PID whose live command still matches this
+# copy's binary, TERM then bounded wait, KILL only if it is still that binary,
+# then a bounded wait to reap. It never blocks on wait after the KILL bound
+# fails. It deletes only directories this invocation created, identified by a
+# per-run marker. It never names a process and never writes the owner's config,
+# session, or acknowledgement.
 #
 # Exports:
 #   ISOLATED_OUT ISOLATED_APP ISOLATED_BINARY ISOLATED_SUPPORT
@@ -29,8 +32,9 @@
 #   ISOLATED_SOURCE_APP
 #
 # Functions: isolated_install_traps, isolated_prepare, isolated_acknowledge,
-# isolated_record_child, isolated_fingerprint_save, isolated_fingerprint_check,
-# isolated_teardown, isolated_cleanup.
+# isolated_record_child, isolated_launch, isolated_relaunch, isolated_default_config,
+# isolated_refuse_pane, isolated_app_is_running, isolated_fingerprint_save,
+# isolated_fingerprint_check, isolated_teardown, isolated_cleanup.
 set -uo pipefail
 
 : "${ROOT:?isolated-app.sh needs ROOT set to the repository root}"
@@ -193,6 +197,84 @@ isolated_record_child() {
   printf '%s\n%s\n' "$ISOLATED_CHILD_PID" "$ISOLATED_BINARY" > "$ISOLATED_PID_FILE"
 }
 
+isolated_refuse_pane() {
+  if [ -n "${BAIA_PANE:-}" ]; then
+    echo "$ISOLATED_LABEL launches an app that takes focus. Run it outside a baia pane." >&2
+    return 1
+  fi
+  return 0
+}
+
+isolated_default_config() {
+  local sidebar="${1:-off}"
+  if [ -z "${ISOLATED_CONFIG:-}" ]; then
+    echo "isolated_default_config: ISOLATED_CONFIG is not set" >&2
+    return 1
+  fi
+  cat > "$ISOLATED_CONFIG" <<EOF
+{
+  "notificationsEnabled": false,
+  "restoreSession": true,
+  "controlChannelEnabled": true,
+  "controlAllowRun": false,
+  "sidebar": "$sidebar",
+  "projectRoots": ["$ISOLATED_OUT"]
+}
+EOF
+}
+
+# Launch the copied binary with this run's config and ZDOTDIR. Does not go
+# through `open`, which would drop ZDOTDIR. Optional first argument is the
+# app log path. mkdir and log-file open are checked synchronously before
+# spawning, so a permission or path failure does not leave a child running
+# with a closed stdout. Returns 1 if the binary is missing, the log cannot
+# be opened, or the child pid is already gone, so callers without `set -e`
+# can abort before driving the UI.
+#
+# The kill -0 after spawn is immediate liveness only: the pid still exists.
+# It is not readiness. The copy may not yet have a window, a socket, or an
+# AX process.
+isolated_launch() {
+  local log="${1:-$ISOLATED_EVIDENCE/app.log}"
+  if [ -z "${ISOLATED_BINARY:-}" ] || [ ! -x "$ISOLATED_BINARY" ]; then
+    echo "isolated_launch: no executable at ${ISOLATED_BINARY:-}" >&2
+    return 1
+  fi
+  if ! mkdir -p "$(dirname "$log")" "$ISOLATED_EVIDENCE"; then
+    echo "isolated_launch: cannot create log directory for $log" >&2
+    return 1
+  fi
+  if ! : >>"$log"; then
+    echo "isolated_launch: cannot open log file $log" >&2
+    return 1
+  fi
+  BAIA_CONFIG_FILE="$ISOLATED_CONFIG" ZDOTDIR="$ISOLATED_ZDOT" \
+    "$ISOLATED_BINARY" >>"$log" 2>&1 &
+  isolated_record_child "$!"
+  # Immediate liveness only, not readiness (window / socket / AX).
+  if ! kill -0 "$ISOLATED_CHILD_PID" 2>/dev/null; then
+    wait "$ISOLATED_CHILD_PID" 2>/dev/null || true
+    echo "isolated_launch: copied binary exited immediately" >&2
+    return 1
+  fi
+  return 0
+}
+
+isolated_relaunch() {
+  isolated_stop_owned_process || {
+    if [ "${ISOLATED_PROCESS_RETAINED:-0}" = 1 ]; then
+      echo "previous isolated process still alive; not relaunching" >&2
+      return 1
+    fi
+  }
+  sleep 1.5
+  isolated_launch "$@"
+}
+
+isolated_app_is_running() {
+  [ -n "${ISOLATED_CHILD_PID:-}" ] && kill -0 "$ISOLATED_CHILD_PID" 2>/dev/null
+}
+
 # Signal only if the live command still is this copy's binary. TERM, bounded
 # wait, KILL only while that is still true, then a bounded wait. A dead pid is
 # reaped and never killed. If it is still this binary after the KILL bound,
@@ -344,18 +426,57 @@ export HISTFILE=/dev/null
 EOF
 
   /usr/bin/ditto "$ISOLATED_SOURCE_APP" "$ISOLATED_APP" || return 1
+
+  # Test hook: fail after the copy exists so teardown must delete it without
+  # touching the source app. Callers without `set -e` still have to abort.
+  if [ "${ISOLATED_FORCE_PREPARE_FAILURE:-0}" = 1 ]; then
+    echo "forced prepare failure" >&2
+    return 1
+  fi
+
+  local plist="$ISOLATED_APP/Contents/Info.plist"
+  local macos_dir="$ISOLATED_APP/Contents/MacOS"
+  local original_exec new_exec short
+  original_exec=$(/usr/bin/plutil -extract CFBundleExecutable raw -o - "$plist") || return 1
+  if [ ! -x "$macos_dir/$original_exec" ]; then
+    echo "copied bundle has no executable at $macos_dir/$original_exec" >&2
+    return 1
+  fi
+  short=$(printf '%s' "$ISOLATED_RUN_ID" | tr -d '-' | cut -c1-12)
+  new_exec="baia-${ISOLATED_LABEL}-${short}"
+  case "$new_exec" in
+    baia|baia-dev)
+      echo "refusing product executable name $new_exec" >&2
+      return 1
+      ;;
+  esac
+  if [ "$new_exec" = "$original_exec" ]; then
+    echo "isolated executable name collided with the source name $original_exec" >&2
+    return 1
+  fi
+  if [ "$new_exec" != "$original_exec" ]; then
+    mv "$macos_dir/$original_exec" "$macos_dir/$new_exec" || return 1
+  fi
+
   /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier pasqualotto.baia.${ISOLATED_LABEL}.${ISOLATED_RUN_ID}" \
-    "$ISOLATED_APP/Contents/Info.plist" || return 1
-  /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName baia-${ISOLATED_LABEL}" \
-    "$ISOLATED_APP/Contents/Info.plist" || return 1
+    "$plist" || return 1
+  /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $new_exec" \
+    "$plist" || return 1
+  if /usr/libexec/PlistBuddy -c "Print :CFBundleName" "$plist" >/dev/null 2>&1; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleName $new_exec" "$plist" || return 1
+  else
+    /usr/libexec/PlistBuddy -c "Add :CFBundleName string $new_exec" "$plist" || return 1
+  fi
+  if /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$plist" >/dev/null 2>&1; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $new_exec" "$plist" || return 1
+  else
+    /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string $new_exec" "$plist" || return 1
+  fi
   /usr/libexec/PlistBuddy -c "Set :BAIASupportDirectory $ISOLATED_SUPPORT_NAME" \
-    "$ISOLATED_APP/Contents/Info.plist" || return 1
+    "$plist" || return 1
   /usr/bin/codesign --force --deep --sign - "$ISOLATED_APP" >/dev/null || return 1
 
-  local executable
-  executable=$(/usr/bin/plutil -extract CFBundleExecutable raw -o - \
-    "$ISOLATED_APP/Contents/Info.plist")
-  ISOLATED_BINARY="$ISOLATED_APP/Contents/MacOS/$executable"
+  ISOLATED_BINARY="$macos_dir/$new_exec"
   if [ ! -x "$ISOLATED_BINARY" ]; then
     echo "copied bundle has no executable at $ISOLATED_BINARY" >&2
     return 1

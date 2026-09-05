@@ -60,7 +60,7 @@ responder inside a pane's window and silently kill every ghostty binding" is.
 | `key-resize/` | ⌃⌘arrow divider steps under key repeat |
 | `override-wires/` | Whether each chrome extra in `DesignOverrides` reaches the pixel it names, and whether an undialled override leaves the rendering byte-identical. Renders the shipped views offscreen through `cacheDisplay(in:to:)` rather than capturing a window, which makes every arm deterministic and machine independent. Opens no window and takes no focus, so it is the third probe here that is safe from inside a pane. Its README records what it deliberately does not measure — the glass tints, the pane wash floor (and before it the retired sidebar one) and the lift's duration are owed to the panel, the package tests and the pane-glass probes rather than claimed |
 | `pane-resize/` | Divider drag arithmetic |
-| `path-picker/` | What lands on the prompt when a sidebar row is clicked. Drives the clicks and captures five images; the verdict is human, because reading a pane's contents needs the unbuilt `read` verb |
+| `path-picker/` | What lands on the prompt when a sidebar row is clicked. Isolated copy; clicks and prompt reads, five images |
 | `theme-catalog/` | Whether a contrast promise measured on one theme holds on the other 484, and whether the figures the doc comments quote are still true. All 485 shipped themes by all seven `FocusAccent` cases. The only probe here that needs no window, no shell and no socket, and it is the exception that proves the rule below. Its build is `build.sh`, callable on its own for a reader who wants the binary without the verdict |
 | `theme-refresh/` | Whether a theme change reaches every surface already on screen |
 | `titlebar-merge/` | Whether the titlebar band and the sidebar column can read as ONE glass panel instead of two planes meeting at a seam. Four arms over a controlled backdrop, graded on luminance step down a strip crossing the boundary. Found the shipped seam measures 38 units — larger than the flat control's own two-tone step — and that both an `NSGlassEffectContainerView` and a single spanning plane take it to exactly 0.00. Also found that a container **cannot** span the app's frame-view/contentView split (a view has one superview), so the merge costs moving the titlebar's glass into `contentView` behind `.fullSizeContentView`, whose grid impact `titlebar-toolbar` measured and this probe does not re-close. Traffic lights survive and stay hit-testable in every arm. Puts real windows on screen and takes no focus, like `glass-backdrop` |
@@ -73,7 +73,7 @@ one's header says which route and why, so nobody re-derives it.
 
 | File | What it is |
 |---|---|
-| `isolated-app.sh` | Sourced, not run. Copies the Debug app, unique bundle id / support / config / `ZDOTDIR`, exact-PID cleanup, hashes the owner's config/session/ack. Used by `control-channel/` and `settings-window/`. Never process-name kills |
+| `isolated-app.sh` | Sourced, not run. Copies the Debug app, unique bundle id / executable (AX process name) / support / config / `ZDOTDIR`, exact-PID cleanup, hashes the owner's config/session/ack. Callers: control-channel, settings-window, capture.sh, config-wiring, tree-expansions, path-picker, prompt-path-bytes, split-command. Never process-name kills |
 | `isolated-app-test.sh` | Static checks over a fake bundle. Launches nothing |
 | `app-identity.sh` | Sourced, not run. Answers *which* baia a probe is talking to, from the bundle it launched rather than from a spelling: `APP_NAME`, `APP_ID`, `APP_EXEC`, `APP_SUPPORT`, `APP_SESSION`, `APP_SOCKET`, plus `quit_app`, `activate_app` and `app_is_running`. Set `APP` before sourcing. Read its header before adding a fifth driver |
 | `app-identity-test.sh` | 13 checks over the kill pattern, run against command-line strings rather than processes, so it launches nothing and kills nothing. Includes the pre-2026-08-02 pattern as a worked example of the bug and an over-broad pattern as a negative control |
@@ -98,11 +98,16 @@ reading the state of the other: eighteen references across six files, found by
 the wave-five verification pass. `app-identity.sh` is the single answer and
 `app-identity-test.sh` is what keeps it honest.
 
-It backs up and restores both `~/.config/baia/config.json` and the workspace
-`session.json`. The session half was added 2026-07-30: `restart` deletes the
-session file on every scenario, twelve times in a run, so before the fix a
-finished run left the app reopening in a throwaway fixture with the real
-workspace gone.
+Driven app probes now copy the Debug build into an isolated instance
+(`isolated-app.sh`) instead of rewriting `~/.config/baia/config.json` or the
+Debug session. `capture.sh` used to back up and restore those files; a killed
+run that failed to restore once left the workspace at `/tmp/baia-design-demo/dirty`.
+
+Remaining launchers that do not use that copy: `pane-move/live.sh` (in-pane, no
+launch), `observer-pane/run.sh` (retired, exits 2), `footer-corners/` (frozen
+no-op), `agent-integration/` (helper against a fixture HOME, not a baia window),
+and the swiftc probes that compile their own windows. Session-recovery has its
+own copy of the same isolation pattern.
 
 ## Adding one
 

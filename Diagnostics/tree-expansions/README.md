@@ -35,7 +35,11 @@ because a map written under the wrong key looks identical in a capture.
 
 **⌘Q, not `pkill`.** The session is flushed as the app terminates and a killed
 process writes nothing, which is the difference between measuring the feature and
-measuring an empty file.
+measuring an empty file. The app is an isolated copy; ⌘Q still has to be the
+isolated process quitting, not a name-based kill.
+
+`./run.sh` from anywhere outside a baia pane. It does not rewrite
+`~/.config/baia` or the Debug session.
 
 ## What it borrows
 

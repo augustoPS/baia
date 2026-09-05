@@ -1,7 +1,9 @@
 # Path picker probe
 
-`./run.sh` from anywhere. Builds the fixture, drives the picker, writes five
-images to `verify-out/path-picker/`, and prints `ok` or `FAIL` per check.
+`./run.sh` from anywhere, outside a baia pane. Builds the fixture, drives an
+isolated copy of the Debug app, writes five images to `verify-out/path-picker/`,
+and prints `ok` or `FAIL` per check. It does not rewrite `~/.config/baia` or
+the Debug session.
 
 **It needs the machine to itself.** The clicks are real events at real screen
 points, so anything that comes to the front during a run takes them. `act` refuses

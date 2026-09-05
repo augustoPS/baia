@@ -3,7 +3,9 @@
 #
 # Drives the real app through AppleScript and captures the window rather than the
 # screen, so the output is usable as a design reference rather than a desktop
-# photo. Run from the repo root after `make build`.
+# photo. Run from the repo root after a Debug build exists. It copies that
+# build into an isolated instance and does not rewrite the owner's config or
+# session.
 #
 #   ./Diagnostics/lib/capture.sh [output-directory]
 #
@@ -20,34 +22,29 @@
 #     That is what `act` is for, and why every helper calls it first.
 set -uo pipefail
 
-APP=".build/Build/Products/Debug/baia-dev.app"
-# Before `SESSION`, which reads a value this defines. `drive.sh` below sources it
-# too and sourcing twice is harmless, but the first use is here.
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/app-identity.sh"
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+ROOT=$(cd "$HERE/../.." && pwd)
+cd "$ROOT"
 
+ISOLATED_LABEL=capture
+# shellcheck source=isolated-app.sh
+source "$HERE/isolated-app.sh"
+isolated_refuse_pane || exit 1
+isolated_install_traps
+isolated_prepare || exit 1
+
+APP="$ISOLATED_APP"
 OUT="${1:-design/handoffs/captures}"
-SESSION="$APP_SESSION"
-CONFIG="$HOME/.config/baia/config.json"
+SESSION="$ISOLATED_SESSION"
+CONFIG="$ISOLATED_CONFIG"
 mkdir -p "$OUT"
-
-# The captures set `sidebar` per scenario, so the owner's own file is put back
-# whatever happens. Without this a killed run leaves their sidebar wherever the
-# last capture wanted it.
-#
-# The session file needs the same treatment and did not have it until 2026-07-30.
-# `restart` deletes it on every scenario, twelve times in a run, so a finished run
-# left the app reopening in whatever throwaway fixture the last capture used and
-# the real workspace gone. One run on 2026-07-29 lost it to
-# /tmp/baia-design-demo/dirty that way.
-CONFIG_BACKUP=$(mktemp)
-SESSION_BACKUP=$(mktemp)
-cp "$CONFIG" "$CONFIG_BACKUP" 2>/dev/null
-cp "$SESSION" "$SESSION_BACKUP" 2>/dev/null
-trap 'cp "$CONFIG_BACKUP" "$CONFIG" 2>/dev/null; cp "$SESSION_BACKUP" "$SESSION" 2>/dev/null; rm -f "$CONFIG_BACKUP" "$SESSION_BACKUP"' EXIT
+isolated_default_config off || exit 1
 
 # Activation, keys, text, clicks and window captures all live in drive.sh, which
 # path-picker's runner shares. OUT is set above; REPO defaults to the repo root.
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/drive.sh"
+# APP is the isolated copy, so drive.sh's identity helpers cannot reach Debug or
+# Release state.
+source "$HERE/drive.sh"
 
 # Relaunches with the sidebar in a named state: off, changes, files, both.
 #
@@ -58,7 +55,12 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/drive.sh"
 # config here already said `both`.
 restart() {
     local content=${1:-off}
-    quit_app
+    isolated_stop_owned_process || {
+      if [ "${ISOLATED_PROCESS_RETAINED:-0}" = 1 ]; then
+        echo "isolated capture app still alive; not relaunching" >&2
+        return 1
+      fi
+    }
     sleep 1.5
     rm -f "$SESSION"
     python3 - "$CONFIG" "$content" <<'PY'
@@ -68,7 +70,7 @@ settings = json.load(open(path))
 settings["sidebar"] = content
 json.dump(settings, open(path, "w"), indent=2)
 PY
-    open "$APP"
+    isolated_launch || exit 1
     sleep 5
 }
 
@@ -190,5 +192,4 @@ key 'key code 123 using {command down, option down}'
 key 'key code 123 using {command down, option down}'
 shot 13-sidebar-and-panes
 
-quit_app
 echo "done"

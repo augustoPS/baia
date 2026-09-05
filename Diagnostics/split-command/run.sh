@@ -21,8 +21,18 @@ set -uo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
-BIN="$ROOT/.build/Build/Products/Debug/baia-dev.app/Contents/Helpers/baia"
-OUT="${TMPDIR:-/tmp}/baia-split-command"
+cd "$ROOT"
+
+ISOLATED_LABEL=split-command
+# shellcheck source=../lib/isolated-app.sh
+source "$ROOT/Diagnostics/lib/isolated-app.sh"
+isolated_install_traps
+isolated_prepare || exit 1
+isolated_default_config off || exit 1
+
+BIN="$ISOLATED_APP/Contents/Helpers/baia"
+OUT="$ISOLATED_OUT/probe"
+mkdir -p "$OUT"
 
 pass=0
 fail=0
@@ -83,19 +93,15 @@ if [ "${1:-}" = "--refusals" ]; then
     exit 1
 fi
 
-echo "-- against the running app"
+echo "-- against an isolated app"
+isolated_refuse_pane || exit 1
 
-if ! pgrep -x baia > /dev/null; then
-    echo "SKIP: baia is not running. make run, focus a shell pane, then rerun." >&2
-    echo
-    if [ "$fail" -eq 0 ]; then echo "PASS $pass checks (refusals only; app half skipped)"; exit 0; fi
-    echo "FAILED $fail of $((pass + fail))"
-    exit 1
-fi
-
+APP="$ISOLATED_APP"
 mkdir -p "$OUT"
 # shellcheck source=../lib/drive.sh
 OUT="$OUT" REPO="$ROOT" source "$ROOT/Diagnostics/lib/drive.sh"
+isolated_launch || exit 1
+sleep 5
 
 # The value goes through a file rather than through the typed line, so the shell
 # being typed into never re-quotes it. Everything here has single quotes in it

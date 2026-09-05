@@ -7,8 +7,8 @@ It used to ask whether the bytes reached the shell. That has an answer, below,
 and the answer is why the question changed.
 
 `./run.sh` from anywhere, and **never from inside a baia pane**: it launches and
-drives `baia-dev.app` with real events. `theme-catalog` and `app-icon` are the two
-probes safe in a pane; this is not one of them.
+drives an isolated copy of the Debug app with real events. `theme-catalog` and
+`app-icon` are the two probes safe in a pane; this is not one of them.
 
 ## Why it is not a check inside `path-picker`
 

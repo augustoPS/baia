@@ -1,7 +1,8 @@
 # Config wiring probe
 
-`./run.sh` from anywhere. Prints `PASS` or `FAIL` per step and writes its captures
-to `verify-out/`, which is gitignored.
+`./run.sh` from anywhere, outside a baia pane. Prints `PASS` or `FAIL` per step
+and writes its captures to `verify-out/`, which is gitignored. It launches an
+isolated copy and writes that copy's config, not `~/.config/baia/config.json`.
 
 **The screen must be unlocked.** A libghostty surface only materialises in a real
 window on an unlocked session, and until it does the pane spawns no pty at all, so
