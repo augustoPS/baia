@@ -110,4 +110,21 @@ import Testing
         #expect(changed)
         #expect(state.attention.isUnacknowledged)
     }
+
+    /// The mutation result describes resolved attention, not every input behind
+    /// it. A publisher caching ``AttentionExplanation`` must compare the whole
+    /// state or this bell disappears under `working` and cannot reappear when
+    /// that report expires.
+    @Test func aBellHiddenByWorkingStillChangesTheUnderlyingLatch() {
+        var state = PaneAttentionState()
+        _ = state.noteReported(blocked: false, message: nil)
+        let before = state
+
+        let resolvedMoved = state.noteBell()
+
+        #expect(resolvedMoved == false)
+        #expect(state != before)
+        #expect(state.explanation.latch == .requested(message: nil))
+        #expect(state.explanation.resolved == .none)
+    }
 }

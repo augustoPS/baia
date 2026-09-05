@@ -347,10 +347,10 @@ final class TerminalPaneController: NSViewController {
     /// can badge itself and post a notification naming the project.
     var onAttentionChange: (() -> Void)?
 
-    var wantsAttention: Bool { activityTracker.wantsAttention }
+    var wantsAttention: Bool { activityTracker.revision.wantsAttention }
 
     /// What this pane asked for, when it said so rather than only ringing.
-    var attentionMessage: String? { activityTracker.attentionMessage }
+    var attentionMessage: String? { activityTracker.revision.attentionMessage }
 
     /// A keystroke reached this pane. Driven by the app's key monitor, since
     /// nothing in a pane may take first responder.
@@ -695,14 +695,15 @@ final class TerminalPaneController: NSViewController {
     /// attention message when nothing is running. Under the old spelling an idle
     /// pane that rang reported "needs input" as its activity, in the same frame
     /// as it reported "needs input" as what it wanted.
-    var activityLabel: String? { activityTracker.classifiedLabel }
+    var activityLabel: String? { activityTracker.revision.activityLabel }
 
     /// How hard this pane is asking, in the chrome's own vocabulary.
     ///
-    /// ``lastAttention`` rather than a second derivation, for the reason
-    /// `PaneStatus.Attention.init(_:)` exists: two copies of "is this pane asking"
-    /// is one copy that can disagree with the chrome the owner is looking at.
-    var attentionState: PaneStatus.Attention { lastAttention }
+    /// The tracker's published revision rather than a second derivation, for the
+    /// reason `PaneStatus.Attention.init(_:)` exists: two copies of "is this pane
+    /// asking" is one copy that can disagree with the chrome the owner is looking
+    /// at.
+    var attentionState: PaneStatus.Attention { activityTracker.revision.attentionState }
 
     @available(*, unavailable)
     required init?(coder _: NSCoder) {
@@ -899,10 +900,10 @@ final class TerminalPaneController: NSViewController {
             self?.clusterSegmentsVanished(roles)
         }
 
-        activityTracker.onChange = { [weak self] in
+        activityTracker.onChange = { [weak self] revision in
             guard let self else { return }
             // Unconditional, so the capsule keeps tracking the label.
-            refreshStatus()
+            refreshStatus(activity: revision)
 
             // Edge-triggering, the ordering, and the source rule all live in
             // `ObservedPaneState`, which is pure and tested. `onChange` fires on
@@ -913,14 +914,11 @@ final class TerminalPaneController: NSViewController {
             // `activityLabel` is the same property `ControlAdapter.record` reads
             // for `PaneRecord.activity`, so a subscriber's bootstrap and its
             // stream speak one vocabulary.
-            // The tracker is asked for the live report on every poll as well, so
-            // an expiry reaches the chrome without a timer of its own.
-            pushReportToTracker()
             for change in publishedState.changes(
-                activity: activityTracker.activityReading,
-                isAsking: activityTracker.wantsAttention,
-                message: attentionMessage,
-                report: reports.live(at: Date())
+                activity: revision.activityReading,
+                isAsking: revision.wantsAttention,
+                message: revision.attentionMessage,
+                report: revision.report.live
             ) {
                 onObservableChange?(change.kind, change.message, change.activity, change.source)
             }
@@ -936,7 +934,7 @@ final class TerminalPaneController: NSViewController {
             // used to leave the level at `.none`, and since `refreshStatus` does
             // not re-enter this block, an idle pane that rang once could sit there
             // asking with nothing drawn and no notification posted.
-            let now = PaneStatus.Attention(activityTracker.agent)
+            let now = revision.attentionState
             guard now != lastAttention else { return }
             lastAttention = now
             // The frame follows the level, so it is pushed here rather than
@@ -980,13 +978,6 @@ final class TerminalPaneController: NSViewController {
     /// wire event or the reverse.
     private var publishedState = ObservedPaneState()
 
-    /// The pane's own statement about itself, when it has made one.
-    ///
-    /// Per pane and per run, like the capability that reaches it. Nothing
-    /// persists: a report describes a process that will not outlive a relaunch,
-    /// and a restored one would be a claim about a pane that no longer exists.
-    private var reports = ReportStore()
-
     /// Records a statement the pane made about itself and publishes at once.
     ///
     /// **Publishes rather than waiting for the next poll.** The tracker fires on
@@ -995,13 +986,10 @@ final class TerminalPaneController: NSViewController {
     /// second of the pane looking busy is the whole latency the verb exists to
     /// remove.
     ///
-    /// A superseded report still runs the publish. It changes nothing, because
-    /// the comparator sees no transition, and skipping it would make the fast
-    /// path depend on the ordering rule agreeing with the comparator.
+    /// The tracker owns ordering, expiry and publication as one timeline. This
+    /// controller only hands over the report that arrived.
     func accept(report: PaneReport) {
-        reports.accept(report)
-        pushReportToTracker()
-        activityTracker.onChange?()
+        activityTracker.accept(report: report)
     }
 
     /// What `baia explain` answers about this pane. Values copied across, no
@@ -1010,13 +998,25 @@ final class TerminalPaneController: NSViewController {
     /// word is the one `PaneRecord.attention` shows.
     func explain(paneID: String) -> PaneExplanation {
         let now = Date()
-        let (activity, reading, attention) = activityTracker.explain()
-        let report = reports.last.map { held in
+        let (activity, revision) = activityTracker.explain()
+        let activityReason: String
+        if let activity,
+           PaneActivityTracker.reading(of: activity.activity) == revision.activityReading {
+            activityReason = activity.reason
+        } else if activity == nil {
+            activityReason = "the pane has no foreground process right now; effective activity "
+                + "remains the last published revision rather than being read as idle"
+        } else {
+            activityReason = "current process evidence differs from the last published activity "
+                + "revision; list and explain keep the published value until the activity tracker "
+                + "advances it"
+        }
+        let report = revision.report.last.map { held in
             PaneExplanation.Report(
                 state: held.state,
                 message: held.message,
                 seq: held.seq,
-                live: reports.live(at: now) != nil,
+                live: revision.report.live != nil,
                 secondsLeft: Int(held.expires.timeIntervalSince(now).rounded(.down))
             )
         }
@@ -1033,16 +1033,15 @@ final class TerminalPaneController: NSViewController {
                     won: verdict.won
                 )
             },
-            activity: activity?.activity.label,
-            activityReading: reading.explained,
-            activityReason: activity?.reason
-                ?? "the pane has no foreground process right now, which the poll skips rather than reading as idle",
+            activity: revision.activityLabel,
+            activityReading: revision.activityReading.explained,
+            activityReason: activityReason,
             report: report,
-            latch: attention.latch.name,
-            seen: attention.seen,
-            attention: PaneStatus.Attention.name(of: lastAttention),
-            attentionDecidedBy: attention.authority.rawValue,
-            attentionReason: attention.reason
+            latch: revision.attention.latch.name,
+            seen: revision.attention.seen,
+            attention: PaneStatus.Attention.name(of: revision.attentionState),
+            attentionDecidedBy: revision.attention.authority.rawValue,
+            attentionReason: revision.attention.reason
         )
     }
 
@@ -1060,26 +1059,7 @@ final class TerminalPaneController: NSViewController {
 
     /// Hands authority back to the pollers and publishes whatever they now say.
     func releaseReport() {
-        reports.release()
-        pushReportToTracker()
-        activityTracker.onChange?()
-    }
-
-    /// Hands the tracker the live report, so the chrome and the channel read the
-    /// same statement.
-    ///
-    /// **Before the publish, never after.** The publish derives both the wire
-    /// event and the chrome's level, so a report pushed afterwards leaves the
-    /// chrome a poll behind the channel: the subscriber is told the pane is
-    /// asking and the pane the owner is looking at is still dark. That is a
-    /// smaller version of the bug this whole change exists to fix.
-    private func pushReportToTracker() {
-        let live = reports.live(at: Date())
-        activityTracker.setReportedBlock(
-            live.map(\.state.isAsking),
-            finished: live.map(\.state.isFinished),
-            message: live?.message
-        )
+        activityTracker.releaseReport()
     }
 
     /// Set by `PaneTreeController` when the pane has a capability. Nil for a pane
@@ -1098,12 +1078,13 @@ final class TerminalPaneController: NSViewController {
     /// place it moves, which is what lets the capsule and the five readers
     /// listed on ``status`` be renderings of one value rather than separate
     /// constructions that agree today.
-    private func refreshStatus() {
+    private func refreshStatus(activity revision: PaneActivityTracker.Revision? = nil) {
         guard let anchor = anchorTracker.anchor else {
             status = nil
             clusterView.segments = []
             return
         }
+        let revision = revision ?? activityTracker.revision
         let home = FileManager.default
             .homeDirectoryForCurrentUser
             .path(percentEncoded: false)
@@ -1120,7 +1101,7 @@ final class TerminalPaneController: NSViewController {
             isPinned: anchor.source == .pinned,
             workingDirectory: shown,
             git: gitStatus.git,
-            agent: activityTracker.agent,
+            agent: revision.agent,
             notice: notice
         )
         status = rebuilt
@@ -1539,16 +1520,13 @@ final class TerminalPaneController: NSViewController {
         }
     }
 
-    /// A pane that leaves the window stops polling. Both timers are scheduled on
-    /// the run loop, which retains them, so a closed pane that relied on
-    /// deallocation would leave two timers firing against a nil target forever.
-    /// This also covers the rebuild path, where a pane is detached and
-    /// reattached and `viewDidAppear` starts it again.
+    /// A pane that leaves the window stops presentation-owned reads. Activity and
+    /// report expiry stay live because a zoom removes this view while the
+    /// workspace still owns its terminal and process.
     override func viewDidDisappear() {
         super.viewDidDisappear()
         anchorTracker.stopPolling()
         gitStatus.stopPolling()
-        activityTracker.stopPolling()
     }
 
     /// Polling is gated on focus, so an unfocused window costs nothing and a
@@ -1592,8 +1570,9 @@ final class TerminalPaneController: NSViewController {
         gitStatus.stopPolling()
     }
 
-    deinit {
+    isolated deinit {
         NotificationCenter.default.removeObserver(self)
+        activityTracker.stopTracking()
     }
 
     override func viewDidLayout() {

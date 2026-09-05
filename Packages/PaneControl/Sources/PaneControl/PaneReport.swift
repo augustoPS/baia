@@ -60,6 +60,24 @@ public struct PaneReport: Sendable, Equatable {
     }
 }
 
+/// One time-consistent read of a report store.
+///
+/// The publisher uses ``nextExpiry`` to schedule the only future transition,
+/// while UI, control events and explanations consume ``live`` and ``last`` from
+/// the same instant. Reading those separately lets expiry land between reads and
+/// makes one pane disagree with itself.
+public struct ReportRevision: Sendable, Equatable {
+    public let live: PaneReport?
+    public let last: PaneReport?
+    public let nextExpiry: Date?
+
+    init(live: PaneReport?, last: PaneReport?, nextExpiry: Date?) {
+        self.live = live
+        self.last = last
+        self.nextExpiry = nextExpiry
+    }
+}
+
 /// The live report for one pane, and the rules that decide which statement wins.
 ///
 /// **Pure, and in this package, for the reason every other rule here is.** Seq
@@ -115,6 +133,12 @@ public struct ReportStore: Sendable, Equatable {
     public func live(at now: Date) -> PaneReport? {
         guard let held, held.expires > now else { return nil }
         return held
+    }
+
+    /// The effective report, history and next transition read at one instant.
+    public func revision(at now: Date) -> ReportRevision {
+        let live = live(at: now)
+        return ReportRevision(live: live, last: held, nextExpiry: live?.expires)
     }
 
     /// The last accepted statement, live or not. Evidence for `explain`, which

@@ -14,9 +14,33 @@ import PaneControl
 /// or an OSC 9 notification.
 @MainActor
 final class PaneActivityTracker {
-    var onChange: (() -> Void)?
+    /// One effective pane state, captured at the instant it is published.
+    ///
+    /// The controller hands this value to chrome, control events and explain.
+    /// None of those readers asks the report store or attention state again, so
+    /// expiry cannot land between separate reads and make one publication
+    /// disagree with itself.
+    struct Revision: Equatable {
+        let agent: PaneStatus.Agent?
+        let activityLabel: String?
+        let activityReading: ActivityReading
+        let attention: AttentionExplanation
+        let report: ReportRevision
 
-    private(set) var agent: PaneStatus.Agent?
+        var wantsAttention: Bool { attention.resolved.isRequesting }
+        var attentionMessage: String? { attention.resolved.message }
+        var attentionState: PaneStatus.Attention { PaneStatus.Attention(agent) }
+    }
+
+    var onChange: ((Revision) -> Void)?
+
+    private(set) var revision = Revision(
+        agent: nil,
+        activityLabel: nil,
+        activityReading: .idle,
+        attention: PaneAttentionState().explanation,
+        report: ReportStore().revision(at: .distantPast)
+    )
 
     /// Supplied by the pane, because reading it means reaching into a terminal
     /// surface and this type never does.
@@ -24,25 +48,20 @@ final class PaneActivityTracker {
 
     private var attention = PaneAttentionState()
 
-    /// Whether the pane has said it is blocked, and what it said, or nil when it
-    /// has made no statement.
+    /// The pane's report authority and its only future transition.
     ///
-    /// **Here rather than only on the controller, so one place still answers
-    /// "does this pane want the owner".** That is the rule
-    /// `PaneStatus.Attention.init` states about itself, being "the only copy of
-    /// that derivation anywhere", and the bug this fixes is what happens when a
-    /// second answer exists: `report` reached the channel's comparator and not
-    /// this, so a reported block published `attentionRaised` and drew nothing.
-    ///
-    /// Set by the controller before it publishes, never polled from here. The
-    /// store that decides liveness and expiry lives with the controller beside
-    /// the rest of the pane's per-run state.
-    ///
-    /// The statement itself lives in ``PaneAttentionState`` rather than beside
-    /// this, and that move is the fix for a real defect: while the report was held
-    /// out here, a pane raised over the channel had no request in the latch for
-    /// focus to acknowledge, so it stayed loud for the report's whole TTL however
-    /// much the owner looked at it or typed in it.
+    /// Kept with the attention it overrides, rather than on the controller, so
+    /// a single revision decides what UI, events and explain observe. The
+    /// deadline timer is separate from process polling because expiry happens
+    /// even when no process changes or this pane's view is not visible.
+    private lazy var reports: ReportTimeline = {
+        let reports = ReportTimeline()
+        reports.onExpiry = { [weak self] report in
+            self?.publish(report: report)
+        }
+        return reports
+    }()
+
     private var activity: PaneActivity = .idleShell
     private var timer: Timer?
 
@@ -78,13 +97,22 @@ final class PaneActivityTracker {
         }
     }
 
-    /// No `deinit` counterpart, for the same reason as the other trackers: Swift
-    /// 6 forbids touching a non-Sendable `Timer` from a nonisolated deinit, and a
-    /// scheduled timer is retained by the run loop, so a pane relying on
-    /// deallocation would leave it firing against a nil target forever.
+    /// The terminal controller's isolated teardown calls ``stopTracking``.
+    /// Keeping the cancellation at that ownership boundary avoids asking this
+    /// type's deinitializer to reach a non-Sendable Foundation timer.
     func stopPolling() {
         timer?.invalidate()
         timer = nil
+    }
+
+    /// Ends every deadline owned by this pane.
+    ///
+    /// Visibility never calls this. A zoom-hidden pane is still workspace-owned
+    /// and must keep both activity and report expiry current. The terminal
+    /// controller calls this only at its own teardown boundary.
+    func stopTracking() {
+        stopPolling()
+        reports.cancel()
     }
 
     // MARK: - Signals from the surface
@@ -93,22 +121,28 @@ final class PaneActivityTracker {
     /// channel is set to a form that rings, so this is the signal that turns
     /// "which of my four agents needs me" from a guess into a fact.
     func noteBell() {
-        guard attention.noteBell() else { return }
-        rebuild()
+        let before = attention
+        _ = attention.noteBell()
+        guard attention != before else { return }
+        publish()
     }
 
     /// OSC 9 or OSC 777. Carries a message, so the capsule can say what is wanted
     /// rather than only that something is.
     func noteNotification(title: String, body: String) {
-        guard attention.noteNotification(title: title, body: body) else { return }
-        rebuild()
+        let before = attention
+        _ = attention.noteNotification(title: title, body: body)
+        guard attention != before else { return }
+        publish()
     }
 
     /// Focusing the pane is the acknowledgement. Nothing else clears attention,
     /// because a pane that stops asking on its own was never answered.
     func noteFocused() {
-        guard attention.noteFocused() else { return }
-        rebuild()
+        let before = attention
+        _ = attention.noteFocused()
+        guard attention != before else { return }
+        publish()
     }
 
     /// A keystroke reached this pane.
@@ -126,42 +160,23 @@ final class PaneActivityTracker {
     /// drops a request from loud to quiet, the next ends it. `||` short circuits,
     /// so a single keystroke never does both.
     func noteInput() {
-        guard attention.noteFocused() || attention.noteResumed() else { return }
-        rebuild()
+        let before = attention
+        _ = attention.noteFocused() || attention.noteResumed()
+        guard attention != before else { return }
+        publish()
     }
 
-    /// What the pane asked for, through OSC 9 or OSC 777 or its own report.
-    var attentionMessage: String? {
-        resolvedAttention.message
+    /// Records a statement and schedules the exact instant its authority ends.
+    func accept(report: PaneReport) {
+        _ = reports.accept(report)
+        publish(report: reports.revision)
     }
 
-    var wantsAttention: Bool {
-        resolvedAttention.isRequesting
-    }
-
-    /// The latch once the pane's own statement is taken into account.
-    ///
-    /// Every reader of "is this pane asking" goes through here, so the capsule,
-    /// the frame, the window title, the Dock badge and `PaneRecord.attention`
-    /// cannot disagree with each other or with the channel.
-    private var resolvedAttention: PaneAttention {
-        attention.attention
-    }
-
-    /// Records what the pane says about itself. The caller publishes.
-    ///
-    /// Deliberately does not fire `onChange`: the controller sets this and then
-    /// publishes, so a single report produces one pass rather than two, and the
-    /// ordering is visible at the call site rather than buried here.
-    /// **Both facts, from the one report that carried them.** `ReportedState` has
-    /// three cases and the package takes two booleans, because the package
-    /// imports Foundation and nothing else; this is the one place the wire enum
-    /// is mapped onto them, the same move `activityReading` already makes. Two
-    /// separate setters would let one of the two go stale against the other.
-    func setReportedBlock(_ blocked: Bool?, finished: Bool?, message: String?) {
-        _ = attention.noteReported(blocked: blocked, finished: finished, message: message)
-        // Recomputed here, announced by the caller. See ``refreshAgent()``.
-        refreshAgent()
+    /// Hands authority back to the pollers now and cancels the obsolete future
+    /// transition before publishing the effective revision.
+    func releaseReport() {
+        reports.release()
+        publish(report: reports.revision)
     }
 
     // MARK: - Polling
@@ -186,58 +201,31 @@ final class PaneActivityTracker {
         // than the state, so a bell that arrives after its command already exited
         // is not cleared on the very next tick before anyone has seen it.
         if wasIdle, !PaneActivity.isIdle(next) { _ = attention.noteResumed() }
-        rebuild()
+        publish()
     }
 
-    private func rebuild() {
-        guard refreshAgent() else { return }
-        onChange?()
+    /// Publishes one time-consistent state through every consumer.
+    private func publish(report: ReportRevision? = nil) {
+        let report = report ?? reports.revision
+        _ = attention.noteReported(
+            blocked: report.live.map(\.state.isAsking),
+            finished: report.live.map(\.state.isFinished),
+            message: report.live?.message
+        )
+        let explanation = attention.explanation
+        let next = Revision(
+            agent: paneAgent(attention: explanation.resolved),
+            activityLabel: activity.label,
+            activityReading: Self.reading(of: activity),
+            attention: explanation,
+            report: report
+        )
+        guard next != revision else { return }
+        revision = next
+        onChange?(next)
     }
 
-    /// Recomputes ``agent`` and says whether it moved, without telling anybody.
-    ///
-    /// **Split from ``rebuild()`` because a report needs the recompute and not
-    /// the notification.** The controller sets a report and then publishes once,
-    /// deriving both the wire event and the chrome's level from that single pass;
-    /// if this fired `onChange` too, one report would publish twice, and if it
-    /// did not recompute at all the publish would read a stale `agent` and the
-    /// chrome would stay dark. The second is exactly the bug this file is being
-    /// changed to fix, one layer further in.
-    @discardableResult
-    private func refreshAgent() -> Bool {
-        let next = paneAgent()
-        guard next != agent else { return false }
-        agent = next
-        return true
-    }
-
-    /// An idle shell with nothing to say contributes no segment at all, so a pane
-    /// sitting at a prompt shows its project and git state and nothing else.
-    /// What is running, with no attention substitution anywhere near it.
-    ///
-    /// The capsule reads ``agent`` instead, whose label falls back to the
-    /// attention message so a pane that rang while idle still has something to
-    /// draw. That fallback is a display decision and it stays inside the display:
-    /// anything answering "what is running" for the control channel or for a
-    /// `PaneRecord` reads this, or it reports the message as the process.
-    var classifiedLabel: String? { activity.label }
-
-    /// The same conclusion as ``classifiedLabel``, keeping the case a `String?`
-    /// cannot carry.
-    ///
-    /// **Mapped here rather than by giving `PaneActivity` the wire type**, which
-    /// is the move `ControlAxis` and `SplitAxis` already make: a package that
-    /// imports Foundation and nothing else does not gain a dependency so another
-    /// package can spell one enum, and the app translates in one place.
-    ///
-    /// `classifiedLabel` folds `idleShell` and `unnameable` together, which is
-    /// right for the chrome because it draws nothing either way, and wrong for
-    /// the control channel, where "running nothing" and "running something I
-    /// cannot name" are different claims about the pane.
-    var activityReading: ActivityReading { Self.reading(of: activity) }
-
-    /// The mapping ``activityReading`` performs, pulled out so ``explain()`` can
-    /// run it on a fresh snapshot's activity rather than the poll's.
+    /// Maps process classification onto the control channel's three-way read.
     static func reading(of activity: PaneActivity) -> ActivityReading {
         switch activity {
         case .idleShell: .idle
@@ -248,36 +236,34 @@ final class PaneActivityTracker {
         }
     }
 
-    /// The evidence behind ``classifiedLabel`` and ``wantsAttention``, read now.
+    /// Current process evidence beside the effective revision consumers observe.
     ///
-    /// **A fresh snapshot rather than the last poll's**, because the poll keeps
-    /// only its conclusion and a two-second-old tree would explain a label the
-    /// pane may no longer show. Nil activity is the same window ``poll()`` skips:
-    /// no foreground process, or no shell above it, which is mid-exec and not
-    /// idle, and ``reading`` reads `.cannotTell` for it rather than `.idle`,
-    /// because a pane the tracker cannot currently see is not a pane confirmed
-    /// idle. Read-only: nothing here moves `activity` or the latch.
-    func explain() -> (activity: ActivityExplanation?, reading: ActivityReading, attention: AttentionExplanation) {
-        let attention = self.attention.explanation
-        guard let foreground = foregroundPid() else { return (nil, .cannotTell, attention) }
+    /// Process detail is fresh because the poll retains only its conclusion, but
+    /// the effective activity/attention/report values are the same immutable
+    /// revision chrome and control use. When the process read is unavailable the
+    /// detail is nil and the effective activity remains the last published fact;
+    /// an unavailable read is not evidence that the pane became idle. Read-only:
+    /// nothing here moves `activity`, report authority or the latch.
+    func explain() -> (activity: ActivityExplanation?, revision: Revision) {
+        let revision = self.revision
+        guard let foreground = foregroundPid() else { return (nil, revision) }
         let tree = ProcessTree.snapshot(under: ProcessInfo.processInfo.processIdentifier)
         guard let shell = ProcessTree.shellPid(above: foreground, in: tree) else {
-            return (nil, .cannotTell, attention)
+            return (nil, revision)
         }
         let explanation = PaneActivityClassifier.explain(tree: tree, shellPid: shell)
-        return (explanation, Self.reading(of: explanation.activity), attention)
+        return (explanation, revision)
     }
 
-    private func paneAgent() -> PaneStatus.Agent? {
+    private func paneAgent(attention: PaneAttention) -> PaneStatus.Agent? {
         let label = activity.label
-        let attention = resolvedAttention
         // A finished pane with nothing running still has something to draw:
         // the ✓ that says it finished unseen. Without the third clause a done
         // pane whose command exited produced no agent at all and the level
         // died at this guard.
         guard label != nil || attention.isRequesting || attention.isDone else { return nil }
         return PaneStatus.Agent(
-            label: label ?? attentionLabel,
+            label: label ?? attentionLabel(for: attention),
             wantsAttention: attention.isRequesting,
             isAcknowledged: !attention.isUnacknowledged,
             // Busy means an agent is working, not that any command is running. A
@@ -295,8 +281,8 @@ final class PaneActivityTracker {
     /// A finish names nothing, deliberately: `PaneAttention.done` carries no
     /// message, and the empty label makes `PaneClusterSegments` skip the agent
     /// segment while the ✓ still draws from the level itself.
-    private var attentionLabel: String {
-        if resolvedAttention.isDone { return "" }
-        return resolvedAttention.message ?? "waiting"
+    private func attentionLabel(for attention: PaneAttention) -> String {
+        if attention.isDone { return "" }
+        return attention.message ?? "waiting"
     }
 }

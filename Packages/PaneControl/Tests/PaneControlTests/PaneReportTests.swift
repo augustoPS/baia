@@ -149,4 +149,78 @@ import Testing
         #expect(store.last?.state == .blocked)
         #expect(store.last?.seq == 1)
     }
+
+    // MARK: One effective revision
+
+    /// Break caught: accepting a renewal updates the live report but leaves a
+    /// scheduler waiting on the replaced report's earlier deadline.
+    @Test func anAcceptedRenewalReplacesThePublishedDeadline() {
+        var store = ReportStore()
+        let first = report(.blocked, seq: 7, livingFor: 30)
+        let renewed = report(.blocked, seq: 8, livingFor: 90)
+
+        _ = store.accept(first)
+        _ = store.accept(renewed)
+        let revision = store.revision(at: Self.now)
+
+        #expect(revision.live == renewed)
+        #expect(revision.last == renewed)
+        #expect(revision.nextExpiry == Self.now.addingTimeInterval(90))
+    }
+
+    /// Break caught: a stale report rejected by sequence comparison cancels or
+    /// postpones the accepted report's deadline.
+    @Test func aRejectedSupersededReportCannotMoveThePublishedDeadline() {
+        var store = ReportStore()
+        let accepted = report(.blocked, seq: 7, livingFor: 30)
+
+        _ = store.accept(accepted)
+        #expect(store.accept(report(.working, seq: 6, livingFor: 90)) == .superseded)
+        let revision = store.revision(at: Self.now)
+
+        #expect(revision.live == accepted)
+        #expect(revision.nextExpiry == Self.now.addingTimeInterval(30))
+    }
+
+    /// Break caught: release clears current authority but leaves an obsolete
+    /// timer armed, allowing a second publication from the stale deadline.
+    @Test func releaseRemovesThePublishedDeadlineButKeepsHistory() {
+        var store = ReportStore()
+        let held = report(.blocked, seq: 7, livingFor: 30)
+
+        _ = store.accept(held)
+        store.release()
+        let revision = store.revision(at: Self.now)
+
+        #expect(revision.live == nil)
+        #expect(revision.last?.seq == 7)
+        #expect(revision.nextExpiry == nil)
+    }
+
+    /// Break caught: a store that computes liveness correctly still advertises
+    /// the elapsed deadline, making its owner repeatedly schedule expiry work.
+    @Test func anExpiredRevisionHasNoNextDeadline() {
+        var store = ReportStore()
+        let held = report(.blocked, seq: 7, livingFor: 30)
+        _ = store.accept(held)
+
+        let revision = store.revision(at: Self.now.addingTimeInterval(31))
+
+        #expect(revision.live == nil)
+        #expect(revision.last == held)
+        #expect(revision.nextExpiry == nil)
+    }
+
+    /// The deadline is exclusive: when the timer fires exactly at `expires`,
+    /// authority has ended and must not be scheduled again for the same instant.
+    @Test func aRevisionAtTheExactDeadlineIsExpired() {
+        var store = ReportStore()
+        let held = report(.blocked, seq: 7, livingFor: 30)
+        _ = store.accept(held)
+
+        let revision = store.revision(at: held.expires)
+
+        #expect(revision.live == nil)
+        #expect(revision.nextExpiry == nil)
+    }
 }
