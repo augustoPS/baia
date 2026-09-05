@@ -93,6 +93,14 @@ final class SettingsPageController: NSViewController {
         extraRefreshes.append(refresh)
     }
 
+    /// A caption whose text comes from live state outside `Settings`, such as
+    /// macOS notification permission. It refreshes with the rest of the page.
+    func liveCaption(_ text: @escaping @MainActor () -> String) {
+        let label = Self.caption("")
+        grid.addRow(with: [NSGridCell.emptyContentView, label])
+        onRefresh { _ in label.stringValue = text() }
+    }
+
     static func caption(_ text: String) -> NSTextField {
         let label = NSTextField(wrappingLabelWithString: text)
         label.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
@@ -135,6 +143,7 @@ enum SettingsPages {
         center: ConfigurationCenter,
         acknowledgement: CommandExecutionAcknowledgement,
         preview: SettingsPreviewController?,
+        notificationPermission: @escaping @MainActor () -> AttentionNotificationPermission,
         confirmCommandExecution: @escaping () -> Bool
     ) -> SettingsPageController {
         let page = SettingsPageController(category: category)
@@ -144,7 +153,12 @@ enum SettingsPages {
         case .window: window(page, editor: editor)
         case .workspace: workspace(page, editor: editor)
         case .behavior: behavior(page, editor: editor)
-        case .notifications: notifications(page, editor: editor)
+        case .notifications:
+            notifications(
+                page,
+                editor: editor,
+                notificationPermission: notificationPermission
+            )
         case .advanced: advanced(page, editor: editor, center: center, acknowledgement: acknowledgement, confirm: confirmCommandExecution)
         }
         return page
@@ -410,14 +424,30 @@ enum SettingsPages {
         ), caption: "How often each pane reads what is running in it, which is what labels an agent and marks it busy.")
     }
 
-    private static func notifications(_ page: SettingsPageController, editor: SettingsEditing) {
+    private static func notifications(
+        _ page: SettingsPageController,
+        editor: SettingsEditing,
+        notificationPermission: @escaping @MainActor () -> AttentionNotificationPermission
+    ) {
         page.toggleRow(nil, ToggleControl(
             title: "Notify when an agent finishes or asks for you",
             actionName: "Change Notifications",
             editor: editor,
             read: { $0.notificationsEnabled },
             edit: { .notificationsEnabled($0) }
-        ), caption: "Posts a macOS notification for a pane whose window is not in front. The capsule and the window title mark the pane either way. macOS must also allow notifications for Baia under System Settings › Notifications.")
+        ))
+        page.liveCaption {
+            let status: String
+            switch notificationPermission() {
+            case .unknown:
+                status = "Baia is waiting for macOS notification permission."
+            case .denied:
+                status = "macOS is blocking notifications for Baia. Allow them in System Settings › Notifications."
+            case .authorized:
+                status = "macOS allows notifications for Baia."
+            }
+            return "Posts a macOS notification for a pane whose window is not in front. The capsule and the window title mark the pane either way. \(status)"
+        }
     }
 
     private static func advanced(

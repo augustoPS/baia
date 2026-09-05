@@ -19,6 +19,7 @@ import BaiaSettings
 final class SettingsWindowController: NSWindowController {
     private let center: ConfigurationCenter
     private let acknowledgement: CommandExecutionAcknowledgement
+    private let notificationPermission: @MainActor () -> AttentionNotificationPermission
     let transactions: SettingsTransactionController
     let settingsUndoManager = UndoManager()
     private let toolbar = NSToolbar(identifier: "pasqualotto.baia.settings")
@@ -29,9 +30,14 @@ final class SettingsWindowController: NSWindowController {
     private(set) var selected: SettingsCategory = .appearance
     private var hasBeenShown = false
 
-    init(center: ConfigurationCenter, acknowledgement: CommandExecutionAcknowledgement) {
+    init(
+        center: ConfigurationCenter,
+        acknowledgement: CommandExecutionAcknowledgement,
+        notificationPermission: @escaping @MainActor () -> AttentionNotificationPermission
+    ) {
         self.center = center
         self.acknowledgement = acknowledgement
+        self.notificationPermission = notificationPermission
         transactions = SettingsTransactionController(
             store: center.store,
             settings: center.settings,
@@ -132,6 +138,7 @@ final class SettingsWindowController: NSWindowController {
             center: center,
             acknowledgement: acknowledgement,
             preview: category == .appearance ? preview : nil,
+            notificationPermission: notificationPermission,
             confirmCommandExecution: { [weak self] in self?.confirmCommandExecution() ?? false }
         )
         pages[category] = page
@@ -168,6 +175,12 @@ final class SettingsWindowController: NSWindowController {
             page.refresh(transactions.settings)
         }
         refreshRecoveryState()
+    }
+
+    /// Refreshes the cached Notifications page when macOS authorization moves.
+    /// If the page has not been opened yet, its first refresh reads current state.
+    func notificationPermissionDidChange() {
+        pages[.notifications]?.refresh(transactions.settings)
     }
 
     private func settingsDidChange() {

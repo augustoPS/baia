@@ -251,6 +251,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Authorization is requested regardless of the setting, so turning
         // notifications back on later does not need a relaunch to get the
         // prompt. Only `notify` is gated.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(notificationPermissionDidChange(_:)),
+            name: .attentionNotificationPermissionDidChange,
+            object: notifier
+        )
         notifier.requestAuthorizationIfNeeded()
         notifier.isEnabled = configuration.settings.notificationsEnabled
         // Before the first pane exists, because a pane opened by the restore
@@ -648,11 +654,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             controller = SettingsWindowController(
                 center: configuration,
-                acknowledgement: commandExecutionAcknowledgement
+                acknowledgement: commandExecutionAcknowledgement,
+                notificationPermission: { [notifier] in notifier.permission }
             )
             settingsWindow = controller
         }
         controller.show()
+    }
+
+    @objc private func notificationPermissionDidChange(_: Notification) {
+        settingsWindow?.notificationPermissionDidChange()
     }
 
     @objc func newTab(_: Any?) {
