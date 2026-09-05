@@ -264,6 +264,15 @@ private nonisolated final class PaletteAccessibilityRow: NSAccessibilityElement 
 
     override func accessibilityParent() -> Any? { list }
 
+    override func accessibilityIndex() -> Int {
+        let list = list
+        let index = index
+        let generation = generation
+        return MainActor.assumeIsolated {
+            list?.accessibilityIndex(forRow: index, generation: generation) ?? NSNotFound
+        }
+    }
+
     override func accessibilityFrame() -> NSRect {
         let list = list
         let index = index
@@ -402,7 +411,7 @@ final class PaletteListView: NSView {
     /// children to keep owning those elements while their rows remain present.
     /// A new result set starts a new generation, which also makes a retained
     /// child unable to activate a different row later placed at the same index.
-    private var accessibilityRows: [PaletteAccessibilityRow]?
+    private var cachedAccessibilityRows: [PaletteAccessibilityRow]?
     private var accessibilityGeneration = 0
 
     override var isFlipped: Bool { true }
@@ -420,8 +429,10 @@ final class PaletteListView: NSView {
 
     override func accessibilityRole() -> NSAccessibility.Role? { .list }
 
+    override func accessibilityLabel() -> String? { "Results" }
+
     override func accessibilityChildren() -> [Any]? {
-        if let accessibilityRows { return accessibilityRows }
+        if let cachedAccessibilityRows { return cachedAccessibilityRows }
 
         let made = rows.indices.map {
             PaletteAccessibilityRow(
@@ -430,14 +441,34 @@ final class PaletteListView: NSView {
                 generation: accessibilityGeneration
             )
         }
-        accessibilityRows = made
+        cachedAccessibilityRows = made
         return made
     }
+
+    override func accessibilityRows() -> [Any]? { accessibilityChildren() }
 
     override func accessibilityVisibleChildren() -> [Any]? {
         guard let all = accessibilityChildren() as? [PaletteAccessibilityRow] else { return [] }
         let end = min(rows.count, scrollOffset + Self.visibleRows)
         return Array(all[scrollOffset ..< end])
+    }
+
+    override func accessibilityVisibleRows() -> [Any]? { accessibilityVisibleChildren() }
+
+    override func accessibilitySelectedChildren() -> [Any]? {
+        guard rows.indices.contains(selection),
+              let all = accessibilityChildren() as? [PaletteAccessibilityRow]
+        else { return [] }
+        return [all[selection]]
+    }
+
+    override func accessibilitySelectedRows() -> [Any]? { accessibilitySelectedChildren() }
+
+    fileprivate func accessibilityIndex(forRow index: Int, generation: Int) -> Int {
+        guard generation == accessibilityGeneration, rows.indices.contains(index) else {
+            return NSNotFound
+        }
+        return index
     }
 
     fileprivate func accessibilityFrame(forRow index: Int, generation: Int) -> NSRect {
@@ -475,7 +506,7 @@ final class PaletteListView: NSView {
 
     private func invalidateAccessibilityRows() {
         accessibilityGeneration &+= 1
-        accessibilityRows = nil
+        cachedAccessibilityRows = nil
     }
 
     override func draw(_: NSRect) {

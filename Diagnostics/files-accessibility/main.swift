@@ -50,6 +50,61 @@ func node(_ name: String, path: String? = nil, children: [FileTreeNode] = []) ->
     )
 }
 
+struct TraversalMeasurement {
+    let elapsedNanoseconds: UInt64
+    let checksum: Int
+}
+
+/// Walks the same production AX properties a client reads from a flat outline
+/// with one disclosed directory. Comparing four times as many children catches
+/// a path lookup or parent lookup that scans from the start for every row.
+@MainActor
+func measureOutlineTraversal(childCount: Int, passes: Int) -> TraversalMeasurement {
+    let (_, rows) = makeRows(height: 54)
+    let root = RepositoryPath("root")
+    rows.tree = [node(
+        "root",
+        children: (0 ..< childCount).map {
+            node(String(format: "file-%05d.swift", $0), path: String(format: "root/file-%05d.swift", $0))
+        }
+    )]
+    rows.expanded = [root]
+    rows.onSelect = { _ in true }
+    let semanticRows = children(of: rows)
+    precondition(semanticRows.count == childCount + 1)
+
+    var checksum = 0
+    let start = DispatchTime.now().uptimeNanoseconds
+    for _ in 0 ..< passes {
+        for (expectedIndex, row) in semanticRows.enumerated() {
+            checksum &+= row.accessibilityIndex()
+            checksum &+= row.accessibilityLabel()?.utf8.count ?? 0
+            checksum &+= (row.accessibilityValue() as? String)?.utf8.count ?? 0
+            checksum &+= Int(row.accessibilityFrame().height)
+            checksum &+= row.accessibilityDisclosureLevel()
+            checksum &+= row.isAccessibilityEnabled() ? 1 : 0
+            checksum &+= row.isAccessibilitySelected() ? 1 : 0
+            if expectedIndex > 0,
+               row.accessibilityDisclosedByRow() as? NSAccessibilityElement === semanticRows[0] {
+                checksum &+= 1
+            }
+        }
+        checksum &+= (semanticRows[0].accessibilityDisclosedRows() as? [NSAccessibilityElement])?.count ?? 0
+    }
+    return TraversalMeasurement(
+        elapsedNanoseconds: DispatchTime.now().uptimeNanoseconds - start,
+        checksum: checksum
+    )
+}
+
+@MainActor
+func medianOutlineTraversal(childCount: Int, passes: Int) -> TraversalMeasurement {
+    let samples = (0 ..< 3).map { _ in
+        measureOutlineTraversal(childCount: childCount, passes: passes)
+    }
+    return samples.sorted { $0.elapsedNanoseconds < $1.elapsedNanoseconds }[1]
+}
+
 @main
 enum FilesAccessibilityFixture {
     @MainActor static func main() {
@@ -72,6 +127,7 @@ enum FilesAccessibilityFixture {
         check((rows.accessibilityRows() as? [NSAccessibilityElement])?.count == 2, "the outline rows attribute exposes the same semantic rows")
         if initial.count == 2 {
             check(initial.allSatisfy { $0.accessibilityRole() == .row }, "every semantic child role is row")
+            check(initial.map { $0.accessibilityIndex() } == [0, 1], "every semantic row exposes its flattened index")
             check(initial.allSatisfy { actionNames(of: $0).contains(.press) }, "every row exposes AXPress")
             check(initial.map { $0.accessibilityLabel() ?? "" } == ["Sources/", "README.md"], "labels preserve the drawn filenames")
             check(initial.map { $0.accessibilityValue() as? String ?? "" } == ["Sources", "README.md"], "values expose full repository-relative paths")
@@ -107,6 +163,7 @@ enum FilesAccessibilityFixture {
         check(expanded.count == 3, "expanding exposes the nested row")
         check(expanded.first === initial.first, "expansion preserves the directory element identity")
         if expanded.count == 3 {
+            check(expanded.map { $0.accessibilityIndex() } == [0, 1, 2], "expanded rows expose their current flattened indices")
             check(expanded[1].accessibilityLabel() == "main.swift", "the nested filename is exposed")
             check(expanded[1].accessibilityValue() as? String == "Sources/main.swift", "the nested full path is exposed")
             check(expanded[1].accessibilityDisclosureLevel() == 1, "the nested row exposes hierarchy level one")
@@ -181,6 +238,25 @@ enum FilesAccessibilityFixture {
         } else {
             check(false, "obsolete and reentrant checks have semantic rows to retain")
         }
+
+        print("=== large outline traversal stays near linear ===")
+        let smallTraversal = medianOutlineTraversal(childCount: 250, passes: 3)
+        let largeTraversal = medianOutlineTraversal(childCount: 1_000, passes: 3)
+        let traversalRatio = Double(largeTraversal.elapsedNanoseconds)
+            / Double(max(1, smallTraversal.elapsedNanoseconds))
+        print(
+            "  measurement 251 rows: \(smallTraversal.elapsedNanoseconds) ns; "
+                + "1001 rows: \(largeTraversal.elapsedNanoseconds) ns; ratio: "
+                + String(format: "%.2f", traversalRatio)
+        )
+        check(
+            smallTraversal.checksum > 0 && largeTraversal.checksum > smallTraversal.checksum,
+            "the bound walks real row properties and disclosure relationships"
+        )
+        check(
+            traversalRatio < 10,
+            "four times as many rows takes less than ten times as long"
+        )
 
         check(rows.window == nil && scroll.window == nil, "all accessibility checks remain windowless")
         print(failures == 0 ? "PASS" : "FAILED \(failures)")

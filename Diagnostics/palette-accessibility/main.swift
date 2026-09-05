@@ -30,6 +30,26 @@ func visibleChildren(of list: PaletteListView) -> [NSAccessibilityElement] {
     (list.accessibilityVisibleChildren() as? [NSAccessibilityElement]) ?? []
 }
 
+@MainActor
+func rowsAttribute(of list: PaletteListView) -> [NSAccessibilityElement] {
+    (list.accessibilityRows() as? [NSAccessibilityElement]) ?? []
+}
+
+@MainActor
+func visibleRowsAttribute(of list: PaletteListView) -> [NSAccessibilityElement] {
+    (list.accessibilityVisibleRows() as? [NSAccessibilityElement]) ?? []
+}
+
+@MainActor
+func selectedChildren(of list: PaletteListView) -> [NSAccessibilityElement] {
+    (list.accessibilitySelectedChildren() as? [NSAccessibilityElement]) ?? []
+}
+
+@MainActor
+func selectedRows(of list: PaletteListView) -> [NSAccessibilityElement] {
+    (list.accessibilitySelectedRows() as? [NSAccessibilityElement]) ?? []
+}
+
 /// Records what the list actually delivers while replacing `rows`, then forwards
 /// to the list's own delivery so the default remains `NSAccessibility.post`.
 @MainActor
@@ -67,11 +87,36 @@ enum PaletteAccessibilityFixture {
         check(!list.acceptsFirstResponder, "the drawn list still refuses first responder")
         check(list.isAccessibilityElement(), "the list is an accessibility element")
         check(list.accessibilityRole() == .list, "the container role is list")
+        check(list.accessibilityLabel() == "Results", "the list role has its required stable label")
 
         let initial = children(of: list)
         check(initial.count == 3, "one accessibility child exists per visible row")
+        let initialRows = rowsAttribute(of: list)
+        check(
+            initialRows.count == initial.count
+                && zip(initialRows, initial).allSatisfy { $0.0 === $0.1 },
+            "the required rows attribute exposes the cached semantic children"
+        )
+        let initialVisibleRows = visibleRowsAttribute(of: list)
+        let initialVisibleChildren = visibleChildren(of: list)
+        check(
+            initialVisibleRows.count == initialVisibleChildren.count
+                && zip(initialVisibleRows, initialVisibleChildren).allSatisfy { $0.0 === $0.1 },
+            "the visible-rows attribute exposes the cached visible children"
+        )
+        let initiallySelectedChildren = selectedChildren(of: list)
+        let initiallySelectedRows = selectedRows(of: list)
+        check(
+            initiallySelectedChildren.count == 1 && initiallySelectedChildren.first === initial.first,
+            "the selected-children attribute exposes the cached selected child"
+        )
+        check(
+            initiallySelectedRows.count == 1 && initiallySelectedRows.first === initial.first,
+            "the selected-rows attribute exposes the cached selected child"
+        )
         if initial.count == 3 {
             check(initial.allSatisfy { $0.accessibilityRole() == .row }, "every child role is row")
+            check(initial.map { $0.accessibilityIndex() } == [0, 1, 2], "every row exposes its required index")
             check(
                 initial.allSatisfy { accessibilityActionNames(of: $0).contains(.press) },
                 "every row exposes AXPress"
@@ -96,6 +141,8 @@ enum PaletteAccessibilityFixture {
                 check(activation.0 == 2 && activation.1 == .newTab, "AXPress uses the plain Return action")
             }
             check(initial.map { $0.isAccessibilitySelected() } == [false, false, true], "existing children report the new selection")
+            check(selectedChildren(of: list).first === initial[2], "selected children follow AXPress")
+            check(selectedRows(of: list).first === initial[2], "selected rows follow AXPress")
 
             check(!initial[1].accessibilityPerformPress(), "a disabled row refuses AXPress")
             check(activations.count == 1, "a disabled row calls no activation closure")
@@ -121,17 +168,29 @@ enum PaletteAccessibilityFixture {
         list.rows = (0 ..< 9).map { PaletteRow.make(relativePath: "project-\($0)") }
         let allRows = children(of: list)
         check(allRows.count == 9, "every result stays reachable through the semantic list")
+        check(
+            rowsAttribute(of: list).count == allRows.count
+                && zip(rowsAttribute(of: list), allRows).allSatisfy { $0.0 === $0.1 },
+            "the rows attribute keeps the semantic child identities after replacement"
+        )
         check(visibleChildren(of: list).count == 8, "the visible subset contains eight rows")
         check(allRows[8].accessibilityPerformPress(), "an offscreen semantic row accepts AXPress")
         check(list.selection == 8, "pressing an offscreen row scrolls it into view")
         let scrolled = visibleChildren(of: list)
+        let scrolledRows = visibleRowsAttribute(of: list)
         check(scrolled.first?.accessibilityLabel() == "project-1", "the visible subset follows scrolling")
         check(scrolled.last?.isAccessibilitySelected() == true, "the selected visible child reports selected")
+        check(
+            scrolledRows.count == scrolled.count
+                && zip(scrolledRows, scrolled).allSatisfy { $0.0 === $0.1 },
+            "the visible-rows attribute follows internal scrolling"
+        )
         check(
             children(of: list).first === allRows.first,
             "scrolling preserves semantic row identity"
         )
         if let stale {
+            check(stale.accessibilityIndex() == NSNotFound, "a replaced child refuses its obsolete index")
             check(!stale.accessibilityPerformPress(), "a child from a replaced result set refuses AXPress")
             check(activations.count == 2, "an obsolete child calls no activation closure")
         }
@@ -199,6 +258,10 @@ enum PaletteAccessibilityFixture {
             "empty results do not post a speech announcement"
         )
         check(children(of: notifying).isEmpty, "empty results expose no semantic children")
+        check(rowsAttribute(of: notifying).isEmpty, "empty results expose an empty rows attribute")
+        check(visibleRowsAttribute(of: notifying).isEmpty, "empty results expose no visible rows")
+        check(selectedChildren(of: notifying).isEmpty, "empty results expose no selected children")
+        check(selectedRows(of: notifying).isEmpty, "empty results expose no selected rows")
         check(!notifying.acceptsFirstResponder, "empty results still refuse first responder")
         check(notifying.window == nil, "notification checks created no window or focus target")
 

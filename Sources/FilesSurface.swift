@@ -540,6 +540,8 @@ final class FileTreeRowsView: NSView {
                 return
             }
             replaceAccessibilityOwner()
+            rebuildAccessibilityRows()
+            NSAccessibility.post(element: self, notification: .layoutChanged)
             needsDisplay = true
         }
     }
@@ -594,6 +596,13 @@ final class FileTreeRowsView: NSView {
     /// different repository or a replacement result set.
     private var accessibilityRowElements: [FileTreeAccessibilityRow] = []
     private var accessibilityRowsByPath: [RepositoryPath: FileTreeAccessibilityRow] = [:]
+
+    /// Rebuilt in one pass with the flattened rows. An AX client commonly asks
+    /// several properties of every semantic row, so resolving each property by
+    /// scanning `rows` would turn one outline walk into quadratic main-actor work.
+    private var accessibilityIndexByPath: [RepositoryPath: Int] = [:]
+    private var accessibilityParentByPath: [RepositoryPath: FileTreeAccessibilityRow] = [:]
+    private var accessibilityChildrenByPath: [RepositoryPath: [FileTreeAccessibilityRow]] = [:]
     private var accessibilityGeneration = 0
 
     // MARK: - Accessibility
@@ -668,14 +677,8 @@ final class FileTreeRowsView: NSView {
         for path: RepositoryPath,
         generation: Int
     ) -> FileTreeAccessibilityRow? {
-        guard let index = currentIndex(for: path, generation: generation) else { return nil }
-        let depth = rows[index].depth
-        guard depth > 0 else { return nil }
-        for candidate in rows[..<index].indices.reversed()
-        where rows[candidate].depth == depth - 1 {
-            return accessibilityRowElements[candidate]
-        }
-        return nil
+        guard currentIndex(for: path, generation: generation) != nil else { return nil }
+        return accessibilityParentByPath[path]
     }
 
     fileprivate func accessibilityDisclosedRows(
@@ -686,16 +689,7 @@ final class FileTreeRowsView: NSView {
               rows[index].node.isDirectory,
               expanded.contains(path)
         else { return nil }
-        let childDepth = rows[index].depth + 1
-        var children: [FileTreeAccessibilityRow] = []
-        var candidate = index + 1
-        while candidate < rows.count, rows[candidate].depth > rows[index].depth {
-            if rows[candidate].depth == childDepth {
-                children.append(accessibilityRowElements[candidate])
-            }
-            candidate += 1
-        }
-        return children
+        return accessibilityChildrenByPath[path] ?? []
     }
 
     fileprivate func accessibilitySelected(for path: RepositoryPath, generation: Int) -> Bool {
@@ -713,7 +707,7 @@ final class FileTreeRowsView: NSView {
 
     private func currentIndex(for path: RepositoryPath, generation: Int) -> Int? {
         guard generation == accessibilityGeneration else { return nil }
-        return rows.firstIndex { $0.node.rawPath == path }
+        return accessibilityIndexByPath[path]
     }
 
     private func currentRow(
@@ -725,7 +719,7 @@ final class FileTreeRowsView: NSView {
     }
 
     private func currentAccessibilityRow(for path: RepositoryPath) -> FileTreeAccessibilityRow? {
-        guard rows.contains(where: { $0.node.rawPath == path }) else { return nil }
+        guard accessibilityIndexByPath[path] != nil else { return nil }
         return accessibilityRowsByPath[path]
     }
 
@@ -740,21 +734,48 @@ final class FileTreeRowsView: NSView {
             accessibilityRowsByPath[row.node.rawPath] = made
             return made
         }
+
+        accessibilityIndexByPath = [:]
+        accessibilityParentByPath = [:]
+        accessibilityChildrenByPath = [:]
+        var ancestors: [RepositoryPath] = []
+        for (index, row) in rows.enumerated() {
+            let path = row.node.rawPath
+            accessibilityIndexByPath[path] = index
+            if ancestors.count > row.depth {
+                ancestors.removeLast(ancestors.count - row.depth)
+            }
+            if let parentPath = ancestors.last,
+               let parent = accessibilityRowsByPath[parentPath] {
+                accessibilityParentByPath[path] = parent
+                accessibilityChildrenByPath[parentPath, default: []].append(
+                    accessibilityRowElements[index]
+                )
+            }
+            if row.node.isDirectory {
+                ancestors.append(path)
+            }
+        }
     }
 
     /// Replaces the identity fence even when two repositories currently expose
     /// equal relative paths. Root identity is not derivable from `tree`: two
     /// repositories may legitimately have byte-for-byte equal trees.
+    ///
+    /// This invalidates only. `anchorPath` rebuilds against the current flattened
+    /// rows, while `tree` first flattens its replacement. Rebuilding here would
+    /// create a throwaway accessibility element for every row in the old tree.
     private func replaceAccessibilityOwner() {
         accessibilityGeneration &+= 1
         accessibilityRowElements = []
         accessibilityRowsByPath = [:]
-        rebuildAccessibilityRows()
+        accessibilityIndexByPath = [:]
+        accessibilityParentByPath = [:]
+        accessibilityChildrenByPath = [:]
         if accessibilitySelectedPath != nil {
             accessibilitySelectedPath = nil
             NSAccessibility.post(element: self, notification: .selectedRowsChanged)
         }
-        NSAccessibility.post(element: self, notification: .layoutChanged)
     }
 
     private func rebuild() {
@@ -765,7 +786,7 @@ final class FileTreeRowsView: NSView {
         rows = FileTree.visibleRows(of: tree, expanded: expanded)
         rebuildAccessibilityRows()
         if let selected = accessibilitySelectedPath,
-           !rows.contains(where: { $0.node.rawPath == selected }) {
+           accessibilityIndexByPath[selected] == nil {
             accessibilitySelectedPath = nil
             NSAccessibility.post(element: self, notification: .selectedRowsChanged)
         }

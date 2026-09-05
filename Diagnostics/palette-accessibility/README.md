@@ -2,11 +2,13 @@
 
 This fixture proves that the production `PaletteListView` exposes the drawn
 palette and find results as an accessibility list with row children. It checks
-labels, selected and enabled state, visible-row updates, press routing through
-the list's existing activation closure, refusal by disabled or obsolete rows,
-and the notifications a result replacement delivers: `layoutChanged` always,
-`rowCountChanged` when the count moves, and `selectedRowsChanged` when the
-current selection remains valid. It does not post a speech announcement.
+the list's required label and rows attributes, generation-fenced row indices,
+selected and enabled state, visible-row updates, press routing through the
+list's existing activation closure, and refusal by disabled or obsolete rows.
+It also checks the notifications a result replacement delivers:
+`layoutChanged` always, `rowCountChanged` when the count moves, and
+`selectedRowsChanged` when the current selection remains valid. It does not
+post a speech announcement.
 
 `run.sh` compiles `Sources/CommandPaletteView.swift` verbatim with the real
 `PaneChrome` sources. The fixture creates no window, starts no application event
