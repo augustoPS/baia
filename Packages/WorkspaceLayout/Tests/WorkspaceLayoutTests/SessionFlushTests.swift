@@ -15,7 +15,7 @@ import Testing
     /// Two snapshots that cannot be confused for one another, since every
     /// assertion here is about *which* one was written.
     private func snapshot(width: Double) -> SessionSnapshot {
-        SessionSnapshot(
+        singleGroupSnapshot(
             workspace: Workspace(tabs: [Tab(pane: PaneID())], focusedTabIndex: 0),
             panes: [],
             windowFrame: WindowFrame(x: 0, y: 0, width: width, height: 600),

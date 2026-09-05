@@ -102,30 +102,41 @@ final class PaneTreeController: NSViewController {
         panes[first] = makePane(id: first, workingDirectory: workingDirectory, createdBy: nil)
     }
 
-    /// Rebuilds a window from a snapshot.
+    /// Rebuilds a window from one tab and the pane records it needs.
     ///
-    /// The snapshot is expected to have been reconciled already, so every pane in
-    /// the tree has a matching record and every recorded directory exists. A pane
-    /// the tree names but the records do not still gets built, at the default
-    /// directory, because a window that renders is better than one that refuses
-    /// to open over a bookkeeping mismatch.
+    /// **One tab, not a whole snapshot**, which is what this type has always
+    /// actually held: a `Workspace` of exactly one tab. It took a `SessionSnapshot`
+    /// while the session file was a flat tab list and a window was one entry in it.
+    /// Now that ``WindowGroup`` owns the tabs, the caller has already decided which
+    /// tab this window is, and handing the whole session in would let a window
+    /// silently restore a tab belonging to some other window.
+    ///
+    /// `records` may name panes this tab does not hold; the extras are ignored. It
+    /// is the session's flat pane list, which is shared across every window.
+    ///
+    /// Reconciliation is expected to have run already, so every pane in the tree has
+    /// a matching record and every recorded directory exists. A pane the tree names
+    /// but the records do not still gets built, at the default directory, because a
+    /// window that renders is better than one that refuses to open over a
+    /// bookkeeping mismatch.
     init(
-        restoring snapshot: SessionSnapshot,
+        restoring tab: Tab,
+        records paneRecords: [PaneState],
         defaultWorkingDirectory: String,
         configuration: ConfigurationCenter,
         channel: (any PaneControlChannel)? = nil
     ) {
-        workspace = snapshot.workspace
+        workspace = Workspace(tabs: [tab], focusedTabIndex: 0)
         workingDirectory = defaultWorkingDirectory
         self.configuration = configuration
         self.channel = channel
         super.init(nibName: nil, bundle: nil)
 
         let records = Dictionary(
-            snapshot.panes.map { ($0.id, $0) },
+            paneRecords.map { ($0.id, $0) },
             uniquingKeysWith: { first, _ in first }
         )
-        for id in snapshot.workspace.tabs.flatMap({ $0.tree.paneIDs }) {
+        for id in tab.tree.paneIDs {
             let record = records[id]
             panes[id] = makePane(
                 id: id,
@@ -145,27 +156,22 @@ final class PaneTreeController: NSViewController {
         }
     }
 
-    /// What the session file records for this window.
+    /// What the session file records for this window: its tab and that tab's panes.
+    ///
+    /// A tab rather than a snapshot, matching `init(restoring:records:...)`. The
+    /// window-level fields a snapshot also carries — the frame, the sidebar, the
+    /// open directories — belong to the window and to the session, not to a tree,
+    /// and a tree answering for them would fight the real answers. The delegate
+    /// assembles them.
     ///
     /// Pane records are taken from the live controllers rather than from anything
     /// cached, so a directory the shell moved to since the last write is included.
-    func snapshot(windowFrame: WindowFrame?) -> SessionSnapshot {
-        SessionSnapshot(
-            workspace: workspace,
-            panes: workspace.tabs
-                .flatMap { $0.tree.paneIDs }
-                .compactMap { panes[$0]?.paneState },
-            windowFrame: windowFrame,
-            // One tree's snapshot, which is not the session's. The sidebar belongs
-            // to the window and is written once by the delegate, so a per-tree
-            // snapshot carrying a guess at it would fight the real one.
-            sidebar: nil,
-            // Nil for the same reason, and it is the sharper case of it: the open
-            // directories live on the sidebar's Files surface, which a tree cannot
-            // reach at all. A tree answering `[:]` here would be a window claiming
-            // it had nothing open.
-            fileTreeExpansions: nil
-        )
+    ///
+    /// Nil when this window holds no tab, which a workspace whose every pane closed
+    /// can be.
+    var restorable: (tab: Tab, panes: [PaneState])? {
+        guard let tab = workspace.tabs.first else { return nil }
+        return (tab, tab.tree.paneIDs.compactMap { panes[$0]?.paneState })
     }
 
     private var focusedPaneID: PaneID? { workspace.focusedPane }

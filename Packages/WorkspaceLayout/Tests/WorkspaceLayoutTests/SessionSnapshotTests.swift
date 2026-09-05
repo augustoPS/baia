@@ -41,7 +41,7 @@ import Testing
 
     @Test func aWholeSnapshotSurvivesAJSONRoundTrip() throws {
         let ids = [PaneID(), PaneID(), PaneID(), PaneID(), PaneID()]
-        let snapshot = SessionSnapshot(
+        let snapshot = singleGroupSnapshot(
             workspace: Workspace(
                 tabs: [
                     Tab(id: UUID(), tree: deepTree(ids), focusedPane: ids[3], zoomedPane: ids[3]),
@@ -70,7 +70,7 @@ import Testing
         // The optional field is the one a synthesized encoder can drop entirely, and a
         // decoder that then demanded it would fail on the first session written before
         // the window had ever been placed.
-        let snapshot = SessionSnapshot(
+        let snapshot = singleGroupSnapshot(
             workspace: Workspace(pane: PaneID()),
             panes: [],
             windowFrame: nil,
@@ -82,11 +82,11 @@ import Testing
         let decoded = try JSONDecoder().decode(SessionSnapshot.self, from: data)
 
         #expect(decoded == snapshot)
-        #expect(decoded.windowFrame == nil)
+        #expect(decoded.onlyFrame == nil)
     }
 
     @Test func aSnapshotWithFileTreeExpansionsSurvivesAJSONRoundTrip() throws {
-        let snapshot = SessionSnapshot(
+        let snapshot = singleGroupSnapshot(
             workspace: Workspace(pane: PaneID()),
             panes: [],
             windowFrame: nil,
@@ -101,14 +101,18 @@ import Testing
         #expect(decoded.fileTreeExpansions == ["/repos/baia": ["Sources", "Sources/PaneChrome"]])
     }
 
-    /// The reason no schema bump is needed, matching ``sidebar``'s own test: a file
-    /// written before this field existed must still load, and nil is what "the
-    /// previous version did not record this" means.
+    /// A version 1 file that predates this field still loads, through the migration
+    /// rather than through a default.
+    ///
+    /// Decoded as ``SessionSnapshotV1`` and migrated, which is what the store now
+    /// does with those bytes. Handing them straight to `SessionSnapshot` would only
+    /// prove that a v2 decoder rejects a v1 document, which it should.
     @Test func aSessionWrittenBeforeTreeExpansionsExistedStillLoads() throws {
         let json = """
         {"schemaVersion":1,"workspace":{"tabs":[],"focusedTabIndex":0},"panes":[]}
         """
-        let decoded = try JSONDecoder().decode(SessionSnapshot.self, from: Data(json.utf8))
+        let old = try JSONDecoder().decode(SessionSnapshotV1.self, from: Data(json.utf8))
+        let decoded = SessionSnapshot.migrating(old)
         #expect(decoded.fileTreeExpansions == nil)
     }
 
@@ -129,14 +133,15 @@ import Testing
     }
 
     @Test func theSchemaVersionIsWrittenIntoTheFile() throws {
-        let snapshot = SessionSnapshot(workspace: Workspace(pane: PaneID()), panes: [], windowFrame: nil, sidebar: nil, fileTreeExpansions: nil)
+        let snapshot = singleGroupSnapshot(workspace: Workspace(pane: PaneID()), panes: [], windowFrame: nil, sidebar: nil, fileTreeExpansions: nil)
 
         let json = String(decoding: try JSONEncoder().encode(snapshot), as: UTF8.self)
 
-        // The gate `SessionStore.load` reads. A snapshot encoded without it would load
-        // back with a zero version and be refused, which would look like a corrupt file.
-        #expect(json.contains("\"schemaVersion\":1"))
-        #expect(SessionSnapshot.currentSchemaVersion == 1)
+        // The gate `SessionStore.inspect` reads. A snapshot encoded without it would
+        // load back with a zero version and be refused, which would look like a
+        // corrupt file.
+        #expect(json.contains("\"schemaVersion\":2"))
+        #expect(SessionSnapshot.currentSchemaVersion == 2)
     }
 
     @Test func aDraggedRatioSurvivesTheFileAndComesBackAtThePathItWasSetOn() throws {
@@ -160,15 +165,15 @@ import Testing
         let dragged = workspace.setRatio(at: SplitPath([1]), to: 0.32)
         #expect(dragged)
 
-        let snapshot = SessionSnapshot(workspace: workspace, panes: [], windowFrame: nil, sidebar: nil, fileTreeExpansions: nil)
+        let snapshot = singleGroupSnapshot(workspace: workspace, panes: [], windowFrame: nil, sidebar: nil, fileTreeExpansions: nil)
         let decoded = try JSONDecoder().decode(SessionSnapshot.self, from: JSONEncoder().encode(snapshot))
 
         // The whole point of writing a drag into the model rather than leaving it in
         // the split view: every ratio in the owner's live session file was exactly
         // 0.5, which was on-disk proof that no drag had ever reached the model. This
         // is that proof inverted.
-        #expect(decoded.workspace.tabs[0].tree.ratio(at: SplitPath([1])) == 0.32)
-        #expect(decoded.workspace.tabs[0].tree.ratio(at: SplitPath()) == 0.5)
+        #expect(decoded.onlyTabs[0].tree.ratio(at: SplitPath([1])) == 0.32)
+        #expect(decoded.onlyTabs[0].tree.ratio(at: SplitPath()) == 0.5)
         #expect(decoded == snapshot)
     }
 

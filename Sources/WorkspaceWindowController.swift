@@ -107,6 +107,19 @@ final class WorkspaceWindowController: NSObject {
     let window: NSWindow
     let tree: PaneTreeController
 
+    /// The id of the window group this window was last written as part of, or nil
+    /// for a window that has never been written.
+    ///
+    /// Carried here because AppKit has nowhere to put it: `NSWindowTabGroup` has no
+    /// stable identifier, and the group object is replaced outright when a tab is
+    /// dragged out or two windows are merged. ``WindowGroupIdentity`` reads these
+    /// claims at capture time and decides which group keeps which id; the delegate
+    /// writes the answers back here.
+    ///
+    /// Assigned on restore too, so a relaunched window claims the id it was saved
+    /// under and an untouched workspace keeps its group ids across quits.
+    var groupID: UUID?
+
     /// Raised when the window closes, so the owner drops its reference. Nothing
     /// else releases the panes, and a pane that outlives its window is a live
     /// shell with nowhere to type.
@@ -115,6 +128,10 @@ final class WorkspaceWindowController: NSObject {
     /// Raised for anything worth persisting or retitling.
     var onSessionChange: (() -> Void)?
     var onFocusedPaneChange: (() -> Void)?
+
+    /// Raised when this window takes the keyboard, so the owner can remember it as
+    /// the last-active one after the keyboard moves elsewhere.
+    var onBecomeKey: (() -> Void)?
     /// Carries the project and message of the pane that just changed, so the
     /// banner names the pane that asked rather than the last one in the list.
     var onAttentionChange: ((String, String?) -> Void)?
@@ -900,11 +917,7 @@ final class WorkspaceWindowController: NSObject {
     }
 
     /// This window's tab, with its panes, for the session file.
-    var snapshot: (tab: Tab, panes: [PaneState])? {
-        let snapshot = tree.snapshot(windowFrame: nil)
-        guard let tab = snapshot.workspace.tabs.first else { return nil }
-        return (tab, snapshot.panes)
-    }
+    var snapshot: (tab: Tab, panes: [PaneState])? { tree.restorable }
 
     var frame: WindowFrame {
         WindowFrame(
@@ -936,6 +949,17 @@ extension WorkspaceWindowController: NSWindowDelegate {
 
     func windowDidMove(_: Notification) {
         onSessionChange?()
+    }
+
+    /// The keyboard arrived. Raised for the owner to record which window was last
+    /// active, so a session written while Settings or another app is key still names
+    /// the group the owner was working in.
+    ///
+    /// Also fires when a tab inside a group is selected, since selecting a tab makes
+    /// that window key. That is wanted: the selected tab of a group is exactly what
+    /// the session records.
+    func windowDidBecomeKey(_: Notification) {
+        onBecomeKey?()
     }
 
     /// AppKit asks for this when the tab bar's plus button is clicked, and hides

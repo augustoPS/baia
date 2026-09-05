@@ -21,7 +21,7 @@ import Testing
     private func sampleSnapshot() -> SessionSnapshot {
         let first = PaneID()
         let second = PaneID()
-        return SessionSnapshot(
+        return singleGroupSnapshot(
             workspace: Workspace(
                 tabs: [Tab(
                     id: UUID(),
@@ -98,13 +98,13 @@ import Testing
             reconciled.panes.map { ($0.id, $0) },
             uniquingKeysWith: { first, _ in first }
         )
-        let rebuilt = reconciled.workspace.tabs
+        let rebuilt = reconciled.onlyTabs
             .flatMap { $0.tree.paneIDs }
             .map { records[$0]?.createdBy }
 
         // Positional, so the parent's own nil is asserted too: a bug that wrote
         // the same edge onto every pane would otherwise pass.
-        #expect(reconciled.workspace.tabs.flatMap { $0.tree.paneIDs } == [parent, child])
+        #expect(reconciled.shownPaneIDs == [parent, child])
         #expect(rebuilt == [nil, parent])
     }
 
@@ -345,9 +345,9 @@ import Testing
     @Test func savingASmallerSessionOverALargerOneLeavesNoTailBehind() {
         let store = store()
         var large = sampleSnapshot()
-        large.workspace.addTab(pane: PaneID())
-        large.workspace.addTab(pane: PaneID())
-        let small = SessionSnapshot(
+        large.groups[0].tabs.append(Tab(pane: PaneID()))
+        large.groups[0].tabs.append(Tab(pane: PaneID()))
+        let small = singleGroupSnapshot(
             workspace: Workspace(pane: PaneID()),
             panes: [],
             windowFrame: nil,
@@ -384,9 +384,15 @@ import Testing
 
 /// The sidebar's geometry, which was added to the snapshot without a schema bump.
 @Suite struct SidebarGeometryPersistenceTests {
+    /// One group holding one tab, so there is a window for the sidebar to belong to.
+    ///
+    /// It was a zero-tab workspace while the sidebar was session-level and could be
+    /// recorded with no window at all. The geometry now rides on the group, which is
+    /// the point of the change: a width is a property of the window it was dragged
+    /// in, and a session with no windows has no width to remember.
     private func snapshot(sidebar: SidebarGeometry?) -> SessionSnapshot {
-        SessionSnapshot(
-            workspace: Workspace(tabs: [], focusedTabIndex: 0),
+        singleGroupSnapshot(
+            workspace: Workspace(pane: PaneID()),
             panes: [],
             windowFrame: nil,
             sidebar: sidebar,
@@ -398,26 +404,30 @@ import Testing
         let written = snapshot(sidebar: SidebarGeometry(width: 312, splitHeight: 140))
         let data = try JSONEncoder().encode(written)
         let read = try JSONDecoder().decode(SessionSnapshot.self, from: data)
-        #expect(read.sidebar?.width == 312)
-        #expect(read.sidebar?.splitHeight == 140)
+        #expect(read.onlySidebar?.width == 312)
+        #expect(read.onlySidebar?.splitHeight == 140)
     }
 
-    /// The reason no schema bump was needed. A file written before this field
-    /// existed must still load, and nil is what "the previous version did not record
-    /// this" means, which the defaults then answer.
+    /// A version 1 file that predates this field still loads, through the migration,
+    /// and comes back stamped with the version this build writes.
+    ///
+    /// The migration rather than a bare decode: those bytes are a v1 document, and a
+    /// v2 decoder refusing them is correct. ``SessionStoreMigrationTests`` covers the
+    /// same document arriving through the store on disk.
     @Test func aFileWrittenBeforeTheFieldExistedStillLoads() throws {
         let json = """
         {"schemaVersion":1,"workspace":{"tabs":[],"focusedTabIndex":0},"panes":[]}
         """
-        let read = try JSONDecoder().decode(SessionSnapshot.self, from: Data(json.utf8))
-        #expect(read.sidebar == nil)
+        let old = try JSONDecoder().decode(SessionSnapshotV1.self, from: Data(json.utf8))
+        let read = SessionSnapshot.migrating(old)
+        #expect(read.onlySidebar == nil)
         #expect(read.schemaVersion == SessionSnapshot.currentSchemaVersion)
     }
 
     @Test func aSessionThatNeverOpenedASidebarWritesNothingForIt() throws {
         let data = try JSONEncoder().encode(snapshot(sidebar: nil))
         let read = try JSONDecoder().decode(SessionSnapshot.self, from: data)
-        #expect(read.sidebar == nil)
+        #expect(read.onlySidebar == nil)
     }
 }
 
@@ -426,7 +436,7 @@ import Testing
 @Suite struct ReconcileCarriesEveryFieldTests {
     private func snapshot() -> SessionSnapshot {
         let pane = PaneID()
-        return SessionSnapshot(
+        return singleGroupSnapshot(
             workspace: Workspace(pane: pane),
             panes: [PaneState(id: pane, workingDirectory: "/tmp", createdBy: nil)],
             windowFrame: WindowFrame(x: 1, y: 2, width: 3, height: 4),
@@ -440,21 +450,31 @@ import Testing
     /// while the file on disk was perfectly correct.
     @Test func theSidebarGeometrySurvivesReconciliation() {
         let (reconciled, _) = SessionStore.reconciled(snapshot(), directoryExists: { _ in true }, resolveAnchor: anchoredAtItsOwnDirectory)
-        #expect(reconciled.sidebar?.width == 462)
-        #expect(reconciled.sidebar?.splitHeight == 516)
+        #expect(reconciled.onlySidebar?.width == 462)
+        #expect(reconciled.onlySidebar?.splitHeight == 516)
     }
 
     @Test func theWindowFrameSurvivesReconciliation() {
         let (reconciled, _) = SessionStore.reconciled(snapshot(), directoryExists: { _ in true }, resolveAnchor: anchoredAtItsOwnDirectory)
-        #expect(reconciled.windowFrame?.width == 3)
+        #expect(reconciled.onlyFrame?.width == 3)
     }
 
-    /// Dropping every pane must not take the geometry with it. The window is gone
-    /// and the column's size is still the owner's answer for the next one.
-    @Test func theGeometrySurvivesEvenWhenEveryPaneIsDropped() {
+    /// **Changed deliberately with the per-group sidebar.** Dropping every pane now
+    /// takes the geometry with it, because the geometry belongs to the group and the
+    /// group is gone.
+    ///
+    /// This suite used to assert the opposite, on the reasoning that "the window is
+    /// gone and the column's size is still the owner's answer for the next one".
+    /// That held while one width was session-level and there was somewhere for it to
+    /// live with no window. Per group it does not: keeping it would mean inventing a
+    /// group to hold it, and a restored window built from nothing opens at the
+    /// default anyway. What the owner loses is one column width in the case where
+    /// every directory in the session vanished, and what they gain is two windows
+    /// that no longer overwrite each other's width on every launch.
+    @Test func theGeometryGoesWithTheGroupWhenEveryPaneIsDropped() {
         let (reconciled, dropped) = SessionStore.reconciled(snapshot(), directoryExists: { _ in false }, resolveAnchor: anchoredAtItsOwnDirectory)
         #expect(!dropped.isEmpty)
-        #expect(reconciled.sidebar?.width == 462)
+        #expect(reconciled.groups.isEmpty)
     }
 
     /// Unlike the geometry above, this one is not carried unconditionally: the

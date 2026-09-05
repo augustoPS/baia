@@ -41,12 +41,12 @@ final class ControlAdapter: ControlWorkspaceBridge {
     /// one place it did. The delegate owns the window list, the wiring every
     /// window needs, and the default working directory a bare leaf falls back to,
     /// so the snapshots go there and the windows come back from there.
-    private let openWindows: ([SessionSnapshot]) -> Void
+    private let openWindows: ([(tab: Tab, panes: [PaneState])]) -> Void
 
     init(
         windows: @escaping () -> [WorkspaceWindowController],
         keyWindow: @escaping () -> NSWindow? = { NSApp.keyWindow },
-        openWindows: @escaping ([SessionSnapshot]) -> Void
+        openWindows: @escaping ([(tab: Tab, panes: [PaneState])]) -> Void
     ) {
         self.windows = windows
         self.keyWindow = keyWindow
@@ -574,29 +574,22 @@ final class ControlAdapter: ControlWorkspaceBridge {
             return .failure(.refused, refusal)
         }
 
-        var pieces: [SessionSnapshot] = []
+        var pieces: [(tab: Tab, panes: [PaneState])] = []
         for tab in layout.tabs {
             var states: [PaneState] = []
             let tree = PaneTree.build(tab, createdBy: pane.layout, into: &states)
             guard let focused = tree.paneIDs.first else { continue }
+            // A tab and its panes, with no geometry at all: a document carries none,
+            // so each window takes whatever AppKit gives it and the sidebar opens at
+            // its default. A frame invented here would be one more thing the session
+            // claims and does not hold, and the open directories could not be
+            // anything but empty — a layout opens fresh panes at directories the
+            // document names, so there is no earlier run whose expansions these
+            // would be.
             pieces.append(
-                SessionSnapshot(
-                    workspace: Workspace(
-                        tabs: [Tab(id: UUID(), tree: tree, focusedPane: focused, zoomedPane: nil)],
-                        focusedTabIndex: 0
-                    ),
-                    panes: states,
-                    // All nil: a document carries no geometry, so the window takes
-                    // whatever AppKit gives it and the sidebar opens at its default.
-                    // A frame invented here would be one more thing the file claims
-                    // and does not hold.
-                    windowFrame: nil,
-                    sidebar: nil,
-                    // All three nil, and this one could not be anything else: a
-                    // layout opens fresh panes at directories the document names,
-                    // so there is no earlier run whose open directories these
-                    // would be.
-                    fileTreeExpansions: nil
+                (
+                    tab: Tab(id: UUID(), tree: tree, focusedPane: focused, zoomedPane: nil),
+                    panes: states
                 )
             )
         }

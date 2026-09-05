@@ -22,6 +22,16 @@ public enum SessionSaveResult: Sendable, Equatable {
     case saved
     case blocked(SessionRejection)
     case failed
+
+    /// The first write after a version 1 file was migrated could not copy those
+    /// bytes to any sibling in ``SessionStore/migrationBackupURL(attempt:)``'s
+    /// series, so nothing was overwritten.
+    ///
+    /// Distinct from ``failed``, which means the write itself did not land. Here
+    /// the write was never attempted: a migrated session that cannot preserve the
+    /// document it came from does not get to replace it, for the reason
+    /// ``SessionStore/recover(replacingWith:backupURL:)`` refuses the same way.
+    case migrationBackupFailed
 }
 
 public enum SessionRecoveryResult: Sendable, Equatable {
@@ -40,6 +50,16 @@ public final class SessionStore: @unchecked Sendable {
     private let lock = NSLock()
     private var inspectedRejection: SessionRejection?
     private var hasInspected = false
+
+    /// The version 1 bytes read at inspection, held until the first version 2 write
+    /// backs them up.
+    ///
+    /// Migration happens in memory, so nothing on disk changes at load: the file is
+    /// only rewritten when the app next saves, and that save is the step a
+    /// downgrade could not survive. Holding the exact bytes here rather than
+    /// re-reading them at save time is what makes the backup a copy of what was
+    /// actually migrated, not of whatever an external writer left in the meantime.
+    private var pendingV1Backup: Data?
 
     public init(fileURL: URL) {
         self.fileURL = fileURL
@@ -97,20 +117,66 @@ public final class SessionStore: @unchecked Sendable {
         // baia may hold a tree shape or a ratio convention this one would decode
         // into a plausible but wrong workspace, and a wrong workspace is worse than
         // a fresh one: it would be saved back over the good file on quit.
-        guard header.schemaVersion == SessionSnapshot.currentSchemaVersion else {
+        //
+        // Version 1 is the one older shape this build reads, because it can
+        // reconstruct it exactly: v1 recorded a flat tab list and one frame, which
+        // is what the app itself produced when every window was joined into a
+        // single tab group. Migrating it is not a guess. Anything below 1, or above
+        // what this build writes, still refuses whole.
+        switch header.schemaVersion {
+        case SessionSnapshot.currentSchemaVersion:
+            guard let snapshot = try? JSONDecoder().decode(SessionSnapshot.self, from: data) else {
+                result = .rejected(.malformed)
+                recordLocked(result)
+                return result
+            }
+            result = .loaded(snapshot)
+        case SessionSnapshot.oldestReadableSchemaVersion:
+            guard let old = try? JSONDecoder().decode(SessionSnapshotV1.self, from: data) else {
+                result = .rejected(.malformed)
+                recordLocked(result)
+                return result
+            }
+            result = .loaded(SessionSnapshot.migrating(old))
+        default:
             result = .rejected(.unsupportedSchema(header.schemaVersion))
-            recordLocked(result)
-            return result
         }
-        guard let snapshot = try? JSONDecoder().decode(SessionSnapshot.self, from: data) else {
-            result = .rejected(.malformed)
-            recordLocked(result)
-            return result
-        }
-        result = .loaded(snapshot)
         recordLocked(result)
+        // After `recordLocked`, which clears this for every other outcome. A
+        // re-inspection that now finds a version 2 file must not leave the old
+        // bytes armed for a backup nothing is going to overwrite.
+        if header.schemaVersion == SessionSnapshot.oldestReadableSchemaVersion,
+           case .loaded = result {
+            pendingV1Backup = data
+        }
         return result
     }
+
+    /// Where the version 1 document is copied before the first version 2 write
+    /// replaces it: `session.json.v1-backup` first, then `session.json.v1-backup-2`,
+    /// `-3` and so on when the name before it already holds different bytes.
+    ///
+    /// Numbered rather than fixed, because the cycle the backup exists for produces
+    /// a second migration of the same file. The owner runs an older build; it refuses
+    /// the version 2 document and, through R01's recovery, writes a fresh version 1
+    /// one; the next launch of this build migrates *those* bytes, which are not the
+    /// bytes the first backup holds. A fixed name refused every save from then on,
+    /// and the alert never named the file in the way. Each sibling is created
+    /// exclusively and read back, so an earlier backup is never overwritten and a
+    /// copy is never taken on trust. ``verifiedMigrationBackupURL`` says which
+    /// sibling the current document's bytes ended up in.
+    public func migrationBackupURL(attempt: Int = 1) -> URL {
+        fileURL.appendingPathExtension(attempt <= 1 ? "v1-backup" : "v1-backup-\(attempt)")
+    }
+
+    /// The sibling holding a verified copy of the version 1 bytes this store
+    /// migrated, or nil until the first version 2 write has made one.
+    public private(set) var verifiedMigrationBackupURL: URL?
+
+    /// How many numbered siblings are tried before the write is refused. Twenty
+    /// downgrade cycles of one file is far past anything an owner does by hand, and a
+    /// bound keeps a directory full of foreign files from turning into a scan.
+    static let migrationBackupAttempts = 20
 
     /// Compatibility for callers interested only in a usable snapshot. Calling it
     /// still arms rejected-file protection.
@@ -121,19 +187,19 @@ public final class SessionStore: @unchecked Sendable {
 
     /// Writes the session, and reports whether it landed.
     ///
-    /// Written to a sibling temporary file and renamed over the target. A crash
-    /// between the first and last write of an in-place save leaves a truncated file,
-    /// which decodes to nil and loses the session; a crash anywhere in this one
-    /// leaves the previous file exactly as it was.
+    /// Writes a sibling temporary file, then atomically renames it over the target.
+    /// A process crash during replacement leaves the complete old or new file at
+    /// the path. `rename(2)` keeps replacement on the same filesystem and avoids
+    /// `FileManager.replaceItemAt` staging a separate temporary directory.
     ///
-    /// `rename(2)` rather than `FileManager.replaceItemAt`, which throws and stages
-    /// its own temporary directory. The temporary file is a sibling precisely so the
-    /// rename stays inside one filesystem, which is where it is atomic.
-    ///
-    /// This survives a process crash, not a power cut: without an `fsync` the rename
-    /// can reach disk before the bytes do. Buying that means a hand-rolled
-    /// `open`/`write` loop, for a file whose whole value is saving the user a
-    /// re-split.
+    /// Session durability (W06):
+    /// - The app rearms a one-second trailing timer after each workspace change.
+    ///   Continuous changes or a delayed main run loop can postpone the save longer.
+    ///   Abrupt termination can lose every change since the last successful save.
+    /// - Atomic replacement prevents readers seeing a partially written session.
+    ///   It does not make pending layout changes durable before the save runs.
+    /// - Power-loss durability is not guaranteed: neither the file nor its parent
+    ///   directory is synced before success is reported.
     public func save(_ snapshot: SessionSnapshot) -> Bool {
         saveResult(snapshot) == .saved
     }
@@ -145,9 +211,53 @@ public final class SessionStore: @unchecked Sendable {
         defer { lock.unlock() }
         if !hasInspected { _ = inspectLocked() }
         if let inspectedRejection { return .blocked(inspectedRejection) }
+        // The version 1 document is preserved before the write that replaces it,
+        // not after: this is the only moment those bytes still exist at the target,
+        // and a migration that cannot preserve what it came from does not get to
+        // overwrite it. Verified by reading the copy back, the same discipline
+        // `recover` uses, because an unverified backup is a claim rather than a
+        // copy.
+        if let pending = pendingV1Backup {
+            guard backUpMigratedSourceLocked(pending) else { return .migrationBackupFailed }
+        }
         guard write(snapshot) else { return .failed }
         recordLocked(.loaded(snapshot))
         return .saved
+    }
+
+    /// Copies the version 1 bytes aside, and reports whether they are safe.
+    ///
+    /// Each name in the series is tried in turn. A name that can be created
+    /// exclusively takes the bytes and is read back before it counts. A name that
+    /// exists and already holds this exact document is an earlier attempt that did
+    /// preserve it, which is success. A name that exists and holds anything else is
+    /// an earlier backup of other bytes, or a file this store did not write, and is
+    /// never written through: the next number is tried. A name that does not exist
+    /// and still could not be created means the directory refused the write, and a
+    /// longer name would not change that.
+    private func backUpMigratedSourceLocked(_ source: Data) -> Bool {
+        let directory = fileURL.deletingLastPathComponent().path(percentEncoded: false)
+        guard Self.createDirectory(atPath: directory) else { return false }
+        for attempt in 1 ... Self.migrationBackupAttempts {
+            let backup = migrationBackupURL(attempt: attempt)
+            if Self.createExclusiveFile(at: backup, contents: source) {
+                // Read back rather than trusted: an unverified backup is a claim,
+                // not a copy, and the write that follows is the one a downgrade
+                // cannot undo.
+                guard (try? Data(contentsOf: backup)) == source else { return false }
+                verifiedMigrationBackupURL = backup
+                pendingV1Backup = nil
+                return true
+            }
+            var information = stat()
+            guard lstat(backup.path(percentEncoded: false), &information) == 0 else { return false }
+            if (try? Data(contentsOf: backup)) == source {
+                verifiedMigrationBackupURL = backup
+                pendingV1Backup = nil
+                return true
+            }
+        }
+        return false
     }
 
     /// Makes a byte-for-byte backup of a rejected source before replacing it.
@@ -204,6 +314,10 @@ public final class SessionStore: @unchecked Sendable {
         } else {
             inspectedRejection = nil
         }
+        // Cleared here so every path through inspection resets it, and re-armed by
+        // the one caller that read version 1 bytes. A stale arming would make a
+        // later save refuse over a document that is no longer at the target.
+        pendingV1Backup = nil
     }
 
     private func write(_ snapshot: SessionSnapshot) -> Bool {
@@ -271,17 +385,17 @@ public final class SessionStore: @unchecked Sendable {
     ///   against here is the key the surface writes.
     ///
     /// The returned snapshot is always launchable, including when every pane is gone:
-    /// an empty workspace, not nil. The caller then opens a pane at its default
-    /// directory, which is what it already does on a first launch.
+    /// no groups, not nil. The caller then opens a pane at its default directory,
+    /// which is what it already does on a first launch.
     public static func reconciled(
         _ snapshot: SessionSnapshot,
         directoryExists: (String) -> Bool,
         resolveAnchor: (PaneState) -> String?
     ) -> (snapshot: SessionSnapshot, droppedPanes: [PaneID]) {
-        // The ids a tab actually shows. A `PaneState` for a pane no tree holds is a
-        // leftover from an earlier save, and reporting it as dropped would name a
+        // The ids a tab actually shows. A `PaneState` for a pane no group holds is
+        // a leftover from an earlier save, and reporting it as dropped would name a
         // pane the caller was never going to create.
-        let shown = Set(snapshot.workspace.tabs.flatMap { $0.tree.paneIDs })
+        let shown = Set(snapshot.shownPaneIDs)
 
         var dropped: [PaneID] = []
         var panes: [PaneState] = []
@@ -301,21 +415,40 @@ public final class SessionStore: @unchecked Sendable {
             panes.append(repaired)
         }
 
-        var tabs: [Tab] = []
-        for tab in snapshot.workspace.tabs {
-            guard let repaired = repair(tab, dropping: dropped) else { continue }
-            tabs.append(repaired)
+        // Each group keeps the tabs that still have panes, and a group that has
+        // none left goes with them. A window showing nothing is not a window the
+        // owner can use, and leaving it would restore an empty frame beside the
+        // real ones.
+        var groups: [WindowGroup] = []
+        for group in snapshot.groups {
+            var tabs: [Tab] = []
+            for tab in group.tabs {
+                guard let repaired = repair(tab, dropping: dropped) else { continue }
+                tabs.append(repaired)
+            }
+            guard let first = tabs.first else { continue }
+            var kept = group
+            kept.tabs = tabs
+            // A selection naming a tab that was dropped falls back to the first tab
+            // of that group, which is the leftmost one in its own tab bar. Not the
+            // tab that slid into its slot, because several can be gone at once and
+            // the leftmost is the one answer that does not depend on the order the
+            // file happened to list them in.
+            if !tabs.contains(where: { $0.id == kept.selectedTab }) {
+                kept.selectedTab = first.id
+            }
+            groups.append(kept)
         }
 
-        // An index out of range makes `focusedTab` nil, and every mutator returns
-        // false on a nil focused tab, so the window would come back with tabs no key
-        // could reach. Clamped rather than reset to 0, so losing the first tab does
-        // not also move the user to the other end of the tab bar.
-        let index = tabs.isEmpty
-            ? 0
-            : min(max(snapshot.workspace.focusedTabIndex, 0), tabs.count - 1)
+        // An active group that was dropped falls back to the first surviving one,
+        // for the reason the tab selection does: the keyboard has to land in a
+        // window that exists. Nil when nothing survived, which is a launchable
+        // answer and what `active` already resolves through.
+        let active = groups.contains { $0.id == snapshot.activeGroup }
+            ? snapshot.activeGroup
+            : groups.first?.id
 
-        let live = Set(tabs.flatMap { $0.tree.paneIDs })
+        let live = Set(groups.flatMap { $0.paneIDs })
 
         // A `createdBy` naming a pane that did not come back is dropped, and the
         // child becomes a root. Not re-parented to the grandparent, which would
@@ -331,7 +464,7 @@ public final class SessionStore: @unchecked Sendable {
         }
 
         // Every anchor a surviving pane resolves to. An entry keyed under none of
-        // them names a repository nothing in the restored window points at, and
+        // them names a repository nothing in the restored windows points at, and
         // keeping it would let the file outgrow the workspace.
         //
         // **Resolved, not raw**, and the difference is the whole reason this takes
@@ -353,14 +486,14 @@ public final class SessionStore: @unchecked Sendable {
         return (
             snapshot: SessionSnapshot(
                 schemaVersion: snapshot.schemaVersion,
-                workspace: Workspace(tabs: tabs, focusedTabIndex: index),
+                groups: groups,
+                activeGroup: active,
                 panes: restorable,
-                windowFrame: snapshot.windowFrame,
-                // Carried across by hand like every other field here, and the one
-                // that was not: a sidebar dragged wide came back at its default
-                // because this rebuilt the snapshot without it while the file on
-                // disk was correct the whole time.
-                sidebar: snapshot.sidebar,
+                // The sidebar now rides on each group and is carried by the `var
+                // kept = group` copy above, which is what keeps the field that was
+                // once dropped here from being droppable at all: a sidebar dragged
+                // wide came back at its default because this rebuilt the snapshot
+                // without it while the file on disk was correct the whole time.
                 fileTreeExpansions: prunedExpansions
             ),
             droppedPanes: dropped

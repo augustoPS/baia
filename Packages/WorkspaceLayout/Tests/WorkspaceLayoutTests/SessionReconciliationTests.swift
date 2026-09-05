@@ -18,7 +18,7 @@ import Testing
         firstDirectory: String,
         secondDirectory: String
     ) -> SessionSnapshot {
-        SessionSnapshot(
+        singleGroupSnapshot(
             workspace: Workspace(
                 tabs: [Tab(
                     id: UUID(),
@@ -59,7 +59,7 @@ import Testing
         let result = SessionStore.reconciled(snapshot, directoryExists: existing("/kept"), resolveAnchor: anchoredAtItsOwnDirectory)
 
         #expect(result.droppedPanes == [gone])
-        #expect(result.snapshot.workspace.tabs[0].tree == .leaf(kept))
+        #expect(result.snapshot.onlyTabs[0].tree == .leaf(kept))
         #expect(result.snapshot.panes.map(\.id) == [kept])
     }
 
@@ -77,12 +77,12 @@ import Testing
 
         // The dropped pane was the focused one. Leaving focus on it would give a
         // workspace where every mutator returns false, so no key could recover it.
-        #expect(result.snapshot.workspace.focusedPane == kept)
+        #expect(result.snapshot.selectedPane == kept)
     }
 
     @Test func aPaneWithNoRecordedDirectoryIsKept() {
         let never = PaneID()
-        let snapshot = SessionSnapshot(
+        let snapshot = singleGroupSnapshot(
             workspace: Workspace(pane: never),
             panes: [PaneState(id: never, workingDirectory: nil, pinnedDirectory: nil, createdBy: nil)],
             windowFrame: nil,
@@ -96,12 +96,12 @@ import Testing
         let result = SessionStore.reconciled(snapshot, directoryExists: { _ in false }, resolveAnchor: anchoredAtItsOwnDirectory)
 
         #expect(result.droppedPanes.isEmpty)
-        #expect(result.snapshot.workspace.tabs[0].tree == .leaf(never))
+        #expect(result.snapshot.onlyTabs[0].tree == .leaf(never))
     }
 
     @Test func aPinnedDirectoryThatVanishedIsClearedWithoutDroppingThePane() {
         let pane = PaneID()
-        let snapshot = SessionSnapshot(
+        let snapshot = singleGroupSnapshot(
             workspace: Workspace(pane: pane),
             panes: [PaneState(id: pane, workingDirectory: "/here", pinnedDirectory: "/gone", createdBy: nil)],
             windowFrame: nil,
@@ -122,7 +122,7 @@ import Testing
     @Test func aTabWhoseEveryPaneVanishedIsRemoved() {
         let firstTabPane = PaneID()
         let survivor = PaneID()
-        let snapshot = SessionSnapshot(
+        let snapshot = singleGroupSnapshot(
             workspace: Workspace(
                 tabs: [Tab(pane: firstTabPane), Tab(pane: survivor)],
                 focusedTabIndex: 0
@@ -138,8 +138,8 @@ import Testing
 
         let result = SessionStore.reconciled(snapshot, directoryExists: existing("/here"), resolveAnchor: anchoredAtItsOwnDirectory)
 
-        #expect(result.snapshot.workspace.tabs.count == 1)
-        #expect(result.snapshot.workspace.focusedPane == survivor)
+        #expect(result.snapshot.onlyTabs.count == 1)
+        #expect(result.snapshot.selectedPane == survivor)
     }
 
     @Test func aSessionWhereEverythingVanishedIsAnEmptyWorkspaceRatherThanNothing() {
@@ -155,42 +155,94 @@ import Testing
         let result = SessionStore.reconciled(snapshot, directoryExists: { _ in false }, resolveAnchor: anchoredAtItsOwnDirectory)
 
         // Nil would make the caller handle a second "no session" case that behaves
-        // exactly like the first launch it already handles. An empty workspace with an
-        // in-range index is launchable as it stands.
-        #expect(result.snapshot.workspace.tabs.isEmpty)
-        #expect(result.snapshot.workspace.focusedTabIndex == 0)
+        // exactly like the first launch it already handles. No groups, with nothing
+        // claiming to be active, is launchable as it stands.
+        #expect(result.snapshot.groups.isEmpty)
+        #expect(result.snapshot.activeGroup == nil)
+        #expect(result.snapshot.active == nil)
         #expect(result.droppedPanes == [first, second])
     }
 
-    @Test func aFocusedTabIndexPastTheEndIsBroughtBackIntoRange() {
+    /// The id-based replacement for the old out-of-range `focusedTabIndex` tests.
+    ///
+    /// Those two tests could only exist because selection was an index into a list
+    /// that reconciliation reorders. A selection id cannot be "past the end"; it can
+    /// only name a tab that is not here, which is what a dropped tab produces and
+    /// what this asserts instead.
+    @Test func aSelectionNamingATabThatWasDroppedFallsBackToTheGroupsFirstTab() {
+        let gone = PaneID()
+        let kept = PaneID()
+        let keptTab = Tab(pane: kept)
+        let goneTab = Tab(pane: gone)
         let snapshot = SessionSnapshot(
-            workspace: Workspace(tabs: [Tab(pane: PaneID()), Tab(pane: PaneID())], focusedTabIndex: 9),
-            panes: [],
-            windowFrame: nil,
-            sidebar: nil,
+            groups: [WindowGroup(
+                id: UUID(),
+                tabs: [keptTab, goneTab],
+                selectedTab: goneTab.id,
+                frame: nil
+            , sidebar: nil            )],
+            activeGroup: nil,
+            panes: [
+                PaneState(id: kept, workingDirectory: "/here", pinnedDirectory: nil, createdBy: nil),
+                PaneState(id: gone, workingDirectory: "/gone", pinnedDirectory: nil, createdBy: nil),
+            ],
             fileTreeExpansions: nil
         )
 
-        let result = SessionStore.reconciled(snapshot, directoryExists: { _ in true }, resolveAnchor: anchoredAtItsOwnDirectory)
+        let result = SessionStore.reconciled(
+            snapshot,
+            directoryExists: existing("/here"),
+            resolveAnchor: anchoredAtItsOwnDirectory
+        )
 
-        // Clamped to the last tab rather than reset to the first: losing a tab at the
-        // end should not also move the user to the other end of the tab bar.
-        #expect(result.snapshot.workspace.focusedTabIndex == 1)
-        #expect(result.snapshot.workspace.focusedTab != nil)
+        #expect(result.snapshot.onlyTabs.map(\.id) == [keptTab.id])
+        #expect(result.snapshot.onlyGroup?.selectedTab == keptTab.id)
+        // Resolvable, which is the property the fallback exists for: a selection
+        // naming nothing would leave the window showing no tab.
+        #expect(result.snapshot.onlyGroup?.selected != nil)
     }
 
-    @Test func aNegativeFocusedTabIndexIsBroughtBackIntoRange() {
+    /// A selection id that never named any tab in this group, which is what a file
+    /// hand-edited or written by a build with a bug can carry.
+    @Test func aSelectionNamingNoTabAtAllFallsBackToTheFirstTab() {
+        let first = Tab(pane: PaneID())
+        let second = Tab(pane: PaneID())
         let snapshot = SessionSnapshot(
-            workspace: Workspace(tabs: [Tab(pane: PaneID())], focusedTabIndex: -3),
+            groups: [WindowGroup(id: UUID(), tabs: [first, second], selectedTab: UUID(), frame: nil, sidebar: nil)],
+            activeGroup: nil,
             panes: [],
-            windowFrame: nil,
-            sidebar: nil,
             fileTreeExpansions: nil
         )
 
-        let result = SessionStore.reconciled(snapshot, directoryExists: { _ in true }, resolveAnchor: anchoredAtItsOwnDirectory)
+        let result = SessionStore.reconciled(
+            snapshot,
+            directoryExists: { _ in true },
+            resolveAnchor: anchoredAtItsOwnDirectory
+        )
 
-        #expect(result.snapshot.workspace.focusedTabIndex == 0)
+        #expect(result.snapshot.onlyGroup?.selectedTab == first.id)
+    }
+
+    /// An `activeGroup` naming nothing resolves to the first group rather than
+    /// leaving the keyboard with no window to land in.
+    @Test func anActiveGroupNamingNoGroupFallsBackToTheFirstOne() {
+        let firstGroup = WindowGroup(tab: Tab(pane: PaneID()))
+        let secondGroup = WindowGroup(tab: Tab(pane: PaneID()))
+        let snapshot = SessionSnapshot(
+            groups: [firstGroup, secondGroup],
+            activeGroup: UUID(),
+            panes: [],
+            fileTreeExpansions: nil
+        )
+
+        let result = SessionStore.reconciled(
+            snapshot,
+            directoryExists: { _ in true },
+            resolveAnchor: anchoredAtItsOwnDirectory
+        )
+
+        #expect(result.snapshot.activeGroup == firstGroup.id)
+        #expect(result.snapshot.active?.id == firstGroup.id)
     }
 
     @Test func aZoomOnAPaneThatVanishedIsCleared() {
@@ -202,13 +254,13 @@ import Testing
             firstDirectory: "/kept",
             secondDirectory: "/gone"
         )
-        snapshot.workspace.tabs[0].zoomedPane = gone
+        snapshot.groups[0].tabs[0].zoomedPane = gone
 
         let result = SessionStore.reconciled(snapshot, directoryExists: existing("/kept"), resolveAnchor: anchoredAtItsOwnDirectory)
 
         // A zoom pointing at a pane nothing will create renders as an empty tab, and
         // the pane that is there never gets laid out at all.
-        #expect(result.snapshot.workspace.tabs[0].zoomedPane == nil)
+        #expect(result.snapshot.onlyTabs[0].zoomedPane == nil)
     }
 
     @Test func aZoomOnAPaneThatIsNoLongerFocusedIsCleared() {
@@ -223,18 +275,18 @@ import Testing
         // The zoom is on the pane that survives, but focus was on the one that did not.
         // Both come back pointing at the survivor or the zoom is a pane on screen with
         // the cursor somewhere else, which is the invariant Workspace keeps.
-        snapshot.workspace.tabs[0].zoomedPane = kept
+        snapshot.groups[0].tabs[0].zoomedPane = kept
 
         let result = SessionStore.reconciled(snapshot, directoryExists: existing("/kept"), resolveAnchor: anchoredAtItsOwnDirectory)
 
-        #expect(result.snapshot.workspace.tabs[0].zoomedPane == kept)
-        #expect(result.snapshot.workspace.focusedPane == kept)
+        #expect(result.snapshot.onlyTabs[0].zoomedPane == kept)
+        #expect(result.snapshot.selectedPane == kept)
     }
 
     @Test func aPaneStateNoTabShowsIsDroppedWithoutBeingReported() {
         let shown = PaneID()
         let leftover = PaneID()
-        let snapshot = SessionSnapshot(
+        let snapshot = singleGroupSnapshot(
             workspace: Workspace(pane: shown),
             panes: [
                 PaneState(id: shown, workingDirectory: "/here", pinnedDirectory: nil, createdBy: nil),
@@ -295,7 +347,7 @@ import Testing
         )
 
         #expect(result.droppedPanes == [gone])
-        #expect(result.snapshot.workspace.tabs[0].tree == .leaf(kept))
+        #expect(result.snapshot.onlyTabs[0].tree == .leaf(kept))
     }
 
     @Test func aCreatedByNamingAPaneThatDidNotComeBackIsDropped() {
@@ -339,7 +391,7 @@ import Testing
 
     @Test func treeExpansionsKeyedUnderASurvivingWorkingDirectoryAreKept() {
         let pane = PaneID()
-        var snapshot = SessionSnapshot(
+        var snapshot = singleGroupSnapshot(
             workspace: Workspace(pane: pane),
             panes: [PaneState(id: pane, workingDirectory: "/here", pinnedDirectory: nil, createdBy: nil)],
             windowFrame: nil,
@@ -355,7 +407,7 @@ import Testing
 
     @Test func treeExpansionsKeyedUnderASurvivingPinnedDirectoryAreKept() {
         let pane = PaneID()
-        var snapshot = SessionSnapshot(
+        var snapshot = singleGroupSnapshot(
             workspace: Workspace(pane: pane),
             panes: [PaneState(id: pane, workingDirectory: "/here", pinnedDirectory: "/pin", createdBy: nil)],
             windowFrame: nil,
@@ -399,7 +451,7 @@ import Testing
     /// pane looking at it are thrown away on every launch.
     @Test func treeExpansionsKeyedUnderTheResolvedRootOfAPaneInASubdirectoryAreKept() {
         let pane = PaneID()
-        var snapshot = SessionSnapshot(
+        var snapshot = singleGroupSnapshot(
             workspace: Workspace(pane: pane),
             panes: [PaneState(
                 id: pane,
@@ -432,7 +484,7 @@ import Testing
     @Test func theAnchorIsResolvedFromThePaneAfterAStalePinIsCleared() {
         let pane = PaneID()
         var seen: [String?] = []
-        var snapshot = SessionSnapshot(
+        var snapshot = singleGroupSnapshot(
             workspace: Workspace(pane: pane),
             panes: [PaneState(
                 id: pane,
@@ -461,7 +513,7 @@ import Testing
 
     @Test func aNilFileTreeExpansionsStaysNilThroughReconciliation() {
         let pane = PaneID()
-        let snapshot = SessionSnapshot(
+        let snapshot = singleGroupSnapshot(
             workspace: Workspace(pane: pane),
             panes: [PaneState(id: pane, workingDirectory: "/here", pinnedDirectory: nil, createdBy: nil)],
             windowFrame: nil,

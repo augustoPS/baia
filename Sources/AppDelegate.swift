@@ -269,6 +269,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             openDesignPanelIfRequested()
             SettingsSelfCheck.runIfRequested(in: self)
             SessionSelfCheck.runIfRequested(in: self)
+            WindowGroupSelfCheck.runIfRequested(in: self)
         #endif
         scheduleSave()
         installKeyMonitor()
@@ -362,7 +363,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             switch result {
             case .saved, .blocked:
                 return .terminateNow
-            case .failed:
+            case .failed, .migrationBackupFailed:
+                // Both leave the file on disk untouched and both are worth stopping
+                // a quit for: the session about to be lost is the one on screen.
                 let alert = NSAlert()
                 alert.alertStyle = .critical
                 alert.messageText = "The workspace session could not be saved."
@@ -416,6 +419,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private var tree: PaneTreeController? { focused?.tree }
+
+    /// The workspace window the keyboard was in most recently, kept while something
+    /// else holds it.
+    ///
+    /// ``focused`` answers "which window do commands act on **now**", and is
+    /// deliberately nil while the Settings window is key. The session needs a
+    /// different answer: which group was the owner last working in, so a quit taken
+    /// from the Settings window, from another app, or with every baia window in the
+    /// background still records the group that comes forward on relaunch.
+    ///
+    /// A controller rather than a group id, because the group a window belongs to
+    /// changes under it: a tab dragged out is still the last-active window and is now
+    /// in a different group. The group is resolved from the controller at capture.
+    ///
+    /// Weak, so a closed window does not keep its panes and their shells alive to
+    /// answer a question about the past.
+    private weak var lastActiveWindow: WorkspaceWindowController?
 
     /// The sidebar this window opens with, or none.
     ///
@@ -600,6 +620,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             updateWindowTitles()
             refreshSidebar(of: controller)
         }
+        // Recorded, not saved: which window was last active changes nothing on disk
+        // by itself, and scheduling a write on every tab click would put a file
+        // write behind ⌘⇧-bracket. It is read at the next capture.
+        controller.onBecomeKey = { [weak self, weak controller] in
+            guard let controller else { return }
+            self?.lastActiveWindow = controller
+        }
         // `weak controller` is not decoration. The controller stores this
         // closure, so a strong capture is a cycle that outlives the close:
         // `isReleasedWhenClosed` is false and `onClose` only drops *our*
@@ -612,6 +639,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.notifyIfUnfocused(controller, project: project, message: message)
         }
         controller.show(joining: sibling)
+        // `.disallowed` has done its one job by now. The mode is consulted when a
+        // window is ordered in for the first time, which `show` just did, and it is
+        // where a `.preferred` window would have been adopted into whichever group
+        // was key: the previous restored group, or the owner's current one for ⌘N.
+        // Left `.disallowed`, the window is also left out of Merge All Windows and
+        // refuses a tab dropped onto its bar, so every restored group's first window
+        // would be one the owner could not merge into until they opened a tab in it.
+        // Back to `.preferred`, which is what every other window here has.
+        if tabbing == .disallowed {
+            controller.window.tabbingMode = .preferred
+        }
         updateWindowTitles()
         // The sidebar opens empty otherwise, and stays empty until something
         // *changes*: `refreshSidebar(of:)` is reached only from
@@ -1311,17 +1349,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             break
         case .failed:
             if presentFailure { presentSessionSaveFailure() }
+        case .migrationBackupFailed:
+            // Nothing was overwritten: the previous session file is still on disk in
+            // the shape the older build wrote it. Surfaced rather than swallowed,
+            // because every later save refuses the same way until the backup path is
+            // clear, and a silent refusal would look like baia quietly forgetting
+            // every layout change from here on.
+            if presentFailure { presentSessionSaveFailure(migrationBackupFailed: true) }
         }
         return result
     }
 
-    private func presentSessionSaveFailure() {
+    private func presentSessionSaveFailure(migrationBackupFailed: Bool = false) {
         guard !isShowingSessionSaveFailure else { return }
         isShowingSessionSaveFailure = true
         let alert = NSAlert()
         alert.alertStyle = .critical
         alert.messageText = "The workspace session could not be saved."
-        alert.informativeText = "Your open windows are unchanged. Check the baia Application Support folder, then make another workspace change to retry."
+        alert.informativeText = migrationBackupFailed
+            ? "Baia upgraded the session file's format and could not write a copy of the previous version beside it, so nothing was changed. Your open windows and the existing session file are unchanged. Check that \(sessionStore.migrationBackupURL().lastPathComponent) and its numbered siblings can be created in the baia Application Support folder, then make another workspace change to retry."
+            : "Your open windows are unchanged. Check the baia Application Support folder, then make another workspace change to retry."
         alert.addButton(withTitle: "OK")
         if let window = focused?.window ?? windows.first?.window {
             alert.beginSheetModal(for: window)
@@ -1405,45 +1452,132 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Tabs in the order AppKit has them, which is the only place that order
-    /// exists. `tabGroup` is nil for a window that is not in a group, so a
-    /// detached window contributes itself.
-    private func orderedWindows() -> [WorkspaceWindowController] {
+    /// The windows grouped the way the screen has them: one entry per tab group,
+    /// each holding its tab-bar order.
+    ///
+    /// **Read from `window.tabGroup`, never mirrored**, which is
+    /// ``WorkspaceWindowController``'s standing rule: a mirror drifts the moment a
+    /// tab is dragged out or windows are merged, and it drifts silently. This walks
+    /// the live groups at the moment the session is written.
+    ///
+    /// A window with no `tabGroup` is its own group of one, which is what AppKit
+    /// reports for a window that has never been tabbed.
+    private func orderedGroups() -> [[WorkspaceWindowController]] {
         var seen: Set<ObjectIdentifier> = []
-        var ordered: [WorkspaceWindowController] = []
-        for controller in windows {
-            let group = controller.window.tabGroup?.windows ?? [controller.window]
-            for window in group {
+        var groups: [[WorkspaceWindowController]] = []
+        for controller in windows where !seen.contains(ObjectIdentifier(controller)) {
+            let siblings = controller.window.tabGroup?.windows ?? [controller.window]
+            var group: [WorkspaceWindowController] = []
+            for window in siblings {
                 guard let match = windows.first(where: { $0.window === window }),
                       seen.insert(ObjectIdentifier(match)).inserted
                 else { continue }
-                ordered.append(match)
+                group.append(match)
             }
+            // A group whose windows this delegate does not own is not a group of
+            // ours. `seen` still holds them, so they are not revisited.
+            guard !group.isEmpty else { continue }
+            groups.append(group)
         }
-        return ordered
+        return groups
     }
 
+    /// The session as it stands: one ``WindowGroup`` per tab group on screen, each
+    /// with its own frame, sidebar, tab order and selected tab.
+    ///
+    /// This is the R05 fix at the point the loss happened. Every window's tab used
+    /// to be appended into one flat list beside a single frame and a single sidebar
+    /// width, so two separately positioned groups were written as one and restored as
+    /// one. Nothing decoded them wrongly; they were never recorded.
+    ///
+    /// Group ids are reconciled rather than minted, through ``WindowGroupIdentity``:
+    /// an untouched workspace writes the same ids on every save, a merge keeps one of
+    /// them deterministically, and after a detach the id stays with the group that
+    /// kept more tabs, so two groups can never share an id. The walk order handed in
+    /// is `windows` order, which is creation order, and it decides only the tie a
+    /// two-tab detach leaves; ``WindowGroupIdentity`` records that limit. Minting
+    /// here would have made the id name nothing at all.
+    ///
+    /// A group's frame and sidebar are taken from its **selected** window, which is
+    /// the one on screen. Tabbed windows share a frame, so any of them answers the
+    /// same for that; the sidebar is genuinely per window, and the selected one is
+    /// the column the owner can see.
     private func snapshot() -> SessionSnapshot {
-        var tabs: [Tab] = []
+        let captured = orderedGroups()
+        let ids = WindowGroupIdentity.resolve(
+            groups: captured.map { $0.map(\.groupID) }
+        )
+        // The group the keyboard was last in, resolved from the window rather than
+        // from a stored id: a tab dragged out is still the last-active window and is
+        // now in a different group.
+        let lastActive = lastActiveWindow ?? focused
+
+        var groups: [WindowGroup] = []
         var panes: [PaneState] = []
-        var focusedIndex = 0
-        for (index, controller) in orderedWindows().enumerated() {
-            guard let piece = controller.snapshot else { continue }
-            if controller.window.isKeyWindow { focusedIndex = index }
-            tabs.append(piece.tab)
-            panes.append(contentsOf: piece.panes)
+        var active: UUID?
+        for (index, controllers) in captured.enumerated() {
+            var tabs: [Tab] = []
+            var selected: UUID?
+            var frame: WindowFrame?
+            var sidebar: SidebarGeometry?
+            var holdsLastActive = false
+            for controller in controllers {
+                guard let piece = controller.snapshot else { continue }
+                tabs.append(piece.tab)
+                panes.append(contentsOf: piece.panes)
+                // The tab AppKit is showing, with the geometry that goes with it.
+                if controller.window.isKeyWindow
+                    || controller.window.tabGroup?.selectedWindow === controller.window {
+                    selected = piece.tab.id
+                    frame = controller.frame
+                    sidebar = controller.sidebar.geometry
+                }
+                if controller === lastActive { holdsLastActive = true }
+            }
+            // A group every one of whose windows refused to snapshot is not written
+            // as an empty window.
+            guard let first = tabs.first else { continue }
+            let id = ids[index]
+            groups.append(
+                WindowGroup(
+                    id: id,
+                    tabs: tabs,
+                    // Falls back to the leftmost tab when AppKit named none, which is
+                    // a group that has never been selected.
+                    selectedTab: selected ?? first.id,
+                    frame: frame ?? controllers.first?.frame,
+                    sidebar: sidebar ?? controllers.first?.sidebar.geometry
+                )
+            )
+            if holdsLastActive { active = id }
+            // Written back so the next capture can claim it. Every window of the
+            // group, not only the selected one, since any of them can be the one
+            // that survives a later close.
+            for controller in controllers { controller.groupID = id }
         }
         return SessionSnapshot(
-            workspace: Workspace(tabs: tabs, focusedTabIndex: focusedIndex),
+            groups: groups,
+            // Nil only when the last-active window is in no captured group, which is
+            // every window having closed. `active` resolves that to the first group.
+            activeGroup: active,
             panes: panes,
-            windowFrame: focused?.frame,
-            // The focused window's, for the reason its frame is the one recorded:
-            // the snapshot carries one of each, and the window being looked at is
-            // the one whose size the owner just settled.
-            sidebar: focused?.sidebar.geometry,
             fileTreeExpansions: fileTreeExpansions()
         )
     }
+
+    #if DEBUG
+        /// The narrow real-app seam for `Diagnostics/window-groups`.
+        ///
+        /// The diagnostic must exercise the same capture and save path as autosave
+        /// and termination. Keeping these two calls here lets the Debug-only driver
+        /// invoke those private production methods without reconstructing their
+        /// AppKit projection in test code.
+        func captureWindowGroupSelfCheckSnapshot() -> SessionSnapshot { snapshot() }
+
+        func saveWindowGroupSelfCheckSnapshot() -> SessionSaveResult? {
+            save(presentFailure: false)
+        }
+    #endif
 
     /// Every window's open directories, merged into the one map the file holds.
     ///
@@ -1513,45 +1647,69 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 ).anchor?.url.path(percentEncoded: false)
             }
         )
-        guard !reconciled.workspace.tabs.isEmpty else { return openFresh() }
+        guard !reconciled.groups.isEmpty else { return openFresh() }
 
-        var first: NSWindow?
-        // Each tab joins the one before it, never the first. `addTabbedWindow`
-        // inserts *after* the window it is given, so joining everything to the
-        // first window builds the group in reverse after the second tab: saving
-        // baia, vault, shop restored them as baia, shop, vault.
-        var previous: NSWindow?
-        for tab in reconciled.workspace.tabs {
-            // One window per tab, each restoring only its own panes.
-            let piece = SessionSnapshot(
-                workspace: Workspace(tabs: [tab], focusedTabIndex: 0),
-                panes: reconciled.panes,
-                windowFrame: nil,
-                // Nil for the same reason the frame is: this piece builds one tab's
-                // panes, and the window-level geometry is applied to every window
-                // once they all exist.
-                sidebar: nil,
-                fileTreeExpansions: nil
-            )
-            let controller = openWindow(
-                tree: PaneTreeController(
-                    restoring: piece,
-                    defaultWorkingDirectory: Self.defaultWorkingDirectory,
-                    configuration: configuration,
-                    channel: control
-                ),
-                joining: previous
-            )
-            if first == nil { first = controller.window }
-            previous = controller.window
+        // One AppKit tab group per recorded group, and **no window joins a group it
+        // does not belong to**. This is the restore half of R05: every window used
+        // to join the one before it in a single chain, so two saved groups came back
+        // as one. `joining: nil` with `.disallowed` starts each group detached, and
+        // only tabs inside a group are chained.
+        var restoredGroups: [(group: WindowGroup, windows: [WorkspaceWindowController])] = []
+        for group in reconciled.groups {
+            // Each tab joins the one before it, never the first. `addTabbedWindow`
+            // inserts *after* the window it is given, so joining everything to the
+            // first window builds the group in reverse after the second tab: saving
+            // baia, vault, shop restored them as baia, shop, vault.
+            var previous: NSWindow?
+            var opened: [WorkspaceWindowController] = []
+            for tab in group.tabs {
+                let controller = openWindow(
+                    tree: PaneTreeController(
+                        // One tab per window, with the session's whole pane list:
+                        // the controller takes the records its own tree names and
+                        // ignores the rest.
+                        restoring: tab,
+                        records: reconciled.panes,
+                        defaultWorkingDirectory: Self.defaultWorkingDirectory,
+                        configuration: configuration,
+                        channel: control
+                    ),
+                    joining: previous,
+                    // The first window of each group refuses tabbing, so it opens as
+                    // its own window rather than being adopted into the group that
+                    // was restored before it.
+                    tabbing: previous == nil ? .disallowed : .preferred
+                )
+                // Seeded so the next capture claims the id this group was saved
+                // under: without it every relaunch would mint new ids and an
+                // untouched workspace would look like a different set of groups on
+                // each launch.
+                controller.groupID = group.id
+                opened.append(controller)
+                previous = controller.window
+            }
+            guard !opened.isEmpty else { continue }
+            restoredGroups.append((group, opened))
         }
-        restoreFrame(reconciled.windowFrame, on: first)
 
-        // Applied to every window, not only the first. Each tab has its own sidebar
-        // and the file records one size, so restoring it to one of them would leave
-        // the rest at the default and read as a drag that half took.
-        if let geometry = reconciled.sidebar {
-            for controller in windows { controller.sidebar.geometry = geometry }
+        // Each group's own frame, applied to every tab window in that group. AppKit
+        // shows one frame for a tab group but retains a frame on each `NSWindow`;
+        // the first live R05 roundtrip proved that setting only the first member
+        // leaves the selected member at its default frame, which replaces the saved
+        // geometry when selection is restored below. Giving every member the same
+        // recorded frame makes later selection a no-op for group geometry.
+        //
+        // The sidebar goes to every window of the group, because each tab has its
+        // own column and the group records one width for all of them. Two *groups*
+        // can now disagree, which is the fix: dragging one window's column wide no
+        // longer resizes the other window's on the next launch.
+        for restored in restoredGroups {
+            for controller in restored.windows {
+                restoreFrame(restored.group.frame, on: controller.window)
+                if let geometry = restored.group.sidebar {
+                    controller.sidebar.geometry = geometry
+                }
+            }
         }
 
         // Every window again, and for a different reason: the map is keyed by
@@ -1568,11 +1726,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             for controller in windows { controller.sidebar.fileTreeExpansions = expansions }
         }
 
-        // Focused last, because joining a tab group brings the new tab forward.
-        let index = reconciled.workspace.focusedTabIndex
-        if windows.indices.contains(index) {
-            windows[index].window.makeKeyAndOrderFront(nil)
-            windows[index].tree.focusedPane?.takeFocus()
+        // Selection last, because joining a tab group brings the new tab forward:
+        // every group is currently showing whichever tab was restored into it last.
+        // Each group is returned to the tab it was left on, and then the active
+        // group is brought to the front.
+        for restored in restoredGroups {
+            guard let selected = restored.windows.first(where: {
+                $0.tree.restorable?.tab.id == restored.group.selectedTab
+            }) else { continue }
+            selected.window.makeKeyAndOrderFront(nil)
+        }
+        // The keyboard goes to the group that had it, resolved through `active` so a
+        // group that reconciliation dropped falls back to the first one rather than
+        // leaving every window in the background.
+        if let active = reconciled.active,
+           let restored = restoredGroups.first(where: { $0.group.id == active.id }),
+           let selected = restored.windows.first(where: {
+               $0.tree.restorable?.tab.id == active.selectedTab
+           }) ?? restored.windows.first {
+            selected.window.makeKeyAndOrderFront(nil)
+            selected.tree.focusedPane?.takeFocus()
         }
         updateWindowTitles()
     }
@@ -1593,7 +1766,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// response frame and this opens shells. The server hands that frame to the
     /// transport on the way out of the adapter, inside the current turn, so it is
     /// queued before any of this runs.
-    func openWindows(restoring pieces: [SessionSnapshot]) {
+    func openWindows(restoring pieces: [(tab: Tab, panes: [PaneState])]) {
         DispatchQueue.main.async { [weak self] in
             MainActor.assumeIsolated {
                 guard let self else { return }
@@ -1601,7 +1774,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 for piece in pieces {
                     let controller = self.openWindow(
                         tree: PaneTreeController(
-                            restoring: piece,
+                            restoring: piece.tab,
+                            records: piece.panes,
                             defaultWorkingDirectory: Self.defaultWorkingDirectory,
                             configuration: self.configuration,
                             channel: self.control

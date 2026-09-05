@@ -7,6 +7,21 @@ import Foundation
 /// answer is false. A false return leaves the value untouched, down to the last
 /// field: nothing here half-applies an edit and then reports failure.
 ///
+/// **What holds one of these, and what does not.** A ``PaneTreeController`` holds
+/// exactly one `Workspace` with exactly one tab: this is the per-window type, and
+/// the window's own tab bar is native AppKit, not this array. ``WindowGroup`` is
+/// what owns an ordered list of tabs and their selection in the session file.
+///
+/// That leaves the multi-tab mutators here — ``addTab(pane:)``, ``closeFocusedTab()``,
+/// ``focusTab(at:)``, ``focusNextTab()``, ``focusPreviousTab()`` — reachable from
+/// tests and from a workspace holding more than one tab, but not from the app's own
+/// construction, which builds one window per tab. They are kept rather than deleted
+/// (W04): the type stays correct for any tab count, the invariants below are stated
+/// once for all of them, and a caller model that puts two tabs in one `Workspace` is
+/// a change to this file's callers rather than a rewrite of this file. Deleting them
+/// would be safe only after something proves no caller can produce that shape, and
+/// `Codable` alone means a decoded session can.
+///
 /// One invariant every mutator upholds: `zoomedPane` is either nil or the focused
 /// pane of that tab. Focus has to sit on a pane the user can see, and a zoomed
 /// pane is the only pane on screen, so moving focus or removing that pane leaves
