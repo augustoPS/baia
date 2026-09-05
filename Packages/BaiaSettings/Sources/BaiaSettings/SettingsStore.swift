@@ -1,8 +1,80 @@
 import Darwin
 import Foundation
 
-/// The config file on disk: where it is, what it says, and what it says on a
-/// first launch.
+/// What the config file is, before anything is written to it.
+///
+/// Five states rather than a Bool, because the two bad shapes want different
+/// words in front of the owner and one of them (`unreadable`) is not about the
+/// bytes at all. Only ``missing`` and ``valid`` accept an ordinary write.
+public enum SettingsDocumentState: Sendable, Equatable {
+    /// No file, or a file holding nothing but whitespace. An ordinary write
+    /// creates the standard document and patches it.
+    case missing
+    /// A JSON object. An ordinary write patches the requested keys and keeps
+    /// every other member.
+    case valid
+    /// A file that exists and cannot be read: permissions, or a directory where
+    /// the file should be.
+    case unreadable
+    /// Bytes that are not JSON.
+    case malformed
+    /// Valid JSON that is not an object: an array, a string, a number.
+    case notAnObject
+}
+
+/// Why a write did not land, one case per step that can fail.
+///
+/// Structured rather than a Bool so Settings can say what happened instead of
+/// only playing a beep (audit S5). ``message`` is the sentence to show.
+public enum SettingsWriteFailure: Error, Equatable, Sendable {
+    case validation(SettingsValidationError)
+    /// The file exists and could not be read.
+    case read
+    /// The file is not JSON.
+    case malformed
+    /// The file is JSON but not an object.
+    case notAnObject
+    /// `~/.config/baia` could not be created.
+    case directory
+    /// Repair only: the backup of the original bytes could not be written, so
+    /// nothing else was.
+    case backup
+    /// The temporary sibling could not be written in full.
+    case temporaryWrite
+    /// The temporary sibling could not be renamed over the file.
+    case rename
+
+    public var message: String {
+        switch self {
+        case let .validation(error):
+            error.message
+        case .read:
+            "The configuration file could not be read. Check its permissions."
+        case .malformed:
+            "The configuration file is not valid JSON, so Baia will not write to it."
+        case .notAnObject:
+            "The configuration file is valid JSON but not an object, so Baia will not write to it."
+        case .directory:
+            "The configuration directory could not be created."
+        case .backup:
+            "The backup of the original file could not be written, so nothing was changed."
+        case .temporaryWrite:
+            "The new configuration could not be written. The disk may be full."
+        case .rename:
+            "The new configuration could not replace the old file."
+        }
+    }
+}
+
+/// What a repair left behind.
+public struct SettingsRepairReceipt: Sendable, Equatable {
+    /// Where the original bytes went, untouched.
+    public let backupURL: URL
+    /// The document that replaced them, decoded.
+    public let result: SettingsDecodeResult
+}
+
+/// The config file on disk: where it is, what it says, and how it is changed.
 public struct SettingsStore: Sendable {
     private let fileURL: URL
 
@@ -22,6 +94,9 @@ public struct SettingsStore: Sendable {
             .appending(path: ".config/baia/config.json")
     }
 
+    /// The file's location, for the recovery banner's reveal action.
+    public var url: URL { fileURL }
+
     /// The settings on disk, or the defaults when there is no file.
     ///
     /// A missing file is not a failure: a first launch has none, and the defaults
@@ -30,13 +105,24 @@ public struct SettingsStore: Sendable {
     /// is no `try` in this project's production code. An unreadable file, one
     /// whose permissions were changed by hand, is nil here too and reports
     /// nothing, which is the one gap in the reporting: the decoder can only blame
-    /// keys it was given.
+    /// keys it was given. ``inspect()`` is where that case gets a name.
     public func load() -> SettingsDecodeResult {
         let path = fileURL.path(percentEncoded: false)
         guard let data = FileManager.default.contents(atPath: path) else {
             return SettingsDecoder.decode(Data())
         }
         return SettingsDecoder.decode(data)
+    }
+
+    /// What is at the path right now, as a write would find it.
+    public func inspect() -> SettingsDocumentState {
+        switch readDocument() {
+        case .missing: .missing
+        case .unreadable: .unreadable
+        case .malformed: .malformed
+        case .notAnObject: .notAnObject
+        case .object: .valid
+        }
     }
 
     /// Writes a fully populated config with every default filled in, so the owner
@@ -67,37 +153,127 @@ public struct SettingsStore: Sendable {
         return Self.writeAll(Array(Self.defaultFileContents.utf8), to: descriptor)
     }
 
-    /// Writes `settings` into the existing document, answering whether it landed.
+    /// Patches `edits` into the document on disk and answers what the file now
+    /// decodes to.
     ///
-    /// Read-modify-write: the file on disk is parsed, the appearance keys are
-    /// replaced, and every other key is carried through untouched. See
-    /// ``SettingsWriter`` for why an encoder built from ``Settings`` would be
-    /// wrong, and `projectRoots` for the case that decides it.
+    /// The file is read fresh on every call. A value the owner changed by hand
+    /// since the last write is carried through untouched, and the one field being
+    /// edited is the only member that moves. A missing file starts from the
+    /// standard document, so the first write from Settings on a fresh account
+    /// leaves the owner the same fully populated file a launch would have.
+    ///
+    /// A malformed, unreadable or non-object file is refused. Overwriting it
+    /// would destroy whatever the owner had in it, and the 2026-09-04 audit
+    /// reproduced exactly that loss. ``repair(with:at:)`` is the explicit path.
     ///
     /// The bytes go to a sibling temporary file and are renamed over the target.
     /// `rename` within a directory is atomic, so a reader never sees half a
-    /// document and a crash mid-write leaves the previous file intact. Truncating
-    /// in place would leave a file that stops halfway through a key, which decodes
-    /// as unreadable, and baia would then report an error about a file it wrote
-    /// itself and never repair it, the path now existing.
-    ///
-    /// The rename also fires `.rename` and `.delete` on the `ConfigurationCenter`
-    /// watcher rather than `.write`, which is already the handled path: it re-arms
-    /// against the path instead of the descriptor it just lost.
-    ///
-    /// Not `O_EXCL`. That is ``writeDefaultIfAbsent()``'s contract, and this one
-    /// exists to overwrite.
-    public func write(_ settings: Settings) -> Bool {
-        let directory = fileURL.deletingLastPathComponent()
-        guard Self.createDirectories(directory) else { return false }
+    /// document and a crash mid-write leaves the previous file intact. The rename
+    /// fires `.rename` and `.delete` on the `ConfigurationCenter` watcher, which
+    /// re-arms against the path.
+    public func patch(_ edits: [SettingsEdit]) -> Result<SettingsDecodeResult, SettingsWriteFailure> {
+        var validated: [SettingsEdit] = []
+        for edit in edits {
+            switch edit.validated() {
+            case let .success(valid): validated.append(valid)
+            case let .failure(error): return .failure(.validation(error))
+            }
+        }
 
+        let document: JSONValue
+        switch readDocument() {
+        case .missing:
+            // The literal parses by construction; `SettingsStoreTests` decodes it
+            // back to the defaults on every run.
+            document = JSONValue.parse(Data(Self.defaultFileContents.utf8)) ?? .object([:])
+        case let .object(existing):
+            document = existing
+        case .unreadable:
+            return .failure(.read)
+        case .malformed:
+            return .failure(.malformed)
+        case .notAnObject:
+            return .failure(.notAnObject)
+        }
+
+        guard let patched = SettingsWriter.patch(document, edits: validated) else {
+            return .failure(.notAnObject)
+        }
+        let bytes = Array(SettingsWriter.serialize(patched).utf8)
+        if let failure = writeAtomically(bytes) {
+            return .failure(failure)
+        }
+        return .success(SettingsDecoder.decode(Data(bytes)))
+    }
+
+    /// Backs the original bytes up beside the file, then replaces the file with
+    /// a document built from `settings`.
+    ///
+    /// The backup comes first and its failure ends the repair: a repair that
+    /// wrote the replacement and then failed to keep the original would be the
+    /// silent loss this path exists to prevent. The backup is created `O_EXCL`,
+    /// so two repairs in one second cannot share a name, and it keeps the
+    /// original's bytes exactly, malformed or not.
+    ///
+    /// A missing or unreadable file cannot be backed up and is not repaired:
+    /// missing needs no repair, since ``patch(_:)`` creates it, and unreadable
+    /// is a permissions problem a new document would not fix.
+    public func repair(
+        with settings: Settings,
+        at date: Date = Date()
+    ) -> Result<SettingsRepairReceipt, SettingsWriteFailure> {
         let path = fileURL.path(percentEncoded: false)
-        let existing = FileManager.default.contents(atPath: path) ?? Data()
-        let document = SettingsWriter.patch(
-            JSONValue.parse(existing) ?? .object([:]),
-            with: settings
-        )
-        let bytes = Array(SettingsWriter.serialize(document).utf8)
+        guard FileManager.default.fileExists(atPath: path),
+              let original = FileManager.default.contents(atPath: path)
+        else {
+            return .failure(.read)
+        }
+
+        guard let backupURL = writeBackup(Array(original), at: date) else {
+            return .failure(.backup)
+        }
+
+        let bytes = Array(SettingsWriter.serialize(SettingsWriter.document(from: settings)).utf8)
+        if let failure = writeAtomically(bytes) {
+            return .failure(failure)
+        }
+        return .success(SettingsRepairReceipt(
+            backupURL: backupURL,
+            result: SettingsDecoder.decode(Data(bytes))
+        ))
+    }
+
+    // MARK: - Reading
+
+    private enum Document {
+        case missing
+        case unreadable
+        case malformed
+        case notAnObject
+        case object(JSONValue)
+    }
+
+    private func readDocument() -> Document {
+        let path = fileURL.path(percentEncoded: false)
+        guard FileManager.default.fileExists(atPath: path) else { return .missing }
+        guard let data = FileManager.default.contents(atPath: path) else { return .unreadable }
+        // A file of nothing but whitespace is what `touch` and an emptied editor
+        // buffer leave behind. The decoder reads it as the defaults rather than
+        // as broken, and a write treats it the same way: it starts from the
+        // standard document instead of refusing to touch it.
+        guard data.contains(where: { !JSONValue.isWhitespace($0) }) else { return .missing }
+        guard let parsed = JSONValue.parse(data) else { return .malformed }
+        guard case .object = parsed else { return .notAnObject }
+        return .object(parsed)
+    }
+
+    // MARK: - Writing
+
+    /// Lands `bytes` at the file's path through a sibling temporary and a
+    /// rename, answering nil on success and the step that failed otherwise.
+    private func writeAtomically(_ bytes: [UInt8]) -> SettingsWriteFailure? {
+        let directory = fileURL.deletingLastPathComponent()
+        guard Self.createDirectories(directory) else { return .directory }
 
         // The pid is in the temporary name so two processes writing at once
         // cannot share it. Either rename then wins whole, and neither observes
@@ -109,19 +285,56 @@ public struct SettingsStore: Sendable {
         // this becomes is the config, and it should not be briefly world-readable
         // on its way there.
         let descriptor = open(temporaryPath, O_WRONLY | O_CREAT | O_TRUNC, 0o600)
-        guard descriptor >= 0 else { return false }
+        guard descriptor >= 0 else { return .temporaryWrite }
 
         let wrote = Self.writeAll(bytes, to: descriptor)
         close(descriptor)
         guard wrote else {
             unlink(temporaryPath)
-            return false
+            return .temporaryWrite
         }
-        guard rename(temporaryPath, path) == 0 else {
+        guard rename(temporaryPath, fileURL.path(percentEncoded: false)) == 0 else {
             unlink(temporaryPath)
-            return false
+            return .rename
         }
-        return true
+        return nil
+    }
+
+    /// Writes `bytes` to a new timestamped sibling and answers where, or nil.
+    ///
+    /// `config.json.backup-2026-09-04T18-01-14Z`, and `-2`, `-3` after it when
+    /// that name is taken. The clock is UTC so two machines sharing a synced
+    /// config directory name their backups in one calendar.
+    private func writeBackup(_ bytes: [UInt8], at date: Date) -> URL? {
+        let directory = fileURL.deletingLastPathComponent()
+        let stamp = Self.backupTimestamp(date)
+        let base = fileURL.lastPathComponent + ".backup-" + stamp
+        for attempt in 1 ... 20 {
+            let name = attempt == 1 ? base : base + "-\(attempt)"
+            let url = directory.appending(path: name)
+            let descriptor = open(url.path(percentEncoded: false), O_WRONLY | O_CREAT | O_EXCL, 0o600)
+            if descriptor < 0 {
+                if errno == EEXIST { continue }
+                return nil
+            }
+            let wrote = Self.writeAll(bytes, to: descriptor)
+            close(descriptor)
+            guard wrote else {
+                unlink(url.path(percentEncoded: false))
+                return nil
+            }
+            return url
+        }
+        return nil
+    }
+
+    /// `2026-09-04T18-01-14Z`: ISO 8601 with the colons replaced, since a colon
+    /// in a file name reads as a path separator in Finder.
+    static func backupTimestamp(_ date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withFullDate, .withTime, .withTimeZone]
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        return formatter.string(from: date).replacingOccurrences(of: ":", with: "-")
     }
 
     /// Creates `directory` and every missing parent, answering whether it exists
@@ -153,9 +366,6 @@ public struct SettingsStore: Sendable {
             guard let base = buffer.baseAddress else { return false }
             var written = 0
             while written < buffer.count {
-                // `Darwin.` qualified because the type now has its own `write(_:)`,
-                // which otherwise wins the unqualified lookup and fails to compile
-                // against a file descriptor.
                 let count = Darwin.write(descriptor, base + written, buffer.count - written)
                 if count > 0 {
                     written += count
@@ -170,16 +380,16 @@ public struct SettingsStore: Sendable {
     /// The first-launch file, holding ``Settings/defaultSettings`` in the
     /// decoder's own key spellings.
     ///
-    /// Written out as text rather than assembled from `defaultSettings`, because a
-    /// serializer would have to be written and tested for the one document it will
-    /// ever produce. The two cannot drift: `SettingsStoreTests` decodes this file
-    /// back and expects the defaults with nothing reported, and it also expects the
-    /// key set here to equal `SettingsDecoder.knownKeys`, which a round trip alone
-    /// cannot see because an omitted key decodes to its default like an absent one.
+    /// Written out as text rather than assembled from `defaultSettings`, so the
+    /// file the owner learns the spellings from is readable here as text. It
+    /// cannot drift: `SettingsStoreTests` decodes this file back and expects the
+    /// defaults with nothing reported, and expects its key set to equal
+    /// `SettingsDecoder.knownKeys`. It still spells `chromeStyle` as `glass`,
+    /// the pre-2026-08-15 name, which the decoder keeps accepting.
     ///
     /// `projectRoots` keeps the tilde rather than the expanded path. The file is
     /// meant to be copied between machines, and the decoder expands it on read.
-    private static let defaultFileContents = """
+    static let defaultFileContents = """
     {
       "fontFamily": null,
       "fontSize": 11.5,

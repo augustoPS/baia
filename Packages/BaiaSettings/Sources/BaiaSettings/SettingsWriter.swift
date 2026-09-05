@@ -1,20 +1,22 @@
 import Foundation
 
-/// Writes settings back into an existing config document.
+/// Writes edits back into an existing config document, one key at a time.
 ///
 /// Read-modify-write rather than encode-from-``Settings``, for three reasons an
 /// encoder cannot answer.
 ///
 /// `projectRoots` is lossy in memory: ``SettingsDecoder`` expands the tilde on
 /// read, so an encoder would write an absolute path over the `~/Projects` the
-/// file is meant to carry between machines, on the first write from a window
-/// that does not even edit the key.
+/// file is meant to carry between machines, on a write that never touched the
+/// key.
 ///
-/// Nine keys sit outside the settings window's scope and inside the same
-/// document, so the window must not rewrite what it does not own.
+/// A control edits one field and shares the document with every other, so a
+/// write must not rewrite what it was not asked to. That was the 2026-09-04
+/// audit's S2: a whole-window snapshot written as one transaction put a stale
+/// value back over an edit made outside the window.
 ///
 /// And an omitted key decodes to its default exactly as an absent one does, so
-/// absence carries no information to round-trip on. That is the same blind spot
+/// absence carries no information to round-trip on. That is the blind spot
 /// `SettingsStoreTests` covers by comparing the default file's key set against
 /// ``SettingsDecoder/knownKeys`` rather than by decoding it.
 enum SettingsWriter {
@@ -24,99 +26,35 @@ enum SettingsWriter {
     /// Explicit because ``JSONValue/object(_:)`` is a dictionary and parsing the
     /// file loses whatever order it had. Sorted output would scramble a document
     /// grouped by subject, and the file is where the owner learns the spellings.
-    ///
-    /// Pinned against ``SettingsDecoder/knownKeys`` by a test rather than by
-    /// construction, so a key added to the decoder and forgotten here fails
-    /// loudly instead of dropping out of every write it is not named in.
-    static let keyOrder: [String] = [
-        "fontFamily",
-        "fontSize",
-        "themeName",
-        "backgroundHex",
-        "backgroundOpacity",
-        "backgroundBlur",
-        "windowPadding",
-        "windowPaddingBalance",
-        "transparentTitlebar",
-        "optionAsAlt",
-        "cursorStyle",
-        "projectRoots",
-        "discoveryMaxDepth",
-        "notificationsEnabled",
-        "gitPollSeconds",
-        "activityPollSeconds",
-        "restoreSession",
-        "focusAccent",
-        "attentionStyle",
-        "attentionAccent",
-        "alertBehavior",
-        "chromeStyle",
-        "sidebar",
-        "controlChannelEnabled",
-        "controlAllowRun",
-        "controlAllowRead",
-    ]
+    static let keyOrder: [String] = SettingsKey.allCases.map(\.rawValue)
 
-    /// The fifteen keys the settings window owns.
+    /// `document` with each edit's key replaced and every other member kept, or
+    /// nil when `document` is not an object.
     ///
-    /// Everything outside this set is carried through untouched: the nine the
-    /// window does not show, and any key the owner added that the decoder already
-    /// reports as unread.
-    ///
-    /// Declared rather than inferred from ``patch(_:with:)``, and pinned against
-    /// what that function actually writes by a test, so the two cannot drift into
-    /// a key that is claimed but never assigned.
-    static let appearanceKeys: Set<String> = [
-        "themeName",
-        "backgroundHex",
-        "backgroundOpacity",
-        "backgroundBlur",
-        "windowPadding",
-        "windowPaddingBalance",
-        "transparentTitlebar",
-        "fontFamily",
-        "fontSize",
-        "cursorStyle",
-        "focusAccent",
-        "attentionStyle",
-        "attentionAccent",
-        "alertBehavior",
-        "chromeStyle",
-    ]
-
-    /// `document` with the appearance keys replaced from `settings`.
-    ///
-    /// A document that is not an object starts from empty rather than aborting. A
-    /// file the owner mangled by hand decodes as unreadable, and accept still has
-    /// to land the fourteen keys rather than silently doing nothing and leaving
-    /// the window looking like it worked.
-    static func patch(_ document: JSONValue, with settings: Settings) -> JSONValue {
-        var members: [String: JSONValue]
-        if case let .object(existing) = document {
-            members = existing
-        } else {
-            members = [:]
+    /// Nil rather than a fresh object. A document that is not an object is a
+    /// file the owner mangled by hand, and writing a new one over it destroys
+    /// whatever they had in it: the audit's S4 fixture lost custom project roots
+    /// that way. ``SettingsStore/patch(_:)`` refuses instead and the window
+    /// offers a repair that keeps a backup.
+    static func patch(_ document: JSONValue, edits: [SettingsEdit]) -> JSONValue? {
+        guard case var .object(members) = document else { return nil }
+        for edit in edits {
+            members[edit.key.rawValue] = edit.jsonValue
         }
+        return .object(members)
+    }
 
-        members["themeName"] = .string(settings.themeName)
-        members["backgroundHex"] = .string(settings.backgroundHex)
-        members["backgroundOpacity"] = .number(settings.backgroundOpacity)
-        members["backgroundBlur"] = .bool(settings.backgroundBlur)
-        members["windowPadding"] = .number(settings.windowPadding)
-        members["windowPaddingBalance"] = .bool(settings.windowPaddingBalance)
-        members["transparentTitlebar"] = .bool(settings.transparentTitlebar)
-        // Null rather than absent. The decoder reads both as unset, and the
-        // default file says null, so the key stays visible to whoever opens the
-        // file looking for the spelling.
-        members["fontFamily"] = settings.fontFamily.map { JSONValue.string($0) } ?? .null
-        members["fontSize"] = .number(settings.fontSize)
-        members["cursorStyle"] = .string(settings.cursorStyle.rawValue)
-        members["focusAccent"] = .string(settings.focusAccent.rawValue)
-        members["attentionStyle"] = .string(settings.attentionStyle.rawValue)
-        members["attentionAccent"] = .string(settings.attentionAccent.rawValue)
-        members["alertBehavior"] = .string(settings.alertBehavior.rawValue)
-        members["chromeStyle"] = .string(settings.chromeStyle.rawValue)
-
+    /// A complete document holding every key `settings` has, for repair.
+    ///
+    /// The only time baia writes a document from ``Settings`` rather than from
+    /// the file, and only ever after the original bytes have been backed up.
+    /// Project roots come out tilde-abbreviated, so a repaired file is as
+    /// portable as a first-launch one.
+    static func document(from settings: Settings) -> JSONValue {
+        var members: [String: JSONValue] = [:]
+        for key in SettingsKey.allCases {
+            members[key.rawValue] = SettingsEdit.value(of: key, in: settings).jsonValue
+        }
         return .object(members)
     }
 
