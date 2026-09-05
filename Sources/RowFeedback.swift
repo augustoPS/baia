@@ -37,7 +37,15 @@ final class RowFeedback {
     /// indistinguishable from every other beep on an audible one.
     enum Answer { case landed, refused }
 
-    init(redraw: @escaping (Int) -> Void) {
+    /// `reducesMotion` is read at every transition rather than once, because the
+    /// user can flip the setting while the app runs and the next click has to
+    /// honour it. The default reads the workspace; a probe passes its own so the
+    /// two policies can be graded in one process without touching the system.
+    init(
+        reducesMotion: @escaping () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion },
+        redraw: @escaping (Int) -> Void
+    ) {
+        self.reducesMotion = reducesMotion
         self.redraw = redraw
     }
 
@@ -115,10 +123,33 @@ final class RowFeedback {
     /// animating it up first would be a flash the release did not earn. The
     /// refusal's ink rides the same level, so the two read as one gesture with two
     /// outcomes.
+    ///
+    /// **Reduce Motion removes the fade, not the answer.** The outcome's hold time
+    /// is separate from its motion: with motion, the level fades from 1 to 0 over
+    /// `answerDuration`; without it, the level sits at 1 for the same
+    /// `answerDuration` and then drops in one step. Either way the result is on
+    /// screen for as long, drawn in the same fill and ink, and is redrawn at once
+    /// so the first frame after the click shows it.
+    ///
+    /// A newer answer on the same row replaces a pending hold rather than stacking
+    /// two, and the hold reads the policy at the moment of the answer: toggling
+    /// Reduce Motion under a pending hold neither cancels it nor animates it.
     func answer(_ answer: Answer, at row: Int) {
         answers[row] = answer
         levels[row] = 1
-        fade(row, to: 0, over: Self.answerDuration)
+        holds[row]?.timer.invalidate()
+        holds[row] = nil
+        guard reducesMotion() else {
+            fade(row, to: 0, over: Self.answerDuration)
+            return
+        }
+        targets[row] = nil
+        redraw(row)
+        heldGeneration += 1
+        let generation = heldGeneration
+        holds[row] = (generation, Timer.scheduledTimer(withTimeInterval: Self.answerDuration, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.release(row, generation: generation) }
+        })
     }
 
     /// The fill a row is drawn with, or nil for a row with nothing on it.
@@ -156,23 +187,44 @@ final class RowFeedback {
         targets = [:]
         timer?.invalidate()
         timer = nil
+        for hold in holds.values { hold.timer.invalidate() }
+        holds = [:]
         for row in touched { redraw(row) }
     }
 
     // MARK: - The clock
 
     private let redraw: (Int) -> Void
+    private let reducesMotion: () -> Bool
     private var levels: [Int: Double] = [:]
     private var targets: [Int: (level: Double, step: Double)] = [:]
     private var answers: [Int: Answer] = [:]
     private var timer: Timer?
+    /// One still-outcome hold per answered row under Reduce Motion. A second
+    /// answer on the same row replaces the hold rather than stacking two.
+    ///
+    /// Each hold carries a generation beside its timer, and the timer's block
+    /// captures **the generation** rather than the timer. `Timer` is not
+    /// `Sendable`, so the block's own task-isolated parameter cannot cross into
+    /// a main-actor closure: passing it there is a Swift 6 data-race error
+    /// (`#SendingRisksDataRace`), which is what an identity check written as
+    /// `holds[row] === timer` cost. A `UInt64` is `Sendable` and answers the same
+    /// question, so the guard survives without weakening isolation anywhere.
+    private var holds: [Int: (generation: UInt64, timer: Timer)] = [:]
+
+    /// Monotonic, app-lifetime, never reused. A per-row counter would do, and
+    /// this is one counter rather than a second dictionary to keep in step.
+    private var heldGeneration: UInt64 = 0
 
     private static let hoverDuration = 0.15
     private static let answerDuration = 0.22
     private static let tick = 1.0 / 60
 
     private func fade(_ row: Int, to level: Double, over duration: Double) {
-        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+        guard !reducesMotion() else {
+            // A pointer leaving a held outcome must not cut the hold short; the
+            // hold's own release clears the answer when its time is up.
+            if level == 0, holds[row] != nil { return }
             levels[row] = level
             targets[row] = nil
             if level == 0 { answers[row] = nil }
@@ -181,6 +233,24 @@ final class RowFeedback {
         }
         targets[row] = (level, Self.tick / duration)
         start()
+    }
+
+    /// The end of a held outcome. The answer goes in one step, so the next hover
+    /// of that row is drawn as a hover and not in `alert`. Only the hold that is
+    /// still current may release: one that `answer(_:at:)` or `reset()` replaced
+    /// or cancelled has nothing left to clear. A pointer that arrived on the row
+    /// during the hold keeps its hover fill instead of going dark under it.
+    private func release(_ row: Int, generation: UInt64) {
+        guard holds[row]?.generation == generation else { return }
+        holds[row] = nil
+        answers[row] = nil
+        if hovered == row {
+            levels[row] = 1
+        } else {
+            levels[row] = nil
+            targets[row] = nil
+        }
+        redraw(row)
     }
 
     private func start() {
