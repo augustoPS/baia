@@ -1,32 +1,48 @@
 #!/bin/bash
-# Builds the Debug app and runs the Settings window's in-app self-check.
+# Builds the Debug app unless the coordinator already did, then runs the
+# Settings window's in-app self-check against an isolated copy.
 #
 #   ./run.sh
 #
-# **Not safe from inside a baia pane.** The check launches baia-dev in the
-# foreground of the calling shell, opens its windows, and quits: it takes
-# focus for the seconds it runs. Run it from a terminal that is not a pane.
+# **Not safe from inside a baia pane.** The check launches the copy in the
+# foreground, opens its windows, and quits. Run it from a terminal that is not
+# a pane.
 #
-# The app is pointed at a scratch copy of the real config through
-# `BAIA_CONFIG_FILE`, so nothing here writes to ~/.config/baia/config.json.
-# The Debug build owns its own session file, socket and acknowledgement file
-# under Application Support/baia-dev, so the installed copy is untouched too.
+# Isolation owns the instance: unique bundle id, Application Support directory,
+# config file, and ZDOTDIR. It does not copy the owner's config and does not
+# launch `baia-dev.app` against the Debug session or acknowledgement.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
-OUT=${TMPDIR:-/tmp}/baia-settings-window-probe
-mkdir -p "$OUT"
 cd "$ROOT"
 
-make --no-print-directory build >/dev/null
-
-SCRATCH="$OUT/config.json"
-if [[ -f "$HOME/.config/baia/config.json" ]]; then
-  cp "$HOME/.config/baia/config.json" "$SCRATCH"
-else
-  rm -f "$SCRATCH"
+if [ -n "${BAIA_PANE:-}" ]; then
+  echo "settings-window launches an app that takes focus. Run it outside a baia pane."
+  exit 1
 fi
 
-BAIA_SETTINGS_SELFCHECK=1 BAIA_CONFIG_FILE="$SCRATCH" \
-  ".build/Build/Products/Debug/baia-dev.app/Contents/MacOS/baia-dev"
+if [ "${BAIA_SETTINGS_WINDOW_SKIP_BUILD:-${BAIA_ISOLATED_SKIP_BUILD:-0}}" != "1" ]; then
+  make build
+fi
+
+ISOLATED_LABEL=settings-window
+# shellcheck source=../lib/isolated-app.sh
+source "$ROOT/Diagnostics/lib/isolated-app.sh"
+isolated_install_traps
+isolated_prepare
+
+cat > "$ISOLATED_CONFIG" <<EOF
+{
+  "controlChannelEnabled": false,
+  "controlAllowRun": false,
+  "notificationsEnabled": false,
+  "restoreSession": true,
+  "projectRoots": ["$ISOLATED_OUT"]
+}
+EOF
+
+BAIA_SETTINGS_SELFCHECK=1 BAIA_CONFIG_FILE="$ISOLATED_CONFIG" ZDOTDIR="$ISOLATED_ZDOT" \
+  "$ISOLATED_BINARY" &
+isolated_record_child "$!"
+wait "$ISOLATED_CHILD_PID"

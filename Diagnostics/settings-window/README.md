@@ -1,8 +1,16 @@
 # Settings window self-check
 
 `./run.sh` from anywhere, from a terminal that is **not** a baia pane: the
-check launches the Debug app in the foreground, opens Settings, drives it, and
-quits, so it takes focus while it runs. Exits non-zero on any failed check.
+check launches an isolated copy of the Debug app in the foreground, opens
+Settings, drives it, and quits, so it takes focus while it runs. Exits
+non-zero on any failed check. Skip the build with
+`BAIA_SETTINGS_WINDOW_SKIP_BUILD=1` or `BAIA_ISOLATED_SKIP_BUILD=1`.
+
+The copy has its own bundle identifier, Application Support directory, config,
+and `ZDOTDIR`. It does not copy `~/.config/baia/config.json` and does not load
+the Debug session or acknowledgement. The owner's config/session/ack hashes
+are compared before and after. This is the unacknowledged fixture: command
+execution stays off without `command-execution.ack`.
 
 ## The question
 

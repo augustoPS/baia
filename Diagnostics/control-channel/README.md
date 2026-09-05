@@ -1,172 +1,85 @@
 # Control channel probe
 
-`./run.sh` from anywhere. It builds baia, launches it, exercises the control
-channel over the real socket, and exits non-zero naming any check that failed.
-Ninety-six checks, each printing `ok` or `FAIL`, ending in `PASS` or
-`FAILED n of m`.
+`./run.sh` from anywhere **outside a baia pane**. It launches a disposable copy
+of the Debug app, exercises the control channel over that copy's real socket,
+and exits non-zero naming any check that failed. One hundred and one checks,
+each printing `ok` or `FAIL`, ending in `PASS` or `FAILED n of m`.
 
-**This probe caught a real bug on 2026-07-30 by being unable to pass.** "the
-activity in an event is the activity list reports for the same pane" answered
-`[None, None]`, and the cause was not the check: `TerminalPaneController`
-gated all three pollers on `isKeyWindow` in `viewDidAppear`, so a pane in a
-window that never becomes key never started reporting activity, and nothing
-else could ever start it. The app here is launched from a script and is never
-key. The same gate would silence a pane a `split` opened in a background window
-while the owner worked in another app, which is the case the feature exists
-for.
+The coordinator builds first (`make build`) or this script builds. Skip the
+build with `BAIA_CONTROL_CHANNEL_SKIP_BUILD=1` or `BAIA_ISOLATED_SKIP_BUILD=1`.
 
-Quit any running baia first. A second instance owns the socket, and the one this
-launches would run with no channel and hand its panes no capability; the script
-refuses up front rather than killing an app somebody is using.
+This probe caught a real bug on 2026-07-30 by being unable to pass. Activity in
+an event is the activity `list` reports for the same pane answered `[None,
+None]`: `TerminalPaneController` gated all three pollers on `isKeyWindow` in
+`viewDidAppear`, so a pane in a window that never becomes key never started
+reporting activity. The isolated app here is launched from a script and is
+never key.
+
+It does not quit a running baia. The copy has its own bundle identifier,
+Application Support directory, socket, config, and `ZDOTDIR`, so it can sit
+beside the daily driver and the Debug app. Cleanup kills only the recorded PID.
+
+## Isolation
+
+`run.sh` sources `Diagnostics/lib/isolated-app.sh`. The copy is ad-hoc signed
+after `Info.plist` changes. Pane tokens are written under the run's temporary
+directory (mode 0700) and deleted with it. Before the first write and after
+teardown, the probe fingerprints:
+
+- `~/.config/baia/config.json`
+- `~/Library/Application Support/baia/session.json`
+- `~/Library/Application Support/baia-dev/session.json`
+- `~/Library/Application Support/baia/command-execution.ack`
+- `~/Library/Application Support/baia-dev/command-execution.ack`
+
+Any change is a failure. There is no backup/restore of those files and no
+fixed `/tmp/baia-control-channel-probe` scratch.
+
+## Acknowledgement
+
+`run` is `disabled` until **both** `controlAllowRun` and this installation's
+`command-execution.ack` are set (`AppDelegate.effectiveAllowRun`). An isolated
+support directory is empty, so the launcher seeds the marker. That is the
+current contract the 101 checks encode: flipping the key then moves `disabled`
+→ `refused`. An unacknowledged copy would keep `disabled` and is not a Settings
+regression.
+
+## Shell readiness
+
+`.zshrc` retries `baia whoami` before recording the exit. A live pane must
+reach 0. A pane already closed (the layout-export child, a churned split) may
+record `badToken` (13); that is not a helper-PATH failure.
 
 ## Everything is on the wire
 
-`probe.py` opens `$BAIA_SOCK`, writes bytes, and reads bytes. It imports nothing
-the app is built from and calls no Swift. That is the whole design, and it is the
-lesson this directory already paid for once: the footer-corners probe verified a
-geometry helper directly and stayed green while the code consuming it was covered
-by nothing. A control that reached `PaneGraph.authorize` would keep passing while
-the socket in front of it was deleted.
-
-One check goes through literal `nc -U`, because `ControlWire`'s own reasoning for
-newline-delimited JSON over a length-prefixed frame is that the channel stays
-debuggable by hand, and a claim nothing exercises stops being true quietly.
-
-**Every expectation is a code or a field read out of parsed JSON.** Key order in
-a response is `JSONEncoder`'s to choose and is stable only within a process, and
-paths come back with their solidi escaped, so a control that grepped for
-`{"v":1,"ok":false` would pass on the run it was written against and fail on the
-next one for a reason nobody would find quickly. The single check that looks at
-bytes is the over-cap frame, whose assertion is that there were none.
+`probe.py` opens the isolated socket, writes bytes, and reads bytes. It imports
+nothing the app is built from. One check goes through literal `nc -U`. Every
+expectation is a code or a field read out of parsed JSON.
 
 ## Where the pane capabilities come from
 
-A pane's token is minted per pane per run, injected into its shell as
-`$BAIA_TOKEN`, never written to disk, and returned by no verb. Nothing in a
-script can type into a pane, so the panes are asked to report their own
-environment instead: the app is launched with `ZDOTDIR` pointing at a directory
-the script writes, whose `.zshenv` copies `$BAIA_PANE` and `$BAIA_TOKEN` into the
-scratch directory as each pane's shell starts.
-
-That is a readout and not a forgery. The values are the app's own, issued by the
-app to that pane, and they reach the socket the way that pane's `baia` would.
-The side effect is that a probe run's panes start with none of the owner's shell
-configuration, which is deliberate: what a pane's dotfiles do must not be able to
-change what the run proves.
+A pane's token is minted per pane per run and injected as `$BAIA_TOKEN`. The
+isolated `ZDOTDIR` `.zshenv` copies `$BAIA_PANE` and `$BAIA_TOKEN` into the
+scratch token directory. That is a readout, not a forgery. Probe panes start
+with none of the owner's shell configuration.
 
 ## How a pane is made to do something
 
-The same plant turned the other way round, for the checks that need a pane to run
-a command rather than report a variable. The probe writes a file, splits, and the
-`.zshrc` of any shell started while that file exists obeys it; the file is removed
-again, so only the panes the probe means to steer are steered. There are two:
-`arm-churn` has the pane close itself, which is the cheapest pair of ring events a
-script can cause, and `arm-activity` has it run a long `sleep`, which is what
-`activityChanged` is supposed to notice.
-
-The sleep runs as a child of the pane's shell rather than replacing it with
-`exec`. The classifier excludes the shell's own pid, so an exec'd command reads as
-an idle pane.
-
-## The checks
-
-**A token is a capability and nothing else is.** A token that was never issued is
-`badToken`. Then the finding that must not silently come back, twice: the
-caller's own pane id and another live pane's id, both read out of `session.json`
-rather than invented, both belonging to panes that hold a live capability at that
-moment, are each `badToken` when sent as a token. An implementation that let
-`authorize` fall back to a pane id "so the read verbs keep working with the ids
-they return" answers `ok` to both.
-
-**The version field.** `v: 0` and `v: 2` are `badVersion`.
-
-**The frame cap.** A line over 256 KiB with no newline in it is closed on with no
-response at all, which is the read loop deciding on bytes as they arrive rather
-than on a line that ended.
-
-**Scope, asserted on contents rather than on refusal.** A read leak fails by
-over-succeeding and a refusal-shaped harness structurally cannot see it, so the
-scope checks assert what came back. The session has three panes; one of them
-splits a child through the channel, and its `list` must name exactly itself and
-that child. A pane that created nothing lists only itself. `whoami` still names
-one pane after that pane has created another. `send` to a live pane that is not a
-peer is `unauthorized`, and `send` to a pane that does not exist answers the same
-code, so a caller cannot enumerate the workspace one id at a time.
-
-**A layout document says the shape and withholds the directories.** Run first,
-and the position is the assertion: alpha has created nothing at that point, so
-its visible set is itself alone and the three-pane seeded window is exactly the
-case the scope decision was made for. The export names all three panes and one
-directory, and no display id appears anywhere in it, which is what makes a shape
-describing panes the caller cannot see safe to hand over. Then the rule as a
-difference, which a count alone cannot show: alpha splits, and exactly one more
-directory crosses. Delete the `visible.contains` guard in `ControlAdapter.describe`
-and both go red at three of three and four of four, which is the negative control
-for this feature and the one to run when it changes.
-
-**A layout applies into a new window and reshapes nothing.** A three-pane
-document is applied and its panes join the caller's scope naming the caller as
-their creator, which is what a `split`'s pane does. One of them is asked to
-describe the window it is now in, and that has to be the document that opened it:
-the strongest available form of "the new window matches the file", and it is
-answered by a pane rather than by a screenshot. The caller's own window is
-exported before and after and must not have moved. Two of the three directories
-exist and are honoured; the third does not, and that pane opens at the default
-rather than being dropped, because the owner asked for three panes. A document
-with no tabs, one from another version, and one past the pane cap are each
-refused with nothing opened, and every one of those frames reached the socket
-without the CLI in front of it, which is the half of the check that matters:
-`ControlLayout.refusal()` runs in both places and only this one is the rule.
-
-**What a supervising pane hears.** A parked `subscribe` is woken by a descendant
-opening and names the pane that created it. A parent hears the close of a child
-after that child is gone, which is the case the audience-at-emit design exists
-for: move the emit in `forgetPane` after `graph.close` and this is what goes red,
-because the parentage that put the parent in the audience has been deleted by
-then. A pane outside the subtree is told about no pane but itself. A subscriber
-that continues from the sequence `list` reported sees every event after it once
-and none of the records it already has. A ring driven past its 512 entries
-answers `gap` rather than a quiet hole. And an `activityChanged` carries the same
-string `list` reports for that pane, which is the live half of the rule that a
-subscriber's bootstrap and its stream speak one vocabulary.
-
-**The two settings keys have consumers.** `controlChannelEnabled` is flipped to
-false live and every one of the eighteen verbs in the probe's own list must answer
-`disabled`, then flipped back and `whoami` must work again. The list is
-hand-maintained and now carries `subscribe` and both layout verbs; `read` is not
-in it, because its gate is a key of its own and the package's verb table holds
-that one.
-`controlAllowRun` is flipped and `run`'s code must move from `disabled` to
-`refused` and back. Each flip is waited on by polling the channel rather than by
-sleeping, so a key with no consumer fails on the deadline instead of passing on a
-race.
+The probe writes a file, splits, and `.zshrc` of any shell started while that
+file exists obeys it. `arm-churn` closes the pane; `arm-activity` runs a long
+`sleep` as a child of the shell (not `exec`, because the classifier excludes
+the shell's own pid).
 
 ## Checking that a control can fail
 
-The controls here cannot be built in the way `pane-resize`'s are, because each
-one would need its own build of the app rather than its own compile of an
-extracted file. So the check is run by hand, and the recipe is in `run.sh`'s
-header: damage `PaneGraph.authorize` so that it also resolves a pane id, run the
-script, and put it back. Both pane-id checks then answer `ok`, the script names
-them and exits 1.
-
-## What it touches
-
-`~/.config/baia/config.json` and `~/Library/Application Support/baia/session.json`
-are backed up before the first write and restored on the way out however the run
-ends, including when a check fails or the run is interrupted. A machine that has
-never run baia has neither file, and the restore removes the probe's copies
-rather than leaving a workspace the owner never had. Everything else lives in
-`$TMPDIR/baia-control-channel-probe`.
-
-The run launches a real baia, which takes the front for about twenty seconds.
+Damage `PaneGraph.authorize` so it also resolves a pane id, run this, put it
+back. Both pane-id controls then answer `ok` and the script exits 1 naming
+them. The recipe is in `run.sh`'s header.
 
 ## What it cannot check
 
 Nothing here types into a pane, so nothing here proves that `baia` works from a
-pane's shell: that `command -v baia` finds the embedded helper after `login` and
-`path_helper` have rebuilt PATH, that the response arrives before the shell dies
-on `baia close`, that `recv --wait 60` leaves the UI responsive, that a mutation
-in a background window does not raise it, or that a pane opened by hand with ⌘D
-appears in no other pane's `list`. Those are the live pass, and they are run by
-hand.
+pane the owner opened by hand. Those are the live pass.
+
+The run launches a real app, which takes the front for about twenty seconds.
+It is **not** a `SAFE_PROBES` member.

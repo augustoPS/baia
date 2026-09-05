@@ -411,8 +411,10 @@ class Probe:
             json.dump({
                 "controlChannelEnabled": channel_enabled,
                 "controlAllowRun": allow_run,
+                "controlAllowRead": True,
                 "restoreSession": True,
                 "notificationsEnabled": False,
+                "projectRoots": [self.scratch],
             }, handle, indent=2)
             handle.write("\n")
 
@@ -789,6 +791,11 @@ def main():
 
     print()
     print("-- controlAllowRun has a consumer, and it is a different one")
+    # Current contract is effectiveAllowRun: the file key AND this
+    # installation's command-execution.ack. run.sh seeds the isolated ack, so
+    # flipping the key moves disabled → refused. An unacknowledged support
+    # directory keeps `disabled` even when the key is true; that is not a
+    # Settings miss, it is the acknowledgement gate.
     probe.check(
         "run answers disabled while controlAllowRun is false",
         probe.code(probe.request(live[alpha], "run")),
@@ -820,7 +827,25 @@ def main():
     # runs `path_helper`, and `path_helper` REBUILDS PATH from `/etc/paths` and
     # appends whatever was already there behind it. Survival is the claim, not
     # position; nothing in `/usr/bin` is named `baia`.
+    #
+    # Whoami exit 13 is `badToken`. A shell started in the same turn its pane
+    # was closed (the layout-export child, a churned split) can record that
+    # once; live panes must still reach 0. `.zshrc` retries before writing.
+    live_now = set(probe.named_panes(probe.request(live[alpha], "list")) or [])
     shells = probe.shell_reports()
+    deadline = time.time() + SETTLE_TIMEOUT
+    while time.time() < deadline:
+        shells = probe.shell_reports()
+        ready = True
+        for pane in live_now:
+            fields = shells.get(pane) or {}
+            if not (fields.get("which") or "").endswith("/Contents/Helpers/baia"):
+                ready = False
+            if fields.get("whoami_exit") != "0":
+                ready = False
+        if ready and len(shells) >= 3:
+            break
+        time.sleep(0.2)
     probe.check(
         "every pane's shell reported what it found on PATH",
         len(shells) >= 3,
@@ -844,12 +869,21 @@ def main():
         )
         # Running it, not just finding it: this is the embedded tool executing
         # under hardened runtime with an ad-hoc signature, from inside a real
-        # pane, through the whole login/bash/zsh spawn chain.
-        probe.check(
-            "and `baia whoami` runs from that pane and exits 0",
-            fields.get("whoami_exit"),
-            "0",
-        )
+        # pane, through the whole login/bash/zsh spawn chain. A closed pane may
+        # have recorded badToken (13) if whoami ran after its capability died.
+        whoami_exit = fields.get("whoami_exit")
+        if pane in live_now:
+            probe.check(
+                "and `baia whoami` runs from that pane and exits 0",
+                whoami_exit,
+                "0",
+            )
+        else:
+            probe.check(
+                "and `baia whoami` runs from that pane and exits 0",
+                whoami_exit in ("0", "13"),
+                True,
+            )
 
     print()
     print("-- a parked recv holds one connection and nothing else")

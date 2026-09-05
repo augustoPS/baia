@@ -49,7 +49,8 @@ responder inside a pane's window and silently kill every ghostty binding" is.
 | `attention-colour/` | Whether the attention treatment resolves to the colour the config asked for |
 | `clip-layout/` | The bug shape that has cost four hand-found hours: something derived from a view's size, the size changing, and the derived thing never rebuilt. Drives a real rows view through a first layout, a width change and a scroll |
 | `config-wiring/` | Task 6 of the config-wiring plan: every appearance key round-tripping into the running app. Colour checks are automated, the ones marked `LOOK` need a human |
-| `control-channel/` | Sixty-seven checks over the real socket: scopes, statuses, event kinds, backfill, and a pane reporting on itself |
+| `control-channel/` | 101 checks over an isolated instance's real socket: scopes, statuses, event kinds, backfill, acknowledgement-gated `run`, and a pane reporting on itself |
+| `settings-window/` | In-app Settings self-check on an isolated, unacknowledged copy. Takes focus; does not load Debug session/ack |
 | `find-in-pane/` | Whether the find panel breaks a responder inside a pane's window, or keeps a dead pane's shell alive |
 | `split-command/` | What ghostty actually does with the `command` config key, which its own documentation gets wrong, and therefore what `baia split --command` has to be given. Also the refusals, which need no app |
 | `footer-corners/` | **Frozen 2026-08-13 and does not run.** It measured the footer's corner geometry, including full screen, by compiling `PaneStatusBarView` verbatim; that file was deleted, so `run.sh` exits 0 printing why rather than dying on a missing path. Kept because `glass-backdrop`, `pane-glass-stacking` and `override-wires` cite its method |
@@ -72,6 +73,8 @@ one's header says which route and why, so nobody re-derives it.
 
 | File | What it is |
 |---|---|
+| `isolated-app.sh` | Sourced, not run. Copies the Debug app, unique bundle id / support / config / `ZDOTDIR`, exact-PID cleanup, hashes the owner's config/session/ack. Used by `control-channel/` and `settings-window/`. Never process-name kills |
+| `isolated-app-test.sh` | Static checks over a fake bundle. Launches nothing |
 | `app-identity.sh` | Sourced, not run. Answers *which* baia a probe is talking to, from the bundle it launched rather than from a spelling: `APP_NAME`, `APP_ID`, `APP_EXEC`, `APP_SUPPORT`, `APP_SESSION`, `APP_SOCKET`, plus `quit_app`, `activate_app` and `app_is_running`. Set `APP` before sourcing. Read its header before adding a fifth driver |
 | `app-identity-test.sh` | 13 checks over the kill pattern, run against command-line strings rather than processes, so it launches nothing and kills nothing. Includes the pre-2026-08-02 pattern as a worked example of the bug and an over-broad pattern as a negative control |
 | `drive.sh` | Sourced, not run. Activation, keys, pasted text, real clicks and window captures against the running app: `act`, `key`, `type_line`, `type_raw`, `shot`, `click_pt`, `click_row`. Set `APP` and `OUT` before sourcing; it sources `app-identity.sh` itself. Shared by `capture.sh` and `path-picker/run.sh`, and the first place to look before scripting the app again |
