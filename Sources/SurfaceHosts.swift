@@ -63,6 +63,20 @@ private final class TitlebarBandGlass: NSGlassEffectView {
 // path is untouched — the wash only ever existed above a glass view — and its
 // rendering is byte-identical by construction.
 
+/// What ``SidebarHost`` lays out beside its column.
+///
+/// The pane tree in a workspace window and the sample pane in the Settings
+/// preview both take the host's leftover width and both need to know when the
+/// column covers a window edge, so their bottom corners stop curving against
+/// it. That is the whole contract, and it is what lets the preview build the
+/// real sidebar without a pane tree, which would spawn a shell per preview.
+@MainActor
+protocol SidebarHostedContent: NSViewController {
+    var edgesCoveredByHost: BottomCorners { get set }
+}
+
+extension PaneTreeController: SidebarHostedContent {}
+
 /// One or more surfaces in the window, beside the panes.
 ///
 /// Becomes the window's `contentViewController`, with the pane tree as a child, so
@@ -81,7 +95,19 @@ private final class TitlebarBandGlass: NSGlassEffectView {
 /// costs is its first appearance.
 @MainActor
 final class SidebarHost: NSViewController {
-    let tree: PaneTreeController
+    /// What sits beside the column: the pane tree in a workspace window, the
+    /// sample pane in the Settings preview. Any view controller that can be
+    /// told which window edges the column covers.
+    let content: SidebarHostedContent
+
+    /// Whether the host's view runs up under the window's titlebar band.
+    ///
+    /// True in a workspace window, whose style mask carries
+    /// `.fullSizeContentView` so the column's glass can merge with the band's;
+    /// false in the Settings preview, where the host is an ordinary subview of
+    /// an ordinary window and `bandHeight` would otherwise read that window's
+    /// titlebar and push the sample's content down by it.
+    private let spansTitlebar: Bool
 
     /// The column's one surface, or none.
     ///
@@ -180,10 +206,8 @@ final class SidebarHost: NSViewController {
     /// had the first heading draw it trailing, "the connector between the footer
     /// and the sidebar"; design v5 §5 replaced that connector with the session
     /// header's own row; the owner's 2026-08-12 rulings removed that row and then
-    /// the heading itself (option C). The property stays because
-    /// ``SettingsPreviewColumn`` still sets `SurfaceTitleView.anchorName`
-    /// directly to show how a heading is themed, and the delegate keeps one place
-    /// that knows the focused pane's anchor name.
+    /// the heading itself (option C). The property stays because the delegate
+    /// keeps one place that knows the focused pane's anchor name.
     ///
     /// Assigning it did call `refreshHeadings()` until 2026-08-12, which read
     /// nothing this value fed. That call went with the CHANGES section (owner's
@@ -195,9 +219,8 @@ final class SidebarHost: NSViewController {
     // It gated the anchor name's accent on the window being key, watched through
     // the two notification observers `viewDidAppear` still installs, and the one
     // thing it ever reached was `section.heading.isWindowActive`. With no heading
-    // in this column there is no accent to gate, so the property went and the
-    // observers now keep only the key state ``SurfaceTitleView`` reads when
-    // `SettingsPreviewColumn` drives one.
+    // in this column there is no accent to gate, so the property went with the
+    // observers.
 
     // `refreshHeadings()` stood here until 2026-08-12. It pushed
     // `headingCount` and `headingTotals` from each surface into the heading
@@ -237,8 +260,8 @@ final class SidebarHost: NSViewController {
     /// spike's sidebar arm (its README's finding 6) measured that an untinted
     /// `regular` glass column, positioned where the sidebar actually sits over
     /// the transparent window region, carries the file rows and (once repaired
-    /// through ``PaneChrome/PaneTheme/sectionHeaderInk(on:)`` — see
-    /// ``SurfaceTitleView/labelInk``) the heading above them both, and its
+    /// through ``PaneChrome/PaneTheme/sectionHeaderInk(on:)``) the heading
+    /// above them both, and its
     /// verdict rejects the `NSSplitViewController` restructure this could have
     /// reached for instead.
     ///
@@ -356,7 +379,7 @@ final class SidebarHost: NSViewController {
     /// runs then lays out exactly as the pre-`fullSizeContentView` arrangement
     /// did. The first pass inside a window recomputes.
     private var bandHeight: Double {
-        guard let window = view.window else { return 0 }
+        guard spansTitlebar, let window = view.window else { return 0 }
         return window.frame.height - window.contentLayoutRect.height
     }
 
@@ -431,13 +454,15 @@ final class SidebarHost: NSViewController {
     private(set) var firstSectionHeight: Double = SidebarGeometry.default.splitHeight
 
     init(
-        tree: PaneTreeController,
+        content: SidebarHostedContent,
         surfaces: FilesSurface?,
         theme: PaneTheme,
         backgroundOpacity: Double,
-        resolvedChrome: ResolvedChrome
+        resolvedChrome: ResolvedChrome,
+        spansTitlebar: Bool = true
     ) {
-        self.tree = tree
+        self.content = content
+        self.spansTitlebar = spansTitlebar
         self.theme = theme
         self.backgroundOpacity = backgroundOpacity
         self.resolvedChrome = resolvedChrome
@@ -477,8 +502,8 @@ final class SidebarHost: NSViewController {
         // never has a frame where the backing is momentarily missing.
         applyResolvedChrome()
 
-        addChild(tree)
-        view.addSubview(tree.view)
+        addChild(content)
+        view.addSubview(content.view)
 
         divider.wantsLayer = true
         divider.layer?.backgroundColor = nsColor(theme.hairline).cgColor
@@ -654,7 +679,7 @@ final class SidebarHost: NSViewController {
         // existence. A window too narrow to give the sidebar any width leaves the
         // tree touching the left edge, and a tree told otherwise would keep its
         // leftmost footers square against a corner the window really does have.
-        tree.edgesCoveredByHost = sidebarWidth > 0 ? [.left] : []
+        self.content.edgesCoveredByHost = sidebarWidth > 0 ? [.left] : []
         divider.isHidden = sidebarWidth == 0
 
         // The glass column, sized to exactly the sidebar's own width and
@@ -801,7 +826,7 @@ final class SidebarHost: NSViewController {
         // minus the band and `bounds` grew by exactly the band. Arm 5 measures
         // the equality (`dx=dy=dw=dh=dtop=0`) and `gridtest` measures that it is
         // an unmoved grid rather than only an unmoved rectangle.
-        tree.view.frame = NSRect(
+        self.content.view.frame = NSRect(
             x: content.minX + sidebarWidth + gutter,
             y: content.minY,
             width: max(0, content.width - sidebarWidth - gutter),

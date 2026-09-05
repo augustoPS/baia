@@ -16,6 +16,13 @@ ground.
 
 ## The question
 
+> **2026-09-04.** `SettingsPreviewPane` and `SettingsPreviewColumn` are gone.
+> The settings preview is `Sources/SettingsPreview.swift`, whose sample pane
+> installs `Sources/PaneChromeStack.swift`, the same stack a live pane wears,
+> so the divergence this probe measured cannot recur by construction. The
+> probe still compiles the two overlay views verbatim and its arms still hold
+> for them; the prose below describes the arrangement it was written against.
+
 `SettingsPreviewPane` swapped its chrome from the retired `PaneStatusBarView` to
 `PaneClusterView` on 2026-08-13. The footer was a 22 pt bar across the pane's
 full width; the capsule is a 20 pt pill in the top-right corner, a fraction of

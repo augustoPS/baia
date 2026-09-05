@@ -109,68 +109,18 @@ final class TerminalPaneController: NSViewController {
     /// pane's own directory is the part of it worth keeping.
     private let command: String?
 
-    // **`clusterCarriesTheFacts`, a `let = true`, stood here until
-    // 2026-08-13.** It was `clusterMode`, a `DesignOverrides.Chrome.Cluster.Mode`
-    // assigned from `chrome.cluster.mode` with a `didSet` re-running
-    // `applyClusterMode()` on every live flip; when the owner retired the dial
-    // it became a constant so its three branch sites — `applyClusterMode()`,
-    // the popover anchor, and the spawn arrangement — could each be deleted as
-    // its own step against a compiling tree.
-    //
-    // All three are straightened now. The spawn arrangement was the last
-    // reader, and it went with `PaneBottomArrangement` itself, so the constant
-    // has nothing left to inform: every pane wears the capsule and none wears a
-    // footer, which is a fact about the app rather than a value to carry. The
-    // scaffolding existed to make three deletions separable and has served that
-    // purpose.
+    /// Everything this pane draws around its surface: the glass plane and
+    /// wash, the capsule, the scrim, the attention frame and the focus lift.
+    ///
+    /// One object since 2026-09-04, so the Settings preview wears the same
+    /// chrome for the same settings. This controller owned the six views and
+    /// their rules until then; what it keeps is what only a pane knows: focus,
+    /// window activation, the attention level and the corner it sits in, which
+    /// it pushes into the stack, and the surface, which the stack never touches.
+    private let chrome = PaneChromeStack()
 
-    /// `chrome.cluster.cornerInset`, nil for the `PaneClusterMetrics.cornerInset`
-    /// constant. Re-pins the installed capsule's two constraints in place, the
-    /// way other live dials reach views that already exist; when the capsule is
-    /// not installed the value waits here and ``installClusterView()`` reads it
-    /// at pin time.
-    private var clusterCornerInset: Double? {
-        didSet {
-            guard clusterCornerInset != oldValue else { return }
-            for constraint in clusterEdgeConstraints {
-                constraint.constant = resolvedClusterInset
-            }
-            // And onto the pill, because the notice budget reserves this inset
-            // at both ends of the pane. The constraints and the budget must
-            // read one value or the pill is pinned at one number and bounded
-            // by another: at a dialled 40 the budget was over-allowing by 68 pt
-            // and the sentence ran off the pane's leading edge.
-            clusterView.cornerInset = resolvedClusterInset
-        }
-    }
-
-    /// `chrome.cluster.opacity`, straight through to the capsule for
-    /// ``liftParameters``' reason: nothing here reads it back, and the view
-    /// keeps its own equality guard.
-    private var clusterOpacity: Double? {
-        get { clusterView.fillOpacity }
-        set { clusterView.fillOpacity = newValue }
-    }
-
-    /// The dialled inset or the shipped constant, the one derivation both the
-    /// install path and the live re-pin read.
-    private var resolvedClusterInset: Double {
-        clusterCornerInset ?? PaneClusterMetrics.cornerInset
-    }
-
-    /// The capsule's top and trailing pins while it is installed, held so the
-    /// `cornerInset` dial can move them without a reinstall. Emptied on
-    /// removal: the constraints die with the view's membership and a held
-    /// reference would re-point a dial at dead layout.
-    private var clusterEdgeConstraints: [NSLayoutConstraint] = []
-
-    /// The capsule in the pane's top-right (design v6), and since the footer's
-    /// deletion the only view this controller's presentation passthroughs
-    /// feed. It was built beside the footer and fed by the same writes, which
-    /// is why it was already telling the truth on the day the mode dial
-    /// installed it; the writes it does not share with anything now are the
-    /// remains of that arrangement, not a second copy of one.
-    private let clusterView = PaneClusterView(frame: .zero)
+    /// The capsule, for the segment clicks and card presentation below.
+    private var clusterView: PaneClusterView { chrome.clusterView }
 
     /// The one card mechanism for this pane's capsule: place and changes both
     /// present through it, which is what makes "one card at a time" a
@@ -254,164 +204,23 @@ final class TerminalPaneController: NSViewController {
     /// each one costs. Lazy for ``clusterCardQueue``'s reason.
     private lazy var clusterGitCommand = GitCommand()
 
-    /// Covers the pane whole, which is the point: a background window recedes as
-    /// one object, and a scrim that stopped short of any part of a pane would
-    /// leave every pane in it wearing a bright band. The part it had to reach
-    /// was the footer until that view was deleted; it is the capsule now, and
-    /// covering the whole pane is what makes the rule survive the change.
-    private let scrim = PaneScrimView(frame: .zero)
+    /// The palette everything in this pane derives from, off the chrome stack.
+    private var theme: PaneTheme { chrome.theme }
 
-    private let edgeFrame = PaneEdgeFrameView(frame: .zero)
-
-    /// The focused pane's ring, inner highlight and shadow under glass
-    /// (Task 6). Covers the pane whole, the same span as ``scrim`` and
-    /// ``edgeFrame``: the lift marks the whole pane as the one holding focus,
-    /// not just the chrome that names it.
-    private let liftView = PaneLiftView(frame: .zero)
-
-    /// The pane's glass plane and its wash, glass path only. Created and torn
-    /// down with ``resolvedChrome`` exactly as the footer's backing was:
-    /// absence is part of what flat's byte-identical claim means, and a hidden
-    /// NSGlassEffectView still costs a compositing pass.
-    private var glassPlane: PaneGlassPlaneView?
-    private var glassWash: PaneGlassWashView?
-
-    /// The owner's one opacity knob, pushed by `ConfigurationCenter.apply(to:)`.
-    /// Under glass it drives the wash (floored); the surface's own
-    /// `background-opacity` is zeroed for glass-spawned panes so the well is
-    /// not painted twice. Appearance only: no didSet here touches geometry.
-    private var backgroundOpacity: Double = 1 {
-        didSet {
-            guard backgroundOpacity != oldValue else { return }
-            updateGlassWashColour()
-        }
-    }
-
-    /// `chrome.paneWashFloor`, nil for the `ChromeMaterials.PaneWash.floor`
-    /// constant. Pushed beside the other chrome extras.
-    private var paneWashFloor: Double? {
-        didSet {
-            guard paneWashFloor != oldValue else { return }
-            updateGlassWashColour()
-        }
-    }
-
-    /// The palette everything in this pane derives from. One property rather than
-    /// one per view, so a theme change cannot land on the capsule and miss the
-    /// scrim.
-    private var theme: PaneTheme = .darkPastel {
-        didSet {
-            guard theme != oldValue else { return }
-            applyPresentation()
-        }
-    }
-
-    private var attentionStyle: AttentionStyle = .loud {
-        didSet {
-            guard attentionStyle != oldValue else { return }
-            // The frame is gated on `loud` too, so a live config edit that
-            // quietens attention has to take the frame down with the fill.
-            applyPresentation()
-        }
-    }
-
-    /// What the capsule and the lift should draw: flat, unchanged, or glass
-    /// with a material set, per `PaneChrome.resolvedStyle(setting:materialIsDark:appearance:)`.
-    ///
-    /// Stored here rather than passed straight through, because
-    /// ``applyPresentation()`` reads it back: it has to know whether chrome is
-    /// glass to decide ``liftView``'s ``PaneLiftView/isVisible``, and a pure
-    /// passthrough would leave that read with nowhere to come from except
-    /// unwrapping the value back out of a view it had just been handed to.
-    private var resolvedChrome: ResolvedChrome = .flat {
-        didSet {
-            guard resolvedChrome != oldValue else { return }
-            clusterView.resolvedChrome = resolvedChrome
-            applyResolvedGlassPlane()
-            applyPresentation()
-        }
-    }
-
-    /// The lift's own numbers and the rim's, pushed straight to ``liftView``.
-    ///
-    /// A passthrough rather than stored state, unlike ``resolvedChrome`` above:
-    /// nothing on this controller reads them back, so storing them here would be
-    /// one value kept in two places. The view holds its own equality guard, so
-    /// an unmoved write from a panel dialling at control-event rate costs
-    /// nothing here either.
-    ///
-    /// Both default to the shipped rendering (``PaneLiftParameters/shipped``,
-    /// ``PaneRimParameters/off``), so a pane whose configuration never sets
-    /// these draws exactly what it always drew.
-    private var liftParameters: PaneLiftParameters {
-        get { liftView.parameters }
-        set { liftView.parameters = newValue }
-    }
-
-    private var rimParameters: PaneRimParameters {
-        get { liftView.rim }
-        set { liftView.rim = newValue }
-    }
-
-    // `footerFillMaterial` was a third passthrough here until 2026-08-09,
-    // carrying the footer's glass tint to the bar. It retired with the dial
-    // behind it, ahead of the glass view ABSORB deletes; see
-    // `DesignOverrides.Chrome`.
-
-    /// Which derivation the attention signal is drawn from, and what to do when it
-    /// lands on the focus colour.
-    ///
-    /// Both reach the capsule and the pane frame, which is why they are stored
-    /// here rather than passed straight to one view the way ``bottomCorners``
-    /// is: the frame around the whole pane is drawn in the same colour, and a
-    /// setting that moved one of the two would leave half of the loud treatment
-    /// behind.
-    private var attentionAccent: AttentionAccent = .alert {
-        didSet {
-            guard attentionAccent != oldValue else { return }
-            clusterView.attentionAccent = attentionAccent
-            applyPresentation()
-        }
-    }
-
-    private var alertBehavior: AlertBehavior = .stock {
-        didSet {
-            guard alertBehavior != oldValue else { return }
-            clusterView.alertBehavior = alertBehavior
-            applyPresentation()
-        }
-    }
+    /// What the capsule and the lift draw, off the chrome stack.
+    private var resolvedChrome: ResolvedChrome { chrome.resolvedChrome }
 
     /// Which of the window's bottom corners this pane sits in.
     ///
-    /// Straight through to the two views that draw a shape there rather than
-    /// stored here and pushed in ``applyPresentation()``, because unlike focus,
-    /// theme and attention it moves for a different reason: the arrangement
-    /// changed, not this pane's state. ``PaneTreeController`` is the only writer.
-    ///
-    /// The attention frame, the lift and the glass masks all reach the corner,
-    /// and they overlap there, so a value that moved one of them would put a
-    /// square frame over a curved fill and leave the frame's own corner to the
-    /// window's mask.
-    ///
-    /// ``edgeFrame`` is where the read comes from. This was the footer's
-    /// property until 2026-08-13, on the grounds that it was the view that had
-    /// always had one; with that view deleted the getter needed a store among
-    /// the views that outlive it, and the edge frame is the one that cannot go
-    /// away — a `private let` built with the controller, written by this same
-    /// setter, and holding its own equality guard. No new stored property here,
-    /// because a fourth copy is exactly the disagreement this passthrough shape
-    /// exists to prevent.
+    /// Straight through to the stack rather than stored here: unlike focus,
+    /// theme and attention it moves for a different reason, the arrangement
+    /// changed, and ``PaneTreeController`` is the only writer.
     var bottomCorners: BottomCorners {
-        get { edgeFrame.bottomCorners }
-        set {
-            edgeFrame.bottomCorners = newValue
-            liftView.bottomCorners = newValue
-            updateGlassPlaneMasks()
-        }
+        get { chrome.bottomCorners }
+        set { chrome.bottomCorners = newValue }
     }
 
-    private(set) var isPaneFocused = false
+    var isPaneFocused: Bool { chrome.isPaneFocused }
 
     /// Whether this pane's window is the key window.
     ///
@@ -419,31 +228,27 @@ final class TerminalPaneController: NSViewController {
     /// so an inactive window reads as one recessed object rather than as a window
     /// that still has a live pane in it. macOS offers no other honest signal for
     /// this here, because the titlebar is transparent.
-    var isWindowActive = true {
-        didSet {
-            guard isWindowActive != oldValue else { return }
-            applyPresentation()
-        }
+    var isWindowActive: Bool {
+        get { chrome.isWindowActive }
+        set { chrome.isWindowActive = newValue }
     }
 
     func setPaneFocused(_ focused: Bool) {
-        guard isPaneFocused != focused else { return }
-        isPaneFocused = focused
-        applyPresentation()
+        guard chrome.isPaneFocused != focused else { return }
+        chrome.isPaneFocused = focused
         // The cursor accent is the one part of the presentation that lives inside
-        // the surface rather than on a view this can repaint, so it is pushed
-        // through the controller here rather than from `applyPresentation`.
+        // the surface rather than on a view the stack can repaint, so it is pushed
+        // through the controller here.
         applyTerminalConfiguration()
     }
 
     /// The last ``PaneChrome/PaneAppearance`` this pane was given, or nil
     /// before its first ``apply(_:)``.
     ///
-    /// Read-only outward face for `DesignPanelController`'s dials (Task 3
-    /// Step 4): a dial that wants to move one field builds a modified copy of
-    /// this value, or of `PaneAppearance.make(...)` when this is nil, and
-    /// calls `apply(_:)` with the whole thing, rather than reaching for a
-    /// setter this controller no longer exposes.
+    /// Read-only outward face for `DesignPanelController`'s dials: a dial that
+    /// wants to move one field builds a modified copy of this value, or of
+    /// `PaneAppearance.make(...)` when this is nil, and calls `apply(_:)` with
+    /// the whole thing.
     private(set) var lastAppliedAppearance: PaneAppearance?
 
     /// The diff instrument the 2026-07-30 sighting lacked: a live config edit
@@ -453,13 +258,8 @@ final class TerminalPaneController: NSViewController {
 
     /// The one entry point for everything ``PaneAppearance`` carries.
     ///
-    /// Assigns the thirteen fields in the order `ConfigurationCenter.apply(to:)`
-    /// used to assign them one property at a time, then picks whichever
-    /// terminal configuration ``isSpawnedUnderGlass`` says this pane spawned
-    /// under and calls ``applyTerminalConfiguration(_:theme:)``, then
-    /// ``applyPresentation()`` exactly once. The setters themselves are
-    /// private now; this is the only place that writes them, which is what
-    /// makes "the ordering lives in one method" true rather than aspirational.
+    /// The thirteen chrome fields go to ``chrome`` in one call; the two poll
+    /// intervals and the terminal configuration are this controller's own.
     func apply(_ appearance: PaneAppearance) {
         if let lastAppliedAppearance, lastAppliedAppearance != appearance {
             Self.appearanceLog.debug(
@@ -468,55 +268,10 @@ final class TerminalPaneController: NSViewController {
         }
         lastAppliedAppearance = appearance
 
-        theme = appearance.theme
-        attentionStyle = appearance.attentionStyle
-        // Straight through, the way `attentionStyle` and `focusAccent` are. The
-        // resolution is `PaneTheme.attentionColour(_:behavior:)`, which has tests;
-        // a line here that decided anything about these two would not, and that is
-        // exactly how `focusAccent` came to be decoded, stored, and never read.
-        attentionAccent = appearance.attentionAccent
-        alertBehavior = appearance.alertBehavior
+        chrome.apply(appearance)
         gitPollInterval = appearance.gitPollInterval
         activityPollInterval = appearance.activityPollInterval
-        // `resolvedChrome` arrives already resolved from the same two live
-        // inputs `PaneAppearance.make` closed over (`settings` and the
-        // appearance observer's last value), so it stays correct whether
-        // `apply` runs from `register`, a settings reload, or an appearance
-        // change.
-        resolvedChrome = appearance.resolvedChrome
-        // The focused pane's lift and the lens rim, from the chrome extras.
-        // Both resolve to today's rendering with nothing dialled — the lift to
-        // its constants, the rim to absent — and in Release neither can be
-        // anything else. Assigned here rather than at pane construction so a
-        // dial reaches panes that are already open, which is every pane the
-        // owner is looking at while he dials.
-        liftParameters = appearance.liftParameters
-        rimParameters = appearance.rimParameters
-        // The pane wash's two inputs: the owner's one opacity knob and the
-        // floor override under it (`ChromeMaterials.PaneWash.opacity`). Both
-        // are appearance-only. They reach a view drawn behind the surface at
-        // the pane's full bounds and never the surface's frame or padding, so
-        // neither can move a live grid the way a padding change would.
-        backgroundOpacity = appearance.backgroundOpacity
-        paneWashFloor = appearance.paneWashFloor
-        // The pane cluster's two dials (`chrome.cluster.*`). Both are
-        // appearance-only on a running pane: the capsule is an overlay pinned
-        // over the surface, so neither reaches the grid.
-        //
-        // **A third assignment stood here until 2026-08-13:
-        // `pane.clusterMode = chromeOverrides.cluster.resolvedMode`.** The
-        // dial behind it retired with the gate, so the pane's `clusterMode`
-        // is now a constant the property initialises itself to and this
-        // method has nothing to feed it. What that assignment did at spawn
-        // beyond gating the capsule — freezing `bottomArrangementAtSpawn`,
-        // read below to pick the configuration — it did by being in place
-        // before that read, and a constant is in place earlier still.
-        clusterCornerInset = appearance.clusterCornerInset
-        clusterOpacity = appearance.clusterOpacity
-        // The footer's glass tint was assigned here until 2026-08-09, from
-        // `chromeOverrides.surfaces.footer`. Both went with the glass view they
-        // wrote to; see `DesignOverrides.Chrome`.
-        //
+
         // Both go through the controller rather than through the view.
         // Assigning `view.configuration` or `view.controller` has a `didSet`
         // that tears the surface down and respawns the shell, losing the
@@ -524,59 +279,30 @@ final class TerminalPaneController: NSViewController {
         //
         // **Which configuration, not just whether one applies.** Reading
         // `isSpawnedUnderGlass` here rather than branching on the live
-        // `resolvedChrome` assigned above is deliberate: that property is
-        // frozen at this pane's first configuration (see `spawnedUnderGlass`'s
-        // doc comment), so a pane spawned under flat keeps taking
+        // `resolvedChrome` is deliberate: that property is frozen at this
+        // pane's first configuration (see `spawnedUnderGlass`'s doc comment),
+        // so a pane spawned under flat keeps taking
         // `appearance.terminalConfiguration` even after a live toggle moves
         // `resolvedChrome` to glass, and a pane spawned under glass keeps its
-        // `+glassWindowPaddingBump` even after a toggle moves back to flat.
+        // zeroed `background-opacity` even after a toggle moves back to flat.
         // Either direction, changing which configuration an already-running
         // pane receives would move its `window-padding-y` on a live surface,
-        // which is a live grid resize — the SIGWINCH hazard arrangement (B)
-        // was built to avoid, not to relocate to a settings reload.
+        // which is a live grid resize and a SIGWINCH. Under glass the well
+        // belongs to the plane and the wash, so the surface's own
+        // `background-opacity` goes to zero rather than painting a second one
+        // over them; under flat the surface keeps the settings-derived opacity.
         //
-        // **This was a three-armed switch on `pane.bottomArrangementAtSpawn`
-        // until 2026-08-13, and the arrangement enum is now deleted.** Two of
-        // its arms named a footer — one for the surface stopping above the bar,
-        // one adding `+glassWindowPaddingBump` to clear a bar floating over the
-        // surface's last points — and the footer view is gone, so both were
-        // unreachable: every pane spawns with the capsule alone, which answered
-        // `.fullHeightClear` whatever the chrome. The bumped arm was the reason
-        // this deletion was gated on a measurement (a changed
-        // `window-padding-y` is a live grid resize), and the measurement is why
-        // it is safe: a glass pane was already taking the un-bumped
-        // configuration through `.fullHeightClear`, so no live padding moves.
-        //
-        // What survives is the glass distinction the clear case made, read
-        // straight off `isSpawnedUnderGlass` instead of through an arrangement
-        // that no longer varies. Under glass the well belongs to the plane and
-        // the wash, so the surface's own `background-opacity` goes to zero
-        // rather than painting a second one over them; under flat the surface
-        // keeps the settings-derived opacity.
-        //
-        // The freeze is unchanged and still load-bearing. `isSpawnedUnderGlass`
-        // is frozen at this pane's first chrome resolution, so a pane spawned
-        // under flat keeps `appearance.terminalConfiguration` even after a live
-        // toggle moves `resolvedChrome` to glass, and vice versa. Handing an
-        // already-running pane a different configuration would change its
-        // surface under it; the toggle takes effect for the next pane opened.
         // This is the first read of the frozen fact, and it runs at
-        // registration — after `resolvedChrome` is assigned above, before the
-        // view loads — which is what "at spawn" means concretely.
+        // registration, after `resolvedChrome` is assigned above and before
+        // the view loads, which is what "at spawn" means concretely.
         let spawnConfiguration = isSpawnedUnderGlass
             ? appearance.glassClearTerminalConfiguration
             : appearance.terminalConfiguration
         applyTerminalConfiguration(spawnConfiguration, theme: appearance.terminalTheme)
-        applyPresentation()
     }
 
-    /// The thirteen field names that moved between `lastAppliedAppearance` and
+    /// The field names that moved between `lastAppliedAppearance` and
     /// `appearance`, comma-joined, for ``apply(_:)``'s diff log.
-    ///
-    /// String names rather than a `CaseIterable` key path list: `PaneAppearance`
-    /// mixes enums, optionals and value types with no shared protocol to
-    /// enumerate over, and a log line is the only consumer, so a plain
-    /// comparison per field costs nothing a key path would have saved.
     private static func changedFields(from previous: PaneAppearance, to next: PaneAppearance) -> String {
         var changed: [String] = []
         if previous.theme != next.theme { changed.append("theme") }
@@ -598,204 +324,6 @@ final class TerminalPaneController: NSViewController {
             changed.append("glassClearTerminalConfiguration")
         }
         return changed.joined(separator: ", ")
-    }
-
-    /// Pushes focus, window activation, theme and attention into the three views
-    /// that draw them, in one pass.
-    ///
-    /// One method rather than one per input, because every input moves more than
-    /// one view: a theme change has to reach the scrim as well as the capsule, and
-    /// an attention change has to reach the pane frame as well as the pill. Split
-    /// setters are how a pane ends up with a repainted capsule over a stale scrim.
-    private func applyPresentation() {
-        clusterView.isPaneFocused = isPaneFocused
-        clusterView.isWindowActive = isWindowActive
-        clusterView.theme = theme
-        scrim.colour = theme.background
-        // See `isWindowActive` above for why an inactive window is the only thing
-        // that scrims a pane. An unfocused pane in the key window is left alone
-        // and the focused one is marked by its lift instead.
-        scrim.amount = isWindowActive ? 0 : PaneTheme.inactiveScrim
-        // The pane frame has one reason to appear and therefore one colour, but
-        // the colour still has to be pushed on every pass: a live theme edit moves
-        // what the attention colour resolves to under a frame that is already on
-        // screen. Resolved from the same call the capsule's own attention colour
-        // comes from, so the frame around the pane and the pill inside it cannot
-        // end up two colours.
-        edgeFrame.colour = theme.attentionColour(attentionAccent, behavior: alertBehavior)
-        edgeFrame.isVisible = drawsAttentionFrame
-        // `isFocused && isWindowActive`, the gate the deleted footer computed
-        // internally as `framesForFocus` for its own thick-fill step and the
-        // reason this conjunction is spelled out rather than read off
-        // `isPaneFocused` alone. Glass-only: under flat (or Reduce
-        // Transparency, which `resolvedChrome` already folds into `.flat`
-        // upstream) the lift stays invisible and focus goes unmarked, which is
-        // what flat has always looked like since the footer's stroke went.
-        let isGlass = if case .glass = resolvedChrome { true } else { false }
-        liftView.isVisible = isPaneFocused && isWindowActive && isGlass
-        updateGlassWashColour()
-    }
-
-    /// Creates or tears down the plane and wash to match ``resolvedChrome``.
-    ///
-    /// Appearance only: both views sit behind ``terminalView`` at the pane's
-    /// full bounds, so neither creation nor teardown moves the surface's frame
-    /// or any padding. The frozen arrangement (``spawnedUnderGlass``) is a
-    /// separate fact and stays untouched by a live flip here.
-    private func applyResolvedGlassPlane() {
-        switch resolvedChrome {
-        case .flat:
-            glassWash?.removeFromSuperview()
-            glassWash = nil
-            glassPlane?.removeFromSuperview()
-            glassPlane = nil
-        case .glass:
-            guard glassPlane == nil, isViewLoaded else { return }
-            installGlassPlane()
-        }
-    }
-
-    private func installGlassPlane() {
-        let plane = PaneGlassPlaneView(frame: view.bounds)
-        plane.style = .regular
-        plane.wantsLayer = true
-        // The mask carries the window's squircle; a uniform cornerRadius would
-        // round corners the window does not cut. Same reasoning as the
-        // footer's retired backing.
-        plane.cornerRadius = 0
-        plane.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(plane, positioned: .below, relativeTo: terminalView)
-
-        let wash = PaneGlassWashView(frame: view.bounds)
-        wash.wantsLayer = true
-        wash.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(wash, positioned: .above, relativeTo: plane)
-
-        for planeLayer in [plane, wash] as [NSView] {
-            NSLayoutConstraint.activate([
-                planeLayer.topAnchor.constraint(equalTo: view.topAnchor),
-                planeLayer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-                planeLayer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-                planeLayer.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            ])
-        }
-
-        glassPlane = plane
-        glassWash = wash
-        updateGlassPlaneMasks()
-        updateGlassWashColour()
-    }
-
-    /// Installs the capsule, from `viewDidLoad`.
-    ///
-    /// **Called from every live mode change too, until 2026-08-13.** The dial
-    /// that pushed those changes retired, so this runs exactly once per pane,
-    /// and what it did on 2026-08-13 was branch three ways to reach the one
-    /// arrangement every pane now spawns in. The removal arm was the
-    /// footer-only rendering's teardown — a capsule taken out of the
-    /// hierarchy, its edge constraints dropped, and any card floating over it
-    /// dismissed first — and it went out with the mode that could ask for it.
-    /// The footer-hiding line went out with the footer.
-    ///
-    /// The `superview == nil` check survives the straightening on its own
-    /// terms rather than as a leftover: it is what keeps this idempotent, and
-    /// `viewDidLoad` is not the only caller with a claim on being able to ask
-    /// twice.
-    private func applyClusterMode() {
-        guard isViewLoaded else { return }
-        guard clusterView.superview == nil else { return }
-        installClusterView()
-    }
-
-    /// Adds the capsule below the scrim, deliberately: the inactive-window
-    /// scrim must lay over the pill so a background window recedes as one
-    /// object, and the scrim's hitTest-nil means a click still falls through
-    /// it to the pill underneath. Pinned by its top-right corner alone, at
-    /// the dialled inset; width and height come from the view's own
-    /// `intrinsicContentSize`, which tracks the measured segments, the same
-    /// self-sizing arrangement Auto Layout already runs the rest of this
-    /// hierarchy on.
-    private func installClusterView() {
-        // Seeded here as well as from the dial's setter, for the case the
-        // setter cannot cover: a pane spawning with `cornerInset` already
-        // dialled writes the property before the capsule exists, and the
-        // constraints below then pin at a value the pill's budget had never
-        // heard. One line, at the one point the two pins are created.
-        clusterView.cornerInset = resolvedClusterInset
-        clusterView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(clusterView, positioned: .below, relativeTo: scrim)
-        let edges = [
-            clusterView.topAnchor.constraint(
-                equalTo: view.topAnchor,
-                constant: resolvedClusterInset
-            ),
-            view.trailingAnchor.constraint(
-                equalTo: clusterView.trailingAnchor,
-                constant: resolvedClusterInset
-            ),
-        ]
-        NSLayoutConstraint.activate(edges)
-        clusterEdgeConstraints = edges
-    }
-
-    /// Clips the plane and the wash to the pane's window corners, the
-    /// footer-backing mask relocated to the plane per ABSORB. Rebuilt from the
-    /// ``bottomCorners`` setter and from layout, because a mask frame does not
-    /// track bounds by itself.
-    ///
-    /// Orientation is load-bearing and was got wrong once, in this method's
-    /// first commit. `WindowCorner.cgPath` documents its precondition: the
-    /// view it is drawn into must be flipped, or the shape is upside down.
-    /// The footer this mask migrated from is `isFlipped: true`; the first
-    /// version of this code copied its math into unflipped views, which is
-    /// exactly the "not copied from `PaneStatusBarView`" trap
-    /// `Diagnostics/pane-glass-stacking`'s README warns about, and the
-    /// failure mode (rounded TOP corners) is silent. Both glass views now
-    /// declare `isFlipped: true` for this reason; see their doc comments.
-    private func updateGlassPlaneMasks() {
-        for masked in [glassPlane, glassWash] as [NSView?] {
-            guard let masked, let layer = masked.layer else { continue }
-            guard masked.bounds.width > 0, masked.bounds.height > 0 else { continue }
-            let mask = (layer.mask as? CAShapeLayer) ?? CAShapeLayer()
-            mask.frame = masked.bounds
-            mask.path = WindowCorner.cgPath(in: masked.bounds, corners: bottomCorners)
-            layer.mask = mask
-        }
-    }
-
-    /// The wash's one derivation: `theme.background` at
-    /// `max(backgroundOpacity, floor)`. Through `SidebarRowMetrics.nsColor`, the
-    /// helper the retired sidebar wash used, so one colour cannot resolve two
-    /// ways.
-    private func updateGlassWashColour() {
-        glassWash?.colour = SidebarRowMetrics.nsColor(
-            theme.background,
-            alpha: ChromeMaterials.PaneWash.opacity(
-                backgroundOpacity: backgroundOpacity,
-                floorOverride: paneWashFloor
-            )
-        )
-    }
-
-    /// Whether this pane is asking loudly enough to wear a frame.
-    ///
-    /// Not gated on `isWindowActive`, unlike the focus frame the footer used to
-    /// draw: focus is a statement about a window that has the keyboard, while an
-    /// unanswered agent in a background window is exactly the thing worth
-    /// finding.
-    ///
-    /// The volume term is what `AttentionStyle` still owns: both volumes draw
-    /// the pill's attention fill, which is asking-only and style-blind (the rule
-    /// was the deleted footer's `showsCapsuleFill`), and `loud` adds this frame
-    /// on top as the cross-window carrier.
-    ///
-    /// The conjunction moved to ``PaneChrome/PaneStatus/Attention/wearsFrame(under:)``
-    /// on 2026-08-13, when `SettingsPreviewPane` became the second view to draw
-    /// this frame and this file stopped being the only place the rule could
-    /// live. What remains here is which facts to ask it about, which is the part
-    /// only a pane knows.
-    private var drawsAttentionFrame: Bool {
-        lastAttention.wearsFrame(under: attentionStyle)
     }
 
     /// Raised when this pane's git read produced something new.
@@ -1285,26 +813,11 @@ final class TerminalPaneController: NSViewController {
         terminalView.controller = controller
         terminalView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(terminalView)
-        // Added last so they sit above both. None can be hit, so ordering
-        // costs the terminal nothing. liftView is added after edgeFrame, so
-        // an attention frame and the focused-pane lift never fight over which
-        // draws on top; in practice the two are mutually exclusive states
-        // (attention outranks focus) and this ordering is a tie-break that
-        // never triggers rather than a load-bearing one.
-        for overlay in [scrim, edgeFrame, liftView] {
-            overlay.translatesAutoresizingMaskIntoConstraints = false
-            view.addSubview(overlay)
-        }
-
-        // The capsule's install. This was the application site for a pane
-        // spawned with the mode dial already turned — the dial was assigned at
-        // registration, before this view loaded, so its `didSet` bailed on the
-        // `isViewLoaded` guard inside ``applyClusterMode()`` and the work
-        // landed here instead. Since the dial retired (2026-08-13) it is the
-        // only call site there is, which changes nothing about where it goes:
-        // the install still needs a loaded view, the same arrangement
-        // `applyResolvedGlassPlane()` is called below for.
-        applyClusterMode()
+        // The whole chrome, above and below the surface, in the stacking the
+        // stack's own doc comment records. `resolvedChrome` was set by
+        // `ConfigurationCenter.apply(to:)` at registration, before the view
+        // loaded, so this is where a glass-spawned pane's plane is created.
+        chrome.install(in: view, around: terminalView)
 
         // Edge pinning alone leaves the hierarchy with no size of its own.
         // TerminalView has no intrinsic content size, so `fittingSize` collapses
@@ -1352,23 +865,6 @@ final class TerminalPaneController: NSViewController {
             preferredWidth,
             preferredHeight,
         ])
-
-        for overlay in [scrim, edgeFrame, liftView] {
-            NSLayoutConstraint.activate([
-                overlay.topAnchor.constraint(equalTo: view.topAnchor),
-                overlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-                overlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-                overlay.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            ])
-        }
-
-        // `resolvedChrome` is set by `ConfigurationCenter.apply(to:)` at
-        // registration, before the view loads, so its `didSet` bailed on the
-        // `isViewLoaded` guard and this is the creation site for a
-        // glass-spawned pane.
-        applyResolvedGlassPlane()
-
-        applyPresentation()
 
         anchorTracker.onChange = { [weak self] in
             guard let self else { return }
@@ -1443,10 +939,10 @@ final class TerminalPaneController: NSViewController {
             let now = PaneStatus.Attention(activityTracker.agent)
             guard now != lastAttention else { return }
             lastAttention = now
-            // The frame follows the level, so it is repainted here rather than
+            // The frame follows the level, so it is pushed here rather than
             // from `refreshStatus`, which fires on every poll of a pane that is
             // merely compiling.
-            applyPresentation()
+            chrome.attention = now
             onAttentionChange?()
         }
     }
@@ -2103,9 +1599,7 @@ final class TerminalPaneController: NSViewController {
     override func viewDidLayout() {
         super.viewDidLayout()
         terminalView.fitToSize()
-        // A mask layer's frame does not track its host's bounds, so a resize
-        // that does not rebuild it leaves the squircle at the old size.
-        updateGlassPlaneMasks()
+        chrome.layoutDidChange()
     }
 
     /// Title carries the anchor, subtitle the working directory. The subtitle is
