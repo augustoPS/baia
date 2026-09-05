@@ -52,7 +52,14 @@ public enum MenuValidation {
         // ghostty owns their keys, because the items are still clickable and a
         // click with no pane travels a responder chain holding no terminal, which
         // AppKit answers with a beep.
-        case .copy, .paste, .pasteSelection, .selectAll, .splitRight, .splitDown, .setProjectDirectory:
+        //
+        // Undo, Redo and Cut sit in the same group for the palette's benefit
+        // only. In the menu bar AppKit resolves their target itself: a Settings
+        // text field or the Settings window's undo manager answers, and with a
+        // workspace window key nothing does, so this rule is never consulted
+        // for them there.
+        case .undo, .redo, .cut,
+             .copy, .paste, .pasteSelection, .selectAll, .splitRight, .splitDown, .setProjectDirectory:
             MenuItemState(
                 isEnabled: availability.paneCount > 0,
                 isChecked: nil,

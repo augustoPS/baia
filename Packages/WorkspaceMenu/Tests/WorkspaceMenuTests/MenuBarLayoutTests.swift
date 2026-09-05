@@ -92,6 +92,33 @@ import Testing
         MenuShortcut(key: key, modifiers: modifiers)
     }
 
+    @Test func settingsLivesInTheApplicationMenuAndNowhereElse() {
+        // Audit S9: application settings belong in the application menu, where
+        // every other Mac app keeps them, and File is for document commands. The
+        // shortcut stays ⌘, and the ghostty unbind travels with the item, so the
+        // move cannot reintroduce the swallowed-key collision.
+        let app = MenuBarLayout.menus.first { $0.role == .app }
+        let file = MenuBarLayout.menus.first { $0.title == "File" }
+        #expect(app?.items.contains { $0.command == .openConfiguration } == true)
+        #expect(file?.items.contains { $0.command == .openConfiguration } == false)
+        #expect(MenuBarLayout.item(for: .openConfiguration)?.shortcut == chord(.character(","), .command))
+        #expect(MenuBarLayout.item(for: .openConfiguration)?.policy == .unbind)
+    }
+
+    @Test func theEditMenuCarriesTheStandardResponderChainItems() {
+        // Undo, Redo, Cut, Copy, Paste and Select All, in that order, on their
+        // standard keys. The Settings window's text fields and its transaction
+        // undo reach these through the responder chain, so an item missing here
+        // is an edit nobody can reverse from the keyboard.
+        let edit = MenuBarLayout.menus.first { $0.title == "Edit" }
+        let commands = edit?.items.map(\.command) ?? []
+        #expect(commands.prefix(6) == [.undo, .redo, .cut, .copy, .paste, .pasteSelection])
+        #expect(commands.contains(.selectAll))
+        #expect(MenuBarLayout.item(for: .undo)?.shortcut == chord(.character("z"), .command))
+        #expect(MenuBarLayout.item(for: .redo)?.shortcut == chord(.character("z"), [.command, .shift]))
+        #expect(MenuBarLayout.item(for: .cut)?.shortcut == chord(.character("x"), .command))
+    }
+
     @Test func noMenuOpensWithASeparator() {
         // A leading separator renders as a blank first row in AppKit rather than
         // being dropped, and isSeparatorBefore on the first item is the easy way

@@ -28,6 +28,9 @@ public enum MenuCommand: String, Sendable, Equatable, CaseIterable {
     case closeWindow
     case openConfiguration
 
+    case undo
+    case redo
+    case cut
     case copy
     case paste
     case pasteSelection
@@ -104,6 +107,12 @@ public enum MenuCommand: String, Sendable, Equatable, CaseIterable {
         case .pasteSelection: 302
         case .selectAll: 303
         case .findInPane: 304
+        // Appended after Find rather than renumbered in front of Copy, for the
+        // reason the View group's 403 and 404 sit above 401: a tag quoted in an
+        // older bug report has to keep naming the same item.
+        case .undo: 305
+        case .redo: 306
+        case .cut: 307
 
         // 400 is retired rather than reused. It was Status Bars, which went with
         // the footer it toggled, and handing the free integer to the next View

@@ -57,12 +57,22 @@ public enum MenuBarLayout {
     /// nothing at all, which is what pointed at ghostty swallowing the key rather
     /// than at the menu being built wrong. Ghostty binds neither `super+h` nor
     /// `super+alt+h`, and it does bind `super+q`.
+    ///
+    /// Settings… is here rather than under File since 2026-09-04 (audit S9):
+    /// application settings belong in the application menu, where every other
+    /// Mac app keeps them, and File is for document-level commands. The key is
+    /// still ⌘, and still unbound from ghostty, which binds `super+,` to
+    /// `open_config`.
     private static func appMenu() -> MenuDescriptor {
         MenuDescriptor(
             title: "baia",
             role: .app,
             items: [
                 item(.about, "About baia", .noConflict),
+                item(
+                    .openConfiguration, "Settings…", .character(","), .command, .unbind,
+                    separatorBefore: true
+                ),
                 item(
                     .hide, "Hide baia", .character("h"), .command, .noConflict,
                     separatorBefore: true
@@ -94,22 +104,32 @@ public enum MenuBarLayout {
                 ),
                 item(.closeTab, "Close Tab", .character("w"), [.command, .option], .unbind),
                 item(.closeWindow, "Close Window", .character("w"), [.command, .shift], .unbind),
-                item(
-                    .openConfiguration, "Settings…", .character(","), .command, .unbind,
-                    separatorBefore: true
-                ),
             ]
         )
     }
 
-    /// Every item here defers to ghostty, and each one names why, because a reader
-    /// auditing this table for missing unbind lines finds this menu first and the
-    /// correct action is to leave it alone.
+    /// The clipboard items defer to ghostty, and each one names why, because a
+    /// reader auditing this table for missing unbind lines finds this menu first
+    /// and the correct action is to leave those alone.
+    ///
+    /// Undo, Redo and Cut are the standard responder-chain items, added
+    /// 2026-09-04 for the Settings window's text fields and its transaction
+    /// undo. Nothing in a terminal pane answers `undo:` or `cut:`, so with a
+    /// workspace window key AppKit finds no target and greys them out, which is
+    /// the existing behaviour spelled as a disabled item rather than an absent
+    /// one. ⌘Z and ⇧⌘Z are unbound from ghostty, which binds them to an undo of
+    /// its own that the Swift bridge drops; ⌘X is not bound there at all.
     private static func editMenu() -> MenuDescriptor {
         MenuDescriptor(
             title: "Edit",
             role: .standard,
             items: [
+                item(.undo, "Undo", .character("z"), .command, .unbind),
+                item(.redo, "Redo", .character("z"), [.command, .shift], .unbind),
+                item(
+                    .cut, "Cut", .character("x"), .command, .noConflict,
+                    separatorBefore: true
+                ),
                 item(
                     .copy, "Copy", .character("c"), .command,
                     .deferToGhostty(
