@@ -13,20 +13,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// is read from there when a session is written. Keeping an ordered mirror
     /// here would drift the moment a tab is dragged out or windows are merged,
     /// and it would drift silently.
-    private var windows: [WorkspaceWindowController] = []
+    private(set) var windows: [WorkspaceWindowController] = []
 
     private let sessionStore = SessionStore(fileURL: SessionStore.defaultFileURL(directoryName: SupportDirectory.name))
 
     /// The config file, and everything derived from it. Created before any
     /// window, because a pane built before it exists would come up in
     /// libghostty's defaults.
-    private lazy var configuration: ConfigurationCenter = {
-        let center = ConfigurationCenter()
+    ///
+    /// `BAIA_CONFIG_FILE` in the environment points the centre at another file.
+    /// It exists for `Diagnostics/settings-window`, which drives the real
+    /// window against a scratch copy, and for nothing else: the shipped app
+    /// reads `~/.config/baia/config.json` and both builds share it on purpose.
+    lazy var configuration: ConfigurationCenter = {
+        let center: ConfigurationCenter
+        if let override = ProcessInfo.processInfo.environment["BAIA_CONFIG_FILE"], !override.isEmpty {
+            center = ConfigurationCenter(store: SettingsStore(fileURL: URL(filePath: override)))
+        } else {
+            center = ConfigurationCenter()
+        }
         center.onSettingsChange { [weak self] in self?.settingsDidChange() }
         return center
     }()
 
     private let notifier = AttentionNotifier()
+
+    #if DEBUG
+        /// For `SettingsSelfCheck`: whether the notifier follows the setting.
+        var notifierIsEnabled: Bool { notifier.isEnabled }
+    #endif
 
     /// The control channel's socket, its pool, and its graph.
     ///
@@ -237,6 +252,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         #if DEBUG
             openDesignPanelIfRequested()
+            SettingsSelfCheck.runIfRequested(in: self)
         #endif
         scheduleSave()
         installKeyMonitor()
@@ -281,7 +297,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // the settings default, so the gap was invisible until audited.
         control.settingsChanged(
             channelEnabled: configuration.settings.controlChannelEnabled,
-            allowRun: configuration.settings.controlAllowRun,
+            allowRun: effectiveAllowRun,
             allowRead: configuration.settings.controlAllowRead
         )
         // Attached before the socket is bound, so the first request cannot arrive
@@ -348,7 +364,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// background tab and all of its live shells while nothing visible changed.
     /// `PalettePanel.canBecomeMain` is false precisely so the workspace window
     /// stays main underneath it, which is what makes this resolve correctly.
+    ///
+    /// **Nil while the Settings window is key.** The fallback to the first
+    /// window was written for the palette, which is key and owns no workspace;
+    /// Settings is key and owns no workspace either, and the fallback would
+    /// have handed ⌘W and every pane command to whichever window happened to be
+    /// first, from a window the owner is not looking at (audit S8). With nil
+    /// here every pane command is a no-op and `availability` is empty, so the
+    /// menu greys them out.
     private var focused: WorkspaceWindowController? {
+        if let key = NSApp.keyWindow, key === settingsWindow?.window { return nil }
         for candidate in [NSApp.keyWindow, NSApp.mainWindow] {
             if let candidate, let match = windows.first(where: { $0.window === candidate }) {
                 return match
@@ -370,7 +395,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func sidebar(for tree: PaneTreeController) -> SidebarHost {
         let content = configuration.settings.sidebar
         let host = SidebarHost(
-            tree: tree,
+            content: tree,
             surfaces: surfaces(for: content, tree: tree),
             theme: configuration.paneTheme,
             // The composed value, not the committed one, so a dialled opacity
@@ -565,20 +590,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return controller
     }
 
-    /// Held so the window survives being shown. An `NSWindowController` created
-    /// inside the action and not retained is released before it can appear.
-    private var settingsWindow: SettingsWindowController?
+    /// One window for the life of the process, built on the first ⌘, and
+    /// brought forward on every later one.
+    ///
+    /// Reused rather than rebuilt since 2026-09-04. The old controller held a
+    /// draft snapshotted at init, so it had to be rebuilt to be current, and
+    /// rebuilding it discarded whatever was being typed (audit S1). There is
+    /// no draft now: every control reads the running settings and every edit
+    /// writes as it validates, so the window is never stale and an in-progress
+    /// text edit survives a second ⌘,.
+    private(set) var settingsWindow: SettingsWindowController?
+
+    /// This installation's confirmation that command execution over the control
+    /// channel may be enabled. Combined with the file's `controlAllowRun` in
+    /// ``effectiveAllowRun``; see `CommandExecutionAcknowledgement`.
+    let commandExecutionAcknowledgement = CommandExecutionAcknowledgement(
+        fileURL: CommandExecutionAcknowledgement.defaultFileURL(directoryName: SupportDirectory.name)
+    )
+
+    /// Whether the control server may offer `run`: the file says so *and* this
+    /// installation has confirmed it. Setting the key by hand enables nothing.
+    var effectiveAllowRun: Bool {
+        configuration.settings.controlAllowRun && commandExecutionAcknowledgement.isAcknowledged
+    }
 
     @objc func showSettings(_: Any?) {
-        // Rebuilt rather than reused, because `SettingsDraft` snapshots the
-        // committed settings at init. A controller kept from last time would open
-        // showing whatever was in effect then, which after one accept is stale.
-        settingsWindow?.close()
-        let controller = SettingsWindowController(center: configuration)
-        settingsWindow = controller
-        controller.showWindow(nil)
-        controller.window?.center()
-        NSApp.activate(ignoringOtherApps: true)
+        let controller: SettingsWindowController
+        if let settingsWindow {
+            controller = settingsWindow
+        } else {
+            controller = SettingsWindowController(
+                center: configuration,
+                acknowledgement: commandExecutionAcknowledgement
+            )
+            settingsWindow = controller
+        }
+        controller.show()
     }
 
     @objc func newTab(_: Any?) {
@@ -1090,7 +1137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         notifier.isEnabled = configuration.settings.notificationsEnabled
         control.settingsChanged(
             channelEnabled: configuration.settings.controlChannelEnabled,
-            allowRun: configuration.settings.controlAllowRun,
+            allowRun: effectiveAllowRun,
             allowRead: configuration.settings.controlAllowRead
         )
         // Dropped so the next palette walks the roots the file now names. The

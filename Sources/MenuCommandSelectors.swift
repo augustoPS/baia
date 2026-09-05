@@ -25,6 +25,14 @@ enum MenuCommandSelectors {
         case .closeWindow: #selector(NSWindow.performClose(_:))
         case .openConfiguration: #selector(AppDelegate.showSettings(_:))
 
+        // The standard responder-chain selectors. `undo:` and `redo:` are not
+        // declared on any AppKit class Swift can name, so they are spelled as
+        // strings; NSWindow forwards both to its `undoManager`, which is how
+        // the Settings window's transaction undo is reached, and a text view
+        // answers them itself while it is editing.
+        case .undo: Selector(("undo:"))
+        case .redo: Selector(("redo:"))
+        case .cut: #selector(NSText.cut(_:))
         // Ghostty implements these inside the surface and they reach it through
         // the responder chain via its own IBActions, which is why the menu keeps
         // their keys bound rather than unbinding them.

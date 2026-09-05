@@ -12,17 +12,18 @@ import PaneChrome
 /// apply.
 @MainActor
 final class ConfigurationCenter {
-    private let store: SettingsStore
+    /// The file, for the Settings window's transaction controller, which is
+    /// the one writer. Everything else reads through ``settings``.
+    let store: SettingsStore
 
     /// What the config file says, exactly.
     ///
     /// **Committed, never composed.** ``effectiveSettings`` below is what every
     /// derivation reads; this is what the file holds, and the two differ only
-    /// while the debug design panel has something dialled. The distinction has
-    /// one consumer that depends on it: `SettingsWindowController` builds its
-    /// draft and its "Current" sample column from this, and a sample built from
-    /// the composed value would tell the owner his file contains a number that
-    /// was never written to it.
+    /// while the debug design panel has something dialled. The Settings window
+    /// edits this value through ``adopt(_:)`` and previews a slider drag
+    /// through it too, so for the length of a drag it runs a frame ahead of the
+    /// file; the write at the gesture's end brings the file up to it.
     private(set) var settings: Settings
 
     #if DEBUG
@@ -187,15 +188,10 @@ final class ConfigurationCenter {
     /// has gone (`SettingsWindowController`), so nothing is kept alive by being
     /// registered and no handler can write into a torn-down surface.
     ///
-    /// What it does cost: `AppDelegate.showSettings(_:)` rebuilds its controller
-    /// on every ⌘, so the list gains one dead entry per visit to Settings and
-    /// never gives one back. A dead entry is a weak load and a branch, and the
-    /// count is bounded by how many times a person opens a settings window
-    /// between relaunches, so this is measured in nanoseconds and tens of bytes.
-    /// The alternative bought with a token type and a bookkeeping dictionary is
-    /// not worth it yet. Revisit if a consumer ever registers from something
-    /// created per pane, per window, or on a timer, where the bound stops being
-    /// a human pressing a key.
+    /// What it costs: nothing today. The Settings window is built once and
+    /// reused for the life of the process since 2026-09-04, so every registrant
+    /// is a singleton. Revisit if a consumer ever registers from something
+    /// created per pane, per window, or on a timer.
     func onSettingsChange(_ handler: @escaping () -> Void) {
         settingsChangeHandlers.append(handler)
     }
@@ -485,19 +481,47 @@ final class ConfigurationCenter {
         }
     }
 
-    // MARK: - Committing
+    // MARK: - Adopting
 
-    /// Writes `settings` to the config file, answering whether it landed.
+    /// Takes `settings` as what is in effect and pushes it everywhere.
     ///
-    /// Applies nothing. The write moves the file, the watcher notices, and
-    /// `reload` applies it exactly as it applies a hand-edit. So the settings
-    /// window is not a second path into the panes and cannot disagree with the
-    /// file about what is in effect.
+    /// The Settings window's transaction controller calls this with what the
+    /// file decoded to after its own write, and with each frame of a slider
+    /// drag before the write. The watcher's reload that follows the write finds
+    /// the file equal to this and does nothing, which is the same guard that
+    /// keeps an editor's no-op save quiet.
+    func adopt(_ settings: Settings) {
+        guard settings != self.settings else { return }
+        self.settings = settings
+        applyToEveryPane()
+        notifySettingsChanged()
+    }
+
+    /// Runs every settings-change handler without a settings change.
     ///
-    /// This exists only because `store` is private and the window has no other
-    /// way to reach the file.
-    func commit(_ settings: Settings) -> Bool {
-        store.write(settings)
+    /// For the one input outside the file that the handlers read: the
+    /// command-execution acknowledgement, which `AppDelegate.settingsDidChange()`
+    /// combines with `controlAllowRun` for the control server.
+    func announce() {
+        notifySettingsChanged()
+    }
+
+    /// The pane appearance `settings` would produce right now, for the Settings
+    /// preview.
+    ///
+    /// Through `PaneAppearance.make` with the live appearance observer and the
+    /// theme-derived darkness, exactly as ``apply(to:)`` builds a pane's, so
+    /// the preview resolves Reduce Transparency, the material set and the
+    /// glass-clear terminal configuration the way a pane spawned under these
+    /// settings would. No design overrides: the preview shows the file's
+    /// settings, and the dials are ephemeral by construction.
+    func appearance(for settings: Settings) -> PaneAppearance {
+        PaneAppearance.make(
+            settings: settings,
+            overrides: DesignOverrides.Chrome(),
+            materialIsDark: PaneChrome.windowIsDark(paneTheme: chrome(for: settings)),
+            appearance: appearanceObserver.appearance
+        )
     }
 
     /// Builds this instant's ``PaneChrome/PaneAppearance`` and hands it to
@@ -513,12 +537,20 @@ final class ConfigurationCenter {
     /// window chrome around it on one derivation: both come from the theme,
     /// never from the system's own appearance.
     private func apply(to pane: TerminalPaneController) {
-        pane.apply(PaneAppearance.make(
+        pane.apply(paneAppearance)
+    }
+
+    /// What every pane is handed right now: the composed settings, the dialled
+    /// chrome extras, the theme-derived darkness and the live appearance.
+    /// Read by ``apply(to:)`` and by the Settings self-check, so the check
+    /// compares a pane against the derivation that fed it.
+    var paneAppearance: PaneAppearance {
+        PaneAppearance.make(
             settings: effectiveSettings,
             overrides: chromeOverrides,
             materialIsDark: windowIsDark,
             appearance: appearanceObserver.appearance
-        ))
+        )
     }
 
     // MARK: - Watching
@@ -532,7 +564,10 @@ final class ConfigurationCenter {
     /// re-arm is what keeps the second save working.
     private func startWatching() {
         stopWatching()
-        let path = SettingsStore.defaultFileURL().path(percentEncoded: false)
+        // The store's own path, not `defaultFileURL()`: the two agree in the
+        // shipped app and differ under `BAIA_CONFIG_FILE`, where watching the
+        // default would reload a file nothing here writes.
+        let path = store.url.path(percentEncoded: false)
         let descriptor = open(path, O_EVTONLY)
         guard descriptor >= 0 else { return }
 
@@ -774,6 +809,13 @@ final class ConfigurationCenter {
         // actually rejected something, so a clean file stays silent no matter how
         // often an editor touches it.
         Self.report(result)
+        // A document the decoder could not read as an object applies nothing,
+        // and the running configuration stays on the last value that did apply.
+        // Dropping to the defaults here would re-theme every pane on a
+        // half-saved file and put them back a keystroke later, and it is not
+        // this object's place to guess what the owner meant; the Settings
+        // window shows the recovery state and offers the repair.
+        guard !result.documentIsUnreadable else { return }
         // A file that decodes to what is already loaded changes nothing. Editors
         // touch a file on save even when its bytes are unchanged.
         guard result.settings != settings else { return }

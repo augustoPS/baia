@@ -338,6 +338,22 @@ public enum SettingsEdit: Equatable, Sendable {
     }
 }
 
+public extension Settings {
+    /// A copy with `edit` applied, in the edit's canonical form.
+    ///
+    /// What the running value becomes when the file accepts the edit, without
+    /// the file: the app's self-check reads it, and it is the same `apply(to:)`
+    /// the transaction controller uses, so the two cannot disagree.
+    func applying(_ edit: SettingsEdit) -> Settings {
+        var next = self
+        switch edit.validated() {
+        case let .success(valid): valid.apply(to: &next)
+        case .failure: break
+        }
+        return next
+    }
+}
+
 extension Settings {
     /// The inverse of ``expandingTilde(_:)``: a path below the home directory
     /// spelled with a leading `~`, and any other path unchanged.

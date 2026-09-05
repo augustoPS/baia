@@ -249,30 +249,31 @@ public struct Settings: Sendable, Equatable {
     ///
     /// They live next to the type rather than inside the decoder because they are
     /// part of what a `Settings` means, and the tests read them by name instead of
-    /// repeating the numbers.
-    enum Limits {
+    /// repeating the numbers. Public since 2026-09-04, so the Settings window's
+    /// steppers and validation messages read the same bounds the file does.
+    public enum Limits {
         /// Below 4 points the grid is unreadable and above 72 a single cell fills
         /// a pane. Both are typos rather than intents.
-        static let fontSize: ClosedRange<Double> = 4 ... 72
+        public static let fontSize: ClosedRange<Double> = 4 ... 72
 
         /// ghostty clamps this key itself, so the range matches its parser rather
         /// than being a baia opinion: the same file has to behave the same way in
         /// both terminals.
-        static let opacity: ClosedRange<Double> = 0 ... 1
+        public static let opacity: ClosedRange<Double> = 0 ... 1
 
         /// Padding wider than a small window leaves no cell grid at all, and
         /// ghostty renders that as an empty pane with no error.
-        static let padding: ClosedRange<Double> = 0 ... 128
+        public static let padding: ClosedRange<Double> = 0 ... 128
 
         /// A depth of 0 finds nothing, and the walk costs grow with the fan out
         /// of each level, so an accidental 40 would stat the whole home
         /// directory.
-        static let discoveryDepth: ClosedRange<Double> = 1 ... 8
+        public static let discoveryDepth: ClosedRange<Double> = 1 ... 8
 
         /// A typo of 0 must not spin a poll timer at whatever rate the run loop
         /// will grant. The ceiling matters for the opposite reason: an hour is
         /// already indistinguishable from disabled, and a stray exponent would
         /// otherwise leave a feature reading as enabled while nothing fires.
-        static let pollSeconds: ClosedRange<Double> = 0.25 ... 3600
+        public static let pollSeconds: ClosedRange<Double> = 0.25 ... 3600
     }
 }
