@@ -58,7 +58,18 @@ import Testing
         flush.hold(snapshot(width: 1400))
 
         #expect(flush.resolve(live: nil) != nil)
+        flush.didSave()
         #expect(flush.resolve(live: nil) == nil)
+    }
+
+    @Test func aHeldSnapshotSurvivesAFailedWriteForRetry() {
+        var flush = SessionFlush()
+        let held = snapshot(width: 1400)
+        flush.hold(held)
+
+        #expect(flush.resolve(live: nil) == held)
+        // No didSave: the store refused or failed this write.
+        #expect(flush.resolve(live: nil) == held)
     }
 
     // MARK: The ordinary path
@@ -85,6 +96,7 @@ import Testing
 
         // A window opens again and a save runs while it is up.
         _ = flush.resolve(live: snapshot(width: 900))
+        flush.didSave()
         // That window closes without anything being held for it, which is what
         // happens when it is not the last one, or when nothing changed.
         #expect(flush.resolve(live: nil) == nil)

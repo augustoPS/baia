@@ -49,16 +49,18 @@ public struct SessionFlush: Sendable, Equatable {
     ///   a held snapshot never wins over a live one, because the live one is
     ///   newer by construction.
     ///
-    /// Consuming rather than peeking. A held snapshot describes one moment that
-    /// has passed, and a second flush answering with it again would write a
-    /// workspace the app has since left, which is how a closed window would come
-    /// back on the launch after next.
+    /// Peeks rather than consumes. The caller acknowledges a successful store
+    /// write with ``didSave()``; a refused or failed write must leave this snapshot
+    /// available for recovery or retry.
     public mutating func resolve(live: SessionSnapshot?) -> SessionSnapshot? {
         if let live {
-            held = nil
             return live
         }
-        defer { held = nil }
         return held
+    }
+
+    /// Forgets the held snapshot only after the store confirms a write landed.
+    public mutating func didSave() {
+        held = nil
     }
 }

@@ -1,18 +1,45 @@
 import Darwin
 import Foundation
 
-/// Reads and writes the session file, and repairs what it read.
+/// Reads and writes the session file, retaining enough health to protect rejected
+/// bytes from every later automatic save.
 ///
-/// Nothing here throws. A missing file, an unreadable one, a file this build's
-/// schema does not know, and a file some editor left half written all mean one
-/// thing to the caller: there is no session to restore, open a fresh workspace.
-///
-/// The two `try?` expressions below are the only ones in the package.
-/// `JSONEncoder` and `JSONDecoder` have no non-throwing entry point, and the
-/// alternative is a hand-written `init(from:)` and `encode(to:)` on every type
-/// here, each of them a `throws` function.
-public struct SessionStore: Sendable {
+/// Errors are translated into typed outcomes at this boundary. Callers never need
+/// to catch Foundation errors to decide whether restoring or saving is safe.
+public enum SessionRejection: Sendable, Equatable {
+    case unreadable
+    case malformed
+    case unsupportedSchema(Int)
+}
+
+public enum SessionLoadResult: Sendable, Equatable {
+    case absent
+    case loaded(SessionSnapshot)
+    case rejected(SessionRejection)
+}
+
+public enum SessionSaveResult: Sendable, Equatable {
+    case saved
+    case blocked(SessionRejection)
+    case failed
+}
+
+public enum SessionRecoveryResult: Sendable, Equatable {
+    case recovered(URL)
+    case backupFailed
+    case saveFailed(URL)
+    case notRejected
+}
+
+public final class SessionStore: @unchecked Sendable {
+    private struct SchemaHeader: Decodable {
+        let schemaVersion: Int
+    }
+
     private let fileURL: URL
+    private let lock = NSLock()
+    private var inspectedRejection: SessionRejection?
+    private var hasInspected = false
 
     public init(fileURL: URL) {
         self.fileURL = fileURL
@@ -39,21 +66,56 @@ public struct SessionStore: Sendable {
             .appending(path: "session.json")
     }
 
-    /// The stored session, or nil when there is nothing usable to restore.
-    public func load() -> SessionSnapshot? {
-        // `contents(atPath:)` rather than `Data(contentsOf:)`: it answers nil for a
-        // missing or unreadable file instead of throwing, and a first launch has no
-        // session file at all, which is not an error worth a type.
-        guard let data = FileManager.default.contents(atPath: fileURL.path(percentEncoded: false))
-        else { return nil }
-        guard let snapshot = try? JSONDecoder().decode(SessionSnapshot.self, from: data)
-        else { return nil }
+    /// Reads the file and retains rejection health so no later save can overwrite
+    /// bytes this build did not understand.
+    public func inspect() -> SessionLoadResult {
+        lock.lock()
+        defer { lock.unlock() }
+        return inspectLocked()
+    }
+
+    private func inspectLocked() -> SessionLoadResult {
+        let path = fileURL.path(percentEncoded: false)
+        let result: SessionLoadResult
+        guard let data = try? Data(contentsOf: fileURL) else {
+            var metadata = stat()
+            if lstat(path, &metadata) == 0 || errno != ENOENT {
+                result = .rejected(.unreadable)
+            } else {
+                result = .absent
+            }
+            recordLocked(result)
+            return result
+        }
+        guard let header = try? JSONDecoder().decode(SchemaHeader.self, from: data) else {
+            result = .rejected(.malformed)
+            recordLocked(result)
+            return result
+        }
 
         // A version this build does not know is refused whole. A file from a newer
         // baia may hold a tree shape or a ratio convention this one would decode
         // into a plausible but wrong workspace, and a wrong workspace is worse than
         // a fresh one: it would be saved back over the good file on quit.
-        guard snapshot.schemaVersion == SessionSnapshot.currentSchemaVersion else { return nil }
+        guard header.schemaVersion == SessionSnapshot.currentSchemaVersion else {
+            result = .rejected(.unsupportedSchema(header.schemaVersion))
+            recordLocked(result)
+            return result
+        }
+        guard let snapshot = try? JSONDecoder().decode(SessionSnapshot.self, from: data) else {
+            result = .rejected(.malformed)
+            recordLocked(result)
+            return result
+        }
+        result = .loaded(snapshot)
+        recordLocked(result)
+        return result
+    }
+
+    /// Compatibility for callers interested only in a usable snapshot. Calling it
+    /// still arms rejected-file protection.
+    public func load() -> SessionSnapshot? {
+        guard case let .loaded(snapshot) = inspect() else { return nil }
         return snapshot
     }
 
@@ -73,23 +135,91 @@ public struct SessionStore: Sendable {
     /// `open`/`write` loop, for a file whose whole value is saving the user a
     /// re-split.
     public func save(_ snapshot: SessionSnapshot) -> Bool {
+        saveResult(snapshot) == .saved
+    }
+
+    /// Writes only when the source was absent or valid. An uninspected store reads
+    /// first, so protection does not depend on every caller remembering a preflight.
+    public func saveResult(_ snapshot: SessionSnapshot) -> SessionSaveResult {
+        lock.lock()
+        defer { lock.unlock() }
+        if !hasInspected { _ = inspectLocked() }
+        if let inspectedRejection { return .blocked(inspectedRejection) }
+        guard write(snapshot) else { return .failed }
+        recordLocked(.loaded(snapshot))
+        return .saved
+    }
+
+    /// Makes a byte-for-byte backup of a rejected source before replacing it.
+    /// `backupURL` must not exist; recovery never overwrites an earlier backup.
+    public func recover(
+        replacingWith snapshot: SessionSnapshot,
+        backupURL: URL? = nil
+    ) -> SessionRecoveryResult {
+        lock.lock()
+        defer { lock.unlock() }
+        guard inspectedRejection != nil else { return .notRejected }
+        guard let source = try? Data(contentsOf: fileURL) else { return .backupFailed }
+        let backup = backupURL ?? nextRecoveryBackupURLLocked()
+        let backupDirectory = backup.deletingLastPathComponent().path(percentEncoded: false)
+        guard Self.createDirectory(atPath: backupDirectory),
+              Self.createExclusiveFile(at: backup, contents: source),
+              (try? Data(contentsOf: backup)) == source
+        else { return .backupFailed }
+
+        // An external writer may have changed the source while its backup was
+        // being created. Refuse replacement unless the backup still matches the
+        // exact bytes currently at the target.
+        guard (try? Data(contentsOf: fileURL)) == source else { return .backupFailed }
+
+        guard write(snapshot) else { return .saveFailed(backup) }
+        recordLocked(.loaded(snapshot))
+        return .recovered(backup)
+    }
+
+    /// The first unused sibling name, stable enough to show in recovery UI and
+    /// exclusive at creation time so two attempts cannot replace one another.
+    public func nextRecoveryBackupURL() -> URL {
+        lock.lock()
+        defer { lock.unlock() }
+        return nextRecoveryBackupURLLocked()
+    }
+
+    private func nextRecoveryBackupURLLocked() -> URL {
+        let base = fileURL.appendingPathExtension("rejected-backup")
+        if !FileManager.default.fileExists(atPath: base.path(percentEncoded: false)) { return base }
+        for number in 2...10_000 {
+            let candidate = fileURL.appendingPathExtension("rejected-backup.\(number)")
+            if !FileManager.default.fileExists(atPath: candidate.path(percentEncoded: false)) {
+                return candidate
+            }
+        }
+        return fileURL.appendingPathExtension("rejected-backup.exhausted")
+    }
+
+    private func recordLocked(_ result: SessionLoadResult) {
+        hasInspected = true
+        if case let .rejected(reason) = result {
+            inspectedRejection = reason
+        } else {
+            inspectedRejection = nil
+        }
+    }
+
+    private func write(_ snapshot: SessionSnapshot) -> Bool {
         let path = fileURL.path(percentEncoded: false)
         let directory = fileURL.deletingLastPathComponent().path(percentEncoded: false)
         guard Self.createDirectory(atPath: directory) else { return false }
         guard let data = try? JSONEncoder().encode(snapshot) else { return false }
 
-        // A fixed `.tmp` name, not a unique one. One app process owns this file, so
-        // there is no second writer to collide with, and a temporary left behind by
-        // an earlier crash is overwritten here rather than accumulating.
-        //
         // 0o600 because the session names every directory the user works in, and
         // Application Support is world readable by default.
-        let temporaryPath = path + ".tmp"
-        guard FileManager.default.createFile(
-            atPath: temporaryPath,
-            contents: data,
-            attributes: [.posixPermissions: 0o600]
-        ) else { return false }
+        // A unique, exclusively-created sibling cannot alias a caller-selected
+        // recovery backup, including on a case-insensitive filesystem or through
+        // a symlinked parent directory.
+        let temporaryPath = path + ".tmp." + UUID().uuidString
+        guard Self.createExclusiveFile(at: URL(filePath: temporaryPath), contents: data)
+        else { return false }
 
         guard rename(temporaryPath, path) == 0 else {
             // The temporary is removed on failure so a stale one cannot be mistaken
@@ -98,6 +228,27 @@ public struct SessionStore: Sendable {
             return false
         }
         return true
+    }
+
+    private static func createExclusiveFile(at url: URL, contents: Data) -> Bool {
+        let path = url.path(percentEncoded: false)
+        let descriptor = Darwin.open(path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
+        guard descriptor >= 0 else { return false }
+        var succeeded = true
+        contents.withUnsafeBytes { raw in
+            var offset = 0
+            while offset < raw.count {
+                let count = Darwin.write(descriptor, raw.baseAddress!.advanced(by: offset), raw.count - offset)
+                if count <= 0 {
+                    succeeded = false
+                    break
+                }
+                offset += count
+            }
+        }
+        if Darwin.close(descriptor) != 0 { succeeded = false }
+        if !succeeded { unlink(path) }
+        return succeeded
     }
 
     /// Drops panes whose working directory no longer exists and repairs focus, so a

@@ -4,12 +4,14 @@ import WorkspaceMenu
 /// The menu bar, built in code because baia has no nib: main.swift owns the
 /// entry point.
 ///
-/// Every title, shortcut and ordering decision lives in `MenuBarLayout`, and the
+/// Every ordinary title, shortcut and ordering decision lives in `MenuBarLayout`, and the
 /// same value produces the ghostty unbind lines in `TerminalPaneController`.
 /// Keeping one source is the point: the menu and the unbind list were two
 /// hand-maintained lists once, and a key the menu claimed while the surface
 /// config left it bound was dead, with no error and no way to notice except
-/// clicking the item and watching it work.
+/// clicking the item and watching it work. The recovery item is appended here
+/// because it is transient app health, carries no shortcut, and has no package
+/// command or terminal binding.
 @MainActor
 enum MainMenu {
     static func install(into app: NSApplication) {
@@ -21,6 +23,16 @@ enum MainMenu {
             for entry in descriptor.items {
                 if entry.isSeparatorBefore { menu.addItem(.separator()) }
                 menu.addItem(makeItem(entry))
+            }
+            if descriptor.title == "File" {
+                menu.addItem(.separator())
+                let recovery = NSMenuItem(
+                    title: "Recover Session…",
+                    action: #selector(AppDelegate.recoverSession(_:)),
+                    keyEquivalent: ""
+                )
+                recovery.target = nil
+                menu.addItem(recovery)
             }
             item.submenu = menu
             bar.addItem(item)

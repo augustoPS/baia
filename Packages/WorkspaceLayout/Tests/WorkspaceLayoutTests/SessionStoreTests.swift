@@ -142,6 +142,150 @@ import Testing
         #expect(store().load() == nil)
     }
 
+    @Test func inspectionDistinguishesAnAbsentSessionFromARejectedOne() throws {
+        let missing = store("missing/session.json")
+        #expect(missing.inspect() == .absent)
+
+        try fixture.file("state/session.json", contents: "half a { session")
+        #expect(store().inspect() == .rejected(.malformed))
+    }
+
+    @Test func inspectionNamesAnUnsupportedSchemaVersion() {
+        var snapshot = sampleSnapshot()
+        snapshot.schemaVersion = SessionSnapshot.currentSchemaVersion + 1
+        let store = store()
+        #expect(store.save(snapshot))
+
+        #expect(store.inspect() == .rejected(.unsupportedSchema(snapshot.schemaVersion)))
+    }
+
+    @Test func inspectionRejectsAFutureShapeByVersionBeforeDecodingItsFields() throws {
+        try fixture.file("state/session.json", contents: "{\"schemaVersion\":99,\"futureWorkspace\":{}}")
+
+        #expect(store().inspect() == .rejected(.unsupportedSchema(99)))
+    }
+
+    @Test func inspectionDistinguishesAnUnreadablePathFromMalformedBytes() throws {
+        try fixture.directory("state/session.json")
+        let store = store()
+
+        #expect(store.inspect() == .rejected(.unreadable))
+        #expect(store.saveResult(sampleSnapshot()) == .blocked(.unreadable))
+    }
+
+    @Test func aDanglingSessionSymlinkIsRejectedInsteadOfTreatedAsAbsent() throws {
+        let link = fixture.root.appending(path: "state/session.json")
+        try fixture.directory("state")
+        try FileManager.default.createSymbolicLink(
+            at: link,
+            withDestinationURL: fixture.root.appending(path: "missing-target")
+        )
+        let store = store()
+
+        #expect(store.inspect() == .rejected(.unreadable))
+        #expect(store.saveResult(sampleSnapshot()) == .blocked(.unreadable))
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: link.path(percentEncoded: false)) == fixture.root.appending(path: "missing-target").path(percentEncoded: false))
+    }
+
+    @Test func everySaveIsBlockedAfterARejectedSessionWasInspected() throws {
+        let original = Data("half a { session".utf8)
+        let url = try fixture.file("state/session.json", contents: String(decoding: original, as: UTF8.self))
+        let store = store()
+        #expect(store.inspect() == .rejected(.malformed))
+
+        #expect(store.saveResult(sampleSnapshot()) == .blocked(.malformed))
+        #expect(try Data(contentsOf: url) == original)
+    }
+
+    @Test func recoveryBacksUpRejectedBytesExactlyBeforeReplacingThem() throws {
+        let original = Data("half a { session\nwith owner notes".utf8)
+        let source = try fixture.file("state/session.json", contents: String(decoding: original, as: UTF8.self))
+        let backup = fixture.root.appending(path: "backups/rejected-session.json")
+        let store = store()
+        let replacement = sampleSnapshot()
+        #expect(store.inspect() == .rejected(.malformed))
+
+        #expect(store.recover(replacingWith: replacement, backupURL: backup) == .recovered(backup))
+        #expect(try Data(contentsOf: backup) == original)
+        #expect(try Data(contentsOf: source) != original)
+        #expect(store.inspect() == .loaded(replacement))
+    }
+
+    @Test func recoveryRefusesReplacementWhenTheBackupCannotBeCreated() throws {
+        let original = Data("half a { session".utf8)
+        let source = try fixture.file("state/session.json", contents: String(decoding: original, as: UTF8.self))
+        let occupiedBackup = try fixture.file("backups/rejected-session.json", contents: "do not replace")
+        let store = store()
+        #expect(store.inspect() == .rejected(.malformed))
+
+        #expect(store.recover(replacingWith: sampleSnapshot(), backupURL: occupiedBackup) == .backupFailed)
+        #expect(try Data(contentsOf: source) == original)
+        #expect(try Data(contentsOf: occupiedBackup) == Data("do not replace".utf8))
+        #expect(store.saveResult(sampleSnapshot()) == .blocked(.malformed))
+    }
+
+    @Test func recoveryDoesNotConsumeALiteralTemporarySuffixBackup() throws {
+        let original = Data("half a { session".utf8)
+        let source = try fixture.file("state/session.json", contents: String(decoding: original, as: UTF8.self))
+        let backup = URL(filePath: source.path(percentEncoded: false) + ".tmp")
+        let store = store()
+        let replacement = sampleSnapshot()
+        #expect(store.inspect() == .rejected(.malformed))
+
+        #expect(store.recover(replacingWith: replacement, backupURL: backup) == .recovered(backup))
+        #expect(try Data(contentsOf: backup) == original)
+        #expect(store.inspect() == .loaded(replacement))
+    }
+
+    @Test func recoveryDoesNotConsumeATemporarySuffixBackupThroughAParentSymlink() throws {
+        let original = Data("half a { session".utf8)
+        try fixture.file("real/session.json", contents: String(decoding: original, as: UTF8.self))
+        let alias = fixture.root.appending(path: "alias")
+        try FileManager.default.createSymbolicLink(
+            at: alias,
+            withDestinationURL: fixture.root.appending(path: "real", directoryHint: .isDirectory)
+        )
+        let backup = alias.appending(path: "session.json.tmp")
+        let store = store("real/session.json")
+        let replacement = sampleSnapshot()
+        #expect(store.inspect() == .rejected(.malformed))
+
+        #expect(store.recover(replacingWith: replacement, backupURL: backup) == .recovered(backup))
+        #expect(try Data(contentsOf: backup) == original)
+        #expect(store.inspect() == .loaded(replacement))
+    }
+
+    @Test func recoveryDoesNotConsumeACaseAliasedTemporarySuffixBackup() throws {
+        let original = Data("half a { session".utf8)
+        let source = try fixture.file("case/session.json", contents: String(decoding: original, as: UTF8.self))
+        let backup = source.deletingLastPathComponent().appending(path: "SESSION.JSON.TMP")
+        let store = store("case/session.json")
+        let replacement = sampleSnapshot()
+        #expect(store.inspect() == .rejected(.malformed))
+
+        #expect(store.recover(replacingWith: replacement, backupURL: backup) == .recovered(backup))
+        #expect(try Data(contentsOf: backup) == original)
+        #expect(store.inspect() == .loaded(replacement))
+    }
+
+    @Test func aReplacementWriteFailureKeepsItsVerifiedBackupAndProtection() throws {
+        let original = Data("half a { session".utf8)
+        let source = try fixture.file("blocked/session.json", contents: String(decoding: original, as: UTF8.self))
+        let sourceDirectory = source.deletingLastPathComponent()
+        let backup = fixture.root.appending(path: "failure-backup/rejected-session.json")
+        let store = store("blocked/session.json")
+        #expect(store.inspect() == .rejected(.malformed))
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: sourceDirectory.path(percentEncoded: false))
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: sourceDirectory.path(percentEncoded: false))
+        }
+
+        #expect(store.recover(replacingWith: sampleSnapshot(), backupURL: backup) == .saveFailed(backup))
+        #expect(try Data(contentsOf: backup) == original)
+        #expect(try Data(contentsOf: source) == original)
+        #expect(store.saveResult(sampleSnapshot()) == .blocked(.malformed))
+    }
+
     @Test func loadFindsNothingInAFileThatIsNotJSON() throws {
         try fixture.file("state/session.json", contents: "half a { session")
 

@@ -17,6 +17,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let sessionStore = SessionStore(fileURL: SessionStore.defaultFileURL(directoryName: SupportDirectory.name))
 
+    /// Prevents repeated timers from stacking the same failure sheet. A successful
+    /// save clears it so a later, distinct failure is still visible.
+    private var isShowingSessionSaveFailure = false
+
+    /// A rejected source gets one explicit recovery choice per launch. The store
+    /// remains the enforcement point while that choice is on screen.
+    private var isShowingSessionRecovery = false
+    private var pendingSessionRejection: SessionRejection?
+
     /// The config file, and everything derived from it. Created before any
     /// window, because a pane built before it exists would come up in
     /// libghostty's defaults.
@@ -253,6 +262,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #if DEBUG
             openDesignPanelIfRequested()
             SettingsSelfCheck.runIfRequested(in: self)
+            SessionSelfCheck.runIfRequested(in: self)
         #endif
         scheduleSave()
         installKeyMonitor()
@@ -338,12 +348,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         true
     }
 
-    func applicationWillTerminate(_: Notification) {
-        // Written synchronously rather than through the timer, which would never
-        // fire: the run loop stops before a scheduled save comes due.
+    func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
         saveTimer?.invalidate()
         saveTimer = nil
-        save()
+        while true {
+            guard let result = save(presentFailure: false) else { return .terminateNow }
+            switch result {
+            case .saved, .blocked:
+                return .terminateNow
+            case .failed:
+                let alert = NSAlert()
+                alert.alertStyle = .critical
+                alert.messageText = "The workspace session could not be saved."
+                alert.informativeText = "Baia can retry the final save, or cancel quitting so your current workspace stays open."
+                alert.addButton(withTitle: "Retry")
+                alert.addButton(withTitle: "Cancel Quit")
+                if alert.runModal() != .alertFirstButtonReturn {
+                    return .terminateCancel
+                }
+            }
+        }
+    }
+
+    func applicationWillTerminate(_: Notification) {
         isTerminating = true
         // After the save, and last of all: every parked `recv` is answered with
         // an empty drain here, and a client that got a bare EOF instead would
@@ -1249,19 +1276,122 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         saveTimer?.invalidate()
         saveTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.save()
+                _ = self?.save()
             }
         }
     }
 
-    private func save() {
-        guard !isTerminating else { return }
+    @discardableResult
+    private func save(presentFailure: Bool = true) -> SessionSaveResult? {
+        guard !isTerminating else { return nil }
         // Nil for "no window left to snapshot", which is the case ``SessionFlush``
         // answers: it hands back what the last window held on its way out, once,
         // and nil after that so an empty workspace still cannot overwrite a good
         // file.
-        guard let snapshot = flush.resolve(live: windows.isEmpty ? nil : snapshot()) else { return }
-        _ = sessionStore.save(snapshot)
+        guard let snapshot = flush.resolve(live: windows.isEmpty ? nil : snapshot()) else { return nil }
+        let result = sessionStore.saveResult(snapshot)
+        switch result {
+        case .saved:
+            flush.didSave()
+            isShowingSessionSaveFailure = false
+        case .blocked:
+            // The recovery sheet explains this state. Remaining silent here avoids
+            // turning every coalesced workspace change into another alert.
+            break
+        case .failed:
+            if presentFailure { presentSessionSaveFailure() }
+        }
+        return result
+    }
+
+    private func presentSessionSaveFailure() {
+        guard !isShowingSessionSaveFailure else { return }
+        isShowingSessionSaveFailure = true
+        let alert = NSAlert()
+        alert.alertStyle = .critical
+        alert.messageText = "The workspace session could not be saved."
+        alert.informativeText = "Your open windows are unchanged. Check the baia Application Support folder, then make another workspace change to retry."
+        alert.addButton(withTitle: "OK")
+        if let window = focused?.window ?? windows.first?.window {
+            alert.beginSheetModal(for: window)
+        } else {
+            FileHandle.standardError.write(Data("baia: the workspace session could not be saved\n".utf8))
+        }
+    }
+
+    private func presentSessionRecovery(for rejection: SessionRejection) {
+        guard !isShowingSessionRecovery else { return }
+        isShowingSessionRecovery = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "The previous workspace session could not be opened."
+            switch rejection {
+            case .unreadable:
+                alert.informativeText = "Baia cannot read session.json. It will preserve the file and pause session saving until you choose recovery."
+            case .malformed:
+                alert.informativeText = "session.json is malformed. Baia will preserve it and pause session saving until you choose recovery."
+            case let .unsupportedSchema(version):
+                alert.informativeText = "session.json uses unsupported schema version \(version). Baia will preserve it and pause session saving until you choose recovery."
+            }
+            alert.addButton(withTitle: "Back Up and Replace")
+            alert.addButton(withTitle: "Keep File")
+            guard let window = self.focused?.window ?? self.windows.first?.window else {
+                self.isShowingSessionRecovery = false
+                return
+            }
+            alert.beginSheetModal(for: window) { [weak self] response in
+                guard let self else { return }
+                self.isShowingSessionRecovery = false
+                if response == .alertFirstButtonReturn {
+                    self.performSessionRecovery()
+                }
+            }
+        }
+    }
+
+    @objc func recoverSession(_: Any?) {
+        guard pendingSessionRejection != nil else { return }
+        performSessionRecovery()
+    }
+
+    private func performSessionRecovery() {
+        let replacement = snapshot()
+        switch sessionStore.recover(replacingWith: replacement) {
+        case let .recovered(backup):
+            pendingSessionRejection = nil
+            isShowingSessionSaveFailure = false
+            let done = NSAlert()
+            done.messageText = "The workspace session was recovered."
+            done.informativeText = "The rejected file was backed up at \(backup.path(percentEncoded: false))."
+            done.addButton(withTitle: "OK")
+            if let window = focused?.window ?? windows.first?.window {
+                done.beginSheetModal(for: window)
+            }
+        case .backupFailed:
+            presentSessionRecoveryFailure("Baia could not create and verify a byte-for-byte backup. The original session file was not replaced.")
+        case let .saveFailed(backup):
+            presentSessionRecoveryFailure("The backup was saved at \(backup.path(percentEncoded: false)), but Baia could not replace session.json.")
+        case .notRejected:
+            break
+        }
+    }
+
+    private func presentSessionRecoveryFailure(_ explanation: String) {
+        let failed = NSAlert()
+        failed.alertStyle = .critical
+        failed.messageText = "The workspace session was not replaced."
+        failed.informativeText = explanation
+        failed.addButton(withTitle: "Retry")
+        failed.addButton(withTitle: "Keep File")
+        if let window = focused?.window ?? windows.first?.window {
+            failed.beginSheetModal(for: window) { [weak self] response in
+                if response == .alertFirstButtonReturn {
+                    self?.performSessionRecovery()
+                }
+            }
+        }
     }
 
     /// Tabs in the order AppKit has them, which is the only place that order
@@ -1333,11 +1463,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// rather than failing to open. A snapshot with nothing left after that is
     /// treated as no snapshot at all.
     private func restoreSession() {
+        // Inspect even when restoration is disabled. The preference controls what
+        // opens, while source health controls whether autosave may replace it.
+        let load = sessionStore.inspect()
+        if case let .rejected(rejection) = load {
+            pendingSessionRejection = rejection
+            openFresh()
+            presentSessionRecovery(for: rejection)
+            return
+        }
         // Opt out entirely rather than restoring and discarding. Someone who
         // turns this off wants a clean window, not the old one rebuilt and
         // thrown away, which would spawn every recorded shell on the way past.
         guard configuration.settings.restoreSession else { return openFresh() }
-        guard let snapshot = sessionStore.load() else { return openFresh() }
+        guard case let .loaded(snapshot) = load else { return openFresh() }
         let resolver = AnchorResolver()
         let (reconciled, _) = SessionStore.reconciled(
             snapshot,
@@ -1581,6 +1720,9 @@ extension AppDelegate: NSMenuItemValidation {
     /// The command is read from the item's tag rather than its selector, because
     /// several commands share one selector shape and a title can be localised.
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(recoverSession(_:)) {
+            return pendingSessionRejection != nil && !isShowingSessionRecovery
+        }
         guard let command = MenuCommand(tag: menuItem.tag) else { return true }
         let state = MenuValidation.state(for: command, given: availability)
         // Set here rather than when the menu is built. AppKit revalidates on
