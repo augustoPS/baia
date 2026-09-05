@@ -41,10 +41,24 @@ public struct PaletteRow: Sendable, Equatable {
     /// which is the rule the footer follows too.
     public var chip: String?
 
-    public init(parent: [PaneStatusRun], name: [PaneStatusRun], chip: String?) {
+    /// Whether choosing this row can perform its advertised action.
+    ///
+    /// Stored separately from the rendered runs so assistive clients do not
+    /// have to infer availability from quiet text or parse an appended reason.
+    /// Project and find rows are actionable. A verb row is disabled when its
+    /// builder receives an unavailable reason.
+    public var isEnabled: Bool
+
+    public init(
+        parent: [PaneStatusRun],
+        name: [PaneStatusRun],
+        chip: String?,
+        isEnabled: Bool = true
+    ) {
         self.parent = parent
         self.name = name
         self.chip = chip
+        self.isEnabled = isEnabled
     }
 
     /// Builds a row from the string the ranker matched and the placement it
@@ -128,7 +142,12 @@ public struct PaletteRow: Sendable, Equatable {
             )
         }
 
-        return PaletteRow(parent: leading, name: trailing, chip: "CMD")
+        return PaletteRow(
+            parent: leading,
+            name: trailing,
+            chip: "CMD",
+            isEnabled: unavailableReason == nil
+        )
     }
 
     /// Groups a stretch of characters into the fewest runs that still say which

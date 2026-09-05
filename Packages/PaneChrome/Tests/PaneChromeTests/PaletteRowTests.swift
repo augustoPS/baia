@@ -130,4 +130,25 @@ import Testing
         #expect(row.name.isEmpty)
         #expect(row.parent.map(\.text).joined() == "website/")
     }
+
+    @Test func projectAndFindRowsAreEnabled() {
+        #expect(PaletteRow.make(relativePath: "baia").isEnabled)
+        #expect(
+            PaletteRow.match(
+                line: "build passed",
+                highlight: 6 ..< 12,
+                project: "baia"
+            ).isEnabled
+        )
+    }
+
+    @Test func verbAvailabilitySurvivesRowRendering() {
+        #expect(PaletteRow.verb(title: "New Window").isEnabled)
+        #expect(
+            !PaletteRow.verb(
+                title: "Close Pane",
+                unavailableReason: "needs a pane"
+            ).isEnabled
+        )
+    }
 }

@@ -248,6 +248,75 @@ final class PaletteQueryField: NSTextField {
 /// visible, and every one of them is a fixed height, so a table view's cell
 /// reuse and delegate round trips buy nothing and cost exact control over a row
 /// whose whole design is which of its characters are accented.
+private nonisolated final class PaletteAccessibilityRow: NSAccessibilityElement {
+    private weak var list: PaletteListView?
+    private let index: Int
+    private let generation: Int
+
+    init(list: PaletteListView, index: Int, generation: Int) {
+        self.list = list
+        self.index = index
+        self.generation = generation
+        super.init()
+    }
+
+    override func accessibilityRole() -> NSAccessibility.Role? { .row }
+
+    override func accessibilityParent() -> Any? { list }
+
+    override func accessibilityFrame() -> NSRect {
+        let list = list
+        let index = index
+        let generation = generation
+        return MainActor.assumeIsolated {
+            list?.accessibilityFrame(forRow: index, generation: generation) ?? .zero
+        }
+    }
+
+    override func accessibilityLabel() -> String? {
+        let list = list
+        let index = index
+        let generation = generation
+        return MainActor.assumeIsolated {
+            list?.accessibilityLabel(forRow: index, generation: generation)
+        }
+    }
+
+    override func isAccessibilitySelected() -> Bool {
+        let list = list
+        let index = index
+        let generation = generation
+        return MainActor.assumeIsolated {
+            list?.accessibilitySelection(forRow: index, generation: generation) ?? false
+        }
+    }
+
+    override func isAccessibilityEnabled() -> Bool {
+        let list = list
+        let index = index
+        let generation = generation
+        return MainActor.assumeIsolated {
+            list?.accessibilityEnabled(forRow: index, generation: generation) ?? false
+        }
+    }
+
+    override func accessibilityActionNames() -> [NSAccessibility.Action] { [.press] }
+
+    override func accessibilityPerformAction(_ action: NSAccessibility.Action) {
+        guard action == .press else { return }
+        _ = accessibilityPerformPress()
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        let list = list
+        let index = index
+        let generation = generation
+        return MainActor.assumeIsolated {
+            list?.accessibilityPress(row: index, generation: generation) ?? false
+        }
+    }
+}
+
 final class PaletteListView: NSView {
     var theme: PaneTheme = .darkPastel { didSet { needsDisplay = true } }
 
@@ -267,8 +336,17 @@ final class PaletteListView: NSView {
     /// The rows, already reduced to coloured runs by `PaletteRow`.
     var rows: [PaletteRow] = [] {
         didSet {
+            let oldCount = oldValue.count
             scrollOffset = 0
+            invalidateAccessibilityRows()
             needsDisplay = true
+            if rows.count != oldCount {
+                postAccessibilityNotification(self, .rowCountChanged)
+            }
+            postAccessibilityNotification(self, .layoutChanged)
+            if rows.indices.contains(selection) {
+                postAccessibilityNotification(self, .selectedRowsChanged)
+            }
         }
     }
 
@@ -287,6 +365,7 @@ final class PaletteListView: NSView {
             guard selection != oldValue else { return }
             scrollSelectionIntoView()
             needsDisplay = true
+            postAccessibilityNotification(self, .selectedRowsChanged)
             // Raised for a hover as well as for an arrow key, because the git
             // state on screen belongs to whichever row is selected however it
             // came to be selected. Without this the pointer moved the highlight
@@ -306,7 +385,25 @@ final class PaletteListView: NSView {
     /// it closes on Return.
     var onActivate: ((Int, PaletteAction) -> Void)?
 
+    /// How this list tells assistive clients that its children or selection
+    /// changed.
+    ///
+    /// Production delivers through `NSAccessibility.post`. The no-window fixture
+    /// replaces this to observe which notifications a result replacement raises,
+    /// which AppKit will not report without a window. Not a speech path:
+    /// `.announcementRequested` is not posted here.
+    var postAccessibilityNotification: (NSView, NSAccessibility.Notification) -> Void = {
+        NSAccessibility.post(element: $0, notification: $1)
+    }
+
     private var scrollOffset = 0
+
+    /// Cached because AppKit requires a view vending virtual accessibility
+    /// children to keep owning those elements while their rows remain present.
+    /// A new result set starts a new generation, which also makes a retained
+    /// child unable to activate a different row later placed at the same index.
+    private var accessibilityRows: [PaletteAccessibilityRow]?
+    private var accessibilityGeneration = 0
 
     override var isFlipped: Bool { true }
 
@@ -316,6 +413,70 @@ final class PaletteListView: NSView {
     override var acceptsFirstResponder: Bool { false }
 
     override var canBecomeKeyView: Bool { false }
+
+    // MARK: - Accessibility
+
+    override func isAccessibilityElement() -> Bool { true }
+
+    override func accessibilityRole() -> NSAccessibility.Role? { .list }
+
+    override func accessibilityChildren() -> [Any]? {
+        if let accessibilityRows { return accessibilityRows }
+
+        let made = rows.indices.map {
+            PaletteAccessibilityRow(
+                list: self,
+                index: $0,
+                generation: accessibilityGeneration
+            )
+        }
+        accessibilityRows = made
+        return made
+    }
+
+    override func accessibilityVisibleChildren() -> [Any]? {
+        guard let all = accessibilityChildren() as? [PaletteAccessibilityRow] else { return [] }
+        let end = min(rows.count, scrollOffset + Self.visibleRows)
+        return Array(all[scrollOffset ..< end])
+    }
+
+    fileprivate func accessibilityFrame(forRow index: Int, generation: Int) -> NSRect {
+        guard generation == accessibilityGeneration,
+              rows.indices.contains(index)
+        else { return .zero }
+
+        let local = NSRect(
+            x: 0,
+            y: Double(index - scrollOffset) * Self.rowHeight,
+            width: bounds.width,
+            height: Self.rowHeight
+        )
+        guard let window else { return local }
+        return window.convertToScreen(convert(local, to: nil))
+    }
+
+    fileprivate func accessibilityLabel(forRow index: Int, generation: Int) -> String? {
+        guard generation == accessibilityGeneration, rows.indices.contains(index) else { return nil }
+        return rows[index].text
+    }
+
+    fileprivate func accessibilitySelection(forRow index: Int, generation: Int) -> Bool {
+        generation == accessibilityGeneration && rows.indices.contains(index) && selection == index
+    }
+
+    fileprivate func accessibilityEnabled(forRow index: Int, generation: Int) -> Bool {
+        generation == accessibilityGeneration && rows.indices.contains(index) && rows[index].isEnabled
+    }
+
+    fileprivate func accessibilityPress(row index: Int, generation: Int) -> Bool {
+        guard generation == accessibilityGeneration else { return false }
+        return activate(index, action: .newTab)
+    }
+
+    private func invalidateAccessibilityRows() {
+        accessibilityGeneration &+= 1
+        accessibilityRows = nil
+    }
 
     override func draw(_: NSRect) {
         // See ``PaletteQueryView/draw(_:)`` for why glass skips this fill
@@ -476,8 +637,30 @@ final class PaletteListView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         guard let index = row(at: event) else { return }
+        activate(
+            index,
+            action: event.modifierFlags.contains(.shift) ? .splitRight : .newTab
+        )
+    }
+
+    /// The one commit path for pointer and accessibility actions. A disabled
+    /// row may still become selected so its reason can be read, but it cannot
+    /// reach the controller's commit closure.
+    @discardableResult
+    private func activate(_ index: Int, action: PaletteAction) -> Bool {
+        guard rows.indices.contains(index) else { return false }
+        let generation = accessibilityGeneration
         selection = index
-        onActivate?(index, event.modifierFlags.contains(.shift) ? .splitRight : .newTab)
+        // Selection synchronously raises `onSelectionChange`, whose owner may
+        // replace the result set. Never let the old index commit a new row or
+        // index into a shorter replacement.
+        guard generation == accessibilityGeneration,
+              rows.indices.contains(index),
+              rows[index].isEnabled,
+              let onActivate
+        else { return false }
+        onActivate(index, action)
+        return true
     }
 
     /// Moving the pointer over a row selects it, the way a menu does.
