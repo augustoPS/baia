@@ -5,8 +5,8 @@ import Foundation
 /// Here rather than beside the window, under the standing rule: which fields a
 /// category owns is answerable with no `NSWindow` and no descriptor, so it
 /// belongs where there is a test bundle. The test pins that every active key
-/// lands in exactly one category and that the inert compatibility key lands in
-/// none, so a key added to ``SettingsKey`` fails a test until it has a home.
+/// lands in exactly one category and that compatibility-only keys land in none,
+/// so a key added to ``SettingsKey`` fails a test until it has a home.
 ///
 /// The order of ``allCases`` is the toolbar's order and the order of ``keys``
 /// is the order a category draws its controls, both from the spec's table.
@@ -48,7 +48,7 @@ public enum SettingsCategory: String, CaseIterable, Sendable {
     public var keys: [SettingsKey] {
         switch self {
         case .appearance: [
-                .themeName, .backgroundHex, .backgroundOpacity, .backgroundBlur, .chromeStyle,
+                .themeName, .backgroundHex, .backgroundOpacity, .chromeStyle,
                 .sidebar, .focusAccent, .attentionStyle, .attentionAccent, .alertBehavior,
             ]
         case .typography: [.fontFamily, .fontSize, .cursorStyle]

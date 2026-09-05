@@ -193,15 +193,8 @@ enum SettingsPages {
             read: { $0.backgroundOpacity },
             edit: { .backgroundOpacity($0) },
             format: { "\(Int(($0 * 100).rounded()))%" }
-        ), caption: "How much of the terminal background covers the desktop. 0% is fully see-through.")
-        let blurRows = page.toggleRow(nil, ToggleControl(
-            title: "Blur the desktop behind the window",
-            actionName: "Change Blur",
-            editor: editor,
-            read: { $0.backgroundBlur },
-            edit: { .backgroundBlur($0) }
-        ))
-        page.showRows(opacityRows + blurRows) { $0.chromeStyle.usesBackgroundOpacity }
+        ), caption: "How much of the terminal background covers the desktop. Glass protects terminal legibility with a minimum 50% background wash.")
+        page.showRows(opacityRows) { $0.chromeStyle.usesBackgroundOpacity }
 
         page.row("Sidebar:", ChoiceControl(
             options: [

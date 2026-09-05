@@ -35,13 +35,14 @@ public enum SettingsKey: String, CaseIterable, Sendable, Hashable {
     case controlAllowRun
     case controlAllowRead
 
-    /// Whether the key drives anything in the running app.
+    /// Whether the key drives a supported behavior that Settings can expose.
     ///
-    /// `transparentTitlebar` stays file compatible and is read by nothing, so
-    /// Settings does not show it and no category places it. See
-    /// ``Settings/transparentTitlebar``.
+    /// `backgroundBlur` remains readable, writable, and emitted for Ghostty
+    /// configuration compatibility, but the supported material paths keep the
+    /// window compositor blur off. `transparentTitlebar` also stays file
+    /// compatible and is read by nothing. Settings does not show either key.
     public var isActive: Bool {
-        self != .transparentTitlebar
+        self != .backgroundBlur && self != .transparentTitlebar
     }
 }
 

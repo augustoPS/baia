@@ -181,6 +181,20 @@
             check("redo put it back in the running settings", center.settings == beforeUndo)
             check("redo put it back in the file", store.load().settings == beforeUndo)
 
+            // Hidden compatibility fields remain valid transaction inputs even
+            // though Settings no longer promises a live control for them.
+            let compatibilityEdit = SettingsEdit.backgroundBlur(!center.settings.backgroundBlur)
+            let compatibilityError = controller.commit(
+                compatibilityEdit,
+                actionName: "self-check backgroundBlur compatibility"
+            )
+            let compatibilityValue = SettingsEdit.value(of: .backgroundBlur, in: center.settings)
+            check("backgroundBlur: the hidden compatibility key remains accepted",
+                  compatibilityError == nil,
+                  compatibilityError?.message ?? "")
+            check("backgroundBlur: the hidden compatibility key remains writable",
+                  SettingsEdit.value(of: .backgroundBlur, in: store.load().settings) == compatibilityValue)
+
             // Invalid input: nothing written, error shown, value retained.
             let fileBefore = (try? Data(contentsOf: store.url)) ?? Data()
             let invalid = controller.commit(.backgroundHex("not-a-colour"), actionName: "invalid")

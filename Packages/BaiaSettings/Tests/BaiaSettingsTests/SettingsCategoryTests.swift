@@ -6,11 +6,12 @@ import Testing
 @Suite struct SettingsCategoryTests {
     @Test func everyActiveKeyLandsInExactlyOneCategory() {
         // Both directions: a key placed twice would draw two controls for one
-        // field, and a key placed nowhere would be a setting Settings cannot
-        // reach. `transparentTitlebar` is the one deliberate absence.
+        // field, and an active key placed nowhere would be a setting Settings
+        // cannot reach. Compatibility-only keys are deliberate absences.
         let placed = SettingsCategory.allCases.flatMap(\.keys)
         #expect(Set(placed).count == placed.count)
         #expect(Set(placed) == Set(SettingsKey.allCases.filter(\.isActive)))
+        #expect(SettingsCategory.containing(.backgroundBlur) == nil)
         #expect(SettingsCategory.containing(.transparentTitlebar) == nil)
     }
 
@@ -19,7 +20,7 @@ import Testing
             .appearance, .typography, .window, .workspace, .behavior, .notifications, .advanced,
         ])
         #expect(SettingsCategory.appearance.keys == [
-            .themeName, .backgroundHex, .backgroundOpacity, .backgroundBlur, .chromeStyle,
+            .themeName, .backgroundHex, .backgroundOpacity, .chromeStyle,
             .sidebar, .focusAccent, .attentionStyle, .attentionAccent, .alertBehavior,
         ])
         #expect(SettingsCategory.typography.keys == [.fontFamily, .fontSize, .cursorStyle])

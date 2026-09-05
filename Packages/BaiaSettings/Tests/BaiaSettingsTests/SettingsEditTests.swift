@@ -10,8 +10,8 @@ import Testing
         #expect(Set(SettingsKey.allCases.map(\.rawValue)) == SettingsDecoder.knownKeys)
     }
 
-    @Test func onlyTheRetiredTitlebarKeyIsInert() {
-        #expect(SettingsKey.allCases.filter { !$0.isActive } == [.transparentTitlebar])
+    @Test func compatibilityKeysAreNotActiveSettingsFields() {
+        #expect(SettingsKey.allCases.filter { !$0.isActive } == [.backgroundBlur, .transparentTitlebar])
     }
 
     // MARK: - Every key round-trips
