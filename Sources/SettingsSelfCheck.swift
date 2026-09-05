@@ -264,6 +264,45 @@
             try? good.write(to: store.url)
             check("an external repair clears the open banner", await waitFor { controller.banner.isHidden })
 
+            // Watch recovery: deletion moves to defaults, recreation attaches to
+            // the new inode, atomic replacement reattaches again, and the next
+            // in-place edit still arrives without reopening the app.
+            try? FileManager.default.removeItem(at: store.url)
+            check("deleting the config reaches the running app",
+                  await waitFor { center.settings == .defaultSettings })
+            try? Data(#"{"fontSize":24}"#.utf8).write(to: store.url)
+            check("recreating the config reaches the running app",
+                  await waitFor { center.settings.fontSize == 24 })
+            try? Data(#"{"fontSize":25}"#.utf8).write(to: store.url, options: .atomic)
+            check("atomic replacement reaches the running app",
+                  await waitFor { center.settings.fontSize == 25 })
+            try? Data(#"{"fontSize":26}"#.utf8).write(to: store.url)
+            check("an edit after replacement reaches the running app",
+                  await waitFor { center.settings.fontSize == 26 })
+
+            // Initial file attachment can fail even though the direct parent is
+            // watchable. Make the first-launch default write fail, then create
+            // the file after the center has fallen back to the parent watcher.
+            let absentRoot = URL(filePath: NSTemporaryDirectory(), directoryHint: .isDirectory)
+                .appending(path: "baia-settings-watch-\(UUID().uuidString)")
+            try? FileManager.default.createDirectory(at: absentRoot, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: absentRoot) }
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o500],
+                ofItemAtPath: absentRoot.path(percentEncoded: false)
+            )
+            let absentURL = absentRoot.appending(path: "config.json")
+            let absentCenter = ConfigurationCenter(store: SettingsStore(fileURL: absentURL))
+            check("the initial-absence fixture starts without a config",
+                  !FileManager.default.fileExists(atPath: absentURL.path(percentEncoded: false)))
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o700],
+                ofItemAtPath: absentRoot.path(percentEncoded: false)
+            )
+            try? Data(#"{"fontSize":27}"#.utf8).write(to: absentURL)
+            check("a config created after initial attachment failure is observed",
+                  await waitFor { absentCenter.settings.fontSize == 27 })
+
         }
 
         // MARK: - Helpers

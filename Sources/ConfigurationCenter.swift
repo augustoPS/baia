@@ -1,5 +1,6 @@
 import AppKit
 import BaiaSettings
+import Darwin
 import GhosttyTerminal
 import PaneChrome
 
@@ -216,7 +217,9 @@ final class ConfigurationCenter {
     private let panes = NSHashTable<TerminalPaneController>.weakObjects()
 
     private var watcher: DispatchSourceFileSystemObject?
+    private var watcherDirectory: DispatchSourceFileSystemObject?
     private var reloadWorkItem: DispatchWorkItem?
+    private var reloadNeedsRearm = false
 
     #if DEBUG
         private var designOverridesWatcher: DispatchSourceFileSystemObject?
@@ -569,7 +572,10 @@ final class ConfigurationCenter {
         // default would reload a file nothing here writes.
         let path = store.url.path(percentEncoded: false)
         let descriptor = open(path, O_EVTONLY)
-        guard descriptor >= 0 else { return }
+        guard descriptor >= 0 else {
+            watchDirectoryForConfig()
+            return
+        }
 
         let source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: descriptor,
@@ -579,7 +585,9 @@ final class ConfigurationCenter {
         source.setEventHandler { [weak self] in
             guard let self else { return }
             let event = source.data
-            if event.contains(.delete) || event.contains(.rename) {
+            if event.contains(.delete) || event.contains(.rename)
+                || !Self.descriptor(descriptor, stillNames: path)
+            {
                 // The path now names a different inode, or none. Re-arm against
                 // the path rather than the descriptor, after long enough for the
                 // rename to land.
@@ -591,11 +599,57 @@ final class ConfigurationCenter {
         source.setCancelHandler { close(descriptor) }
         source.resume()
         watcher = source
+        // Close the gap between `open` and source activation. An atomic
+        // replacement in that interval can leave this descriptor on the old
+        // inode without delivering an event to the newly activated source.
+        if !Self.descriptor(descriptor, stillNames: path) {
+            scheduleReload(rearm: true)
+        }
+    }
+
+    /// Watches the nearest existing ancestor until the config path can be
+    /// opened. Usually this is the direct parent after a delete. Walking upward
+    /// also covers an initially absent parent after first-launch creation failed;
+    /// each ancestor event re-arms closer to the target until the file exists.
+    private func watchDirectoryForConfig() {
+        var directory = store.url.deletingLastPathComponent()
+        var descriptor: Int32 = -1
+        while descriptor < 0 {
+            descriptor = open(directory.path(percentEncoded: false), O_EVTONLY)
+            if descriptor >= 0 { break }
+            let parent = directory.deletingLastPathComponent()
+            guard parent.path(percentEncoded: false) != directory.path(percentEncoded: false) else { return }
+            directory = parent
+        }
+
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: descriptor,
+            eventMask: [.write, .delete, .rename, .extend],
+            queue: .main
+        )
+        source.setEventHandler { [weak self] in
+            self?.scheduleReload(rearm: true)
+        }
+        source.setCancelHandler { close(descriptor) }
+        source.resume()
+        watcherDirectory = source
+
+        // If the file appeared after its failed `open` but before the directory
+        // source became active, no creation event is guaranteed. Probe once
+        // after arming and reattach immediately when it is now openable.
+        let path = store.url.path(percentEncoded: false)
+        let probe = open(path, O_EVTONLY)
+        if probe >= 0 {
+            close(probe)
+            scheduleReload(rearm: true)
+        }
     }
 
     private func stopWatching() {
         watcher?.cancel()
         watcher = nil
+        watcherDirectory?.cancel()
+        watcherDirectory = nil
     }
 
     /// Coalesces a burst of events into one reload.
@@ -605,14 +659,32 @@ final class ConfigurationCenter {
     /// per keystroke-in-an-editor, and reloading mid-write would read a
     /// half-written file and report every key in it as invalid.
     private func scheduleReload(rearm: Bool) {
+        reloadNeedsRearm = reloadNeedsRearm || rearm
         reloadWorkItem?.cancel()
         let item = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            if rearm { startWatching() }
+            let needsRearm = reloadNeedsRearm
+            reloadNeedsRearm = false
+            if needsRearm { startWatching() }
             reload()
         }
         reloadWorkItem = item
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: item)
+    }
+
+    /// Whether `descriptor` and `path` still identify one vnode. Comparing the
+    /// device and inode catches replacement even when the source reports only a
+    /// generic write event or replacement lands during watcher setup.
+    private static func descriptor(_ descriptor: Int32, stillNames path: String) -> Bool {
+        var opened = stat()
+        var current = stat()
+        let currentDescriptor = open(path, O_EVTONLY)
+        guard currentDescriptor >= 0 else { return false }
+        defer { close(currentDescriptor) }
+        guard Darwin.fstat(descriptor, &opened) == 0,
+              Darwin.fstat(currentDescriptor, &current) == 0
+        else { return false }
+        return opened.st_dev == current.st_dev && opened.st_ino == current.st_ino
     }
 
     #if DEBUG
