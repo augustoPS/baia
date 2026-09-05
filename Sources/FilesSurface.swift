@@ -389,6 +389,139 @@ final class FilesSurface: NSObject {
 /// No `NSTableView`, for the reason `PaneStatusBarView` gives and one more: a table
 /// view brings a selection that wants the keyboard, and wanting the keyboard is the
 /// one thing a view in this window must never do.
+private nonisolated struct FileTreeAccessibilityTransfer<Value>: @unchecked Sendable {
+    let value: Value
+}
+
+private nonisolated final class FileTreeAccessibilityRow: NSAccessibilityElement {
+    private weak var rowsView: FileTreeRowsView?
+    private let path: RepositoryPath
+    private let generation: Int
+
+    init(rowsView: FileTreeRowsView, path: RepositoryPath, generation: Int) {
+        self.rowsView = rowsView
+        self.path = path
+        self.generation = generation
+        super.init()
+    }
+
+    override func accessibilityRole() -> NSAccessibility.Role? { .row }
+
+    override func accessibilityParent() -> Any? { rowsView }
+
+    override func accessibilityIndex() -> Int {
+        let rowsView = rowsView
+        let path = path
+        let generation = generation
+        return MainActor.assumeIsolated {
+            rowsView?.accessibilityIndex(for: path, generation: generation) ?? NSNotFound
+        }
+    }
+
+    override func accessibilityFrame() -> NSRect {
+        let rowsView = rowsView
+        let path = path
+        let generation = generation
+        return MainActor.assumeIsolated {
+            rowsView?.accessibilityFrame(for: path, generation: generation) ?? .zero
+        }
+    }
+
+    override func accessibilityLabel() -> String? {
+        let rowsView = rowsView
+        let path = path
+        let generation = generation
+        return MainActor.assumeIsolated {
+            rowsView?.accessibilityLabel(for: path, generation: generation)
+        }
+    }
+
+    override func accessibilityValue() -> Any? {
+        let rowsView = rowsView
+        let path = path
+        let generation = generation
+        return MainActor.assumeIsolated {
+            rowsView?.accessibilityValue(for: path, generation: generation)
+        }
+    }
+
+    override func accessibilityDisclosureLevel() -> Int {
+        let rowsView = rowsView
+        let path = path
+        let generation = generation
+        return MainActor.assumeIsolated {
+            rowsView?.accessibilityDisclosureLevel(for: path, generation: generation) ?? 0
+        }
+    }
+
+    override func isAccessibilityDisclosed() -> Bool {
+        let rowsView = rowsView
+        let path = path
+        let generation = generation
+        return MainActor.assumeIsolated {
+            rowsView?.accessibilityDisclosed(for: path, generation: generation) ?? false
+        }
+    }
+
+    override func accessibilityDisclosedByRow() -> Any? {
+        let rowsView = rowsView
+        let path = path
+        let generation = generation
+        let result = MainActor.assumeIsolated {
+            FileTreeAccessibilityTransfer(
+                value: rowsView?.accessibilityDisclosedByRow(for: path, generation: generation)
+            )
+        }
+        return result.value
+    }
+
+    override func accessibilityDisclosedRows() -> Any? {
+        let rowsView = rowsView
+        let path = path
+        let generation = generation
+        let result = MainActor.assumeIsolated {
+            FileTreeAccessibilityTransfer(
+                value: rowsView?.accessibilityDisclosedRows(for: path, generation: generation)
+            )
+        }
+        return result.value
+    }
+
+    override func isAccessibilitySelected() -> Bool {
+        let rowsView = rowsView
+        let path = path
+        let generation = generation
+        return MainActor.assumeIsolated {
+            rowsView?.accessibilitySelected(for: path, generation: generation) ?? false
+        }
+    }
+
+    override func isAccessibilityEnabled() -> Bool {
+        let rowsView = rowsView
+        let path = path
+        let generation = generation
+        return MainActor.assumeIsolated {
+            rowsView?.accessibilityEnabled(for: path, generation: generation) ?? false
+        }
+    }
+
+    override func accessibilityActionNames() -> [NSAccessibility.Action] { [.press] }
+
+    override func accessibilityPerformAction(_ action: NSAccessibility.Action) {
+        guard action == .press else { return }
+        _ = accessibilityPerformPress()
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        let rowsView = rowsView
+        let path = path
+        let generation = generation
+        return MainActor.assumeIsolated {
+            rowsView?.accessibilityPress(path: path, generation: generation) ?? false
+        }
+    }
+}
+
 @MainActor
 final class FileTreeRowsView: NSView {
     var theme: PaneTheme = .darkPastel { didSet { needsDisplay = true } }
@@ -400,7 +533,16 @@ final class FileTreeRowsView: NSView {
 
     /// Where the pane is anchored, for the absent state to name. Nil while the
     /// anchor is a repository, where it is never drawn.
-    var anchorPath: String? { didSet { needsDisplay = true } }
+    var anchorPath: String? {
+        didSet {
+            guard anchorPath != oldValue else {
+                needsDisplay = true
+                return
+            }
+            replaceAccessibilityOwner()
+            needsDisplay = true
+        }
+    }
 
     /// What each path has to say for itself, files and the directories above them.
     /// Empty outside a repository and while nothing has changed.
@@ -411,7 +553,12 @@ final class FileTreeRowsView: NSView {
         }
     }
 
-    var tree: [FileTreeNode] = [] { didSet { rebuild() } }
+    var tree: [FileTreeNode] = [] {
+        didSet {
+            replaceAccessibilityOwner()
+            rebuild()
+        }
+    }
 
     /// Paths of the directories that are open.
     ///
@@ -436,17 +583,202 @@ final class FileTreeRowsView: NSView {
 
     private var rows: [FileTree.VisibleRow] = []
 
+    /// The row VoiceOver most recently activated, independent of the transient
+    /// hover/press/answer paint in ``RowFeedback``. Nothing draws from this value.
+    private var accessibilitySelectedPath: RepositoryPath?
+
+    /// Virtual rows are retained while their paths remain part of this root, so
+    /// scrolling and disclosure do not replace the object under the AX cursor.
+    /// A root or tree replacement advances the generation and clears the cache;
+    /// a retained element can therefore never act on the same relative path in a
+    /// different repository or a replacement result set.
+    private var accessibilityRowElements: [FileTreeAccessibilityRow] = []
+    private var accessibilityRowsByPath: [RepositoryPath: FileTreeAccessibilityRow] = [:]
+    private var accessibilityGeneration = 0
+
+    // MARK: - Accessibility
+
+    override func isAccessibilityElement() -> Bool { true }
+
+    override func accessibilityRole() -> NSAccessibility.Role? { .outline }
+
+    override func accessibilityLabel() -> String? { "Files" }
+
+    override func accessibilityChildren() -> [Any]? { accessibilityRowElements }
+
+    override func accessibilityRows() -> [Any]? { accessibilityRowElements }
+
+    override func accessibilityVisibleChildren() -> [Any]? {
+        guard !rows.isEmpty else { return [] }
+        let viewport = visibleRect
+        let first = max(0, Int(floor(viewport.minY / Self.rowHeight)))
+        let end = min(rows.count, Int(ceil(viewport.maxY / Self.rowHeight)))
+        guard first < end else { return [] }
+        return Array(accessibilityRowElements[first ..< end])
+    }
+
+    override func accessibilityVisibleRows() -> [Any]? { accessibilityVisibleChildren() }
+
+    override func accessibilitySelectedChildren() -> [Any]? {
+        guard let selected = accessibilitySelectedPath,
+              let row = currentAccessibilityRow(for: selected)
+        else { return [] }
+        return [row]
+    }
+
+    override func accessibilitySelectedRows() -> [Any]? { accessibilitySelectedChildren() }
+
+    fileprivate func accessibilityIndex(for path: RepositoryPath, generation: Int) -> Int {
+        currentIndex(for: path, generation: generation) ?? NSNotFound
+    }
+
+    fileprivate func accessibilityFrame(for path: RepositoryPath, generation: Int) -> NSRect {
+        guard let index = currentIndex(for: path, generation: generation) else { return .zero }
+        let local = NSRect(
+            x: 0,
+            y: Double(index) * Self.rowHeight,
+            width: bounds.width,
+            height: Self.rowHeight
+        )
+        guard let window else { return local }
+        return window.convertToScreen(convert(local, to: nil))
+    }
+
+    fileprivate func accessibilityLabel(for path: RepositoryPath, generation: Int) -> String? {
+        guard let row = currentRow(for: path, generation: generation) else { return nil }
+        return row.node.name + (row.node.isDirectory ? "/" : "")
+    }
+
+    fileprivate func accessibilityValue(for path: RepositoryPath, generation: Int) -> String? {
+        currentRow(for: path, generation: generation)?.node.path
+    }
+
+    fileprivate func accessibilityDisclosureLevel(for path: RepositoryPath, generation: Int) -> Int {
+        currentRow(for: path, generation: generation)?.depth ?? 0
+    }
+
+    fileprivate func accessibilityDisclosed(for path: RepositoryPath, generation: Int) -> Bool {
+        guard let row = currentRow(for: path, generation: generation), row.node.isDirectory else {
+            return false
+        }
+        return expanded.contains(path)
+    }
+
+    fileprivate func accessibilityDisclosedByRow(
+        for path: RepositoryPath,
+        generation: Int
+    ) -> FileTreeAccessibilityRow? {
+        guard let index = currentIndex(for: path, generation: generation) else { return nil }
+        let depth = rows[index].depth
+        guard depth > 0 else { return nil }
+        for candidate in rows[..<index].indices.reversed()
+        where rows[candidate].depth == depth - 1 {
+            return accessibilityRowElements[candidate]
+        }
+        return nil
+    }
+
+    fileprivate func accessibilityDisclosedRows(
+        for path: RepositoryPath,
+        generation: Int
+    ) -> [FileTreeAccessibilityRow]? {
+        guard let index = currentIndex(for: path, generation: generation),
+              rows[index].node.isDirectory,
+              expanded.contains(path)
+        else { return nil }
+        let childDepth = rows[index].depth + 1
+        var children: [FileTreeAccessibilityRow] = []
+        var candidate = index + 1
+        while candidate < rows.count, rows[candidate].depth > rows[index].depth {
+            if rows[candidate].depth == childDepth {
+                children.append(accessibilityRowElements[candidate])
+            }
+            candidate += 1
+        }
+        return children
+    }
+
+    fileprivate func accessibilitySelected(for path: RepositoryPath, generation: Int) -> Bool {
+        currentIndex(for: path, generation: generation) != nil && accessibilitySelectedPath == path
+    }
+
+    fileprivate func accessibilityEnabled(for path: RepositoryPath, generation: Int) -> Bool {
+        guard let row = currentRow(for: path, generation: generation) else { return false }
+        return row.node.isDirectory || onSelect != nil
+    }
+
+    fileprivate func accessibilityPress(path: RepositoryPath, generation: Int) -> Bool {
+        activate(path: path, generation: generation, feedbackAt: nil)
+    }
+
+    private func currentIndex(for path: RepositoryPath, generation: Int) -> Int? {
+        guard generation == accessibilityGeneration else { return nil }
+        return rows.firstIndex { $0.node.rawPath == path }
+    }
+
+    private func currentRow(
+        for path: RepositoryPath,
+        generation: Int
+    ) -> FileTree.VisibleRow? {
+        guard let index = currentIndex(for: path, generation: generation) else { return nil }
+        return rows[index]
+    }
+
+    private func currentAccessibilityRow(for path: RepositoryPath) -> FileTreeAccessibilityRow? {
+        guard rows.contains(where: { $0.node.rawPath == path }) else { return nil }
+        return accessibilityRowsByPath[path]
+    }
+
+    private func rebuildAccessibilityRows() {
+        accessibilityRowElements = rows.map { row in
+            if let existing = accessibilityRowsByPath[row.node.rawPath] { return existing }
+            let made = FileTreeAccessibilityRow(
+                rowsView: self,
+                path: row.node.rawPath,
+                generation: accessibilityGeneration
+            )
+            accessibilityRowsByPath[row.node.rawPath] = made
+            return made
+        }
+    }
+
+    /// Replaces the identity fence even when two repositories currently expose
+    /// equal relative paths. Root identity is not derivable from `tree`: two
+    /// repositories may legitimately have byte-for-byte equal trees.
+    private func replaceAccessibilityOwner() {
+        accessibilityGeneration &+= 1
+        accessibilityRowElements = []
+        accessibilityRowsByPath = [:]
+        rebuildAccessibilityRows()
+        if accessibilitySelectedPath != nil {
+            accessibilitySelectedPath = nil
+            NSAccessibility.post(element: self, notification: .selectedRowsChanged)
+        }
+        NSAccessibility.post(element: self, notification: .layoutChanged)
+    }
+
     private func rebuild() {
+        let oldCount = rows.count
         // A fade in flight belongs to the row that was at that index, and after a
         // rebuild that index is a different file.
         feedback.reset()
         rows = FileTree.visibleRows(of: tree, expanded: expanded)
+        rebuildAccessibilityRows()
+        if let selected = accessibilitySelectedPath,
+           !rows.contains(where: { $0.node.rawPath == selected }) {
+            accessibilitySelectedPath = nil
+            NSAccessibility.post(element: self, notification: .selectedRowsChanged)
+        }
         resize()
         // A frame that does not move marks no layout
         // pass, so the areas would stay built against the list that was there
         // before.
         updateTrackingAreas()
         needsDisplay = true
+        if rows.count != oldCount {
+            NSAccessibility.post(element: self, notification: .rowCountChanged)
+        }
+        NSAccessibility.post(element: self, notification: .layoutChanged)
     }
 
     /// **Sized on every layout pass, not only when the tree changes.**
@@ -721,7 +1053,13 @@ final class FileTreeRowsView: NSView {
         }
     }
 
-    var onSelect: ((RepositoryPath) -> Bool)?
+    var onSelect: ((RepositoryPath) -> Bool)? {
+        didSet {
+            // File rows become enabled or disabled with the production handler;
+            // directories remain enabled through their disclosure path.
+            NSAccessibility.post(element: self, notification: .layoutChanged)
+        }
+    }
 
     /// Asks for the offer to be taken, which puts `git init` on the focused
     /// pane's prompt without a newline.
@@ -767,24 +1105,81 @@ final class FileTreeRowsView: NSView {
         guard let index = feedback.pressed else { return }
         feedback.pressed = nil
         guard rows.indices.contains(index), row(at: event) == index else { return }
+        _ = activate(
+            path: rows[index].node.rawPath,
+            generation: accessibilityGeneration,
+            feedbackAt: index
+        )
+    }
+
+    /// The one production activation path for a pointer release and AXPress.
+    ///
+    /// The path and root generation are captured before a callback can replace
+    /// the tree. Nothing indexes `rows` after `onSelect` returns, so a synchronous
+    /// replacement cannot redirect selection or feedback to the row that happens
+    /// to inherit the old index.
+    @discardableResult
+    private func activate(
+        path: RepositoryPath,
+        generation: Int,
+        feedbackAt feedbackIndex: Int?
+    ) -> Bool {
+        guard let index = currentIndex(for: path, generation: generation) else { return false }
         let node = rows[index].node
 
-        // A directory answers by opening, which is answer enough: the rows below it
-        // change. Only a send has an outcome the column has to state.
-        guard node.isDirectory else {
-            // `rawPath` rather than `path`: the latter is the lossy spelling the
-            // row draws, and what is being sent here is a name rather than a label.
-            return feedback.answer(onSelect?(node.rawPath) == true ? .landed : .refused, at: index)
+        guard node.isDirectory || onSelect != nil else {
+            if let feedbackIndex {
+                feedback.answer(.refused, at: feedbackIndex)
+            }
+            return false
         }
 
-        // `rawPath` for the same reason the send above uses it: keyed on the drawn
-        // spelling, two sibling directories that draw alike shared one entry and
-        // one chevron moved both.
-        if expanded.contains(node.rawPath) {
-            expanded.remove(node.rawPath)
-        } else {
-            expanded.insert(node.rawPath)
+        selectAccessibilityRow(path, at: index)
+
+        // A directory answers by opening, which is answer enough: the rows below
+        // it change. Only a send has an outcome the column has to state.
+        if node.isDirectory {
+            let accessibilityRow = accessibilityRowsByPath[path]
+            let wasExpanded = expanded.contains(path)
+            // `rawPath` for the same reason the send below uses it: keyed on the
+            // drawn spelling, two siblings that draw alike would share one entry.
+            if wasExpanded {
+                expanded.remove(path)
+            } else {
+                expanded.insert(path)
+            }
+            if let accessibilityRow {
+                NSAccessibility.post(
+                    element: accessibilityRow,
+                    notification: wasExpanded ? .rowCollapsed : .rowExpanded
+                )
+            }
+            return true
         }
+
+        // Capture the callback before invoking it. It receives the exact bytes
+        // represented by this row, never the lossy label VoiceOver reads.
+        let selected = onSelect
+        let landed = selected?(path) == true
+        if let feedbackIndex,
+           generation == accessibilityGeneration,
+           rows.indices.contains(feedbackIndex),
+           rows[feedbackIndex].node.rawPath == path {
+            feedback.answer(landed ? .landed : .refused, at: feedbackIndex)
+        }
+        return landed
+    }
+
+    private func selectAccessibilityRow(_ path: RepositoryPath, at index: Int) {
+        guard accessibilitySelectedPath != path else { return }
+        accessibilitySelectedPath = path
+        scrollToVisible(NSRect(
+            x: 0,
+            y: Double(index) * Self.rowHeight,
+            width: bounds.width,
+            height: Self.rowHeight
+        ))
+        NSAccessibility.post(element: self, notification: .selectedRowsChanged)
     }
 
     private func row(at event: NSEvent) -> Int {
