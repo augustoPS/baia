@@ -13,8 +13,11 @@ public enum SettingsDocumentState: Sendable, Equatable {
     /// A JSON object. An ordinary write patches the requested keys and keeps
     /// every other member.
     case valid
-    /// A file that exists and cannot be read: permissions, or a directory where
-    /// the file should be.
+    /// A file that exists and cannot be read: permissions, a directory where
+    /// the file should be, or a symbolic link whose target is missing. The
+    /// dangling link is deliberately not ``missing``: an ordinary write would
+    /// either create a file the owner's link does not point at or replace the
+    /// link itself, and neither is what a dotfiles link asks for.
     case unreadable
     /// Bytes that are not JSON.
     case malformed
@@ -28,7 +31,8 @@ public enum SettingsDocumentState: Sendable, Equatable {
 /// only playing a beep (audit S5). ``message`` is the sentence to show.
 public enum SettingsWriteFailure: Error, Equatable, Sendable {
     case validation(SettingsValidationError)
-    /// The file exists and could not be read.
+    /// The file exists and could not be read, or is a link to a file that
+    /// does not exist. Nothing is written in either case.
     case read
     /// The file is not JSON.
     case malformed
@@ -36,6 +40,18 @@ public enum SettingsWriteFailure: Error, Equatable, Sendable {
     case notAnObject
     /// `~/.config/baia` could not be created.
     case directory
+    /// The stable sibling used to coordinate writers could not be opened or
+    /// locked for a reason other than contention.
+    case lock
+    /// Another cooperating process held the write lock for the bounded wait.
+    case busy
+    /// A non-cooperating writer changed the document after it was read and
+    /// before its replacement. A patch retries from the new bytes before
+    /// answering this; a repair answers it at once and keeps the backup it had
+    /// already written beside the file, since those bytes are the only copy of
+    /// what the owner had before the other writer, even though no receipt can
+    /// name it.
+    case conflict
     /// Repair only: the backup of the original bytes could not be written, so
     /// nothing else was.
     case backup
@@ -49,13 +65,19 @@ public enum SettingsWriteFailure: Error, Equatable, Sendable {
         case let .validation(error):
             error.message
         case .read:
-            "The configuration file could not be read. Check its permissions."
+            "The configuration file could not be read. Check its permissions, and that it is not a link to a missing file."
         case .malformed:
             "The configuration file is not valid JSON, so Baia will not write to it."
         case .notAnObject:
             "The configuration file is valid JSON but not an object, so Baia will not write to it."
         case .directory:
             "The configuration directory could not be created."
+        case .lock:
+            "The configuration write lock could not be opened."
+        case .busy:
+            "Another Baia process is saving the configuration. Try again."
+        case .conflict:
+            "The configuration changed while Baia was saving it. This change was not written; try again."
         case .backup:
             "The backup of the original file could not be written, so nothing was changed."
         case .temporaryWrite:
@@ -78,8 +100,25 @@ public struct SettingsRepairReceipt: Sendable, Equatable {
 public struct SettingsStore: Sendable {
     private let fileURL: URL
 
+    /// Runs after a candidate is staged and before the generation check. Nil
+    /// in every production store. Tests use it to put a non-cooperating write
+    /// into the one interval this code can observe, instead of racing a large
+    /// fixture against the scheduler.
+    private let afterStaging: (@Sendable () -> Void)?
+
     public init(fileURL: URL) {
-        self.fileURL = fileURL
+        self.init(fileURL: fileURL, afterStaging: nil)
+    }
+
+    init(fileURL: URL, afterStaging: (@Sendable () -> Void)?) {
+        // One physical config gets one lock even when two callers reached it
+        // through different symlink spellings. Operations use the same canonical
+        // target, so replacing through a symlink never turns the symlink itself
+        // into a second, independently locked config file. A link whose target
+        // is missing stays unresolved here, and ``readDocument()`` reports it as
+        // unreadable rather than missing.
+        self.fileURL = fileURL.standardizedFileURL.resolvingSymlinksInPath()
+        self.afterStaging = afterStaging
     }
 
     /// `~/.config/baia/config.json`.
@@ -185,16 +224,42 @@ public struct SettingsStore: Sendable {
             }
         }
 
+        return withExclusiveWriteLock {
+            patchRecordingPrevious(validated: validated)
+        }
+    }
+
+    /// Runs one validated read/patch/replace transaction while every
+    /// cooperating SettingsStore for this physical file is excluded.
+    private func patchRecordingPrevious(
+        validated: [SettingsEdit]
+    ) -> Result<(previous: Settings, result: SettingsDecodeResult), SettingsWriteFailure> {
+        for attempt in 1 ... 3 {
+            let outcome = patchOnce(validated: validated)
+            guard case .failure(.conflict) = outcome, attempt < 3 else { return outcome }
+        }
+        return .failure(.conflict)
+    }
+
+    /// One optimistic attempt. The advisory lock serializes Baia processes;
+    /// comparing the exact bytes again protects against editors that do not use
+    /// that lock. A caller retries a changed generation from its new contents.
+    private func patchOnce(
+        validated: [SettingsEdit]
+    ) -> Result<(previous: Settings, result: SettingsDecodeResult), SettingsWriteFailure> {
         let document: JSONValue
         let wasMissing: Bool
+        let original: Document
         switch readDocument() {
         case .missing:
             wasMissing = true
+            original = .missing
             // The literal parses by construction; `SettingsStoreTests` decodes it
             // back to the defaults on every run.
             document = JSONValue.parse(Data(Self.defaultFileContents.utf8)) ?? .object([:])
-        case let .object(existing):
+        case let .object(existing, bytes):
             wasMissing = false
+            original = .object(existing, bytes)
             document = existing
         case .unreadable:
             return .failure(.read)
@@ -220,7 +285,19 @@ public struct SettingsStore: Sendable {
             return .success((previous, SettingsDecoder.decode(Data(SettingsWriter.serialize(document).utf8))))
         }
         let bytes = Array(SettingsWriter.serialize(patched).utf8)
-        if let failure = writeAtomically(bytes) {
+        let staged: URL
+        switch stage(bytes) {
+        case let .success(url):
+            staged = url
+        case let .failure(failure):
+            return .failure(failure)
+        }
+        afterStaging?()
+        guard documentStillMatches(original) else {
+            unlink(staged.path(percentEncoded: false))
+            return .failure(.conflict)
+        }
+        if let failure = replace(with: staged) {
             return .failure(failure)
         }
         return .success((previous, SettingsDecoder.decode(Data(bytes))))
@@ -237,10 +314,30 @@ public struct SettingsStore: Sendable {
     ///
     /// A missing or unreadable file cannot be backed up and is not repaired:
     /// missing needs no repair, since ``patch(_:)`` creates it, and unreadable
-    /// is a permissions problem a new document would not fix.
+    /// is a permissions problem, or a dangling link, that a new document would
+    /// not fix.
+    ///
+    /// A repair refused with ``SettingsWriteFailure/conflict`` has already
+    /// written its backup, and leaves it. The receipt is the only thing that
+    /// names a backup, and a refused repair has no receipt, so the owner finds
+    /// that file by its `config.json.backup-` name beside the config. Deleting
+    /// it would discard the one copy of the bytes the other writer replaced.
     public func repair(
         with settings: Settings,
         at date: Date = Date()
+    ) -> Result<SettingsRepairReceipt, SettingsWriteFailure> {
+        withExclusiveWriteLock {
+            repairWhileLocked(with: settings, at: date)
+        }
+    }
+
+    /// Keeps the bytes being backed up, staged, checked, and replaced inside
+    /// the same protocol as an ordinary patch. Repair does not retry a changed
+    /// generation: its backup describes the first read, so replacing a newer
+    /// document on a later attempt would no longer be that repair.
+    private func repairWhileLocked(
+        with settings: Settings,
+        at date: Date
     ) -> Result<SettingsRepairReceipt, SettingsWriteFailure> {
         let path = fileURL.path(percentEncoded: false)
         guard FileManager.default.fileExists(atPath: path),
@@ -254,9 +351,19 @@ public struct SettingsStore: Sendable {
         }
 
         let bytes = Array(SettingsWriter.serialize(SettingsWriter.document(from: settings)).utf8)
-        if let failure = writeAtomically(bytes) {
+        let staged: URL
+        switch stage(bytes) {
+        case let .success(url):
+            staged = url
+        case let .failure(failure):
             return .failure(failure)
         }
+        afterStaging?()
+        guard FileManager.default.contents(atPath: path) == original else {
+            unlink(staged.path(percentEncoded: false))
+            return .failure(.conflict)
+        }
+        if let failure = replace(with: staged) { return .failure(failure) }
         return .success(SettingsRepairReceipt(
             backupURL: backupURL,
             result: SettingsDecoder.decode(Data(bytes))
@@ -270,49 +377,121 @@ public struct SettingsStore: Sendable {
         case unreadable
         case malformed
         case notAnObject
-        case object(JSONValue)
+        case object(JSONValue, Data)
     }
 
     private func readDocument() -> Document {
         let path = fileURL.path(percentEncoded: false)
-        guard FileManager.default.fileExists(atPath: path) else { return .missing }
+        guard FileManager.default.fileExists(atPath: path) else {
+            // `fileExists` follows links. Something at the path that it cannot
+            // see through is a link to a file that is not there, and that is
+            // unreadable, not missing: a write here would have to choose between
+            // creating the target and replacing the link, and refusing is the
+            // only choice that leaves the owner's arrangement as it was.
+            var information = stat()
+            return lstat(path, &information) == 0 ? .unreadable : .missing
+        }
         guard let data = FileManager.default.contents(atPath: path) else { return .unreadable }
         guard let parsed = JSONValue.parse(data, preservingNumbers: true) else { return .malformed }
         guard case .object = parsed else { return .notAnObject }
-        return .object(parsed)
+        return .object(parsed, data)
     }
 
     // MARK: - Writing
 
-    /// Lands `bytes` at the file's path through a sibling temporary and a
-    /// rename, answering nil on success and the step that failed otherwise.
-    private func writeAtomically(_ bytes: [UInt8]) -> SettingsWriteFailure? {
+    /// Acquires the stable sibling lock without leaving the main actor blocked
+    /// indefinitely. Fifty non-blocking attempts at 10 ms cap contention near
+    /// 500 ms; a dead process releases its advisory lock when its descriptor
+    /// closes.
+    private func withExclusiveWriteLock<Value>(
+        _ body: () -> Result<Value, SettingsWriteFailure>
+    ) -> Result<Value, SettingsWriteFailure> {
         let directory = fileURL.deletingLastPathComponent()
-        guard Self.createDirectories(directory) else { return .directory }
+        guard Self.createDirectories(directory) else { return .failure(.directory) }
+        // A case-insensitive volume accepts CONFIG.JSON and config.json as the
+        // same path while preserving whichever spelling the caller supplied.
+        // Folding only the private lock name makes those aliases cooperate; on
+        // a case-sensitive volume it merely over-serializes two unusual sibling
+        // names and never redirects either config operation.
+        let lockName = ".\(fileURL.lastPathComponent.lowercased()).lock"
+        let lockURL = directory.appending(path: lockName)
+        let descriptor = open(
+            lockURL.path(percentEncoded: false),
+            O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW,
+            0o600
+        )
+        guard descriptor >= 0 else { return .failure(.lock) }
+        defer { close(descriptor) }
 
-        // The pid is in the temporary name so two processes writing at once
-        // cannot share it. Either rename then wins whole, and neither observes
-        // the other's partial bytes.
-        let temporaryURL = directory.appending(path: ".config.json.\(getpid()).tmp")
+        var waits = 0
+        while flock(descriptor, LOCK_EX | LOCK_NB) != 0 {
+            if errno == EINTR { continue }
+            guard errno == EWOULDBLOCK else { return .failure(.lock) }
+            guard waits < 50 else { return .failure(.busy) }
+            waits += 1
+            usleep(10_000)
+        }
+        defer { _ = flock(descriptor, LOCK_UN) }
+        return body()
+    }
+
+    /// Writes a complete candidate to an exclusive sibling. A UUID is not the
+    /// exclusion mechanism: `O_EXCL` is, so even a collision cannot truncate a
+    /// stage another thread or process still owns.
+    private func stage(_ bytes: [UInt8]) -> Result<URL, SettingsWriteFailure> {
+        let directory = fileURL.deletingLastPathComponent()
+        guard Self.createDirectories(directory) else { return .failure(.directory) }
+
+        let temporaryURL = directory.appending(
+            path: ".\(fileURL.lastPathComponent).\(getpid()).\(UUID().uuidString).tmp"
+        )
         let temporaryPath = temporaryURL.path(percentEncoded: false)
 
         // 0o600 for the same reason `writeDefaultIfAbsent` asks for it: the file
         // this becomes is the config, and it should not be briefly world-readable
         // on its way there.
-        let descriptor = open(temporaryPath, O_WRONLY | O_CREAT | O_TRUNC, 0o600)
-        guard descriptor >= 0 else { return .temporaryWrite }
+        let descriptor = open(
+            temporaryPath,
+            O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
+            0o600
+        )
+        guard descriptor >= 0 else { return .failure(.temporaryWrite) }
 
         let wrote = Self.writeAll(bytes, to: descriptor)
         close(descriptor)
         guard wrote else {
             unlink(temporaryPath)
-            return .temporaryWrite
+            return .failure(.temporaryWrite)
         }
+        return .success(temporaryURL)
+    }
+
+    /// Replaces the target with one complete stage and removes the stage on
+    /// failure.
+    private func replace(with temporaryURL: URL) -> SettingsWriteFailure? {
+        let temporaryPath = temporaryURL.path(percentEncoded: false)
         guard rename(temporaryPath, fileURL.path(percentEncoded: false)) == 0 else {
             unlink(temporaryPath)
             return .rename
         }
         return nil
+    }
+
+    /// Whether the target still has the exact generation read for this attempt.
+    /// Byte equality deliberately includes whitespace and numeric spelling: a
+    /// non-cooperating owner edit is a conflict even when it decodes to the same
+    /// Settings value.
+    private func documentStillMatches(_ original: Document) -> Bool {
+        let path = fileURL.path(percentEncoded: false)
+        switch original {
+        case .missing:
+            var information = stat()
+            return lstat(path, &information) != 0 && errno == ENOENT
+        case let .object(_, bytes):
+            return FileManager.default.contents(atPath: path) == bytes
+        case .unreadable, .malformed, .notAnObject:
+            return false
+        }
     }
 
     /// Writes `bytes` to a new timestamped sibling and answers where, or nil.
@@ -364,7 +543,12 @@ public struct SettingsStore: Sendable {
         var built = ""
         for component in directory.pathComponents {
             built = component == "/" ? "/" : built + (built.hasSuffix("/") ? "" : "/") + component
-            guard mkdir(built, 0o700) == 0 || errno == EEXIST else { return false }
+            if mkdir(built, 0o700) == 0 { continue }
+            guard errno == EEXIST else { return false }
+            var isDirectory = ObjCBool(false)
+            guard FileManager.default.fileExists(atPath: built, isDirectory: &isDirectory),
+                  isDirectory.boolValue
+            else { return false }
         }
         return true
     }

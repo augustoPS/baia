@@ -1,7 +1,29 @@
+import Darwin
 import Foundation
 import Testing
 
 @testable import BaiaSettings
+
+private final class LockedBox<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Value?
+
+    init(_ value: Value? = nil) {
+        stored = value
+    }
+
+    func set(_ value: Value) {
+        lock.lock()
+        stored = value
+        lock.unlock()
+    }
+
+    func get() -> Value? {
+        lock.lock()
+        defer { lock.unlock() }
+        return stored
+    }
+}
 
 @Suite final class SettingsStoreTests {
     let fixture: DirectoryFixture
@@ -20,6 +42,48 @@ import Testing
             return Set(fields.keys)
         }
         return []
+    }
+
+    /// Every name in the fixture root, for asserting what an operation did and
+    /// did not leave beside the file.
+    private func names() throws -> Set<String> {
+        Set(try FileManager.default.contentsOfDirectory(atPath: fixture.root.path(percentEncoded: false)))
+    }
+
+    /// Holds the store's write lock for the whole of `body`, exactly as another
+    /// cooperating process would. Acquired before `body` starts, so nothing in
+    /// it can observe a moment when the lock was free.
+    private func holdingWriteLock<Value>(
+        named fileName: String = "config.json",
+        _ body: () throws -> Value
+    ) throws -> Value {
+        let lockPath = fixture.root.appending(path: ".\(fileName).lock").path(percentEncoded: false)
+        let descriptor = open(lockPath, O_RDWR | O_CREAT, 0o600)
+        try #require(descriptor >= 0)
+        defer { close(descriptor) }
+        try #require(flock(descriptor, LOCK_EX | LOCK_NB) == 0)
+        defer { _ = flock(descriptor, LOCK_UN) }
+        return try body()
+    }
+
+    /// Runs `operation` on another thread and answers its outcome and elapsed
+    /// time, or nil when it had not returned after ten seconds. That watchdog
+    /// is the upper bound on a refusal: it is wide enough that scheduling
+    /// noise cannot reach it, and an operation that never gives up on a held
+    /// lock fails here instead of hanging the suite.
+    private func awaitingOutcome<Value>(
+        _ operation: @escaping @Sendable () -> Value
+    ) -> (outcome: Value?, elapsed: TimeInterval) {
+        let box = LockedBox<Value>()
+        let group = DispatchGroup()
+        let started = Date()
+        group.enter()
+        DispatchQueue.global().async {
+            box.set(operation())
+            group.leave()
+        }
+        let finished = group.wait(timeout: .now() + 10) == .success
+        return (finished ? box.get() : nil, Date().timeIntervalSince(started))
     }
 
     @Test func theDefaultFileSitsUnderTheUsersConfigDirectory() {
@@ -216,7 +280,8 @@ import Testing
         let url = fixture.root.appending(path: "config.json")
         _ = try SettingsStore(fileURL: url).patch([.fontSize(15)]).get()
         let contents = try FileManager.default.contentsOfDirectory(atPath: fixture.root.path(percentEncoded: false))
-        #expect(contents == ["config.json"])
+        #expect(!contents.contains { $0.hasSuffix(".tmp") })
+        #expect(Set(contents) == ["config.json", ".config.json.lock"])
     }
 
     @Test func patchingTwiceWithTheSameValueProducesTheSameBytes() throws {
@@ -228,7 +293,256 @@ import Testing
         #expect(try text(url) == first)
     }
 
+    @Test func simultaneousStoreInstancesKeepBothDisjointEdits() throws {
+        // A missing cross-process lock lets both calls read the same revision,
+        // then the last rename silently discards the other successful edit.
+        let payload = String(repeating: "x", count: 2 * 1_024 * 1_024)
+        let url = try fixture.file("config.json", contents: """
+        {"fontSize":11.5,"notificationsEnabled":true,"unknownNumber":1.234567890123456789,"payload":"\(payload)"}
+        """)
+        let ready = DispatchSemaphore(value: 0)
+        let start = DispatchSemaphore(value: 0)
+        let group = DispatchGroup()
+        let outcomes = [
+            LockedBox<Result<SettingsDecodeResult, SettingsWriteFailure>>(),
+            LockedBox<Result<SettingsDecodeResult, SettingsWriteFailure>>(),
+        ]
+        let edits: [SettingsEdit] = [.fontSize(20), .notificationsEnabled(false)]
+
+        for index in edits.indices {
+            let edit = edits[index]
+            let outcome = outcomes[index]
+            group.enter()
+            DispatchQueue.global().async {
+                ready.signal()
+                start.wait()
+                outcome.set(SettingsStore(fileURL: url).patch([edit]))
+                group.leave()
+            }
+        }
+        ready.wait()
+        ready.wait()
+        start.signal()
+        start.signal()
+        #expect(group.wait(timeout: .now() + 10) == .success)
+        #expect(outcomes.allSatisfy { outcome in
+            guard case .success? = outcome.get() else { return false }
+            return true
+        })
+
+        let final = try text(url)
+        let decoded = SettingsStore(fileURL: url).load().settings
+        #expect(decoded.fontSize == 20)
+        #expect(!decoded.notificationsEnabled)
+        #expect(final.contains("1.234567890123456789"))
+    }
+
+    @Test func anExternalWriteDuringStagingIsMergedByRetryingFromTheNewBytes() throws {
+        // The non-cooperating write lands after the candidate is staged and
+        // before the generation check, through the store's own seam rather than
+        // by racing a large fixture. The first attempt must notice, and the
+        // retry must read the new bytes and land on them.
+        let url = try fixture.file("config.json", contents: #"{"fontSize":11.5,"externalKey":"before"}"#)
+        let external = #"{"fontSize":11.5,"externalKey":"after","unknownNumber":1.234567890123456789}"#
+        let attempts = LockedBox<Int>(0)
+        let store = SettingsStore(fileURL: url, afterStaging: {
+            let count = (attempts.get() ?? 0) + 1
+            attempts.set(count)
+            if count == 1 { try? Data(external.utf8).write(to: url) }
+        })
+
+        let result = try store.patch([.fontSize(20)]).get()
+
+        #expect(attempts.get() == 2)
+        #expect(result.settings.fontSize == 20)
+        let final = try text(url)
+        #expect(final.contains(#""externalKey": "after""#))
+        #expect(final.contains("1.234567890123456789"))
+        #expect(try names() == ["config.json", ".config.json.lock"])
+    }
+
+    @Test func aWriterThatKeepsChangingTheFileIsRefusedAfterThreeAttempts() throws {
+        // Every attempt finds a newer generation. The store stops after three,
+        // answers `.conflict`, leaves the other writer's last document in place
+        // and removes every stage it made.
+        let url = try fixture.file("config.json", contents: #"{"fontSize":11.5}"#)
+        let attempts = LockedBox<Int>(0)
+        let store = SettingsStore(fileURL: url, afterStaging: {
+            let count = (attempts.get() ?? 0) + 1
+            attempts.set(count)
+            try? Data(#"{"fontSize":11.5,"revision":\#(count)}"#.utf8).write(to: url)
+        })
+
+        #expect(store.patch([.fontSize(20)]) == .failure(.conflict))
+        #expect(attempts.get() == 3)
+        #expect(try text(url) == #"{"fontSize":11.5,"revision":3}"#)
+        #expect(try names() == ["config.json", ".config.json.lock"])
+    }
+
+    @Test func patchingReportsALockFileItCannotOpen() throws {
+        let url = try fixture.file("config.json", contents: "{}")
+        let lockURL = fixture.root.appending(path: ".config.json.lock")
+        try FileManager.default.createDirectory(at: lockURL, withIntermediateDirectories: true)
+        #expect(SettingsStore(fileURL: url).patch([.fontSize(20)]) == .failure(.lock))
+    }
+
+    @Test func patchingRefusesBoundedLockContention() throws {
+        let url = try fixture.file("config.json", contents: "{}")
+        let (outcome, elapsed) = try holdingWriteLock {
+            awaitingOutcome { SettingsStore(fileURL: url).patch([.fontSize(20)]) }
+        }
+
+        // The lock was held for the whole call, so the only way out was to stop
+        // waiting. Fifty 10 ms polls take at least half a second by `usleep`'s
+        // contract, which is the lower bound; the watchdog in `awaitingOutcome`
+        // is the upper one. No assertion sits close enough to either for
+        // scheduling noise to reach it.
+        #expect(outcome == .failure(.busy))
+        #expect(elapsed >= 0.4)
+        #expect(try text(url) == "{}")
+        #expect(try names() == ["config.json", ".config.json.lock"])
+
+        // Released, the same call lands: the refusal was the lock and nothing else.
+        _ = try SettingsStore(fileURL: url).patch([.fontSize(20)]).get()
+        #expect(SettingsStore(fileURL: url).load().settings.fontSize == 20)
+    }
+
+    @Test func canonicalFileAliasesContendOnOneLock() throws {
+        let realURL = try fixture.file("config.json", contents: "{}")
+        let aliasURL = fixture.root.appending(path: "alias.json")
+        try FileManager.default.createSymbolicLink(at: aliasURL, withDestinationURL: realURL)
+
+        let store = SettingsStore(fileURL: aliasURL)
+        #expect(store.url == realURL)
+        let (outcome, _) = try holdingWriteLock {
+            awaitingOutcome { store.patch([.fontSize(20)]) }
+        }
+        #expect(outcome == .failure(.busy))
+        #expect(try text(realURL) == "{}")
+    }
+
+    @Test func relativeAndCaseAliasesUseTheCanonicalLockIdentity() throws {
+        let realURL = try fixture.file("config.json", contents: "{}")
+        let relativeURL = fixture.root.appending(path: "nested/../config.json")
+        #expect(SettingsStore(fileURL: relativeURL).url == realURL)
+
+        let caseAlias = fixture.root.appending(path: "CONFIG.JSON")
+        let (outcome, _) = try holdingWriteLock {
+            awaitingOutcome { SettingsStore(fileURL: caseAlias).patch([.fontSize(20)]) }
+        }
+        #expect(outcome == .failure(.busy))
+        #expect(try text(realURL) == "{}")
+    }
+
+    @Test func aStaleLegacyTemporaryIsNeverReusedOrRemoved() throws {
+        let url = try fixture.file("config.json", contents: "{}")
+        let stale = fixture.root.appending(path: ".config.json.\(getpid()).tmp")
+        try "belongs to an interrupted writer".write(to: stale, atomically: false, encoding: .utf8)
+
+        _ = try SettingsStore(fileURL: url).patch([.fontSize(20)]).get()
+
+        #expect(try text(stale) == "belongs to an interrupted writer")
+        #expect(SettingsStore(fileURL: url).load().settings.fontSize == 20)
+    }
+
+    @Test func aDanglingConfigLinkIsUnreadableAndIsLeftExactlyAsFound() throws {
+        // A dotfiles link whose target has gone. Treating it as missing would
+        // make every write a false `.conflict` (the generation check sees the
+        // link where it expects nothing), and creating the target or replacing
+        // the link would each decide something for the owner. It is unreadable,
+        // every writer refuses, and the link is left alone.
+        let target = fixture.root.appending(path: "dotfiles/config.json").path(percentEncoded: false)
+        let link = fixture.root.appending(path: "config.json")
+        try FileManager.default.createSymbolicLink(atPath: link.path(percentEncoded: false), withDestinationPath: target)
+        let store = SettingsStore(fileURL: link)
+
+        #expect(store.inspect() == .unreadable)
+        #expect(store.load().settings == .defaultSettings)
+        #expect(store.writeDefaultIfAbsent() == false)
+        #expect(store.patch([.fontSize(20)]) == .failure(.read))
+        #expect(store.repair(with: .defaultSettings) == .failure(.read))
+
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: link.path(percentEncoded: false)) == target)
+        #expect(!FileManager.default.fileExists(atPath: target))
+        #expect(try names() == ["config.json", ".config.json.lock"])
+    }
+
     // MARK: - Repair
+
+    @Test func repairUsesTheSameBoundedWriteLockAsPatch() throws {
+        let url = try fixture.file("config.json", contents: "broken")
+        let (outcome, elapsed) = try holdingWriteLock {
+            awaitingOutcome { SettingsStore(fileURL: url).repair(with: .defaultSettings) }
+        }
+
+        // Same bounds as the patch case: the lock never let go, so the refusal
+        // came from the store giving up, no earlier than its polls allow and
+        // well inside the watchdog. Nothing was backed up, staged or replaced.
+        #expect(outcome == .failure(.busy))
+        #expect(elapsed >= 0.4)
+        #expect(try text(url) == "broken")
+        #expect(try names() == ["config.json", ".config.json.lock"])
+
+        // Released, the same repair lands.
+        let receipt = try SettingsStore(fileURL: url).repair(with: .defaultSettings).get()
+        #expect(try text(receipt.backupURL) == "broken")
+        #expect(SettingsStore(fileURL: url).inspect() == .valid)
+    }
+
+    @Test func repairRefusesAnExternalEditThatDoesNotMatchItsBackupAndKeepsTheBackup() throws {
+        let original = #"{"projectRoots":["~/precious"], broken"#
+        let url = try fixture.file("config.json", contents: original)
+        let external = #"{"fontSize":31,"externalKey":"newer"}"#
+        let store = SettingsStore(fileURL: url, afterStaging: {
+            try? Data(external.utf8).write(to: url)
+        })
+
+        #expect(store.repair(with: .defaultSettings) == .failure(.conflict))
+        #expect(try text(url) == external)
+
+        // The backup was written before the check and stays: it is the only
+        // copy of the bytes the other writer replaced. A refused repair has no
+        // receipt to name it, so it is found by its name beside the config.
+        // The stage is gone.
+        let backups = try names().filter { $0.hasPrefix("config.json.backup-") }
+        #expect(backups.count == 1)
+        for name in backups {
+            #expect(try text(fixture.root.appending(path: name)) == original)
+        }
+        #expect(try names().subtracting(backups) == ["config.json", ".config.json.lock"])
+    }
+
+    @Test func aPatchArrivingWhileRepairHoldsTheLockLandsOnTheRepairedDocument() throws {
+        let url = try fixture.file("config.json", contents: #"{"fontSize":11.5,"themeName":"Before"}"#)
+        var replacement = Settings.defaultSettings
+        replacement.themeName = "Repaired"
+        let repaired = replacement
+        let patchOutcome = LockedBox<Result<SettingsDecodeResult, SettingsWriteFailure>>()
+        let patchFinished = DispatchGroup()
+        patchFinished.enter()
+
+        // The patch starts while repair holds the lock with its candidate
+        // already staged, so it cannot run first: it waits on the lock, or at
+        // worst arrives just after the release. Either way the repaired
+        // document must end up carrying the patch, which is only possible if
+        // the patch read the repaired bytes.
+        let store = SettingsStore(fileURL: url, afterStaging: {
+            DispatchQueue.global().async {
+                patchOutcome.set(SettingsStore(fileURL: url).patch([.fontSize(20)]))
+                patchFinished.leave()
+            }
+        })
+        let receipt = try store.repair(with: repaired).get()
+        #expect(receipt.result.settings.themeName == "Repaired")
+        #expect(patchFinished.wait(timeout: .now() + 10) == .success)
+
+        if case let .failure(failure)? = patchOutcome.get() {
+            Issue.record("the patch did not land: \(failure)")
+        }
+        let final = SettingsStore(fileURL: url).load().settings
+        #expect(final.themeName == "Repaired")
+        #expect(final.fontSize == 20)
+    }
 
     @Test func repairBacksUpTheOriginalBytesBeforeWritingAReplacement() throws {
         let original = #"{"projectRoots":["~/precious"], broken"#
@@ -271,9 +585,12 @@ import Testing
 
     @Test func repairAbortsWhenTheBackupCannotBeWritten() throws {
         // The directory is made read-only after the file exists, so the original
-        // can be read and the sibling cannot be created. Nothing is replaced.
+        // and its already-created write lock can be opened, but the backup
+        // sibling cannot be created. Nothing is replaced.
         let url = try fixture.file("locked/config.json", contents: "broken")
         let directory = url.deletingLastPathComponent().path(percentEncoded: false)
+        let lockURL = url.deletingLastPathComponent().appending(path: ".config.json.lock")
+        #expect(FileManager.default.createFile(atPath: lockURL.path(percentEncoded: false), contents: Data()))
         try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory)
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory) }
 
@@ -292,7 +609,8 @@ import Testing
     @Test func everyFailureHasAMessage() {
         let failures: [SettingsWriteFailure] = [
             .validation(SettingsValidationError(key: .fontSize, message: "x")),
-            .read, .malformed, .notAnObject, .directory, .backup, .temporaryWrite, .rename,
+            .read, .malformed, .notAnObject, .directory, .lock, .busy, .conflict,
+            .backup, .temporaryWrite, .rename,
         ]
         for failure in failures {
             #expect(!failure.message.isEmpty)
