@@ -26,6 +26,10 @@ import Testing
         (try? String(contentsOf: url, encoding: .utf8)) ?? ""
     }
 
+    private func readData(_ url: URL) -> Data {
+        (try? Data(contentsOf: url)) ?? Data()
+    }
+
     // MARK: Installing
 
     @Test func installingOnAMachineWithNoSettingsFileStillWorks() {
@@ -98,14 +102,113 @@ import Testing
         #expect(FileManager.default.fileExists(atPath: layout.script.path) == false)
     }
 
+    @Test func settingsWithInvalidUTF8AreRefusedAndLeftAlone() throws {
+        let layout = HookInstaller.Layout.standard(home: makeHome())
+        let broken = Data([0x7b, 0xff, 0x7d])
+        try FileManager.default.createDirectory(
+            at: layout.settings.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        try broken.write(to: layout.settings)
+
+        guard case let .refused(reason) = HookInstaller.install(layout) else {
+            Issue.record("invalid UTF-8 settings were accepted")
+            return
+        }
+        #expect(reason.contains("could not be read as UTF-8"))
+        #expect(readData(layout.settings) == broken)
+        #expect(FileManager.default.fileExists(atPath: layout.script.path) == false)
+    }
+
+    @Test func danglingSettingsSymlinkIsRefusedAndPreserved() throws {
+        let layout = HookInstaller.Layout.standard(home: makeHome())
+        try FileManager.default.createDirectory(
+            at: layout.settings.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        let destination = "missing-settings.json"
+        try FileManager.default.createSymbolicLink(atPath: layout.settings.path, withDestinationPath: destination)
+
+        guard case let .refused(reason) = HookInstaller.install(layout) else {
+            Issue.record("a dangling settings symlink was treated as an absent file")
+            return
+        }
+        #expect(reason.contains("could not be read as UTF-8"))
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: layout.settings.path) == destination)
+        #expect(FileManager.default.fileExists(atPath: layout.script.path) == false)
+        #expect(FileManager.default.fileExists(
+            atPath: layout.settings.appendingPathExtension("baia-backup").path
+        ) == false)
+    }
+
+    @Test func settingsBehindAnInaccessibleParentAreRefusedBeforeMutation() throws {
+        let layout = HookInstaller.Layout.standard(home: makeHome())
+        let claude = layout.settings.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: claude, withIntermediateDirectories: true)
+        try "{}".write(to: layout.settings, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: claude.path)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: claude.path)
+        }
+
+        guard case .refused = HookInstaller.install(layout) else {
+            Issue.record("an indeterminate settings path was treated as absent")
+            return
+        }
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: claude.path)
+        #expect(read(layout.settings) == "{}")
+        #expect(FileManager.default.fileExists(atPath: layout.script.path) == false)
+    }
+
+    @Test func unreadableExistingSettingsAreRefusedAndLeftAlone() throws {
+        let layout = HookInstaller.Layout.standard(home: makeHome())
+        let original = Data("{\"theme\":\"dark\"}".utf8)
+        try FileManager.default.createDirectory(
+            at: layout.settings.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        try original.write(to: layout.settings)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: layout.settings.path)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: layout.settings.path)
+        }
+
+        guard case let .refused(reason) = HookInstaller.install(layout) else {
+            Issue.record("unreadable settings were accepted")
+            return
+        }
+        #expect(reason.contains("could not be read as UTF-8"))
+        #expect(FileManager.default.fileExists(atPath: layout.script.path) == false)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: layout.settings.path)
+        #expect(readData(layout.settings) == original)
+    }
+
     @Test func aHooksSectionInAStrangeShapeIsRefused() {
         let layout = HookInstaller.Layout.standard(home: makeHome())
-        write("{\n  \"hooks\": \"surprise\"\n}", to: layout.settings)
+        let original = "{\n  \"hooks\": \"surprise\"\n}"
+        write(original, to: layout.settings)
         guard case let .refused(reason) = HookInstaller.install(layout) else {
             Issue.record("a strange hooks section was accepted")
             return
         }
         #expect(reason.contains("does not understand"))
+        #expect(read(layout.settings) == original)
+        #expect(FileManager.default.fileExists(atPath: layout.script.path) == false)
+    }
+
+    @Test func exhaustedBackupNamesRefuseReplacementAndReportTheScriptChange() {
+        let layout = HookInstaller.Layout.standard(home: makeHome())
+        write(HookInstallTests.foreign, to: layout.settings)
+        for suffix in ["baia-backup"] + (2 ... 99).map({ "baia-backup-\($0)" }) {
+            write("occupied", to: layout.settings.appendingPathExtension(suffix))
+        }
+
+        guard case let .refused(reason) = HookInstaller.install(layout) else {
+            Issue.record("settings were replaced without a fresh backup")
+            return
+        }
+        #expect(reason.contains("could not back up"))
+        #expect(reason.contains("wrote \(layout.script.path)"))
+        #expect(reason.contains("Nothing was changed") == false)
+        #expect(read(layout.settings) == HookInstallTests.foreign)
+        #expect(FileManager.default.fileExists(atPath: layout.script.path))
     }
 
     // MARK: The registration

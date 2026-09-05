@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 /// Putting the hook on disk and into `settings.json`, and taking it off again.
 ///
@@ -95,7 +96,15 @@ public enum HookInstaller {
     public static func install(_ layout: Layout, version: Int = ManagedHeader.currentVersion) -> Outcome {
         var notes: [String] = []
 
-        guard let document = readSettings(layout.settings) else {
+        let document: JSON
+        switch readSettings(layout.settings) {
+        case let .document(value):
+            document = value
+        case .unreadable:
+            return .refused(
+                "\(layout.settings.path) exists but could not be read as UTF-8. Nothing was changed."
+            )
+        case .invalidJSON:
             return .refused(
                 "\(layout.settings.path) is not valid JSON. Nothing was changed: a hand edit is "
                     + "worth more than this install, and repairing it is not baia's to attempt."
@@ -125,11 +134,11 @@ public enum HookInstaller {
             return notes.isEmpty ? .unchanged : .changed(notes)
         }
         guard let backup = backUp(layout.settings) else {
-            return .refused("could not back up \(layout.settings.path). Nothing was changed.")
+            return refused("could not back up \(layout.settings.path)", after: notes)
         }
         notes += backup
         guard writeAtomically(installed.serialized() + "\n", to: layout.settings) else {
-            return .refused("could not write \(layout.settings.path). Nothing was changed.")
+            return refused("could not write \(layout.settings.path)", after: notes)
         }
         for entry in entries(scriptPath: layout.script.path) {
             notes.append("hooked \(entry.event)\(entry.matcher.map { " on \($0)" } ?? "")")
@@ -140,7 +149,15 @@ public enum HookInstaller {
     // MARK: Uninstalling
 
     public static func uninstall(_ layout: Layout) -> Outcome {
-        guard let document = readSettings(layout.settings) else {
+        let document: JSON
+        switch readSettings(layout.settings) {
+        case let .document(value):
+            document = value
+        case .unreadable:
+            return .refused(
+                "\(layout.settings.path) exists but could not be read as UTF-8. Nothing was changed."
+            )
+        case .invalidJSON:
             return .refused("\(layout.settings.path) is not valid JSON. Nothing was changed.")
         }
         guard let stripped = HookDocument.uninstall(ownedBy: layout.script.path, from: document) else {
@@ -182,14 +199,56 @@ public enum HookInstaller {
 
     /// An absent settings file is an empty document rather than a refusal: a
     /// machine that has never written one is a machine baia can still install on.
-    static func readSettings(_ url: URL) -> JSON? {
-        guard let text = try? String(contentsOf: url, encoding: .utf8) else {
-            return .object(JSONObject())
+    enum SettingsRead {
+        case document(JSON)
+        case unreadable
+        case invalidJSON
+    }
+
+    enum PathStatus {
+        case absent
+        case present
+        case indeterminate
+    }
+
+    /// `fileExists` follows symbolic links, so it calls a dangling link absent.
+    /// Installation must instead distinguish a genuinely missing directory entry
+    /// from every path it cannot safely read or classify.
+    static func pathStatus(_ url: URL) -> PathStatus {
+        var metadata = stat()
+        let lookup: (result: Int32, error: Int32) = url.withUnsafeFileSystemRepresentation { path in
+            guard let path else { return (Int32(-1), EINVAL) }
+            let result = Darwin.lstat(path, &metadata)
+            return (result, result == 0 ? 0 : errno)
+        }
+        if lookup.result == 0 { return .present }
+        return lookup.error == ENOENT ? .absent : .indeterminate
+    }
+
+    static func readSettings(_ url: URL) -> SettingsRead {
+        switch pathStatus(url) {
+        case .absent:
+            return .document(.object(JSONObject()))
+        case .present:
+            break
+        case .indeterminate:
+            return .unreadable
+        }
+        guard let data = try? Data(contentsOf: url), let text = String(data: data, encoding: .utf8) else {
+            return .unreadable
         }
         guard text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
-            return .object(JSONObject())
+            return .document(.object(JSONObject()))
         }
-        return JSON.parse(text)
+        guard let document = JSON.parse(text) else { return .invalidJSON }
+        return .document(document)
+    }
+
+    static func refused(_ reason: String, after notes: [String]) -> Outcome {
+        if notes.isEmpty {
+            return .refused("\(reason). Nothing was changed.")
+        }
+        return .refused("\(reason). Already changed: \(notes.joined(separator: "; ")).")
     }
 
     static func writeScript(_ layout: Layout, version: Int) -> Outcome {
@@ -220,14 +279,18 @@ public enum HookInstaller {
     /// can be found. Later runs write `.baia-backup-2` and so on, so the oldest
     /// copy, which is the one from before baia touched anything, always survives.
     static func backUp(_ url: URL) -> [String]? {
-        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
+        switch pathStatus(url) {
+        case .absent: return []
+        case .present: break
+        case .indeterminate: return nil
+        }
         var backup = url.appendingPathExtension("baia-backup")
         var suffix = 2
         while FileManager.default.fileExists(atPath: backup.path) {
             backup = url.appendingPathExtension("baia-backup-\(suffix)")
             suffix += 1
             guard suffix < 100 else {
-                return ["kept \(url.lastPathComponent) backups already on disk and made no more"]
+                return nil
             }
         }
         do {
