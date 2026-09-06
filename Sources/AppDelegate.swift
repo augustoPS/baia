@@ -245,6 +245,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// itself is in ``SessionFlush``, where a test can reach it.
     private var flush = SessionFlush()
 
+    /// Refuses every save while the launch-time restore is still reading the
+    /// file it would overwrite. The rule is in ``SessionRestoreGate``.
+    private var restoreGate = SessionRestoreGate()
+
+    /// The filesystem lane the restore's directory checks and anchor walks run
+    /// on. Held here because the task's operation captures it weakly: a task
+    /// that is let go never calls back, and a restore that never calls back
+    /// never opens a window.
+    private var restoreTask: LatestFilesystemTask<SessionSnapshot, SessionSnapshot>?
+
     func applicationDidFinishLaunching(_: Notification) {
         MainMenu.install(into: NSApp)
         PaneAnchorTracker.removeLegacyPin()
@@ -263,20 +273,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // below has to be told where to talk while it is being built.
         startControlChannel()
 
+        // Opens the windows now, or begins a restore that opens them when the
+        // filesystem answers. Either way `settleLaunch()` runs once they exist.
         restoreSession()
         NSApp.activate(ignoringOtherApps: true)
         #if DEBUG
             openDesignPanelIfRequested()
-            SettingsSelfCheck.runIfRequested(in: self)
-            SessionSelfCheck.runIfRequested(in: self)
-            WindowGroupSelfCheck.runIfRequested(in: self)
         #endif
-        scheduleSave()
         installKeyMonitor()
         // Warmed here so the first ⌘K of a session opens on a full list rather
         // than on an empty one that fills in a moment later.
         discoverProjects()
         noticeOutdatedHook()
+    }
+
+    /// What waits for the workspace to exist: the autosave arm, and the Debug
+    /// drivers that act on windows. Once per launch, from whichever branch of
+    /// `restoreSession` produced the windows, so a driver written when restore
+    /// was synchronous still finds the restored session on screen.
+    private func settleLaunch() {
+        #if DEBUG
+            SettingsSelfCheck.runIfRequested(in: self)
+            SessionSelfCheck.runIfRequested(in: self)
+            WindowGroupSelfCheck.runIfRequested(in: self)
+        #endif
+        scheduleSave()
     }
 
     /// One line on stderr when an installed agent hook is older than this build.
@@ -358,6 +379,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
         saveTimer?.invalidate()
         saveTimer = nil
+        // A quit while the restore is still reading the file. Nothing on screen
+        // is the saved session, so nothing is written, and the result that lands
+        // after this is discarded rather than applied over a closing app.
+        // `isTerminating` is what keeps the file closed from here on, since
+        // `cancel()` reopens the gate; both are set so neither is relied on alone.
+        if restoreGate.isPending {
+            isTerminating = true
+            restoreGate.cancel()
+            return .terminateNow
+        }
         while true {
             guard let result = save(presentFailure: false) else { return .terminateNow }
             switch result {
@@ -588,7 +619,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // termination arrives after that. A change made in the final second is
             // scheduled, coalesced, and then flushed against an empty workspace,
             // so this is where it has to be caught.
-            if windows.count == 1 {
+            //
+            // Not while a restore is pending: the only window then is one the
+            // owner opened while waiting, and holding it would let the flush
+            // write it over the saved session once the gate reopens.
+            if windows.count == 1, restoreGate.allowsSave {
                 flush.hold(snapshot())
             }
             // Before the reference goes, because the tree is the only thing that
@@ -1333,6 +1368,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @discardableResult
     private func save(presentFailure: Bool = true) -> SessionSaveResult? {
         guard !isTerminating else { return nil }
+        // Nil while the restore is pending: the windows on screen, if any, are
+        // not the session on disk, and the file is the restore's source.
+        guard restoreGate.allowsSave else { return nil }
         // Nil for "no window left to snapshot", which is the case ``SessionFlush``
         // answers: it hands back what the last window held on its way out, once,
         // and nil after that so an empty workspace still cannot overwrite a good
@@ -1610,44 +1648,116 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func restoreSession() {
         // Inspect even when restoration is disabled. The preference controls what
         // opens, while source health controls whether autosave may replace it.
+        // The read stays here: the file is in Application Support, local by
+        // construction, and a rejected source has to block saves before anything
+        // else can arm one.
         let load = sessionStore.inspect()
         if case let .rejected(rejection) = load {
             pendingSessionRejection = rejection
             openFresh()
             presentSessionRecovery(for: rejection)
+            settleLaunch()
             return
         }
         // Opt out entirely rather than restoring and discarding. Someone who
         // turns this off wants a clean window, not the old one rebuilt and
         // thrown away, which would spawn every recorded shell on the way past.
-        guard configuration.settings.restoreSession else { return openFresh() }
-        guard case let .loaded(snapshot) = load else { return openFresh() }
-        let resolver = AnchorResolver()
-        let (reconciled, _) = SessionStore.reconciled(
-            snapshot,
-            directoryExists: { path in
-                var isDirectory: ObjCBool = false
-                let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
-                return exists && isDirectory.boolValue
-            },
-            // The same resolver, asked the same question, as the one that points
-            // the sidebar in `refreshSidebar(of:)`, and the same
-            // `url.path(percentEncoded:)` spelling of the answer. That is not a
-            // coincidence to be tidied away later: the expansions are keyed by
-            // whatever string that call produces, so anything else here prunes
-            // against keys the surface never writes and silently empties the map.
-            resolveAnchor: { pane in
-                resolver.resolve(
-                    workingDirectory: pane.workingDirectory.map {
-                        URL(filePath: $0, directoryHint: .isDirectory)
-                    },
-                    pin: pane.pinnedDirectory.map {
-                        URL(filePath: $0, directoryHint: .isDirectory)
-                    }
-                ).anchor?.url.path(percentEncoded: false)
+        guard configuration.settings.restoreSession, case let .loaded(snapshot) = load else {
+            openFresh()
+            settleLaunch()
+            return
+        }
+
+        // Reconciliation stats every recorded directory and walks up from every
+        // surviving pane looking for a repository root. Those are the calls that
+        // stall on a slow volume, and until 2026-09-06 they ran here, on the main
+        // thread, before the first window existed: a stalled mount was an app
+        // that never came up and could not be quit. They now run on the shared
+        // filesystem lane, the one that already carries listings and anchoring,
+        // and the main thread stays live for activation, menus, the control
+        // socket and quit.
+        //
+        // Nothing opens in the meantime. A placeholder window would spawn a
+        // shell only to be replaced, and the gate refuses every save until the
+        // result is applied, so whatever the owner opens while waiting cannot be
+        // written over the file the restore is still reading.
+        let generation = restoreGate.begin()
+        let task = Self.makeRestoreTask()
+        restoreTask = task
+        #if DEBUG
+            RestoreSelfCheck.runIfRequested(in: self)
+        #endif
+        task.submit(snapshot) { [weak self] reconciled in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    self?.applyRestoredSession(reconciled, generation: generation)
+                }
             }
-        )
-        guard !reconciled.groups.isEmpty else { return openFresh() }
+        }
+    }
+
+    /// The filesystem half of the restore, as one lane task.
+    ///
+    /// Static, and capturing only values: the operation runs on the executor's
+    /// thread and must not reach back into the delegate.
+    private static func makeRestoreTask() -> LatestFilesystemTask<SessionSnapshot, SessionSnapshot> {
+        let resolver = AnchorResolver()
+        #if DEBUG
+            let stall = RestoreSelfCheck.stallFile
+        #endif
+        return LatestFilesystemTask { snapshot in
+            SessionStore.reconciled(
+                snapshot,
+                directoryExists: { path in
+                    #if DEBUG
+                        RestoreSelfCheck.holdUntilReleased(stall)
+                    #endif
+                    var isDirectory: ObjCBool = false
+                    let exists = FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
+                    return exists && isDirectory.boolValue
+                },
+                // The same resolver, asked the same question, as the one that
+                // points the sidebar in `refreshSidebar(of:)`, and the same
+                // `url.path(percentEncoded:)` spelling of the answer. That is
+                // not a coincidence to be tidied away later: the expansions are
+                // keyed by whatever string that call produces, so anything else
+                // here prunes against keys the surface never writes and silently
+                // empties the map.
+                resolveAnchor: { pane in
+                    resolver.resolve(
+                        workingDirectory: pane.workingDirectory.map {
+                            URL(filePath: $0, directoryHint: .isDirectory)
+                        },
+                        pin: pane.pinnedDirectory.map {
+                            URL(filePath: $0, directoryHint: .isDirectory)
+                        }
+                    ).anchor?.url.path(percentEncoded: false)
+                }
+            ).snapshot
+        }
+    }
+
+    /// Opens what the reconciled snapshot describes, once, and only if it is the
+    /// restore still expected.
+    ///
+    /// Windows the owner opened while the restore was pending stay. The saved
+    /// groups open beside them, detached as they always are, and the keyboard is
+    /// left where it was rather than moved to the restored active group: the
+    /// owner is typing somewhere, and a restore that lands late must not pull
+    /// the keys out from under that. An empty result opens nothing extra when a
+    /// window already exists, because the fresh pane exists to give the owner
+    /// something to type in and they already have one.
+    private func applyRestoredSession(
+        _ reconciled: SessionSnapshot,
+        generation: SessionRestoreGate.Generation
+    ) {
+        guard restoreGate.complete(generation), !isTerminating else { return }
+        defer { settleLaunch() }
+        let previouslyKey = windows.first { $0.window.isKeyWindow }
+        guard !reconciled.groups.isEmpty else {
+            if windows.isEmpty { openFresh() }
+            return
+        }
 
         // One AppKit tab group per recorded group, and **no window joins a group it
         // does not belong to**. This is the restore half of R05: every window used
@@ -1738,17 +1848,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // The keyboard goes to the group that had it, resolved through `active` so a
         // group that reconciliation dropped falls back to the first one rather than
-        // leaving every window in the background.
-        if let active = reconciled.active,
-           let restored = restoredGroups.first(where: { $0.group.id == active.id }),
-           let selected = restored.windows.first(where: {
-               $0.tree.restorable?.tab.id == active.selectedTab
-           }) ?? restored.windows.first {
+        // leaving every window in the background. Unless the owner already had a
+        // window and the keys in it: a late restore opens beside that, not over it.
+        if let previouslyKey {
+            previouslyKey.window.makeKeyAndOrderFront(nil)
+            previouslyKey.tree.focusedPane?.takeFocus()
+        } else if let active = reconciled.active,
+                  let restored = restoredGroups.first(where: { $0.group.id == active.id }),
+                  let selected = restored.windows.first(where: {
+                      $0.tree.restorable?.tab.id == active.selectedTab
+                  }) ?? restored.windows.first {
             selected.window.makeKeyAndOrderFront(nil)
             selected.tree.focusedPane?.takeFocus()
         }
         updateWindowTitles()
     }
+
+    #if DEBUG
+        /// Read by `RestoreSelfCheck`, which measures the pending state from the
+        /// main thread and the file the restore is reading from.
+        var isRestorePending: Bool { restoreGate.isPending }
+        var sessionFileURL: URL { SessionStore.defaultFileURL(directoryName: SupportDirectory.name) }
+    #endif
 
     /// Opens one window per snapshot, joined into a group of their own.
     ///
