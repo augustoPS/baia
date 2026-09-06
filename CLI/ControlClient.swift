@@ -170,7 +170,7 @@ struct ControlClient {
     }
 
     /// Reads until the first newline, the cap, or the end.
-    private static func readOneLine(from descriptor: Int32) -> ExchangeOutcome {
+    static func readOneLine(from descriptor: Int32) -> ExchangeOutcome {
         var received = Data()
         var chunk = [UInt8](repeating: 0, count: 16 * 1024)
 
@@ -201,11 +201,20 @@ struct ControlClient {
 
             if let end = received.firstIndex(of: UInt8(0x0A)) {
                 let line = received[received.startIndex ... end]
-                guard let response = ControlWire.decodeResponse(Data(line)) else {
-                    return .broken(
-                        "baia answered something this build cannot read, which means this helper "
-                            + "was copied out of a different build of the app"
-                    )
+                let data = Data(line)
+                guard let response = ControlWire.decodeResponse(data) else {
+                    switch ControlWire.classifyUndecodableResponse(data) {
+                    case let .unsupportedVersion(received):
+                        return .broken(
+                            "baia answered protocol version \(received); this helper speaks "
+                                + "version \(ControlWire.version)"
+                        )
+                    case .invalidFrame:
+                        return .broken(
+                            "baia answered an invalid frame, which is a transport failure "
+                                + "rather than a request this build cannot understand"
+                        )
+                    }
                 }
                 return .answered(response)
             }

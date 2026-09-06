@@ -415,18 +415,16 @@ public enum ControlWire {
     /// One line into a response, or nil when it is not one this build
     /// understands.
     ///
-    /// Nil rather than a coded failure because the only reader is the CLI, which
-    /// has exactly one thing to say about a response it cannot parse: the app it
-    /// is talking to is not the build it shipped with.
+    /// Nil is not "wrong build" by itself. A truncated or non-JSON line is a
+    /// transport failure; only an explicit `v` that is not ``version`` is a
+    /// protocol-version mismatch. ``classifyUndecodableResponse(_:)`` keeps
+    /// those two stories apart for the CLI.
     ///
     /// The version is checked on its own pass, the same way and for the same
     /// reason as in ``decodeRequest(_:)``. A response from another build decodes
     /// perfectly well into this shape, since `v` is just an `Int` the synthesized
     /// decoder accepts, so without this guard a v2 answer would be read as
     /// though it were a v1 answer, with whichever fields happened to survive.
-    /// The request direction answers `badVersion` for the mirror image of that
-    /// frame, and a wire where only one direction notices a version skew is a
-    /// wire whose version field is decoration.
     public static func decodeResponse(_ line: Data) -> ControlResponse? {
         let payload = stripTrailingNewline(line)
         guard fitsFrame(payload) else { return nil }
@@ -437,6 +435,27 @@ public enum ControlWire {
         else { return nil }
 
         return try? decoder.decode(ControlResponse.self, from: payload)
+    }
+
+    /// Why ``decodeResponse(_:)`` answered nil, so the CLI does not report a
+    /// truncated frame as a helper copied from another build.
+    public enum UndecodableResponse: Sendable, Equatable {
+        /// Not JSON, not an object, missing `v`, wrong shape, or over the cap.
+        case invalidFrame
+        /// JSON named a protocol version this build does not speak.
+        case unsupportedVersion(Int)
+    }
+
+    public static func classifyUndecodableResponse(_ line: Data) -> UndecodableResponse {
+        let payload = stripTrailingNewline(line)
+        guard fitsFrame(payload) else { return .invalidFrame }
+        // Same `VersionProbe` decode as the request and response paths. JSONSerialization
+        // plus `NSNumber.intValue` would turn `true` into 1 and `1.5` into 1.
+        guard let probe = try? JSONDecoder().decode(VersionProbe.self, from: payload) else {
+            return .invalidFrame
+        }
+        if probe.v != version { return .unsupportedVersion(probe.v) }
+        return .invalidFrame
     }
 
     private static let newline = UInt8(0x0A)

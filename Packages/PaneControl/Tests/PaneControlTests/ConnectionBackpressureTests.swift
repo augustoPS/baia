@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 
@@ -14,6 +15,20 @@ import Testing
 @Suite struct ConnectionBackpressureTests {
     static func line(_ bytes: Int) -> Data {
         Data(repeating: UInt8(ascii: "x"), count: bytes)
+    }
+
+    static func validFrame(padding: Int) -> Data {
+        ControlWire.encodeResponse(.success(ControlResult(pane: String(repeating: "a", count: padding))))!
+    }
+
+    static func lines(in bytes: [UInt8]) -> [[UInt8]] {
+        var lines: [[UInt8]] = []
+        var start = 0
+        for (index, byte) in bytes.enumerated() where byte == UInt8(ascii: "\n") {
+            lines.append(Array(bytes[start ... index]))
+            start = index + 1
+        }
+        return lines
     }
 
     static func refusal(in pressure: ConnectionBackpressure) -> ControlError? {
@@ -158,23 +173,45 @@ import Testing
         #expect(ControlWire.decodeResponse(Data(pressure.pending))?.ok == false)
     }
 
-    /// Measured against a real socket before it was fixed: the peer had taken
-    /// 8192 bytes of a 250 KiB answer, the backlog was dropped, and the refusal
-    /// landed on the end of that half line. The peer's first line was then
-    /// neither the answer nor the refusal.
-    @Test func a_refusal_after_a_half_written_frame_starts_on_a_line_of_its_own() {
+    /// Production byte stream: 8192 bytes of a valid response already left, then
+    /// the outbound cap is passed. Completing the started frame makes the first
+    /// line decodable; a synthetic newline after the prefix made an 8193-byte
+    /// invalid line and a later valid refusal.
+    @Test func a_refusal_finishes_the_started_frame_before_the_refusal_line() {
+        let frame = Self.validFrame(padding: 20_000)
+        #expect(frame.count > 8192)
+        #expect(ControlWire.decodeResponse(frame) != nil)
+
+        var pressure = ConnectionBackpressure()
+        _ = pressure.queue(frame)
+        pressure.wrote(8192)
+        #expect(pressure.isMidFrame)
+
+        #expect(pressure.queue(Self.line(ControlWire.maxOutboundBytes)) == .refused)
+        #expect(pressure.pending.count <= ControlWire.maxOutboundBytes)
+        #expect(pressure.pending.first != UInt8(ascii: "\n"))
+
+        let alreadySent = Array(frame.prefix(8192))
+        let wire = alreadySent + pressure.pending
+        let lines = Self.lines(in: wire)
+        #expect(lines.count == 2)
+        #expect(ControlWire.decodeResponse(Data(lines[0])) != nil)
+        #expect(ControlWire.decodeResponse(Data(lines[1]))?.error?.code == .refused)
+        #expect(lines[0].count != 8193)
+    }
+
+    /// No terminator remains in the unfinished suffix, so inventing a newline
+    /// would complete a malformed first line. Drop the suffix and do not glue
+    /// a refusal onto it.
+    @Test func a_refusal_with_no_newline_left_does_not_fabricate_a_line() {
         var pressure = ConnectionBackpressure()
         _ = pressure.queue(Self.line(ControlWire.maxOutboundBytes))
         pressure.wrote(8192)
         #expect(pressure.isMidFrame)
 
-        // Past the cap again, and it takes a whole frame to get there: the eight
-        // kilobytes the peer took back are eight kilobytes of room.
         #expect(pressure.queue(Self.line(ControlWire.maxOutboundBytes)) == .refused)
-
-        #expect(pressure.pending.first == UInt8(ascii: "\n"))
-        #expect(ControlWire.decodeResponse(Data(pressure.pending.dropFirst()))?.error?.code
-            == .refused)
+        #expect(pressure.isRefusing)
+        #expect(pressure.pending.isEmpty)
     }
 
     @Test func a_refusal_at_a_frame_boundary_carries_no_empty_line_before_it() {
@@ -205,6 +242,63 @@ import Testing
         #expect(Self.refusal(in: stopped)?.message != Self.refusal(in: flooding)?.message)
     }
 
+    /// Real unix socket: 8192 bytes already written, refuse, then the reader
+    /// consumes the rest. The first line must decode; the second is the refusal.
+    @Test func a_real_socket_slow_reader_decodes_the_completed_started_frame() throws {
+        var sockets = [Int32](repeating: -1, count: 2)
+        try #require(socketpair(AF_UNIX, SOCK_STREAM, 0, &sockets) == 0)
+        let writer = sockets[0]
+        let reader = sockets[1]
+        defer {
+            Darwin.close(writer)
+            Darwin.close(reader)
+        }
+        var on: Int32 = 1
+        _ = setsockopt(writer, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
+
+        let frame = Self.validFrame(padding: 20_000)
+        var pressure = ConnectionBackpressure()
+        #expect(pressure.queue(frame) == .accepted)
+        let prefix = Darwin.write(writer, Array(frame.prefix(8192)), 8192)
+        try #require(prefix == 8192)
+        pressure.wrote(8192)
+        #expect(pressure.isMidFrame)
+        #expect(pressure.queue(Self.line(ControlWire.maxOutboundBytes)) == .refused)
+
+        let received = LockedData()
+        let group = DispatchGroup()
+        group.enter()
+        DispatchQueue.global().async {
+            var chunk = [UInt8](repeating: 0, count: 16 * 1024)
+            while true {
+                let count = chunk.withUnsafeMutableBufferPointer { buffer in
+                    Darwin.read(reader, buffer.baseAddress!, buffer.count)
+                }
+                if count <= 0 { break }
+                received.append(chunk[0 ..< count])
+            }
+            group.leave()
+        }
+
+        while pressure.isEmpty == false {
+            let written = pressure.pending.withUnsafeBufferPointer { buffer in
+                Darwin.write(writer, buffer.baseAddress, buffer.count)
+            }
+            try #require(written > 0)
+            pressure.wrote(written)
+        }
+        Darwin.close(writer)
+        try #require(group.wait(timeout: .now() + 2) == .success)
+
+        let lines = Self.lines(in: received.bytes)
+        #expect(lines.count == 2)
+        let first = ControlWire.decodeResponse(Data(lines[0]))
+        #expect(first != nil)
+        #expect(first?.ok == true)
+        #expect(ControlWire.decodeResponse(Data(lines[1]))?.error?.code == .refused)
+        #expect(lines[0].count != 8193)
+    }
+
     @Test func a_hand_built_refusal_line_is_a_frame_the_cli_can_read() {
         // `ControlWire.refusal` promises a line where `encodeResponse` promises
         // an optional, and the byte layer leans on that promise at the one moment
@@ -212,5 +306,22 @@ import Testing
         let line = ControlWire.refusal("no")
         #expect(ControlWire.decodeResponse(line)?.error?.code == .refused)
         #expect(line.last == UInt8(ascii: "\n"))
+    }
+}
+
+private final class LockedData: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored = Data()
+
+    func append(_ slice: ArraySlice<UInt8>) {
+        lock.lock()
+        stored.append(contentsOf: slice)
+        lock.unlock()
+    }
+
+    var bytes: [UInt8] {
+        lock.lock()
+        defer { lock.unlock() }
+        return [UInt8](stored)
     }
 }

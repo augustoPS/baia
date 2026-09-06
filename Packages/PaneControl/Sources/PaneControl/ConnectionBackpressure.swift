@@ -20,12 +20,13 @@ import Foundation
 /// socket, with the peer uid check and mode 0600 the only things in front of it.
 ///
 /// The answer to passing either bound is spec rule 5's, closed and total: one
-/// `refused` frame replaces whatever was queued, and the connection closes once
-/// that frame has been written or has failed to be. Dropping the backlog is not
-/// a shortcut. A peer that passed either bound is a peer that is not reading what
-/// it is already owed, so those bytes are bytes nobody will ever read, and
-/// holding them while writing the refusal would be the same allocation wearing an
-/// apology.
+/// `refused` frame replaces whatever was *not* already started, and the
+/// connection closes once that frame has been written or has failed to be.
+/// An in-flight frame the peer has already taken bytes of is finished through
+/// its newline first, so the first line they read is still a frame. Later
+/// queued frames are dropped. Dropping an unfinished suffix with no newline
+/// is not a shortcut: completing it with a synthetic newline made a first
+/// line that was neither the answer nor the refusal.
 public struct ConnectionBackpressure: Sendable, Equatable {
     /// What the caller does next.
     ///
@@ -117,11 +118,25 @@ public struct ConnectionBackpressure: Sendable, Equatable {
     }
 
     private mutating func refuse(with error: ControlError) -> Outcome {
-        // The newline first when the peer is holding half a line, so the refusal
-        // arrives as a line of its own rather than as the tail of a frame the
-        // backlog was cut out from under.
-        pending = isMidFrame ? [Self.newline] : []
-        pending.append(contentsOf: ControlWire.refusal(error.message))
+        // Finish an already-started frame through its newline, then one refusal.
+        // Inventing a newline after a prefix the peer already holds made that
+        // prefix a first line of its own, which the CLI decoded as a wrong build.
+        // No terminator left means the suffix is dropped and nothing is glued
+        // onto the partial bytes; the peer sees EOF mid-frame.
+        let head: [UInt8]
+        if isMidFrame, let end = pending.firstIndex(of: Self.newline) {
+            head = Array(pending[...end])
+        } else {
+            head = []
+        }
+        let refusal = [UInt8](ControlWire.refusal(error.message))
+        if head.isEmpty, isMidFrame {
+            pending = []
+        } else if head.count + refusal.count <= ControlWire.maxOutboundBytes {
+            pending = head + refusal
+        } else {
+            pending = head
+        }
         // Nothing in flight will be counted back: the connection closes once this
         // line is written, and the answers still on their way find no connection
         // to be written to.

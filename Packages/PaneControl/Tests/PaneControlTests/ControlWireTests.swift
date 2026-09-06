@@ -372,14 +372,49 @@ import Testing
         #expect(decoded.token == Self.paneID)
     }
 
-    /// A response this build cannot read is nil rather than a half-built one,
-    /// and the CLI has exactly one thing to say about it: the app it is talking
-    /// to is not the build it shipped with.
+    /// A response this build cannot read is nil rather than a half-built one.
+    /// Truncated JSON is an invalid frame; only an explicit other `v` is a
+    /// version mismatch.
     @Test func aResponseThatIsNotOneDecodesToNil() {
         #expect(ControlWire.decodeResponse(Data(#"{"ok": true"#.utf8)) == nil)
         let unknownCode = #"{"v": 1, "ok": false, "error": {"code": "teleported", "message": "x"}}"#
         #expect(ControlWire.decodeResponse(Data(unknownCode.utf8)) == nil)
         #expect(ControlWire.decodeResponse(Data(repeating: 0x7B, count: ControlWire.maxFrameBytes + 1)) == nil)
+        #expect(ControlWire.classifyUndecodableResponse(Data(#"{"ok": true"#.utf8)) == .invalidFrame)
+        #expect(ControlWire.classifyUndecodableResponse(Data(Array(repeating: UInt8(ascii: "x"), count: 8192) + [0x0A]))
+            == .invalidFrame)
+        #expect(ControlWire.classifyUndecodableResponse(Data(#"{"v": 1, "ok": false, "error": {"code": "teleported", "message": "x"}}"#.utf8))
+            == .invalidFrame)
+    }
+
+    /// Booleans, fractions, and integers that do not fit `Int` are invalid
+    /// frames, not another protocol version. `NSNumber.intValue` would have
+    /// coerced `true` to 1 and `1.5` to 1.
+    @Test func aCoercedVersionIsAnInvalidFrameNotAVersionMismatch() {
+        let booleanTrue = Data(#"{"v": true, "token": "t", "verb": "whoami"}"#.utf8)
+        let booleanFalse = Data(#"{"v": false, "ok": true, "result": {}}"#.utf8)
+        let fractional = Data(#"{"v": 1.5, "ok": true, "result": {}}"#.utf8)
+        let otherFractional = Data(#"{"v": 2.9, "ok": true, "result": {}}"#.utf8)
+        let oversized = Data(#"{"v": 9223372036854775808, "ok": true, "result": {}}"#.utf8)
+        let undersized = Data(#"{"v": -9223372036854775809, "ok": true, "result": {}}"#.utf8)
+
+        #expect(ControlWire.classifyUndecodableResponse(booleanTrue) == .invalidFrame)
+        #expect(ControlWire.classifyUndecodableResponse(booleanFalse) == .invalidFrame)
+        #expect(ControlWire.classifyUndecodableResponse(fractional) == .invalidFrame)
+        #expect(ControlWire.classifyUndecodableResponse(otherFractional) == .invalidFrame)
+        #expect(ControlWire.classifyUndecodableResponse(oversized) == .invalidFrame)
+        #expect(ControlWire.classifyUndecodableResponse(undersized) == .invalidFrame)
+
+        #expect(ControlWire.decodeResponse(booleanFalse) == nil)
+        #expect(ControlWire.decodeResponse(fractional) == nil)
+        #expect(ControlWire.decodeResponse(oversized) == nil)
+
+        guard case let .failure(error) = ControlWire.decodeRequest(booleanTrue) else {
+            Issue.record("boolean v decoded as a request, which is the NSNumber coercion")
+            return
+        }
+        #expect(error.code == .badFrame)
+        #expect(error.code != .badVersion)
     }
 
     /// `kinds` crosses as strings rather than as the enum, so a frame written by
@@ -541,5 +576,7 @@ import Testing
         let current = #"{"v": \#(ControlWire.version), "ok": true, "result": {"pane": "\#(Self.paneID)"}}"#
         #expect(ControlWire.decodeResponse(Data(current.utf8))
             == .success(ControlResult(pane: Self.paneID)))
+        #expect(ControlWire.classifyUndecodableResponse(Data(#"{"v": 2, "ok": true, "result": {}}"#.utf8))
+            == .unsupportedVersion(2))
     }
 }

@@ -399,9 +399,9 @@ nonisolated final class ControlTransport: @unchecked Sendable {
                 if thenClose { connection.closeAfterFlush = true }
                 flush(connection)
             case .refused:
-                // The response this was is gone with the rest of the backlog, and
-                // the refusal is in its place. A peer that is this far behind is
-                // not reading the answer it asked for either.
+                // The started frame is finished through its newline; later
+                // queued frames are gone; the refusal follows. A peer that is
+                // this far behind still gets one complete first line.
                 refuse(connection)
             case .dropped:
                 // Already refusing and already closing, so the answers still on
