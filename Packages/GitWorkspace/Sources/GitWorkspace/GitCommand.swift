@@ -248,17 +248,7 @@ public struct GitCommand: Sendable {
     public func read(
         ofRepositoryRoot root: URL
     ) -> (status: RepositoryStatus?, changes: [RepositoryFileChange]) {
-        guard let output = bytes(
-            of: [
-                "--no-optional-locks",
-                "status",
-                "--porcelain=v2",
-                "--branch",
-                "--untracked-files=all",
-                "-z",
-            ],
-            in: root
-        ) else { return (nil, []) }
+        guard let output = bytes(of: Self.statusArguments, in: root) else { return (nil, []) }
         guard var status = GitStatusParser.parse(output) else { return (nil, []) }
         if let gitDirectory = GitDirectory.url(forRepositoryRoot: root) {
             status.inProgress = InProgressProbe.detect(gitDirectory: gitDirectory)
@@ -316,17 +306,32 @@ public struct GitCommand: Sendable {
     /// status poll's queue, and the flag costs nothing next to a `git commit` in the
     /// pane failing on `index.lock`.
     public func defaultBranch(ofRepositoryRoot root: URL) -> String? {
-        guard let output = output(
-            of: [
-                "--no-optional-locks",
-                "for-each-ref",
-                "--format=%(refname) %(symref)",
-                "refs/remotes/*/HEAD",
-            ],
-            in: root
-        ) else { return nil }
+        guard let output = output(of: Self.defaultBranchArguments, in: root) else { return nil }
         return DefaultBranchParser.parse(output)
     }
+
+    /// The three reads ``RepositoryObserver`` runs, spelled once so the typed
+    /// reads in `RepositoryReading.swift` and the nil-mapping wrappers here cannot
+    /// drift apart. Every flag is documented on the wrapper that first needed it.
+    static let statusArguments = [
+        "--no-optional-locks",
+        "status",
+        "--porcelain=v2",
+        "--branch",
+        "--untracked-files=all",
+        "-z",
+    ]
+
+    static let treeArguments = [
+        "--no-optional-locks", "ls-files", "--cached", "--others", "--exclude-standard", "-z",
+    ]
+
+    static let defaultBranchArguments = [
+        "--no-optional-locks",
+        "for-each-ref",
+        "--format=%(refname) %(symref)",
+        "refs/remotes/*/HEAD",
+    ]
 
     /// Every file the repository holds, as a tree.
     ///
@@ -348,10 +353,7 @@ public struct GitCommand: Sendable {
     /// answer as a repository holding nothing. A caller that needs to tell those
     /// apart has already asked for the status.
     public func files(ofRepositoryRoot root: URL) -> [FileTreeNode] {
-        guard let output = bytes(
-            of: ["--no-optional-locks", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
-            in: root
-        ) else { return [] }
+        guard let output = bytes(of: Self.treeArguments, in: root) else { return [] }
         return FileTree.build(paths: FileTree.paths(fromNulSeparated: output))
     }
 

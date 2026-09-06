@@ -22,7 +22,7 @@ public enum DirectoryTree {
     ///
     /// The anchor outside a repository is frequently a home directory or a volume
     /// root. Uncapped, the walk there is a hang rather than a tree, and it would
-    /// be a hang on the main actor's poll.
+    /// monopolize one of the bounded filesystem executor's workers.
     public static let defaultMaxEntries = 2000
 
     /// The forest under `root`, dotfiles omitted, directories before files.
