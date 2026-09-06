@@ -2,6 +2,7 @@ import AgentIntegration
 import AppKit
 import BaiaSettings
 import GitWorkspace
+import PaneActivity
 import PaneChrome
 import PanePrompt
 import ProjectAnchor
@@ -387,6 +388,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             SettingsSelfCheck.runIfRequested(in: self)
             SessionSelfCheck.runIfRequested(in: self)
             WindowGroupSelfCheck.runIfRequested(in: self)
+            CloseSelfCheck.runIfRequested(in: self)
         #endif
         scheduleSave()
     }
@@ -468,6 +470,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
+        // Before anything is torn down or written: a cancelled quit must leave
+        // the workspace exactly as it was.
+        guard confirmQuitOverRunningWork() else { return .terminateCancel }
         saveTimer?.invalidate()
         saveTimer = nil
         // A quit while the restore is still reading the file. Nothing on screen
@@ -704,6 +709,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // route, ``newTab(_:)`` arriving from the menu or from `⌘T` and the
         // focused window being the only window either can mean.
         windows.append(controller)
+        // The close button, Close Window and Close All arrive here; a confirmed
+        // close goes through `window.close()`, which does not ask again.
+        controller.onShouldClose = { [weak self, weak controller] in
+            guard let self, let controller else { return true }
+            let activities = controller.tree.currentActivities
+            guard CloseConfirmation.needed(for: .window, activities: activities) != nil else { return true }
+            self.confirmClose(.window, activities: activities, on: controller.window) {
+                controller.window.close()
+            }
+            return false
+        }
         controller.onClose = { [weak self, weak controller] in
             guard let self, let controller else { return }
             // Before anything is torn down, and only for the last window: once it
@@ -872,7 +888,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSSound.beep()
             return
         }
-        workspace.window.close()
+        confirmClose(.tab, activities: workspace.tree.currentActivities, on: workspace.window) {
+            workspace.window.close()
+        }
+    }
+
+    // MARK: - Closing over running work
+
+    /// Runs `close` now when nothing in `activities` is running, otherwise
+    /// after the owner confirms on a sheet that names what is.
+    ///
+    /// The policy (owner decision, 2026-09-06) is that any close the owner
+    /// starts asks first when it would end a job; ``CloseConfirmation`` holds
+    /// the rule and the wording. `baia close` over the control socket never
+    /// comes here: automation that asks for a close has already decided.
+    private func confirmClose(
+        _ scope: CloseScope,
+        activities: [PaneActivity],
+        on window: NSWindow,
+        then close: @escaping () -> Void
+    ) {
+        guard let confirmation = CloseConfirmation.needed(for: scope, activities: activities) else {
+            return close()
+        }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = confirmation.title
+        alert.informativeText = confirmation.detail
+        // The confirm button is the default, as Terminal.app has it; Escape is
+        // the way out.
+        alert.addButton(withTitle: confirmation.confirmTitle)
+        let cancel = alert.addButton(withTitle: "Cancel")
+        cancel.keyEquivalent = "\u{1b}"
+        alert.beginSheetModal(for: window) { response in
+            if response == .alertFirstButtonReturn { close() }
+        }
+    }
+
+    /// The Quit half of the same policy, as a modal alert: `applicationShouldTerminate`
+    /// answers synchronously, and the save-failure alert on that path already
+    /// runs modally for the same reason.
+    private func confirmQuitOverRunningWork() -> Bool {
+        let activities = windows.flatMap { $0.tree.currentActivities }
+        guard let confirmation = CloseConfirmation.needed(for: .quit, activities: activities) else {
+            return true
+        }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = confirmation.title
+        alert.informativeText = confirmation.detail
+        alert.addButton(withTitle: confirmation.confirmTitle)
+        let cancel = alert.addButton(withTitle: "Cancel")
+        cancel.keyEquivalent = "\u{1b}"
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     // MARK: - Command palette
@@ -2081,7 +2149,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSSound.beep()
             return
         }
-        workspace.tree.closeFocusedPane()
+        let activities = workspace.tree.focusedPane.map { [$0.currentActivity] } ?? []
+        confirmClose(.pane, activities: activities, on: workspace.window) {
+            workspace.tree.closeFocusedPane()
+        }
     }
 
     @objc func zoomPane(_: Any?) {

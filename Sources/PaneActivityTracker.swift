@@ -105,6 +105,14 @@ final class PaneActivityTracker {
         timer = nil
     }
 
+    /// What is running now, sampled at the moment of asking rather than taken
+    /// from the last poll: a job started a moment ago must still count when the
+    /// owner is about to close the pane over it.
+    func currentActivity() -> PaneActivity {
+        poll()
+        return activity
+    }
+
     /// Ends every deadline owned by this pane.
     ///
     /// Visibility never calls this. A zoom-hidden pane is still workspace-owned

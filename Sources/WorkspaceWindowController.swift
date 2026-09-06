@@ -125,6 +125,11 @@ final class WorkspaceWindowController: NSObject {
     /// shell with nowhere to type.
     var onClose: (() -> Void)?
 
+    /// Asked before a close the owner started (the close button, Close Window,
+    /// Close All). Returning false keeps the window; the owner may then close it
+    /// through `window.close()`, which does not ask again. Absent means yes.
+    var onShouldClose: (() -> Bool)?
+
     /// Raised for anything worth persisting or retitling.
     var onSessionChange: (() -> Void)?
     var onFocusedPaneChange: (() -> Void)?
@@ -930,6 +935,10 @@ final class WorkspaceWindowController: NSObject {
 }
 
 extension WorkspaceWindowController: NSWindowDelegate {
+    func windowShouldClose(_: NSWindow) -> Bool {
+        onShouldClose?() ?? true
+    }
+
     func windowWillClose(_: Notification) {
         onClose?()
     }

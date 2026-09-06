@@ -357,6 +357,10 @@ final class TerminalPaneController: NSViewController {
 
     var wantsAttention: Bool { activityTracker.revision.wantsAttention }
 
+    /// A fresh reading of what this pane is running, for a close that has to
+    /// decide whether to ask first.
+    var currentActivity: PaneActivity { activityTracker.currentActivity() }
+
     /// What this pane asked for, when it said so rather than only ringing.
     var attentionMessage: String? { activityTracker.revision.attentionMessage }
 

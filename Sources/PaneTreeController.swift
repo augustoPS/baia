@@ -1,4 +1,5 @@
 import AppKit
+import PaneActivity
 import PaneChrome
 import WorkspaceLayout
 
@@ -200,6 +201,10 @@ final class PaneTreeController: NSViewController {
     }
 
     var paneCount: Int { panes.count }
+
+    /// A fresh reading of every pane in this window, in visual order, for a
+    /// close that has to decide whether to ask first.
+    var currentActivities: [PaneActivity] { allPanes.map(\.currentActivity) }
 
     var isZoomed: Bool { zoomedPane != nil }
 
