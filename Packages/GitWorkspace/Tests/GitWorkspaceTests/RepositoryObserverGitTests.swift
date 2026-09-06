@@ -282,6 +282,10 @@ private final class CountingReader: RepositoryReading, @unchecked Sendable {
         observer.refresh(viaPhysical)
 
         #expect(await eventually { self.names(observer.snapshot(of: viaPhysical)).contains("after-delete.txt") })
+        // The tree and the status are read on their own cadences, so the tree
+        // landing does not mean the status has. Wait for the status too before
+        // asserting on health and head.
+        #expect(await eventually { observer.snapshot(of: viaPhysical)?.status?.head == .branch("main") })
         #expect(observer.snapshot(of: viaPhysical)?.health == .ok)
         #expect(observer.snapshot(of: viaPhysical)?.isGone != true)
         #expect(observer.snapshot(of: viaPhysical)?.status?.head == .branch("main"))
@@ -326,6 +330,8 @@ private final class CountingReader: RepositoryReading, @unchecked Sendable {
         #expect(await eventually {
             self.names(observer.snapshot(of: viaOriginal)).contains("after-retarget.txt")
         })
+        // As above: the tree landing does not imply the status read has finished.
+        #expect(await eventually { observer.snapshot(of: viaOriginal)?.status?.head == .branch("main") })
         let snapshot = observer.snapshot(of: viaOriginal)
         #expect(snapshot?.health == .ok)
         #expect(snapshot?.status?.head == .branch("main"))

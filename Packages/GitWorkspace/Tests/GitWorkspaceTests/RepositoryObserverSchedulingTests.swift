@@ -465,10 +465,13 @@ final class Deliveries {
         #expect(await eventually { reader.treeCalls.count == 1 })
 
         for _ in 0 ..< 30 { observer.invalidateTree(of: repo) }
-        await settle(0.1)
-        #expect(reader.treeCalls.count == 1)
         #expect(await eventually { reader.treeCalls.count == 2 })
+        // The 30 invalidations coalesce into exactly one further read, and the
+        // spacing is asserted from the recorded timestamps below rather than from
+        // a `settle` shorter than `minimumTreeReadSpacing`: under load that sleep
+        // can overshoot the spacing and see the coalesced read already logged.
         let calls = reader.treeCalls
+        #expect(calls.count == 2)
         #expect(calls[1].at - calls[0].at >= 0.14)
 
         for _ in 0 ..< 30 { observer.invalidateTree(of: repo) }
@@ -878,7 +881,13 @@ final class Deliveries {
         let repo = try root("repo")
         let subscription = observer.observe(repo) { _ in }
         defer { subscription.cancel() }
-        #expect(await eventually { reader.statusCalls.count >= 1 && reader.defaultBranchCalls.count == 1 })
+        // Wait for the resolved branch to be published, not merely for the read to
+        // have been logged: the call is recorded on the read queue, while the
+        // observation only records `.known` when the completion reaches the main
+        // actor. Swapping the script in that window leaves the branch unresolved,
+        // so the next working-tree read would relearn it and read "develop".
+        #expect(await eventually { observer.snapshot(of: repo)?.defaultBranch == .known(nil) })
+        #expect(reader.defaultBranchCalls.count == 1)
         reader.setDefaultBranch { _, _, _ in .success("develop") }
 
         for _ in 0 ..< 8 { observer.invalidate(repo, .workingTree) }
