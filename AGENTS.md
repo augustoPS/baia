@@ -11,7 +11,9 @@ not run in Codex, so enforce their safety intent through the checks below.
 baia is a macOS terminal workspace in Swift and AppKit, with the Ghostty engine
 from `Lakr233/libghostty-spm`. Read `~/Projects/vault/projects/baia/baia.md` before
 substantial work. Open work is in `~/Projects/vault/projects/baia/baia-todo.md`; follow
-its linked plans and update the relevant item when its status changes.
+its linked plans and update the relevant item when its status changes. The canonical
+systematic-refactor plan is in `~/Projects/vault/projects/baia/audits/2026-09-05-systematic-review/roadmap.md`, and resumable work anchors are recorded in
+`baia/.superpowers/sdd/roadmap/STOP-CHECKPOINT.md`.
 
 Check the current branch, revision, and dirty paths before editing. Preserve
 existing changes and keep unrelated fixes separately reviewable. Use subagents
