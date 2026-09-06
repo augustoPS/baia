@@ -21,9 +21,10 @@ import Testing
 
         #expect(Set(enabled) == [
             .about, .hide, .hideOthers, .showAll, .quit,
-            .newWindow, .newTab, .openConfiguration,
-            .reloadProjectList, .mergeAllWindows, .bringAllToFront,
-            .copyDiagnostics, .toggleSurfacePanels, .resetSidebarSize,
+            .newWindow, .openConfiguration,
+            .reloadProjectList, .bringAllToFront,
+            .copyDiagnostics,
+            .commandPalette,
         ])
     }
 
@@ -115,10 +116,10 @@ import Testing
         #expect(state(.findInPane, MenuAvailability(paneCount: 1)).isEnabled)
     }
 
-    @Test func thePaletteIsDisabledUntilTheProjectListIsLoaded() {
-        // An empty palette reads as a workspace holding no projects, which is a
-        // worse answer than a disabled item.
-        #expect(!state(.commandPalette, .empty).isEnabled)
+    @Test func thePaletteStaysEnabledWithNoDiscoveredProjects() {
+        // Command mode remains useful before discovery completes and after an
+        // empty result, so project population cannot gate the palette itself.
+        #expect(state(.commandPalette, .empty).isEnabled)
         #expect(state(.commandPalette, MenuAvailability(paletteAvailable: true)).isEnabled)
     }
 

@@ -26,9 +26,9 @@ public struct MenuAvailability: Sendable, Equatable {
 
     public var isZoomed: Bool
 
-    /// False until the project list has been read at least once. The palette
-    /// with nothing in it is worse than a disabled item, because it looks like
-    /// the workspace holds no projects.
+    /// Whether project discovery has produced content. Kept as an observable
+    /// fact for clients that describe discovery; command mode means it no longer
+    /// controls whether the palette can open.
     public var paletteAvailable: Bool
 
     public init(

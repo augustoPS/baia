@@ -144,6 +144,17 @@ public struct Workspace: Sendable, Equatable, Codable {
         }
     }
 
+    /// Moves focus to the previous pane in visual order, wrapping. False when
+    /// the tab has one pane, since there is nowhere to go.
+    public mutating func focusPreviousPane() -> Bool {
+        withFocusedTab { tab in
+            guard let previous = tab.tree.pane(before: tab.focusedPane) else { return false }
+            tab.focusedPane = previous
+            tab.zoomedPane = nil
+            return true
+        }
+    }
+
     /// Moves the divider of the split at `path` in the focused tab.
     ///
     /// The only way a finished drag reaches the model. Without it the ratio lives

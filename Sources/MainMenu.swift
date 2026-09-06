@@ -105,7 +105,7 @@ enum MainMenu {
         // serve, because several commands share one selector shape, and matching
         // on the title would break the moment a title changed.
         item.tag = entry.command.tag
-        item.action = MenuCommandSelectors.selector(for: entry.command)
+        item.action = CommandCatalog.selector(for: entry.command)
         // A nil target sends the action down the responder chain to whoever
         // implements it, which is what lets the terminal answer copy and paste
         // while the app delegate answers the pane commands.

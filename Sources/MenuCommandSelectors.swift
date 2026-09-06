@@ -9,7 +9,7 @@ import WorkspaceMenu
 /// looking live and silently doing nothing when chosen. That greying happens
 /// before `validateMenuItem` runs, so `MenuValidation` never sees these.
 @MainActor
-enum MenuCommandSelectors {
+extension CommandCatalog {
     static func selector(for command: MenuCommand) -> Selector? {
         switch command {
         case .about: #selector(NSApplication.orderFrontStandardAboutPanel(_:))
@@ -38,7 +38,7 @@ enum MenuCommandSelectors {
         // their keys bound rather than unbinding them.
         case .copy: #selector(NSText.copy(_:))
         case .paste: #selector(NSText.paste(_:))
-        case .pasteSelection: nil
+        case .pasteSelection: nil as Selector?
         case .selectAll: #selector(NSText.selectAll(_:))
         // On the delegate rather than on the responder chain, because the panel
         // is a window of the app's rather than a view of the pane's: nothing
@@ -54,7 +54,7 @@ enum MenuCommandSelectors {
         case .splitRight: #selector(AppDelegate.splitPaneRight(_:))
         case .splitDown: #selector(AppDelegate.splitPaneDown(_:))
         case .selectNextPane: #selector(AppDelegate.selectNextPane(_:))
-        case .selectPreviousPane: nil
+        case .selectPreviousPane: #selector(AppDelegate.selectPreviousPane(_:))
         case .focusPaneLeft: #selector(AppDelegate.focusPaneLeft(_:))
         case .focusPaneRight: #selector(AppDelegate.focusPaneRight(_:))
         case .focusPaneUp: #selector(AppDelegate.focusPaneUp(_:))
@@ -77,7 +77,7 @@ enum MenuCommandSelectors {
 
         case .commandPalette: #selector(AppDelegate.showCommandPalette(_:))
         case .reloadProjectList: #selector(AppDelegate.reloadProjectList(_:))
-        case .refreshGitStatus: nil
+        case .refreshGitStatus: #selector(AppDelegate.refreshGitStatus(_:))
 
         case .minimize: #selector(NSWindow.performMiniaturize(_:))
         case .zoomWindow: #selector(NSWindow.performZoom(_:))
@@ -89,7 +89,7 @@ enum MenuCommandSelectors {
         case .mergeAllWindows: #selector(NSWindow.mergeAllWindows(_:))
         case .bringAllToFront: #selector(NSApplication.arrangeInFront(_:))
 
-        case .copyDiagnostics: nil
+        case .copyDiagnostics: #selector(AppDelegate.copyDiagnostics(_:))
         }
     }
 }

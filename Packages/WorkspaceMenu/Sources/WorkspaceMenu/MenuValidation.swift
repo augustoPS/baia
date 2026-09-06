@@ -20,9 +20,16 @@ public enum MenuValidation {
         // stays enabled with no window at all: baia shipped without a ⌘Q once and
         // closing the window was the only way to leave the app.
         case .about, .hide, .hideOthers, .showAll, .quit,
-             .newWindow, .newTab, .openConfiguration,
-             .reloadProjectList, .mergeAllWindows, .bringAllToFront, .copyDiagnostics:
+             .newWindow, .openConfiguration,
+             .reloadProjectList, .bringAllToFront, .copyDiagnostics:
             MenuItemState(isEnabled: true, isChecked: nil)
+
+        case .newTab:
+            MenuItemState(
+                isEnabled: availability.paneCount > 0,
+                isChecked: nil,
+                unavailableReason: "needs a pane"
+            )
 
         // The only checkable item left, since Status Bars went with the footer.
         // Zooming needs something to zoom away from, so a single pane disables
@@ -76,6 +83,13 @@ public enum MenuValidation {
                 unavailableReason: "needs a window"
             )
 
+        case .mergeAllWindows:
+            MenuItemState(
+                isEnabled: availability.tabCount > 1,
+                isChecked: nil,
+                unavailableReason: "needs 2 windows"
+            )
+
         // Cycling to the next tab of one is a no-op that still consumes the key.
         case .showPreviousTab, .showNextTab:
             MenuItemState(
@@ -127,22 +141,19 @@ public enum MenuValidation {
                 unavailableReason: "needs a pane"
             )
 
-        // Always enabled, including when the config asked for no panel-housed
-        // surface at all. Greying it out would need a new availability field
-        // carrying a setting that cannot change while the app runs, and an item
-        // that does nothing is a clearer answer than one that is disabled for a
-        // reason the owner would have to open the config file to discover.
+        // `toggleSurfacePanels` depends on a target workspace, but it has no
+        // additional state requirements beyond having a pane to act on.
         case .toggleSurfacePanels, .resetSidebarSize:
-            MenuItemState(isEnabled: true, isChecked: nil)
-
-        // An empty palette reads as a workspace holding no projects, which is
-        // worse than a disabled item that says the list is not loaded yet.
-        case .commandPalette:
             MenuItemState(
-                isEnabled: availability.paletteAvailable,
+                isEnabled: availability.paneCount > 0,
                 isChecked: nil,
-                unavailableReason: "the project list is still loading"
+                unavailableReason: "needs a pane"
             )
+
+        // Command mode is useful before discovery and after an empty result, so
+        // project population never gates opening the palette.
+        case .commandPalette:
+            MenuItemState(isEnabled: true, isChecked: nil)
         }
     }
 }

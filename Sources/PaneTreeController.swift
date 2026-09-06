@@ -372,6 +372,11 @@ final class PaneTreeController: NSViewController {
         focusPane(next)
     }
 
+    func focusPreviousPane() {
+        guard workspace.focusPreviousPane(), let previous = focusedPaneID else { return }
+        focusPane(previous)
+    }
+
     /// Grows the focused pane one keyboard step in that direction.
     ///
     /// Deliberately not through `rebuild()`, which is what every other command

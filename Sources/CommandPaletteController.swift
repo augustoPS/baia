@@ -40,13 +40,21 @@ private final class PaletteGlassBacking: NSGlassEffectView {
 /// only the app delegate knows what a tab is.
 @MainActor
 final class CommandPaletteController: NSObject, NSTextFieldDelegate {
-    /// Raised with the chosen project and what to do with it.
-    var onOpen: ((Project, PaletteAction) -> Void)?
+    /// Raised with the chosen project, the action, and the window the palette
+    /// was summoned over.
+    var onOpen: ((Project, PaletteAction, NSWindow?) -> Void)?
 
-    /// Raised with the chosen verb's `MenuCommand.tag`, for the same reason
-    /// ``onOpen`` exists: only the app delegate can perform a menu command, and
-    /// the palette's job ends at deciding which one was asked for.
-    var onRunVerb: ((Int) -> Void)?
+    /// Whether a project can open from the window the palette was summoned
+    /// over. Asked before dismissal, for the same reason ``prepareVerb`` is:
+    /// summoned from Settings or a system panel there is no workspace to open
+    /// into, and a palette that dismissed first would leave the owner with a
+    /// beep and no list. False leaves the palette open.
+    var canOpenProject: (NSWindow?) -> Bool = { _ in true }
+
+    /// Validates a chosen verb against the workspace captured before this panel
+    /// became key and returns the action to run after that workspace regains key.
+    /// Nil is an explicit refusal and leaves the palette open.
+    var prepareVerb: (Int, NSWindow?) -> (() -> Bool)? = { _, _ in nil }
 
     /// Every verb available right now, supplied by the app target because
     /// availability is a fact about the app rather than about this panel.
@@ -54,7 +62,7 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
     /// Re-read on each open rather than held across opens: `Close Tab` is
     /// available with two tabs and not with one, and a list captured when the
     /// palette was built would offer a verb that has since become impossible.
-    var availableVerbs: () -> [PaletteVerb] = { [] }
+    var availableVerbs: (NSWindow?) -> [PaletteVerb] = { _ in [] }
 
     var theme: PaneTheme = .darkPastel {
         didSet {
@@ -536,7 +544,7 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
     /// not called here and the previous row's runs are cleared instead. Leaving
     /// them would draw the last selected project's branch beside a verb.
     private func refilterVerbs(matching query: String) {
-        let ranked = VerbRanker.rank(availableVerbs(), query: query)
+        let ranked = VerbRanker.rank(availableVerbs(hostWindow), query: query)
         results = .verbs(ranked)
         hintsView.hints = PaletteHints.verbs(hasResults: !ranked.isEmpty)
 
@@ -574,7 +582,7 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
     /// denominators are different facts: how much of the workspace is out of
     /// view, and how much of what the app can do right now is out of view.
     private func verbCountText(query: String, shown: Int) -> String {
-        let total = availableVerbs().count
+        let total = availableVerbs(hostWindow).count
         guard !query.isEmpty else { return "\(total)" }
         return "\(shown) of \(total)"
     }
@@ -645,8 +653,12 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
         case let .projects(projects):
             guard projects.indices.contains(index) else { return }
             let project = projects[index]
+            guard canOpenProject(hostWindow) else {
+                NSSound.beep()
+                return
+            }
             dismiss()
-            onOpen?(project, action)
+            onOpen?(project, action, hostWindow)
         case let .verbs(verbs):
             guard verbs.indices.contains(index) else { return }
             let verb = verbs[index]
@@ -655,8 +667,12 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
             // is the worst of both: the reason it gave is gone from the screen
             // before the reader can act on it.
             guard verb.isAvailable else { return }
+            guard let execute = prepareVerb(verb.id, hostWindow) else {
+                NSSound.beep()
+                return
+            }
             dismiss()
-            onRunVerb?(verb.id)
+            if !execute() { NSSound.beep() }
         }
     }
 

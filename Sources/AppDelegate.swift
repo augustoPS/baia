@@ -90,11 +90,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // glass material set inside this panel. See
         // ``CommandPaletteController/isDark``.
         palette.isDark = configuration.windowIsDark
-        palette.onOpen = { [weak self] project, action in
-            self?.open(project, action: action)
+        palette.onOpen = { [weak self] project, action, hostWindow in
+            self?.open(project, action: action, invokedFrom: hostWindow)
         }
-        palette.availableVerbs = { [weak self] in self?.paletteVerbs() ?? [] }
-        palette.onRunVerb = { [weak self] tag in self?.runVerb(tag: tag) }
+        // The same test `open(_:action:invokedFrom:)` applies after dismissal,
+        // asked first so a refusal keeps the list on screen.
+        palette.canOpenProject = { [weak self] window in
+            self?.workspace(owning: window) != nil
+        }
+        palette.availableVerbs = { [weak self] window in
+            self?.paletteVerbs(invokedFrom: window) ?? []
+        }
+        palette.prepareVerb = { [weak self] tag, window in
+            self?.prepareVerb(tag: tag, invokedFrom: window)
+        }
         return palette
     }()
 
@@ -116,33 +125,90 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Rebuilt per call rather than cached. `availability` is a snapshot of what
     /// the app can do, and it changes with every split, tab and focus move; a
     /// list held across opens would offer Close Tab with one tab left.
-    private func paletteVerbs() -> [PaletteVerb] {
-        let state = availability
-        return MenuCommand.allCases.compactMap { command in
+    private func paletteVerbs(invokedFrom window: NSWindow?) -> [PaletteVerb] {
+        let workspace = workspace(owning: window)
+        let state = availability(for: workspace)
+        return CommandCatalog.entries(given: state).compactMap { entry in
+            guard entry.isOfferedInPalette else { return nil }
+            let command = entry.command
             guard let title = MenuBarLayout.title(of: command) else { return nil }
-            let itemState = MenuValidation.state(for: command, given: state)
+            let selector = CommandCatalog.selector(for: command)
+            let refusal = CommandCatalog.refusal(
+                for: entry,
+                actionIsSupported: selector != nil,
+                targetIsValid: commandTargetIsValid(entry.target, invokedFrom: window)
+            )
             return PaletteVerb(
                 title: title,
                 shortcut: MenuBarLayout.shortcutText(of: command) ?? "",
                 id: command.tag,
-                unavailableReason: itemState.isEnabled ? nil : itemState.unavailableReason
+                unavailableReason: refusal.map(commandRefusalText)
             )
         }
     }
 
-    /// Performs the verb the palette committed, recovered from its tag.
+    /// Validates the verb while the palette is key, capturing the invocation
+    /// window rather than asking current command context to mistake the palette
+    /// for a lost workspace. The returned closure runs after dismissal restores
+    /// the captured window and validates it again before dispatch.
     ///
     /// The tag rather than the command itself, for the same reason
     /// `validateMenuItem` reads it: the palette is a surface and knows nothing
     /// about `MenuCommand`, so the integer is the whole of what crosses the
     /// boundary.
-    private func runVerb(tag: Int) {
-        guard let command = MenuCommand(tag: tag) else { return }
-        guard let selector = MenuCommandSelectors.selector(for: command) else { return }
-        // Through the responder chain rather than called directly, so a verb
-        // reaches whatever `NSMenuItem` would have reached. A direct call here
-        // would run against the delegate for commands the first responder owns.
-        NSApp.sendAction(selector, to: nil, from: menuItem(for: command))
+    private func prepareVerb(tag: Int, invokedFrom window: NSWindow?) -> (() -> Bool)? {
+        guard let command = MenuCommand(tag: tag) else { return nil }
+        let entry = CommandCatalog.entry(
+            for: command,
+            given: availability(for: workspace(owning: window))
+        )
+        guard entry.isOfferedInPalette,
+              let selector = CommandCatalog.selector(for: command),
+              CommandCatalog.refusal(
+                  for: entry,
+                  actionIsSupported: true,
+                  targetIsValid: commandTargetIsValid(entry.target, invokedFrom: window)
+              ) == nil
+        else { return nil }
+
+        return { [weak self, weak window] in
+            guard let self else { return false }
+            if entry.target != .application {
+                guard let window, window.isVisible else { return false }
+                window.makeKey()
+            }
+            let current = CommandCatalog.entry(
+                for: command,
+                given: self.availability(for: self.workspace(owning: window))
+            )
+            let result = CommandCatalog.dispatch(
+                current,
+                actionIsSupported: true,
+                targetIsValid: self.commandTargetIsValid(current.target, invokedFrom: window)
+            ) { command in
+                // Nil-target responder dispatch preserves Settings field-editor
+                // undo and the terminal's own copy/paste implementation.
+                NSApp.sendAction(selector, to: nil, from: self.menuItem(for: command))
+            }
+            return result == .performed
+        }
+    }
+
+    private func commandTargetIsValid(_ target: CommandTarget, invokedFrom window: NSWindow?) -> Bool {
+        switch target {
+        case .application: true
+        case .workspace: workspace(owning: window) != nil
+        case .responder: window?.firstResponder != nil
+        }
+    }
+
+    private func commandRefusalText(_ refusal: CommandDispatchRefusal) -> String {
+        switch refusal {
+        case let .unavailable(reason): reason
+        case .unsupported: "not implemented"
+        case .missingTarget: "the command target is unavailable"
+        case .targetRefused: "the command target refused"
+        }
     }
 
     /// A stand-in item carrying the command's tag, so an action that reads the
@@ -445,34 +511,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Windows and tabs
 
-    /// The window the commands act on. `keyWindow` rather than a stored value,
-    /// because a tab is selected by AppKit and by dragging, neither of which
-    /// routes through baia.
-    ///
-    /// `mainWindow` is consulted second because the ⌘K palette is a key window
-    /// baia does not own. While it is up, `keyWindow` matches nothing here and
-    /// the old fallback to `windows.first` handed every command to the *oldest*
-    /// tab, which is unordered and usually not the one on screen: ⌥⌘W closed a
-    /// background tab and all of its live shells while nothing visible changed.
-    /// `PalettePanel.canBecomeMain` is false precisely so the workspace window
-    /// stays main underneath it, which is what makes this resolve correctly.
-    ///
-    /// **Nil while the Settings window is key.** The fallback to the first
-    /// window was written for the palette, which is key and owns no workspace;
-    /// Settings is key and owns no workspace either, and the fallback would
-    /// have handed ⌘W and every pane command to whichever window happened to be
-    /// first, from a window the owner is not looking at (audit S8). With nil
-    /// here every pane command is a no-op and `availability` is empty, so the
-    /// menu greys them out.
-    private var focused: WorkspaceWindowController? {
-        if let key = NSApp.keyWindow, key === settingsWindow?.window { return nil }
-        for candidate in [NSApp.keyWindow, NSApp.mainWindow] {
-            if let candidate, let match = windows.first(where: { $0.window === candidate }) {
-                return match
-            }
-        }
-        return windows.first
+    /// The explicit owner of commands at this instant. A foreign key window is
+    /// system context even if AppKit leaves a workspace main underneath it, so a
+    /// colour panel or sheet cannot route into an unseen pane.
+    private var commandContext: CommandContext<WorkspaceWindowController> {
+        CommandContextResolver.resolve(
+            keyWindow: NSApp.keyWindow,
+            mainWindow: NSApp.mainWindow,
+            settingsWindow: settingsWindow?.window,
+            workspaces: commandWorkspaces,
+            isPanel: { $0 is PalettePanel }
+        )
     }
+
+    private var commandWorkspaces: [CommandWorkspace<NSWindow, WorkspaceWindowController>] {
+        windows.map { controller in
+            CommandWorkspace(window: controller.window, workspace: controller)
+        }
+    }
+
+    private func workspace(owning window: NSWindow?) -> WorkspaceWindowController? {
+        CommandContextResolver.workspace(owning: window, in: commandWorkspaces)
+    }
+
+    /// The workspace arm only. Settings, app panels, and system windows are nil;
+    /// there is no unordered first-window fallback.
+    private var focused: WorkspaceWindowController? { commandContext.workspace }
+
+    /// Host window for command-scoped dialogs.
+    private var commandHostWindow: NSWindow? { focused?.window }
 
     private var tree: PaneTreeController? { focused?.tree }
 
@@ -770,7 +837,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func newTab(_: Any?) {
         // The new tab opens where the focused pane is, not at the workspace root.
         // Opening a tab is usually a second view of the project already in front.
-        let directory = tree?.focusedPane?.anchorTracker.workingDirectory?
+        guard let workspace = commandContext.workspace else {
+            NSSound.beep()
+            return
+        }
+        let directory = workspace.tree.focusedPane?.anchorTracker.workingDirectory?
             .path(percentEncoded: false) ?? Self.defaultWorkingDirectory
         openWindow(
             tree: PaneTreeController(
@@ -778,7 +849,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 configuration: configuration,
                 channel: control
             ),
-            joining: focused?.window
+            joining: workspace.window
         )
     }
 
@@ -797,7 +868,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func closeTab(_: Any?) {
-        focused?.window.close()
+        guard case let .workspace(workspace) = commandContext else {
+            NSSound.beep()
+            return
+        }
+        workspace.window.close()
     }
 
     // MARK: - Command palette
@@ -810,7 +885,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // here froze the app for the duration and one hung repository on a
         // network mount would have frozen it indefinitely.
         palette.toggle(
-            over: focused?.window,
+            over: commandHostWindow,
             projects: discoveredProjects ?? [],
             recency: recentProjects.load()
         )
@@ -820,7 +895,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Find
 
     @objc func findInPane(_: Any?) {
-        find.toggle(over: focused?.window)
+        find.toggle(over: commandHostWindow)
     }
 
     /// Returns the sidebar to the size it ships with.
@@ -849,7 +924,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// matching, and the string match was the arm that broke silently whenever a
     /// title moved.
     @objc func toggleSurfacePanels(_: Any?) {
-        guard let window = focused ?? windows.first else { return }
+        guard let window = focused else {
+            NSSound.beep()
+            return
+        }
         if let files = window.sidebar.files {
             plainDirectoryTrees[ObjectIdentifier(files)] = nil
         }
@@ -993,7 +1071,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Opens a project chosen in the palette.
-    private func open(_ project: Project, action: PaletteAction) {
+    private func open(_ project: Project, action: PaletteAction, invokedFrom window: NSWindow?) {
+        guard let workspace = workspace(owning: window) else {
+            NSSound.beep()
+            return
+        }
         let directory = project.url.path(percentEncoded: false)
 
         // Recorded before the open, so the ranking reflects the choice even if
@@ -1009,14 +1091,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     configuration: configuration,
                     channel: control
                 ),
-                joining: focused?.window
+                joining: workspace.window
             )
         case .splitRight:
             // Splits the focused pane and points the new one at the project. The
             // split has to happen first: the new pane does not exist until the
             // workspace has made it, and it opens at the focused pane's directory
             // by default rather than at the project's.
-            tree?.splitFocusedPane(axis: .horizontal, workingDirectory: directory)
+            workspace.tree.splitFocusedPane(axis: .horizontal, workingDirectory: directory)
         }
         updateWindowTitles()
     }
@@ -1433,14 +1515,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ? "Baia upgraded the session file's format and could not write a copy of the previous version beside it, so nothing was changed. Your open windows and the existing session file are unchanged. Check that \(sessionStore.migrationBackupURL().lastPathComponent) and its numbered siblings can be created in the baia Application Support folder, then make another workspace change to retry."
             : "Your open windows are unchanged. Check the baia Application Support folder, then make another workspace change to retry."
         alert.addButton(withTitle: "OK")
-        if let window = focused?.window ?? windows.first?.window {
+        // The command host, or the window the owner last typed in when
+        // Settings or a panel holds the keys: the failure is about their
+        // workspace and belongs on it, not on stderr.
+        if let window = commandHostWindow ?? lastActiveWindow?.window {
             alert.beginSheetModal(for: window)
         } else {
             FileHandle.standardError.write(Data("baia: the workspace session could not be saved\n".utf8))
         }
     }
 
-    private func presentSessionRecovery(for rejection: SessionRejection) {
+    /// The launch-time recovery choice, as a sheet on the window that was just
+    /// opened for it.
+    ///
+    /// `host` is explicit rather than resolved: at this point the fresh window is
+    /// not key yet, the app may not even be active, and the command context is
+    /// rightly nil. This is not a command; it is the only window there is, handed
+    /// in by the caller that made it.
+    private func presentSessionRecovery(for rejection: SessionRejection, on host: NSWindow) {
         guard !isShowingSessionRecovery else { return }
         isShowingSessionRecovery = true
         DispatchQueue.main.async { [weak self] in
@@ -1457,16 +1549,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 alert.informativeText = "session.json uses unsupported schema version \(version). Baia will preserve it and pause session saving until you choose recovery."
             }
             alert.addButton(withTitle: "Back Up and Replace")
-            alert.addButton(withTitle: "Keep File")
-            guard let window = self.focused?.window ?? self.windows.first?.window else {
-                self.isShowingSessionRecovery = false
-                return
-            }
-            alert.beginSheetModal(for: window) { [weak self] response in
+            let keepFile = alert.addButton(withTitle: "Keep File")
+            keepFile.keyEquivalent = "\u{1b}"
+            alert.beginSheetModal(for: host) { [weak self] response in
                 guard let self else { return }
                 self.isShowingSessionRecovery = false
                 if response == .alertFirstButtonReturn {
-                    self.performSessionRecovery()
+                    self.performSessionRecovery(on: host)
                 }
             }
         }
@@ -1474,10 +1563,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func recoverSession(_: Any?) {
         guard pendingSessionRejection != nil else { return }
-        performSessionRecovery()
+        performSessionRecovery(on: commandHostWindow)
     }
 
-    private func performSessionRecovery() {
+    /// `host` is the window the outcome sheet attaches to: the launch sheet's
+    /// window when recovery was chosen there, the command host from the menu.
+    private func performSessionRecovery(on host: NSWindow?) {
         let replacement = snapshot()
         switch sessionStore.recover(replacingWith: replacement) {
         case let .recovered(backup):
@@ -1487,29 +1578,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             done.messageText = "The workspace session was recovered."
             done.informativeText = "The rejected file was backed up at \(backup.path(percentEncoded: false))."
             done.addButton(withTitle: "OK")
-            if let window = focused?.window ?? windows.first?.window {
-                done.beginSheetModal(for: window)
+            if let host {
+                done.beginSheetModal(for: host)
             }
         case .backupFailed:
-            presentSessionRecoveryFailure("Baia could not create and verify a byte-for-byte backup. The original session file was not replaced.")
+            presentSessionRecoveryFailure("Baia could not create and verify a byte-for-byte backup. The original session file was not replaced.", on: host)
         case let .saveFailed(backup):
-            presentSessionRecoveryFailure("The backup was saved at \(backup.path(percentEncoded: false)), but Baia could not replace session.json.")
+            presentSessionRecoveryFailure("The backup was saved at \(backup.path(percentEncoded: false)), but Baia could not replace session.json.", on: host)
         case .notRejected:
             break
         }
     }
 
-    private func presentSessionRecoveryFailure(_ explanation: String) {
+    private func presentSessionRecoveryFailure(_ explanation: String, on host: NSWindow?) {
         let failed = NSAlert()
         failed.alertStyle = .critical
         failed.messageText = "The workspace session was not replaced."
         failed.informativeText = explanation
         failed.addButton(withTitle: "Retry")
-        failed.addButton(withTitle: "Keep File")
-        if let window = focused?.window ?? windows.first?.window {
-            failed.beginSheetModal(for: window) { [weak self] response in
+        let keepFile = failed.addButton(withTitle: "Keep File")
+        keepFile.keyEquivalent = "\u{1b}"
+        if let host {
+            failed.beginSheetModal(for: host) { [weak self] response in
                 if response == .alertFirstButtonReturn {
-                    self?.performSessionRecovery()
+                    self?.performSessionRecovery(on: host)
                 }
             }
         }
@@ -1651,15 +1743,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// repositories hold two disjoint halves of it, and writing one window's would
     /// forget the other's on every quit.
     ///
-    /// The focused window merges last, so an anchor two windows both visited keeps
-    /// the tree the owner was last looking at.
+    /// Merges all window trees, with focused first and last-active last.
+    /// If the last-active workspace is background, its expansion state is the
+    /// one the owner was interacting with most recently.
     private func fileTreeExpansions() -> [String: [String]] {
         var merged: [String: [String]] = [:]
-        for controller in windows where controller !== focused {
+        for controller in windows {
+            guard controller !== focused, controller !== lastActiveWindow else { continue }
             merged.merge(controller.sidebar.fileTreeExpansions) { _, later in later }
         }
         if let focused {
             merged.merge(focused.sidebar.fileTreeExpansions) { _, later in later }
+        }
+        if let lastActiveWindow, lastActiveWindow !== focused {
+            merged.merge(lastActiveWindow.sidebar.fileTreeExpansions) { _, later in later }
         }
         return merged
     }
@@ -1679,8 +1776,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let load = sessionStore.inspect()
         if case let .rejected(rejection) = load {
             pendingSessionRejection = rejection
-            openFresh()
-            presentSessionRecovery(for: rejection)
+            let fresh = openFresh()
+            presentSessionRecovery(for: rejection, on: fresh.window)
             settleLaunch()
             return
         }
@@ -1936,7 +2033,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func openFresh() {
+    @discardableResult
+    private func openFresh() -> WorkspaceWindowController {
         openWindow(
             tree: PaneTreeController(
                 workingDirectory: Self.defaultWorkingDirectory,
@@ -1979,7 +2077,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func closePane(_: Any?) {
-        tree?.closeFocusedPane()
+        guard case let .workspace(workspace) = commandContext else {
+            NSSound.beep()
+            return
+        }
+        workspace.tree.closeFocusedPane()
     }
 
     @objc func zoomPane(_: Any?) {
@@ -1996,6 +2098,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func selectNextPane(_: Any?) {
         tree?.focusNextPane()
+    }
+
+    @objc func selectPreviousPane(_: Any?) {
+        tree?.focusPreviousPane()
     }
 
     @objc func growPaneLeft(_: Any?) { tree?.resizeFocusedPane(.left) }
@@ -2040,6 +2146,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pasteboard.clearContents()
         pasteboard.setString(anchor.url.path(percentEncoded: false), forType: .string)
     }
+
+    @objc func refreshGitStatus(_: Any?) {
+        guard tree?.focusedPane?.repository.refresh() == true else {
+            NSSound.beep()
+            return
+        }
+    }
+
+    @objc func copyDiagnostics(_: Any?) {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let diagnostics = CommandDiagnostics(
+            marketingVersion: info["CFBundleShortVersionString"] as? String ?? "unknown",
+            buildVersion: info["CFBundleVersion"] as? String ?? "unknown",
+            bundleIdentifier: Bundle.main.bundleIdentifier ?? "unknown",
+            gitRevision: (info["BAIAGitCommit"] as? String).flatMap {
+                $0.isEmpty || $0.hasPrefix("$(") || $0 == "unknown" ? nil : $0
+            },
+            paneCount: windows.reduce(0) { $0 + $1.tree.paneCount },
+            tabCount: windows.count,
+            configurationPath: configuration.store.url.path(percentEncoded: false),
+            sessionPath: SessionStore.defaultFileURL(directoryName: SupportDirectory.name)
+                .path(percentEncoded: false),
+            supportDirectoryName: SupportDirectory.name
+        )
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(diagnostics.text, forType: .string)
+    }
 }
 
 extension AppDelegate: NSMenuItemValidation {
@@ -2055,7 +2189,7 @@ extension AppDelegate: NSMenuItemValidation {
             return pendingSessionRejection != nil && !isShowingSessionRecovery
         }
         guard let command = MenuCommand(tag: menuItem.tag) else { return true }
-        let state = MenuValidation.state(for: command, given: availability)
+        let state = CommandCatalog.entry(for: command, given: availability).state
         // Set here rather than when the menu is built. AppKit revalidates on
         // every menu open, so a checkmark applied at build time would sit on
         // whichever item held it at launch until the app was relaunched.
@@ -2066,11 +2200,16 @@ extension AppDelegate: NSMenuItemValidation {
     }
 
     private var availability: MenuAvailability {
-        guard let tree else { return .empty }
+        availability(for: focused)
+    }
+
+    private func availability(for workspace: WorkspaceWindowController?) -> MenuAvailability {
+        guard let workspace else { return .empty }
+        let tree = workspace.tree
         let anchor = tree.focusedPane?.anchorTracker.anchor
         return MenuAvailability(
             paneCount: tree.paneCount,
-            tabCount: focused?.window.tabGroup?.windows.count ?? windows.count,
+            tabCount: workspace.window.tabGroup?.windows.count ?? windows.count,
             isPinned: tree.focusedPane?.anchorTracker.isPinned ?? false,
             hasAnchor: anchor != nil,
             anchorIsRepository: anchor?.kind == .repository,

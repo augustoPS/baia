@@ -231,6 +231,28 @@ import Testing
         #expect(workspace == before)
     }
 
+    @Test func cyclingPanesBackwardMovesInReverseVisualOrderAndWraps() {
+        let panes = TwoPanes()
+        var workspace = panes.workspace
+
+        let wrapped = workspace.focusPreviousPane()
+        let backward = workspace.focusPreviousPane()
+
+        #expect(wrapped)
+        #expect(backward)
+        #expect(workspace.focusedPane == panes.left)
+    }
+
+    @Test func cyclingBackwardInASinglePaneTabIsRefused() {
+        var workspace = Workspace(pane: PaneID())
+        let before = workspace
+
+        let cycled = workspace.focusPreviousPane()
+
+        #expect(!cycled)
+        #expect(workspace == before)
+    }
+
     /// One tab holding two splits on the same spine, focus on the leftmost pane.
     private struct NestedSplits {
         let a = PaneID()
