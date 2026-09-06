@@ -2,6 +2,75 @@ import AppKit
 import BaiaSettings
 import PaneChrome
 
+private nonisolated final class ApprovalAccessibilityElement: NSAccessibilityElement {
+    enum Kind {
+        case title
+        case message
+        case action(ApprovalPopover.Action)
+    }
+
+    weak var approvalView: ApprovalPopoverView?
+    let kind: Kind
+    let generation: Int
+
+    init(approvalView: ApprovalPopoverView, kind: Kind, generation: Int) {
+        self.approvalView = approvalView
+        self.kind = kind
+        self.generation = generation
+        super.init()
+    }
+
+    override func accessibilityParent() -> Any? { approvalView }
+
+    override func accessibilityRole() -> NSAccessibility.Role? {
+        switch kind {
+        case .title, .message: .staticText
+        case .action: .button
+        }
+    }
+
+    override func accessibilityLabel() -> String? {
+        guard let approvalView else { return nil }
+        let kind = kind
+        return MainActor.assumeIsolated { approvalView.accessibilityLabel(for: kind) }
+    }
+
+    override func accessibilityFrame() -> NSRect {
+        guard let approvalView else { return .zero }
+        let kind = kind
+        return MainActor.assumeIsolated { approvalView.accessibilityFrame(for: kind) }
+    }
+
+    override func isAccessibilityEnabled() -> Bool {
+        guard let approvalView else { return false }
+        let kind = kind
+        let generation = generation
+        return MainActor.assumeIsolated {
+            approvalView.isAccessibilityEnabled(for: kind, generation: generation)
+        }
+    }
+
+    override func accessibilityActionNames() -> [NSAccessibility.Action] {
+        switch kind {
+        case .title, .message: []
+        case .action: [.press]
+        }
+    }
+
+    override func accessibilityPerformAction(_ action: NSAccessibility.Action) {
+        guard action == .press else { return }
+        _ = accessibilityPerformPress()
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        guard let approvalView, case let .action(action) = kind else { return false }
+        let generation = generation
+        return MainActor.assumeIsolated {
+            approvalView.accessibilityPerformPress(action, generation: generation)
+        }
+    }
+}
+
 /// The attention card: what springs from the capsule's agent segment and its
 /// attention dot both (design v6, Task 6). One card for the two segments,
 /// because they describe one thing: the agent running in the pane, and how
@@ -51,16 +120,35 @@ final class ClusterAttentionCardView: NSView {
 
     /// The embedded approval's answer, raised by a button click or by ⏎/⎋.
     /// The caller writes the bytes and dismisses the card.
-    var onApprovalAction: ((ApprovalPopover.Action) -> Void)?
+    var onApprovalAction: ((ApprovalPopover.Action) -> Void)? {
+        didSet {
+            approvalView?.accessibilityAvailabilityChanged()
+            NSAccessibility.post(element: self, notification: .layoutChanged)
+        }
+    }
 
     /// Raised by ⎋ while no approval is embedded. The card cannot dismiss
     /// itself; only its controller knows the panel. With an approval embedded
     /// ⎋ is Deny instead — see ``keyDown(with:)``.
-    var onClose: (() -> Void)?
+    var onClose: (() -> Void)? {
+        didSet { NSAccessibility.post(element: self, notification: .layoutChanged) }
+    }
 
     /// The embedded approval, or nil when nothing is pending. Held so the
     /// key-event forwarding below has a target.
     private let approvalView: ApprovalPopoverView?
+    private var rows: [ClusterCardRowView] = []
+    private var actionsAreValid = true
+
+    /// Ends this presentation's action lifetime. The whole card may remain
+    /// retained by an accessibility client after dismissal, so both answers
+    /// and the close route are cleared independently of object lifetime.
+    func invalidateActions() {
+        guard actionsAreValid else { return }
+        actionsAreValid = false
+        onApprovalAction = nil
+        onClose = nil
+    }
 
     /// Where the hairline between facts and the approval draws, or nil when
     /// no approval is embedded and the card is facts alone.
@@ -112,7 +200,10 @@ final class ClusterAttentionCardView: NSView {
             ))
             addSubview(view)
             view.onAction = { [weak self] action in
-                self?.onApprovalAction?(action)
+                self?.performApproval(action)
+            }
+            view.isActionAvailable = { [weak self] in
+                self?.actionsAreValid == true && self?.onApprovalAction != nil
             }
             // The view lays its internal content sibling out in `layout()`,
             // which the standalone panel's resize triggers; embedded, the
@@ -143,6 +234,7 @@ final class ClusterAttentionCardView: NSView {
             row.text = value
             row.font = font
             addSubview(row)
+            rows.append(row)
             y += ClusterCardRowView.height
         }
     }
@@ -166,6 +258,38 @@ final class ClusterAttentionCardView: NSView {
     /// arrangement, with a one-hop forward as the whole difference.
     override var acceptsFirstResponder: Bool { true }
 
+    // MARK: - Accessibility
+
+    override func isAccessibilityElement() -> Bool { true }
+
+    override func accessibilityRole() -> NSAccessibility.Role? { .group }
+
+    override func accessibilitySubrole() -> NSAccessibility.Subrole? { .dialog }
+
+    override func accessibilityLabel() -> String? { "Attention" }
+
+    override func accessibilityChildren() -> [Any]? {
+        if let approvalView { return rows + [approvalView] }
+        return rows
+    }
+
+    override func accessibilityPerformCancel() -> Bool {
+        if let approvalView {
+            return approvalView.accessibilityPerform(action: .deny)
+        }
+        guard actionsAreValid, let onClose else { return false }
+        onClose()
+        return true
+    }
+
+    nonisolated override func accessibilityActionNames() -> [NSAccessibility.Action] { [.cancel] }
+
+    nonisolated override func accessibilityPerformAction(_ action: NSAccessibility.Action) {
+        guard action == .cancel else { return }
+        let card = self
+        MainActor.assumeIsolated { _ = card.accessibilityPerformCancel() }
+    }
+
     /// ⎋ can arrive as `cancelOperation` rather than `keyDown`;
     /// ``ApprovalPopoverView`` documents the route on its own copy. With an
     /// approval embedded the forward makes ⎋ mean Deny, exactly what it
@@ -175,7 +299,7 @@ final class ClusterAttentionCardView: NSView {
         if let approvalView {
             approvalView.cancelOperation(sender)
         } else {
-            onClose?()
+            _ = accessibilityPerformCancel()
         }
     }
 
@@ -193,10 +317,15 @@ final class ClusterAttentionCardView: NSView {
            event.keyCode == Self.returnKeyCode || event.keyCode == Self.escapeKeyCode {
             approvalView.keyDown(with: event)
         } else if event.keyCode == Self.escapeKeyCode {
-            onClose?()
+            _ = accessibilityPerformCancel()
         } else {
             super.keyDown(with: event)
         }
+    }
+
+    private func performApproval(_ action: ApprovalPopover.Action) {
+        guard actionsAreValid, let onApprovalAction else { return }
+        onApprovalAction(action)
     }
 
     override func draw(_: NSRect) {
@@ -330,12 +459,22 @@ final class ApprovalPopoverView: NSView {
     }
 
     /// `agent · repo`, or the bare repo name when no agent is running.
-    var title: String = "" { didSet { contentView.needsDisplay = true } }
+    var title: String = "" {
+        didSet {
+            contentView.needsDisplay = true
+            replaceAccessibilityChildren()
+        }
+    }
 
     /// The attention message verbatim, or ``ApprovalPopover/body(for:)``'s
     /// fallback. Set by the caller, which is the one place that knows both
     /// the reported message and the fallback rule.
-    var messageText: String = "" { didSet { contentView.needsDisplay = true } }
+    var messageText: String = "" {
+        didSet {
+            contentView.needsDisplay = true
+            replaceAccessibilityChildren()
+        }
+    }
 
     /// Which button, if any, currently reads as pressed: the mouse is down
     /// inside it. ⏎/⎋ commit straight through ``keyDown(with:)`` without ever
@@ -345,7 +484,16 @@ final class ApprovalPopoverView: NSView {
     /// system pressed state to inherit.
     private var pressedAction: ApprovalPopover.Action?
 
-    var onAction: ((ApprovalPopover.Action) -> Void)?
+    var onAction: ((ApprovalPopover.Action) -> Void)? {
+        didSet { accessibilityAvailabilityChanged() }
+    }
+
+    var isActionAvailable: (() -> Bool)? {
+        didSet { accessibilityAvailabilityChanged() }
+    }
+
+    private var accessibilityGeneration = 0
+    private var accessibilityElements: [ApprovalAccessibilityElement]?
 
     private var glassBacking: ApprovalPopoverGlassBacking?
 
@@ -368,19 +516,91 @@ final class ApprovalPopoverView: NSView {
     /// ``PaletteQueryField`` already carries.
     override var acceptsFirstResponder: Bool { true }
 
+    // MARK: - Accessibility
+
+    override func isAccessibilityElement() -> Bool { true }
+
+    override func accessibilityRole() -> NSAccessibility.Role? { .group }
+
+    override func accessibilityLabel() -> String? { title }
+
+    override func accessibilityChildren() -> [Any]? {
+        if let accessibilityElements { return accessibilityElements }
+        let generation = accessibilityGeneration
+        let elements = [
+            ApprovalAccessibilityElement(approvalView: self, kind: .title, generation: generation),
+            ApprovalAccessibilityElement(approvalView: self, kind: .message, generation: generation),
+            ApprovalAccessibilityElement(approvalView: self, kind: .action(.deny), generation: generation),
+            ApprovalAccessibilityElement(approvalView: self, kind: .action(.approve), generation: generation),
+        ]
+        accessibilityElements = elements
+        return elements
+    }
+
+    fileprivate func accessibilityLabel(for kind: ApprovalAccessibilityElement.Kind) -> String {
+        switch kind {
+        case .title: title
+        case .message: messageText
+        case let .action(action): Self.title(for: action)
+        }
+    }
+
+    fileprivate func accessibilityFrame(for kind: ApprovalAccessibilityElement.Kind) -> NSRect {
+        let rect: NSRect
+        switch kind {
+        case .title:
+            rect = NSRect(x: Self.inset, y: Self.inset, width: bounds.width - 2 * Self.inset, height: Self.titleHeight)
+        case .message:
+            rect = bodyRect
+        case let .action(action):
+            rect = self.rect(for: action)
+        }
+        guard let window else { return .zero }
+        return window.convertToScreen(convert(rect, to: nil))
+    }
+
+    fileprivate func isAccessibilityEnabled(
+        for kind: ApprovalAccessibilityElement.Kind,
+        generation: Int
+    ) -> Bool {
+        guard generation == accessibilityGeneration else { return false }
+        return switch kind {
+        case .title, .message: true
+        case .action: onAction != nil && (isActionAvailable?() ?? true)
+        }
+    }
+
+    fileprivate func accessibilityPerformPress(
+        _ action: ApprovalPopover.Action,
+        generation: Int
+    ) -> Bool {
+        guard generation == accessibilityGeneration else { return false }
+        return accessibilityPerform(action: action)
+    }
+
+    fileprivate func accessibilityAvailabilityChanged() {
+        NSAccessibility.post(element: self, notification: .layoutChanged)
+    }
+
+    private func replaceAccessibilityChildren() {
+        accessibilityGeneration &+= 1
+        accessibilityElements = nil
+        NSAccessibility.post(element: self, notification: .layoutChanged)
+    }
+
     /// Escape does not reach `keyDown(with:)` as reliably as Return does,
     /// because AppKit can route it through `cancelOperation(_:)` on the
     /// responder chain first — the same fact ``PaletteQueryField`` documents
     /// on its own copy of this override. Caught here as well so Deny answers
     /// however Escape arrives.
     override func cancelOperation(_: Any?) {
-        onAction?(.deny)
+        _ = accessibilityPerform(action: .deny)
     }
 
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
-        case Self.returnKeyCode: onAction?(.approve)
-        case Self.escapeKeyCode: onAction?(.deny)
+        case Self.returnKeyCode: _ = accessibilityPerform(action: .approve)
+        case Self.escapeKeyCode: _ = accessibilityPerform(action: .deny)
         default: super.keyDown(with: event)
         }
     }
@@ -582,7 +802,14 @@ final class ApprovalPopoverView: NSView {
         }
         let point = convert(event.locationInWindow, from: nil)
         guard let action = pressedAction, rect(for: action).contains(point) else { return }
-        onAction?(action)
+        _ = accessibilityPerform(action: action)
+    }
+
+    @discardableResult
+    fileprivate func accessibilityPerform(action: ApprovalPopover.Action) -> Bool {
+        guard let onAction, isActionAvailable?() ?? true else { return false }
+        onAction(action)
+        return true
     }
 
     // MARK: - Layout

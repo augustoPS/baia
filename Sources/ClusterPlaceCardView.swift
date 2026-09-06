@@ -26,16 +26,36 @@ final class ClusterCardRowView: NSView {
     /// Fired on mouse-up inside the row. Nil makes this a fact row: no wash,
     /// no hand cursor, and a click lands on the card behind it.
     var onClick: (() -> Void)? {
-        didSet { window?.invalidateCursorRects(for: self) }
+        didSet {
+            window?.invalidateCursorRects(for: self)
+            NSAccessibility.post(element: self, notification: .layoutChanged)
+        }
+    }
+
+    /// The owner-side availability behind an action row. `onClick` identifies
+    /// the row as an action; this predicate prevents a retained row from acting
+    /// after its card or result generation has been replaced.
+    var isActionEnabled: (() -> Bool)? {
+        didSet { NSAccessibility.post(element: self, notification: .layoutChanged) }
     }
 
     /// The leading caption of a fact row ("branch", "directory"), drawn
     /// secondary in its own fixed column. Nil for an action row, whose label
     /// starts at the inset.
-    var caption: String? { didSet { needsDisplay = true } }
+    var caption: String? {
+        didSet {
+            needsDisplay = true
+            NSAccessibility.post(element: self, notification: .titleChanged)
+        }
+    }
 
     /// The row's text: the fact's value, or the action's label.
-    var text: String = "" { didSet { needsDisplay = true } }
+    var text: String = "" {
+        didSet {
+            needsDisplay = true
+            NSAccessibility.post(element: self, notification: .titleChanged)
+        }
+    }
 
     /// The text's font. Facts are terminal-adjacent strings (a branch, a
     /// path) and read monospaced at the footer's 11pt; action labels read as
@@ -51,6 +71,38 @@ final class ClusterCardRowView: NSView {
     /// row taking it would break that without gaining anything a click does
     /// not already deliver.
     override var acceptsFirstResponder: Bool { false }
+
+    // MARK: - Accessibility
+
+    override func isAccessibilityElement() -> Bool { true }
+
+    override func accessibilityRole() -> NSAccessibility.Role? {
+        onClick == nil ? .staticText : .button
+    }
+
+    override func accessibilityLabel() -> String? {
+        caption.map { "\($0), \(text)" } ?? text
+    }
+
+    override func accessibilityValue() -> Any? { text }
+
+    override func isAccessibilityEnabled() -> Bool {
+        guard onClick != nil else { return true }
+        return isActionEnabled?() ?? true
+    }
+
+    override func accessibilityPerformPress() -> Bool { activate() }
+
+    nonisolated override func accessibilityActionNames() -> [NSAccessibility.Action] {
+        let row = self
+        return MainActor.assumeIsolated { row.onClick == nil ? [] : [.press] }
+    }
+
+    nonisolated override func accessibilityPerformAction(_ action: NSAccessibility.Action) {
+        guard action == .press else { return }
+        let row = self
+        MainActor.assumeIsolated { _ = row.accessibilityPerformPress() }
+    }
 
     override func draw(_: NSRect) {
         if onClick != nil, isPressed || isHovered {
@@ -134,7 +186,14 @@ final class ClusterCardRowView: NSView {
         let wasPressed = isPressed
         isPressed = false
         guard wasPressed, bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
-        onClick?()
+        _ = activate()
+    }
+
+    @discardableResult
+    private func activate() -> Bool {
+        guard let onClick, isActionEnabled?() ?? true else { return false }
+        onClick()
+        return true
     }
 
     override func resetCursorRects() {
@@ -177,12 +236,32 @@ final class ClusterPlaceCardView: NSView {
     /// AppKit.
     typealias Model = ClusterPlaceCardModel
 
-    var onCopyPath: (() -> Void)?
-    var onReveal: (() -> Void)?
+    var onCopyPath: (() -> Void)? {
+        didSet { NSAccessibility.post(element: self, notification: .layoutChanged) }
+    }
+    var onReveal: (() -> Void)? {
+        didSet { NSAccessibility.post(element: self, notification: .layoutChanged) }
+    }
 
     /// Raised by ⎋. The card cannot dismiss itself; only its controller
     /// knows the panel.
-    var onClose: (() -> Void)?
+    var onClose: (() -> Void)? {
+        didSet { NSAccessibility.post(element: self, notification: .layoutChanged) }
+    }
+
+    private var rows: [ClusterCardRowView] = []
+    private var actionsAreValid = true
+
+    /// Ends this presentation's action lifetime. A dismissed card can remain
+    /// alive when an accessibility client retains it, but none of its old
+    /// callbacks may remain available or executable.
+    func invalidateActions() {
+        guard actionsAreValid else { return }
+        actionsAreValid = false
+        onCopyPath = nil
+        onReveal = nil
+        onClose = nil
+    }
 
     /// Where the hairline between facts and actions draws, in this flipped
     /// view's coordinates. Solved once in `init`; the card never relayouts.
@@ -234,22 +313,33 @@ final class ClusterPlaceCardView: NSView {
             row.text = value
             row.font = font
             addSubview(row)
+            rows.append(row)
             y += ClusterCardRowView.height
         }
 
         y += Self.separatorGap
-        let actions: [(String, () -> Void)] = [
-            ("Copy path", { [weak self] in self?.onCopyPath?() }),
-            ("Reveal in Finder", { [weak self] in self?.onReveal?() }),
+        let actions: [(String, () -> Void, () -> Bool)] = [
+            (
+                "Copy path",
+                { [weak self] in self?.copyPath() },
+                { [weak self] in self?.actionsAreValid == true && self?.onCopyPath != nil }
+            ),
+            (
+                "Reveal in Finder",
+                { [weak self] in self?.reveal() },
+                { [weak self] in self?.actionsAreValid == true && self?.onReveal != nil }
+            ),
         ]
-        for (label, action) in actions {
+        for (label, action, enabled) in actions {
             let row = ClusterCardRowView(frame: NSRect(
                 x: 0, y: y, width: Self.width, height: ClusterCardRowView.height
             ))
             row.text = label
             row.font = Self.actionFont
             row.onClick = action
+            row.isActionEnabled = enabled
             addSubview(row)
+            rows.append(row)
             y += ClusterCardRowView.height
         }
     }
@@ -265,16 +355,50 @@ final class ClusterPlaceCardView: NSView {
     /// grant, which is what routes ⎋ here.
     override var acceptsFirstResponder: Bool { true }
 
+    // MARK: - Accessibility
+
+    override func isAccessibilityElement() -> Bool { true }
+
+    override func accessibilityRole() -> NSAccessibility.Role? { .group }
+
+    override func accessibilityLabel() -> String? { "Place" }
+
+    override func accessibilityChildren() -> [Any]? { rows }
+
+    override func accessibilityPerformCancel() -> Bool {
+        guard actionsAreValid, let onClose else { return false }
+        onClose()
+        return true
+    }
+
+    nonisolated override func accessibilityActionNames() -> [NSAccessibility.Action] { [.cancel] }
+
+    nonisolated override func accessibilityPerformAction(_ action: NSAccessibility.Action) {
+        guard action == .cancel else { return }
+        let card = self
+        MainActor.assumeIsolated { _ = card.accessibilityPerformCancel() }
+    }
+
     /// ⎋ can arrive as `cancelOperation` rather than `keyDown`;
     /// ``ApprovalPopoverView`` documents the route on its own copy.
-    override func cancelOperation(_: Any?) { onClose?() }
+    override func cancelOperation(_: Any?) { _ = accessibilityPerformCancel() }
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == Self.escapeKeyCode {
-            onClose?()
+            _ = accessibilityPerformCancel()
         } else {
             super.keyDown(with: event)
         }
+    }
+
+    private func copyPath() {
+        guard actionsAreValid, let onCopyPath else { return }
+        onCopyPath()
+    }
+
+    private func reveal() {
+        guard actionsAreValid, let onReveal else { return }
+        onReveal()
     }
 
     override func draw(_: NSRect) {

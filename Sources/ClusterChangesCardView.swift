@@ -27,21 +27,47 @@ final class ClusterChangesCardView: NSView {
     /// rebuilds the rows and resizes the card's window in place, top edge
     /// pinned, so growth extends the card downward from the segment it hangs
     /// under rather than crawling up over the capsule.
-    var changes: [RepositoryFileChange] = [] {
-        didSet { rebuild() }
+    var changes: [RepositoryFileChange] {
+        get { storedChanges }
+        set {
+            guard actionsAreValid else { return }
+            storedChanges = newValue
+            rebuild()
+        }
     }
 
     /// A file row's handoff: the caller turns the change into a split
     /// running its diff.
-    var onFileDiff: ((RepositoryFileChange) -> Void)?
+    var onFileDiff: ((RepositoryFileChange) -> Void)? {
+        didSet { NSAccessibility.post(element: self, notification: .layoutChanged) }
+    }
 
-    var onFullDiff: (() -> Void)?
+    var onFullDiff: (() -> Void)? {
+        didSet { NSAccessibility.post(element: self, notification: .layoutChanged) }
+    }
 
     /// Raised by ⎋. The card cannot dismiss itself; only its controller
     /// knows the panel.
-    var onClose: (() -> Void)?
+    var onClose: (() -> Void)? {
+        didSet { NSAccessibility.post(element: self, notification: .layoutChanged) }
+    }
 
     private var rows: [ClusterCardRowView] = []
+    private var rowGeneration = 0
+    private var storedChanges: [RepositoryFileChange] = []
+    private var actionsAreValid = true
+
+    /// Ends this presentation's action and result lifetime. Retained rows
+    /// refuse, and an asynchronous result that lands after dismissal cannot
+    /// rebuild content that is no longer presented.
+    func invalidateActions() {
+        guard actionsAreValid else { return }
+        actionsAreValid = false
+        rowGeneration &+= 1
+        onFileDiff = nil
+        onFullDiff = nil
+        onClose = nil
+    }
 
     /// Where the hairline between file rows and the action row draws, or nil
     /// while there are no file rows to separate.
@@ -64,11 +90,35 @@ final class ClusterChangesCardView: NSView {
 
     override var acceptsFirstResponder: Bool { true }
 
-    override func cancelOperation(_: Any?) { onClose?() }
+    // MARK: - Accessibility
+
+    override func isAccessibilityElement() -> Bool { true }
+
+    override func accessibilityRole() -> NSAccessibility.Role? { .group }
+
+    override func accessibilityLabel() -> String? { "Changes" }
+
+    override func accessibilityChildren() -> [Any]? { rows }
+
+    override func accessibilityPerformCancel() -> Bool {
+        guard actionsAreValid, let onClose else { return false }
+        onClose()
+        return true
+    }
+
+    nonisolated override func accessibilityActionNames() -> [NSAccessibility.Action] { [.cancel] }
+
+    nonisolated override func accessibilityPerformAction(_ action: NSAccessibility.Action) {
+        guard action == .cancel else { return }
+        let card = self
+        MainActor.assumeIsolated { _ = card.accessibilityPerformCancel() }
+    }
+
+    override func cancelOperation(_: Any?) { _ = accessibilityPerformCancel() }
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == Self.escapeKeyCode {
-            onClose?()
+            _ = accessibilityPerformCancel()
         } else {
             super.keyDown(with: event)
         }
@@ -78,6 +128,8 @@ final class ClusterChangesCardView: NSView {
     /// long list capped, with the remainder counted rather than scrolled),
     /// then the hairline, then `Full diff`.
     private func rebuild() {
+        rowGeneration &+= 1
+        let generation = rowGeneration
         for row in rows { row.removeFromSuperview() }
         rows = []
         separatorY = nil
@@ -95,7 +147,14 @@ final class ClusterChangesCardView: NSView {
             // card and the tree speak one vocabulary from one assembly.
             row.text = "\(RowStatusLetter(change).glyph)  \(change.path)"
             row.font = Self.fileFont
-            row.onClick = { [weak self] in self?.onFileDiff?(change) }
+            row.onClick = { [weak self] in
+                self?.activate(change: change, generation: generation)
+            }
+            row.isActionEnabled = { [weak self] in
+                guard let self else { return false }
+                return self.actionsAreValid
+                    && self.rowGeneration == generation && self.onFileDiff != nil
+            }
         }
         if changes.count > shown.count {
             // Counted, not scrolled: a card is a glance, and the rows it
@@ -112,10 +171,28 @@ final class ClusterChangesCardView: NSView {
         let action = makeRow(at: &y)
         action.text = "Full diff"
         action.font = Self.actionFont
-        action.onClick = { [weak self] in self?.onFullDiff?() }
+        action.onClick = { [weak self] in
+            self?.activateFullDiff(generation: generation)
+        }
+        action.isActionEnabled = { [weak self] in
+            guard let self else { return false }
+            return self.actionsAreValid
+                && self.rowGeneration == generation && self.onFullDiff != nil
+        }
 
         apply(size: NSSize(width: Self.width, height: y + Self.padding))
         needsDisplay = true
+        NSAccessibility.post(element: self, notification: .layoutChanged)
+    }
+
+    private func activate(change: RepositoryFileChange, generation: Int) {
+        guard actionsAreValid, rowGeneration == generation, let onFileDiff else { return }
+        onFileDiff(change)
+    }
+
+    private func activateFullDiff(generation: Int) {
+        guard actionsAreValid, rowGeneration == generation, let onFullDiff else { return }
+        onFullDiff()
     }
 
     private func makeRow(at y: inout Double) -> ClusterCardRowView {

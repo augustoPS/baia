@@ -204,6 +204,11 @@ final class TerminalPaneController: NSViewController {
     /// each one costs. Lazy for ``clusterCardQueue``'s reason.
     private lazy var clusterGitCommand = GitCommand()
 
+    /// Cancels the card's read when the card closes, so a read that outlives
+    /// its card is torn down at the process boundary rather than left to finish
+    /// for nobody.
+    private var changesCardCancellation: SubprocessCancellation?
+
     /// The palette everything in this pane derives from, off the chrome stack.
     private var theme: PaneTheme { chrome.theme }
 
@@ -1220,8 +1225,21 @@ final class TerminalPaneController: NSViewController {
     /// — rides the same rule for the same reason, and is cleared in the same
     /// `onDismiss`, so the wash cannot outlive its card or be wiped by the
     /// outgoing one's teardown.
-    private func presentCard(_ content: NSView, role: PaneClusterSegmentRole, anchoredTo anchor: NSRect, in window: NSWindow) {
-        clusterCards.show(content: content, anchoredTo: anchor, in: window) { [weak self] in
+    private func presentCard(
+        _ content: NSView,
+        role: PaneClusterSegmentRole,
+        anchoredTo anchor: NSRect,
+        in window: NSWindow,
+        invalidateActions: @escaping () -> Void,
+        onDismiss: (() -> Void)? = nil
+    ) {
+        clusterCards.show(
+            content: content,
+            anchoredTo: anchor,
+            in: window,
+            invalidateActions: invalidateActions
+        ) { [weak self] in
+            onDismiss?()
             self?.clusterCardRole = nil
             self?.clusterView.activeRole = nil
         }
@@ -1296,7 +1314,13 @@ final class TerminalPaneController: NSViewController {
         }
         card.onClose = { [weak self] in self?.clusterCards.dismiss() }
 
-        presentCard(card, role: .place, anchoredTo: anchor, in: window)
+        presentCard(
+            card,
+            role: .place,
+            anchoredTo: anchor,
+            in: window,
+            invalidateActions: { [weak card] in card?.invalidateActions() }
+        )
     }
 
     /// Presents the changes card, then runs the poller's own porcelain read
@@ -1333,24 +1357,46 @@ final class TerminalPaneController: NSViewController {
         }
         card.onClose = { [weak self] in self?.clusterCards.dismiss() }
 
-        presentCard(card, role: .changes, anchoredTo: anchor, in: window)
+        presentCard(
+            card,
+            role: .changes,
+            anchoredTo: anchor,
+            in: window,
+            invalidateActions: { [weak card] in card?.invalidateActions() },
+            onDismiss: { [weak self, card] in
+                guard let self, self.changesCard === card else { return }
+                // Every dismissal route tears down the card's read: close,
+                // toggle, replacement, and resign-key all enter this one
+                // presentation cleanup. The identity guard prevents an old
+                // handler from cancelling a replacement card's work.
+                self.changesCardCancellation?.cancel()
+                self.changesCardCancellation = nil
+                self.changesCard = nil
+            }
+        )
         changesCard = card
         changesCardHeadExists = true
 
         // The same invocation `PaneGitStatus.refresh` runs, flags and all
-        // (`GitCommand.read` owns them), on a utility queue with the answer
-        // hopped back to main. Landing on the weak card means a result that
-        // outlives its card updates nothing.
+        // (`GitCommand.readStatus` owns them), on a utility queue with the
+        // answer hopped back to main. Landing on the weak card means a result
+        // that outlives its card updates nothing; a read that failed or was
+        // cancelled leaves the card on its `Full diff` row.
         let command = clusterGitCommand
-        clusterCardQueue.async { [weak self] in
-            let (status, changes) = command.read(ofRepositoryRoot: root)
-            var headExists = true
-            if case .unborn = status?.head { headExists = false }
+        let cancellation = SubprocessCancellation()
+        changesCardCancellation?.cancel()
+        changesCardCancellation = cancellation
+        clusterCardQueue.async { [weak self, weak card] in
+            let read = command.readStatus(ofRepositoryRoot: root, cancellation: cancellation)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    guard let self, let card = self.changesCard else { return }
+                    guard let self, let card, self.changesCard === card,
+                          case let .success(reading) = read
+                    else { return }
+                    var headExists = true
+                    if case .unborn = reading.status.head { headExists = false }
                     self.changesCardHeadExists = headExists
-                    card.changes = changes
+                    card.changes = reading.changes
                 }
             }
         }
@@ -1409,7 +1455,13 @@ final class TerminalPaneController: NSViewController {
         // `role` here is `.attention` or `.agent`, whichever segment was
         // clicked — ``presentCard(_:role:anchoredTo:in:)`` carries the wash
         // to that same segment, the per-segment memory the toggle keeps.
-        presentCard(card, role: role, anchoredTo: anchor, in: window)
+        presentCard(
+            card,
+            role: role,
+            anchoredTo: anchor,
+            in: window,
+            invalidateActions: { [weak card] in card?.invalidateActions() }
+        )
     }
 
     /// Hands a card's command to the terminal and dismisses the card.
@@ -1573,6 +1625,7 @@ final class TerminalPaneController: NSViewController {
     isolated deinit {
         NotificationCenter.default.removeObserver(self)
         activityTracker.stopTracking()
+        changesCardCancellation?.cancel()
     }
 
     override func viewDidLayout() {

@@ -17,6 +17,75 @@ import PaneChrome
 /// answers self inside the pill and nil everywhere else, which keeps the rest
 /// of the pane exactly as clickable-through as every other overlay leaves it.
 /// The keyboard must never move; the mouse, here alone, may land.
+private nonisolated final class PaneClusterAccessibilitySegment: NSAccessibilityElement {
+    private weak var cluster: PaneClusterView?
+    private let role: PaneClusterSegmentRole
+    private let generation: Int
+
+    init(cluster: PaneClusterView, role: PaneClusterSegmentRole, generation: Int) {
+        self.cluster = cluster
+        self.role = role
+        self.generation = generation
+        super.init()
+    }
+
+    override func accessibilityRole() -> NSAccessibility.Role? { .button }
+
+    override func accessibilityParent() -> Any? { cluster }
+
+    override func accessibilityFrame() -> NSRect {
+        let cluster = cluster
+        let role = role
+        let generation = generation
+        return MainActor.assumeIsolated {
+            cluster?.accessibilityFrame(for: role, generation: generation) ?? .zero
+        }
+    }
+
+    override func accessibilityLabel() -> String? {
+        let cluster = cluster
+        let role = role
+        let generation = generation
+        return MainActor.assumeIsolated {
+            cluster?.accessibilityLabel(for: role, generation: generation)
+        }
+    }
+
+    override func isAccessibilitySelected() -> Bool {
+        let cluster = cluster
+        let role = role
+        let generation = generation
+        return MainActor.assumeIsolated {
+            cluster?.accessibilitySelected(role, generation: generation) ?? false
+        }
+    }
+
+    override func isAccessibilityEnabled() -> Bool {
+        let cluster = cluster
+        let role = role
+        let generation = generation
+        return MainActor.assumeIsolated {
+            cluster?.accessibilityEnabled(role, generation: generation) ?? false
+        }
+    }
+
+    override func accessibilityActionNames() -> [NSAccessibility.Action] { [.press] }
+
+    override func accessibilityPerformAction(_ action: NSAccessibility.Action) {
+        guard action == .press else { return }
+        _ = accessibilityPerformPress()
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        let cluster = cluster
+        let role = role
+        let generation = generation
+        return MainActor.assumeIsolated {
+            cluster?.activateSegment(role, generation: generation) ?? false
+        }
+    }
+}
+
 final class PaneClusterView: PaneOverlayView {
     /// What the pill says, in ``PaneClusterSegments/build(from:)``'s fixed
     /// order. Re-measured on change, because the text is what the width is.
@@ -75,6 +144,7 @@ final class PaneClusterView: PaneOverlayView {
         didSet {
             guard activeRole != oldValue else { return }
             needsDisplay = true
+            NSAccessibility.post(element: self, notification: .selectedChildrenChanged)
         }
     }
 
@@ -132,7 +202,9 @@ final class PaneClusterView: PaneOverlayView {
     /// nothing — ``PaneClusterLayout/segment(at:in:)`` resolves them to nil
     /// on purpose, so a miss opens nothing rather than whichever card is
     /// nearer.
-    var onSegmentClick: ((PaneClusterSegmentRole, NSRect) -> Void)?
+    var onSegmentClick: ((PaneClusterSegmentRole, NSRect) -> Void)? {
+        didSet { NSAccessibility.post(element: self, notification: .layoutChanged) }
+    }
 
     /// Raised with the roles that were on the pill a moment ago and are not on
     /// it now, whatever took them off.
@@ -187,6 +259,106 @@ final class PaneClusterView: PaneOverlayView {
     /// The solved placement, cached at measure time rather than re-solved per
     /// draw or per click, so what is drawn and what is hit cannot disagree.
     private var placed: [PaneClusterLayout.Placed] = []
+
+    private var accessibilitySegments: [PaneClusterAccessibilitySegment] = []
+    private var accessibilityGeneration = 0
+
+    // MARK: - Accessibility
+
+    override func isAccessibilityElement() -> Bool { true }
+
+    override func accessibilityRole() -> NSAccessibility.Role? { .group }
+
+    override func accessibilityLabel() -> String? { "Pane status" }
+
+    override func accessibilityChildren() -> [Any]? { accessibilitySegments }
+
+    override func accessibilitySelectedChildren() -> [Any]? {
+        guard let activeRole,
+              let index = placed.firstIndex(where: { $0.segment.role == activeRole })
+        else { return [] }
+        return [accessibilitySegments[index]]
+    }
+
+    fileprivate func accessibilityFrame(
+        for role: PaneClusterSegmentRole,
+        generation: Int
+    ) -> NSRect {
+        guard generation == accessibilityGeneration, let rect = segmentRect(for: role) else {
+            return .zero
+        }
+        guard let window else { return rect }
+        return window.convertToScreen(convert(rect, to: nil))
+    }
+
+    fileprivate func accessibilityLabel(
+        for role: PaneClusterSegmentRole,
+        generation: Int
+    ) -> String? {
+        guard generation == accessibilityGeneration,
+              let segment = placed.first(where: { $0.segment.role == role })?.segment
+        else { return nil }
+        return Self.accessibilityLabel(for: segment)
+    }
+
+    fileprivate func accessibilitySelected(
+        _ role: PaneClusterSegmentRole,
+        generation: Int
+    ) -> Bool {
+        generation == accessibilityGeneration
+            && placed.contains(where: { $0.segment.role == role })
+            && activeRole == role
+    }
+
+    fileprivate func accessibilityEnabled(
+        _ role: PaneClusterSegmentRole,
+        generation: Int
+    ) -> Bool {
+        generation == accessibilityGeneration
+            && placed.contains(where: { $0.segment.role == role })
+            && role.opensCard
+            && onSegmentClick != nil
+    }
+
+    fileprivate func activateSegment(
+        _ role: PaneClusterSegmentRole,
+        generation: Int
+    ) -> Bool {
+        guard generation == accessibilityGeneration,
+              let segment = placed.first(where: { $0.segment.role == role }),
+              role.opensCard,
+              let onSegmentClick
+        else { return false }
+        let rect = NSRect(x: segment.x, y: 0, width: segment.width, height: bounds.height)
+        onSegmentClick(role, rect)
+        return true
+    }
+
+    private func replaceAccessibilitySegments() {
+        accessibilityGeneration &+= 1
+        accessibilitySegments = placed.map {
+            PaneClusterAccessibilitySegment(
+                cluster: self,
+                role: $0.segment.role,
+                generation: accessibilityGeneration
+            )
+        }
+        NSAccessibility.post(element: self, notification: .layoutChanged)
+    }
+
+    private static func accessibilityLabel(for segment: PaneClusterSegment) -> String {
+        switch segment.role {
+        case .operation: "Operation, \(segment.text)"
+        case .place: "Place, \(segment.text)"
+        case .changes: "Changes, \(segment.text)"
+        case .agent: "Agent, \(segment.text)"
+        case .attention:
+            if segment.isFinished { "Attention, done" }
+            else if segment.isAcknowledged { "Attention, acknowledged" }
+            else { "Attention, asking" }
+        case .notice: "Notice, \(segment.text)"
+        }
+    }
 
     /// Where the attention dot sat in the last placement that had one, as a
     /// distance from the pill's **trailing** edge rather than as a rect.
@@ -325,10 +497,9 @@ final class PaneClusterView: PaneOverlayView {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         guard let segment = PaneClusterLayout.segment(at: Double(point.x), in: placed),
-              segment.role.opensCard,
-              let rect = segmentRect(for: segment.role)
+              segment.role.opensCard
         else { return }
-        onSegmentClick?(segment.role, rect)
+        _ = activateSegment(segment.role, generation: accessibilityGeneration)
     }
 
     /// The named segment's rect in this view's own coordinates, or nil while
@@ -493,7 +664,10 @@ final class PaneClusterView: PaneOverlayView {
         // cheap: at most five roles.
         let before = Set(placed.map(\.segment.role))
 
-        placed = PaneClusterLayout.solve(segments: fitted, widths: widths)
+        let nextPlacement = PaneClusterLayout.solve(segments: fitted, widths: widths)
+        let placementChanged = nextPlacement != placed
+        placed = nextPlacement
+        if placementChanged { replaceAccessibilitySegments() }
         measuredPaneWidth = superview.map { Double($0.bounds.width) }
 
         // The one announcement that a segment stopped existing, whatever took

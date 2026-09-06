@@ -29,6 +29,14 @@ final class ClusterCardController {
     /// A parameter is assigned after that internal dismiss, so it cannot be.
     private var onDismiss: (() -> Void)?
 
+    /// Revokes the presented view's action callbacks at the same lifetime
+    /// boundary that removes it from the panel. Accessibility clients may
+    /// retain an old card (not just one of its virtual children), so releasing
+    /// `panel.contentView` cannot by itself make an obsolete action refuse.
+    /// Like `onDismiss`, this belongs to the presentation and is installed
+    /// only after `show` has dismissed the outgoing card.
+    private var invalidateActions: (() -> Void)?
+
     private let panel: PalettePanel
 
     private var resignObserver: (any NSObjectProtocol)?
@@ -138,6 +146,7 @@ final class ClusterCardController {
         content: NSView,
         anchoredTo segmentRect: NSRect,
         in host: NSWindow,
+        invalidateActions: (() -> Void)? = nil,
         onDismiss: (() -> Void)? = nil
     ) {
         // Unconditional, not `if panel.isVisible`: an outgoing card whose panel
@@ -146,6 +155,7 @@ final class ClusterCardController {
         // test skipped exactly that teardown. `dismiss()` guards its own window
         // work and returns having called nothing when there was no card.
         dismiss()
+        self.invalidateActions = invalidateActions
         self.onDismiss = onDismiss
 
         hostWindow = host
@@ -218,6 +228,15 @@ final class ClusterCardController {
             panel.orderOut(nil)
             if hadKey { hostWindow?.makeKey() }
         }
+        // Revoke first while the panel still owns the card. The callbacks are
+        // taken and nil'd before either runs so a callback that reenters
+        // `dismiss()` cannot fire the presentation's cleanup twice.
+        let invalidation = invalidateActions
+        let handler = onDismiss
+        invalidateActions = nil
+        onDismiss = nil
+        invalidation?()
+
         // Unlike the approval popover, which owns its view for the process's
         // life, the card view belongs to the caller and only visits: it is
         // released here so a dismissed card's view (and whatever it holds) does
@@ -225,8 +244,6 @@ final class ClusterCardController {
         // branch on purpose — an AppKit-hidden panel still holds the card view,
         // and that is exactly the leak this releases.
         panel.contentView = NSView()
-        let handler = onDismiss
-        onDismiss = nil
         handler?()
     }
 
