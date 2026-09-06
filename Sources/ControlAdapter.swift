@@ -141,7 +141,7 @@ final class ControlAdapter: ControlWorkspaceBridge {
             workingDirectory: controller.anchorTracker.workingDirectory?
                 .path(percentEncoded: false),
             anchor: anchor?.url.path(percentEncoded: false),
-            branch: controller.gitStatus.git?.head,
+            branch: controller.repository.git?.head,
             activity: controller.activityLabel,
             attention: PaneStatus.Attention.name(of: controller.attentionState),
             createdBy: controller.createdBy?.rawValue.uuidString

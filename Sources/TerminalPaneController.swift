@@ -190,18 +190,17 @@ final class TerminalPaneController: NSViewController {
     /// transient git error ahead of the shell rather than a wrong diff.
     private var changesCardHeadExists = true
 
-    /// The changes card's one-shot read, off the main actor for
-    /// ``PaneGitStatus``'s reason: forking git where the user is waiting
-    /// would have the card competing with the terminal for the main queue.
-    /// Lazy like ``clusterCards`` and touched only in the click path, so the
-    /// closed gate builds none of this machinery.
+    /// The changes card's one-shot read, off the main actor for the observer's
+    /// reason: forking git where the user is waiting would have the card
+    /// competing with the terminal for the main queue. Lazy like
+    /// ``clusterCards`` and touched only in the click path, so the closed gate
+    /// builds none of this machinery.
     private lazy var clusterCardQueue = DispatchQueue(
         label: "gutons.baia.cluster-card", qos: .utility
     )
 
-    /// The card read's own spawner. ``PaneGitStatus`` keeps its instance
-    /// private, and sharing a counter with the poller would only blur what
-    /// each one costs. Lazy for ``clusterCardQueue``'s reason.
+    /// The card read's own spawner, separate from the shared observer's so what
+    /// each one costs stays legible. Lazy for ``clusterCardQueue``'s reason.
     private lazy var clusterGitCommand = GitCommand()
 
     /// Cancels the card's read when the card closes, so a read that outlives
@@ -338,11 +337,15 @@ final class TerminalPaneController: NSViewController {
     /// when focus moved, which is the case where nothing changed.
     var onGitChange: (() -> Void)?
 
-    /// Readable from outside so a surface can re-point at the focused pane's last
-    /// answer instead of starting a read of its own. Read-only on purpose: the
-    /// poller's interval and anchor are still set through this controller, so
-    /// nothing outside can start, stop or retarget a pane's git reads.
-    private(set) var gitStatus = PaneGitStatus()
+    /// This pane's binding to the shared repository observer. Readable from
+    /// outside so a surface can draw the focused pane's snapshot instead of
+    /// starting a read of its own. Read-only on purpose: the root and the
+    /// activity are set through this controller, so nothing outside can
+    /// retarget a pane's repository.
+    ///
+    /// Lazy, because the centre is a main-actor static and the pane's
+    /// initialiser runs before it needs one.
+    private(set) lazy var repository = RepositoryService.shared.makeBinding()
 
     private lazy var activityTracker = PaneActivityTracker(
         foregroundPid: { [weak self] in self?.terminalView.foregroundPid }
@@ -469,9 +472,12 @@ final class TerminalPaneController: NSViewController {
 
     private static let rowSearchBound = 64
 
+    /// The status cadence, which every pane shares: the observer polls per
+    /// repository, so this sets one value for the process and the last pane to
+    /// apply a settings change writes the same number as the first.
     private var gitPollInterval: TimeInterval {
-        get { gitStatus.pollInterval }
-        set { gitStatus.pollInterval = newValue }
+        get { RepositoryService.shared.statusInterval }
+        set { RepositoryService.shared.statusInterval = newValue }
     }
 
     private var activityPollInterval: TimeInterval {
@@ -874,19 +880,23 @@ final class TerminalPaneController: NSViewController {
 
         anchorTracker.onChange = { [weak self] in
             guard let self else { return }
-            // Handed the anchor on every change, and it returns immediately
-            // unless the repository actually moved. Without that guard this
-            // would fork git once a second per pane.
-            gitStatus.setAnchor(anchorTracker.anchor)
+            // Handed the repository root on every change, and the binding
+            // returns immediately unless the root actually moved. Without that
+            // guard this would release and re-resolve once a second per pane.
+            // The root and nothing else: `GitWorkspace` takes URLs, and a plain
+            // anchor hands over nil so the pane draws no git rows at all.
+            repository.setRepositoryURL(Anchor.repositoryRoot(of: anchorTracker.anchor))
             refreshStatus()
             onAnchorChange?()
         }
 
-        gitStatus.onChange = { [weak self] _ in
+        repository.onChange = { [weak self] _ in
             guard let self else { return }
             refreshStatus()
-            // Raised after the capsule is rebuilt, so anything drawing the same read
-            // elsewhere is redrawing from a poller that has already settled.
+            // Raised after the capsule is rebuilt, so anything drawing the same
+            // snapshot elsewhere is redrawing from a publication that has
+            // already landed. Fires for the nil the binding publishes on a root
+            // change too, which is what clears the sidebar at once.
             onGitChange?()
         }
 
@@ -1105,7 +1115,7 @@ final class TerminalPaneController: NSViewController {
             anchorIsRepository: anchor.kind == .repository,
             isPinned: anchor.source == .pinned,
             workingDirectory: shown,
-            git: gitStatus.git,
+            git: repository.git,
             agent: revision.agent,
             notice: notice
         )
@@ -1253,9 +1263,9 @@ final class TerminalPaneController: NSViewController {
     private func presentPlaceCard(anchoredTo anchor: NSRect, in window: NSWindow) {
         guard let paneAnchor = anchorTracker.anchor else { return }
         // The footer's stale-facts rule, kept: a plain directory renders no
-        // git rows even when the poller still holds facts from before a `cd`
-        // out of the repository.
-        let git = paneAnchor.kind == .repository ? gitStatus.git : nil
+        // git rows. The binding already publishes nil on the way out of a
+        // repository, and this keeps the rule legible at the one site it matters.
+        let git = paneAnchor.kind == .repository ? repository.git : nil
 
         let directoryPath = (anchorTracker.workingDirectory ?? paneAnchor.url)
             .path(percentEncoded: false)
@@ -1323,11 +1333,11 @@ final class TerminalPaneController: NSViewController {
         )
     }
 
-    /// Presents the changes card, then runs the poller's own porcelain read
+    /// Presents the changes card, then runs the observer's own porcelain read
     /// for a fresh answer. The card opens with only its `Full diff` row and
-    /// grows when the result lands; the cached ``PaneGitStatus/changes`` is
-    /// deliberately not used to seed it, because a card is opened to act on
-    /// what is true now and the cache is up to a poll interval old.
+    /// grows when the result lands; the snapshot's `changes` is deliberately
+    /// not used to seed it, because a card is opened to act on what is true
+    /// now and the snapshot is up to a poll interval old.
     private func presentChangesCard(anchoredTo anchor: NSRect, in window: NSWindow) {
         guard let root = Anchor.repositoryRoot(of: anchorTracker.anchor) else { return }
         // The diff commands run at the repository root, not the shell's
@@ -1377,7 +1387,7 @@ final class TerminalPaneController: NSViewController {
         changesCard = card
         changesCardHeadExists = true
 
-        // The same invocation `PaneGitStatus.refresh` runs, flags and all
+        // The same invocation the observer's status read runs, flags and all
         // (`GitCommand.readStatus` owns them), on a utility queue with the
         // answer hopped back to main. Landing on the weak card means a result
         // that outlives its card updates nothing; a read that failed or was
@@ -1566,9 +1576,9 @@ final class TerminalPaneController: NSViewController {
         // `Diagnostics/control-channel/`, whose app is launched from a script and
         // is never key, so no pane in it ever reported activity.
         activityTracker.startPolling()
+        repository.isActive = view.window?.isKeyWindow == true
         if view.window?.isKeyWindow == true {
             anchorTracker.startPolling()
-            gitStatus.startPolling()
         }
     }
 
@@ -1578,7 +1588,7 @@ final class TerminalPaneController: NSViewController {
     override func viewDidDisappear() {
         super.viewDidDisappear()
         anchorTracker.stopPolling()
-        gitStatus.stopPolling()
+        repository.isActive = false
     }
 
     /// Polling is gated on focus, so an unfocused window costs nothing and a
@@ -1609,7 +1619,10 @@ final class TerminalPaneController: NSViewController {
 
     @objc private func windowDidBecomeKey() {
         anchorTracker.startPolling()
-        gitStatus.startPolling()
+        // Per pane, which is per subscriber on the shared observer: a root is
+        // read while any of its subscribers is in a key window, so one window
+        // resigning key cannot silence a repository another window shows.
+        repository.isActive = true
         // Activity keeps polling while the window is unfocused. It is the one
         // tracker whose whole purpose is to notice something while the user is
         // looking elsewhere, so gating it on focus would disable the feature
@@ -1619,12 +1632,16 @@ final class TerminalPaneController: NSViewController {
 
     @objc private func windowDidResignKey() {
         anchorTracker.stopPolling()
-        gitStatus.stopPolling()
+        repository.isActive = false
     }
 
     isolated deinit {
         NotificationCenter.default.removeObserver(self)
         activityTracker.stopTracking()
+        // The root goes with the pane: the last pane on a repository stops its
+        // watch and its polling here rather than when the binding happens to
+        // deallocate.
+        repository.releaseRoot()
         changesCardCancellation?.cancel()
     }
 
@@ -1694,7 +1711,7 @@ final class TerminalPaneController: NSViewController {
             // repository whose default is `develop` showed `:develop` on every tab
             // forever, and one defaulting to `main` said nothing at all on a branch
             // called `master`, which is the state worth shouting about.
-            isDefaultBranch: gitStatus.isOnDefaultBranch,
+            isDefaultBranch: repository.isOnDefaultBranch,
             markers: markers,
             attention: status?.attention ?? .none,
             isBusy: status?.agent?.isBusy ?? false,

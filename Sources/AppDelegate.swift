@@ -210,9 +210,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// project created since launch.
     private var discoveredProjects: [Project]?
 
-    /// Guards against two walks running at once, which the launch warm-up and an
-    /// early ⌘K would otherwise start.
-    private var isDiscovering = false
+    private struct ProjectDiscoveryRequest: Equatable, Sendable {
+        let roots: [URL]
+        let maxDepth: Int
+    }
+
+    /// One bounded filesystem lane for the project walk. A reload while a slow
+    /// volume is still answering replaces the one pending request and fences the
+    /// old completion; it never creates a replacement detached task per reload.
+    private lazy var projectDiscoveryTask = LatestFilesystemTask<ProjectDiscoveryRequest, [Project]> {
+        request in
+        let git = GitCommand()
+        let discovery = ProjectDiscovery(
+            roots: request.roots,
+            maxDepth: request.maxDepth,
+            ignoredNames: ProjectDiscovery.defaultIgnoredNames
+        )
+        // git names the worktrees rather than the walk finding them. They are
+        // full file copies living inside the repository, so walking into them
+        // triples the tree and reports the same files twice.
+        return discovery.discover { git.worktrees(ofRepositoryRoot: $0) }
+    }
+
+    private var projectDiscoveryGeneration: UInt64 = 0
+    private var requestedDiscovery: ProjectDiscoveryRequest?
+
+    /// One plain-tree binding per Files surface. The surface is the lifecycle
+    /// key: toggling the column off or closing its window removes its lane.
+    private var plainDirectoryTrees: [ObjectIdentifier: DirectoryTreeBinding] = [:]
 
     /// Watches every keystroke that reaches a workspace window, so typing into a
     /// pane answers its request for attention.
@@ -630,6 +655,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // knows which panes went with the window. A registration that outlived
             // its shell is a token that still works against a pane nobody can see.
             controller.tree.forgetEveryPane()
+            if let files = controller.sidebar.files {
+                plainDirectoryTrees[ObjectIdentifier(files)] = nil
+            }
             windows.removeAll { $0 === controller }
             // Dropped before the save so a closed tab is gone from the next
             // snapshot rather than restored on the following launch.
@@ -822,6 +850,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// title moved.
     @objc func toggleSurfacePanels(_: Any?) {
         guard let window = focused ?? windows.first else { return }
+        if let files = window.sidebar.files {
+            plainDirectoryTrees[ObjectIdentifier(files)] = nil
+        }
         let next: SidebarContent = window.sidebar.files == nil ? .files : .off
         // The window's own tree, not the focused one: this rebuilds the surfaces
         // of one window, and a click in them has to reach that window's panes.
@@ -910,43 +941,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Discards the cached project list and walks again, so a project created
     /// since launch shows up.
     @objc func reloadProjectList(_: Any?) {
-        discoveredProjects = nil
+        invalidateProjectDiscovery()
         discoverProjects()
     }
 
     /// Walks the configured roots off the main thread and hands the result to
     /// the palette.
     ///
-    /// Re-entrant by design: `isDiscovering` collapses the launch warm-up, the
-    /// ⌘K that arrives before it finishes, and Reload Project List into one
-    /// walk rather than three concurrent ones.
+    /// Re-entrant by design: identical requests collapse, while a settings edit
+    /// or Reload Project List supersedes the running generation and retains only
+    /// its newest pending walk.
     private func discoverProjects() {
-        guard discoveredProjects == nil, !isDiscovering else { return }
-        isDiscovering = true
-
         let settings = configuration.settings
-        let roots = settings.projectRoots.map {
-            URL(filePath: $0, directoryHint: .isDirectory)
-        }
-        let maxDepth = settings.discoveryMaxDepth
+        let request = ProjectDiscoveryRequest(
+            roots: settings.projectRoots.map {
+                URL(filePath: $0, directoryHint: .isDirectory)
+            },
+            maxDepth: settings.discoveryMaxDepth
+        )
+        guard discoveredProjects == nil, request != requestedDiscovery else { return }
+        requestedDiscovery = request
+        projectDiscoveryGeneration &+= 1
+        let generation = projectDiscoveryGeneration
 
-        Task.detached(priority: .userInitiated) {
-            let git = GitCommand()
-            let discovery = ProjectDiscovery(
-                roots: roots,
-                maxDepth: maxDepth,
-                ignoredNames: ProjectDiscovery.defaultIgnoredNames
-            )
-            // git names the worktrees rather than the walk finding them. They
-            // are full file copies living inside the repository, so walking
-            // into them triples the tree and reports the same files twice.
-            let found = discovery.discover { git.worktrees(ofRepositoryRoot: $0) }
-            await MainActor.run { [weak self] in
-                guard let self else { return }
-                isDiscovering = false
-                discoveredProjects = found
-                palette.setProjects(found, recency: recentProjects.load())
+        projectDiscoveryTask.submit(request) { [weak self] found in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self, generation == self.projectDiscoveryGeneration,
+                          self.requestedDiscovery == request
+                    else { return }
+                    self.requestedDiscovery = nil
+                    self.discoveredProjects = found
+                    self.palette.setProjects(found, recency: self.recentProjects.load())
+                }
             }
+        }
+    }
+
+    /// Invalidates both queued and eventual delivery. A syscall already inside
+    /// the filesystem is allowed to return, but its generation can no longer
+    /// repopulate the palette with the old roots.
+    private func invalidateProjectDiscovery() {
+        let hadPublishedProjects = discoveredProjects != nil
+        discoveredProjects = nil
+        requestedDiscovery = nil
+        projectDiscoveryGeneration &+= 1
+        projectDiscoveryTask.cancelPending()
+        if hadPublishedProjects {
+            palette.setProjects([], recency: recentProjects.load())
         }
     }
 
@@ -987,10 +1029,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Re-points the sidebar at the focused pane and redraws from what that pane
     /// already holds.
     ///
-    /// **Zero `git` invocations, by construction.** `PaneGitStatus` polls per pane
-    /// and keeps its last answer, so this reads a value that is already in memory.
-    /// Starting a read here instead would fork git on every click and every
-    /// ⌥⌘arrow, which is several times a second while someone arrows across a grid.
+    /// **Zero `git` invocations, by construction.** The focused pane's
+    /// `RepositoryBinding` holds the shared observer's latest snapshot for its
+    /// root, so this reads a value that is already in memory and requests
+    /// nothing: the tree, the changes and the status come out of one snapshot,
+    /// and the observer's own cadence, the filesystem watch and the focused
+    /// pane's `onGitChange` are what bring a newer one here. Starting a read
+    /// from a draw path was the feedback edge that looped on an empty
+    /// repository, and it is gone with the cache that made it possible.
     ///
     /// A pane with no repository is told so rather than shown an empty list, because
     /// "nothing changed" and "not a repository" are different answers.
@@ -1006,11 +1052,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let anchorPath = anchor?.url.path(percentEncoded: false)
 
         // The CHANGES surface was fed here too until 2026-08-12, from
-        // `gitStatus.changes` and `gitStatus.stats`. The owner's ruling that day
+        // the repository snapshot's changes. The owner's ruling that day
         // removed it. `files.changes` below is not what went: the tree's own
         // per-file dirty marks are the tree's annotation on a row it was already
         // drawing, not a second list of changed files.
         if let files = controller.sidebar.files {
+            let directoryTree = plainDirectoryTree(for: files)
             // Inside a repository git lists the files; outside one the
             // directory is walked. The mode follows the anchor rather than a
             // control, because repo-or-local has one right answer at any
@@ -1033,17 +1080,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .plain: files.listing = .directory
             case nil: files.listing = .absent
             }
-            if let root {
-                // Optional because the cache can miss: the read is async and a
-                // first refresh arrives before it lands.
-                files.tree = fileTrees.tree(for: root) ?? []
-                readFileTree(at: root)
+            // One snapshot for the tree and its dirty marks, so both describe
+            // the same repository at the same publication. The binding clears
+            // its snapshot the moment the pane's root changes and never
+            // delivers a completion for a root the pane has left, so a snapshot
+            // here is this anchor's or nil; `unread`, `empty` and `failed`
+            // trees all draw as no rows, and none of them asks for a read.
+            let snapshot = root != nil ? pane?.repository.snapshot : nil
+            if root != nil {
+                directoryTree.refresh(nil)
+                files.tree = snapshot?.tree.nodes ?? []
             } else if let plain = anchor?.url {
-                files.tree = DirectoryTree.tree(at: plain)
+                directoryTree.refresh(plain)
+                files.tree = directoryTree.nodes
             } else {
+                directoryTree.refresh(nil)
                 files.tree = []
             }
-            files.changes = pane?.gitStatus.changes ?? []
+            files.changes = snapshot?.changes ?? []
             files.anchorPath = anchorPath
         }
         controller.sidebar.anchorName = anchor?.displayName
@@ -1053,6 +1107,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // ruling that day removed the row as a fourth copy of what the window
         // title, the prompt and the capsule already say, and the pane's status
         // reaches this column through none of them now.
+    }
+
+    /// The bounded plain-directory lane for this exact Files surface.
+    private func plainDirectoryTree(for files: FilesSurface) -> DirectoryTreeBinding {
+        let key = ObjectIdentifier(files)
+        if let existing = plainDirectoryTrees[key] { return existing }
+        let binding = DirectoryTreeBinding()
+        binding.onChange = { [weak files] nodes in files?.tree = nodes }
+        plainDirectoryTrees[key] = binding
+        return binding
     }
 
     /// Puts a clicked path on the focused pane's prompt.
@@ -1145,45 +1209,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pane.send(Array(SurfaceMessage.initCaption.utf8))
     }
 
-    /// Every repository's file tree, once read.
-    ///
-    /// The rule lives in `GitWorkspace` rather than here, because it is the rule the
-    /// sidebar's cost rests on and it is testable there without a window: reading a
-    /// tree is a `git ls-files` over the whole repository, and focus moves several
-    /// times a second while someone arrows across a grid. See ``FileTreeCache``.
-    private var fileTrees = FileTreeCache()
-
-    /// Reads a repository's tree once and pushes it into whatever is showing it.
-    ///
-    /// Deliberately not on the git poll. The status read is on a two second timer per
-    /// pane and this is not: a tree is re-read when the sidebar first needs it and
-    /// then left alone, because paying `ls-files` every two seconds per pane is a
-    /// cost with no question behind it.
-    private func readFileTree(at root: URL) {
-        // Claiming is what starts the read, so two focus changes in one turn cannot
-        // both be told yes. The check and the claim are one call for that reason.
-        guard fileTrees.claimRead(of: root) else { return }
-        let command = GitCommand()
-        DispatchQueue.global(qos: .userInitiated).async {
-            let tree = command.files(ofRepositoryRoot: root)
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    if tree.isEmpty {
-                        // Nothing to store, and the root is released rather than
-                        // recorded as empty: a repository mid-clone resolves itself,
-                        // and a cache that never retried would need a relaunch.
-                        self.fileTrees.forget(root)
-                    } else {
-                        self.fileTrees.store(tree, for: root)
-                    }
-                    // Pushed into every window, because the same repository can be
-                    // open in more than one and each of them is waiting on this.
-                    for controller in self.windows { self.refreshSidebar(of: controller) }
-                }
-            }
-        }
-    }
-
     private func updateWindowTitles() {
         // Named rather than counted. A count answers "how many", which nobody
         // asked; a name answers "which", which is the entire reason the marker
@@ -1254,7 +1279,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Dropped so the next palette walks the roots the file now names. The
         // walk is not started here: it would fire on every keystroke of an
         // editor holding the file open.
-        discoveredProjects = nil
+        invalidateProjectDiscovery()
         for controller in windows {
             controller.tree.refreshTheme()
             // The sidebar too, which this loop did not reach: a theme or an opacity

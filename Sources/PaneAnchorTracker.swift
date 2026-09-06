@@ -1,4 +1,5 @@
 import AppKit
+import GitWorkspace
 import PaneActivity
 import ProjectAnchor
 
@@ -19,7 +20,23 @@ final class PaneAnchorTracker {
     private static let legacyPinDefaultsKey = "pinnedProjectDirectory"
 
     private let foregroundPid: () -> pid_t?
-    private let resolver: AnchorResolver
+
+    private enum FilesystemRequest: Sendable {
+        case poll(pid_t, pin: URL?)
+        case resolve(workingDirectory: URL?, pin: URL?)
+    }
+
+    private enum FilesystemResult: Sendable {
+        case poll(directory: URL?, resolution: AnchorResolver.Resolution?)
+        case resolution(AnchorResolver.Resolution)
+    }
+
+    /// Kernel cwd reads, descendant discovery, repository-root walks and pin
+    /// validation all enter the fixed filesystem pool through one latest-only
+    /// pane lane. A blocked syscall retains one pending request, not one task per
+    /// timer tick.
+    private let filesystemTask: LatestFilesystemTask<FilesystemRequest, FilesystemResult>
+    private var resolutionGeneration: UInt64 = 0
 
     private var timer: Timer?
 
@@ -47,11 +64,30 @@ final class PaneAnchorTracker {
     init(
         foregroundPid: @escaping () -> pid_t?,
         resolver: AnchorResolver = .init(),
-        pinnedDirectory: URL? = nil
+        pinnedDirectory: URL? = nil,
+        filesystemExecutor: FilesystemExecutor = .shared
     ) {
         self.foregroundPid = foregroundPid
-        self.resolver = resolver
         self.pinnedDirectory = pinnedDirectory
+        filesystemTask = LatestFilesystemTask(executor: filesystemExecutor) { request in
+            switch request {
+            case let .poll(pid, pin):
+                guard let directory = Self.readWorkingDirectory(forForeground: pid) else {
+                    return .poll(directory: nil, resolution: nil)
+                }
+                return .poll(
+                    directory: directory,
+                    resolution: resolver.resolve(workingDirectory: directory, pin: pin)
+                )
+            case let .resolve(workingDirectory, pin):
+                return .resolution(resolver.resolve(workingDirectory: workingDirectory, pin: pin))
+            }
+        }
+    }
+
+    isolated deinit {
+        timer?.invalidate()
+        filesystemTask.cancelPending()
     }
 
     /// Removes the app-wide pin the earlier design left behind.
@@ -88,24 +124,15 @@ final class PaneAnchorTracker {
     /// A failed read keeps the last known directory. A shell mid-exec has no
     /// foreground process for a moment, and the title must not flicker.
     private func poll() {
-        guard let pid = foregroundPid(),
-              let directory = readWorkingDirectory(forForeground: pid)
-        else { return }
-        // Compared against what the *poll* last saw, not against
-        // `workingDirectory`, and the difference is the whole point. An
-        // announcement through `reportWorkingDirectory` moves
-        // `workingDirectory` and cannot move the process, so a poll comparing
-        // against `workingDirectory` would find a disagreement every single tick
-        // and overwrite the announcement within the second. That is exactly the
-        // case the announcement exists for: an agent that cds in a subshell moves
-        // no process cwd at all, so the poll would clobber it forever.
-        //
-        // Comparing against the last polled value instead means the poll speaks
-        // only when the process genuinely moved, which is what earns it the right
-        // to overrule what it was told.
-        guard directory != lastPolledDirectory else { return }
-        lastPolledDirectory = directory
-        apply(directory)
+        guard let pid = foregroundPid() else { return }
+        let generation = resolutionGeneration
+        filesystemTask.submit(.poll(pid, pin: pinnedDirectory)) { [weak self] result in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    self?.finish(result, generation: generation)
+                }
+            }
+        }
     }
 
     /// The pane's working directory, asking the foreground process first and its
@@ -127,7 +154,7 @@ final class PaneAnchorTracker {
     ///
     /// The snapshot is rooted at the foreground pid rather than at baia, because
     /// the processes wanted are below it and `snapshot(under:)` walks downward.
-    private func readWorkingDirectory(forForeground pid: pid_t) -> URL? {
+    nonisolated private static func readWorkingDirectory(forForeground pid: pid_t) -> URL? {
         if let direct = ProcessWorkingDirectory.url(ofProcess: pid) { return direct }
         let tree = ProcessTree.snapshot(under: pid)
         for candidate in ProcessTree.cwdCandidates(forForeground: pid, in: tree)
@@ -199,10 +226,48 @@ final class PaneAnchorTracker {
         resolveAndNotify()
     }
 
-    /// Every caller has already changed an input the pane displays, so this
-    /// always notifies rather than comparing the resulting anchor.
+    /// Every caller has changed a displayed input. Clear the old anchor before
+    /// starting the slow resolution so a title/sidebar never combines the new
+    /// working directory or pin with the previous root.
     private func resolveAndNotify() {
-        let resolution = resolver.resolve(workingDirectory: workingDirectory, pin: pinnedDirectory)
+        resolutionGeneration &+= 1
+        let generation = resolutionGeneration
+        anchor = nil
+        onChange?()
+        // The callback is synchronous and may set another pin or report a new
+        // directory. Preserve that nested request instead of overwriting it with
+        // this outer resolution after the callback returns.
+        guard generation == resolutionGeneration else { return }
+        filesystemTask.cancelPending()
+        filesystemTask.submit(.resolve(workingDirectory: workingDirectory, pin: pinnedDirectory)) {
+            [weak self] result in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    self?.finish(result, generation: generation)
+                }
+            }
+        }
+    }
+
+    private func finish(_ result: FilesystemResult, generation: UInt64) {
+        guard generation == resolutionGeneration else { return }
+        switch result {
+        case let .poll(directory, resolution):
+            guard let directory, let resolution else { return }
+            let directoryChanged = directory != lastPolledDirectory
+            if directoryChanged { lastPolledDirectory = directory }
+            // A direct report or pin change may have cleared the anchor while a
+            // poll was pending. In that case the poll's resolution is still the
+            // newest input even when the process directory itself did not move.
+            guard directoryChanged || anchor == nil else { return }
+            workingDirectory = directory
+            apply(resolution)
+        case let .resolution(resolution):
+            apply(resolution)
+        }
+    }
+
+    private func apply(_ resolution: AnchorResolver.Resolution) {
         // A pin whose directory has been deleted is dropped rather than kept and
         // ignored, so the next snapshot records the pane as unpinned instead of
         // restoring a pin that will never resolve again.
