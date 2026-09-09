@@ -12,15 +12,12 @@ import Foundation
 /// the window's own tab bar is native AppKit, not this array. ``WindowGroup`` is
 /// what owns an ordered list of tabs and their selection in the session file.
 ///
-/// That leaves the multi-tab mutators here — ``addTab(pane:)``, ``closeFocusedTab()``,
-/// ``focusTab(at:)``, ``focusNextTab()``, ``focusPreviousTab()`` — reachable from
-/// tests and from a workspace holding more than one tab, but not from the app's own
-/// construction, which builds one window per tab. They are kept rather than deleted
-/// (W04): the type stays correct for any tab count, the invariants below are stated
-/// once for all of them, and a caller model that puts two tabs in one `Workspace` is
-/// a change to this file's callers rather than a rewrite of this file. Deleting them
-/// would be safe only after something proves no caller can produce that shape, and
-/// `Codable` alone means a decoded session can.
+/// The multi-tab mutators that only tests reached (add tab, close focused tab,
+/// focus tab by index, next and previous tab) were deleted on 2026-09-09 (W04,
+/// owner decision): the app builds one window per tab and AppKit owns the tab
+/// bar, so nothing could call them. The type still holds a `tabs` array and stays
+/// correct for any count, because a decoded session can carry more than one tab
+/// and the pane-targeted mutators below resolve across all of them.
 ///
 /// One invariant every mutator upholds: `zoomedPane` is either nil or the focused
 /// pane of that tab. Focus has to sit on a pane the user can see, and a zoomed
@@ -393,56 +390,6 @@ public struct Workspace: Sendable, Equatable, Codable {
             tab.zoomedPane = tab.zoomedPane == tab.focusedPane ? nil : tab.focusedPane
             return true
         }
-    }
-
-    /// Appends a tab showing `pane` and focuses it. A new tab the user cannot see
-    /// is not what cmd+t means, so this has no failure to report.
-    public mutating func addTab(pane: PaneID) {
-        tabs.append(Tab(pane: pane))
-        focusedTabIndex = tabs.count - 1
-    }
-
-    /// Closes the focused tab, taking every pane in it.
-    ///
-    /// False for the last tab, for the same reason `closeFocusedPane` refuses the
-    /// last pane: the window keeps showing something.
-    ///
-    /// Focus goes to whichever tab slid into the closed one's position, and to the
-    /// new last tab when the closed one was at the end. Clamping rather than always
-    /// stepping left keeps the tab under the same slot in the tab bar, which is
-    /// where the eye already is.
-    ///
-    /// A wrapper over ``closeTab(at:)``, which ``close(pane:)`` also reaches when it
-    /// takes the last pane of a tab. Two implementations of closing a tab is what
-    /// would let one of them forget to keep the user where they were.
-    public mutating func closeFocusedTab() -> Bool {
-        closeTab(at: focusedTabIndex)
-    }
-
-    /// Focuses the tab at `index`. False for an index no tab has, which is what
-    /// cmd+5 in a three-tab window is, and false for the tab that is already
-    /// focused.
-    public mutating func focusTab(at index: Int) -> Bool {
-        guard tabs.indices.contains(index), index != focusedTabIndex else { return false }
-        focusedTabIndex = index
-        return true
-    }
-
-    /// Focuses the next tab, wrapping past the last.
-    ///
-    /// The empty guard is not decoration: `%` on an empty collection's count traps,
-    /// and a reconciled session that lost every tab is an empty workspace rather
-    /// than nil.
-    public mutating func focusNextTab() {
-        guard !tabs.isEmpty else { return }
-        focusedTabIndex = (max(focusedTabIndex, 0) + 1) % tabs.count
-    }
-
-    /// Focuses the previous tab, wrapping past the first.
-    public mutating func focusPreviousTab() {
-        guard !tabs.isEmpty else { return }
-        let current = min(max(focusedTabIndex, 0), tabs.count - 1)
-        focusedTabIndex = (current + tabs.count - 1) % tabs.count
     }
 
     /// The body of both ``equalize(tabContaining:)`` and ``equalizeFocusedTab()``.

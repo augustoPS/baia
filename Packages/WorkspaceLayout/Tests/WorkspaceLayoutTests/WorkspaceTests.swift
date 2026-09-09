@@ -520,114 +520,6 @@ import Testing
         #expect(workspace.focusedTab?.tree == .leaf(panes.right))
     }
 
-    @Test func zoomSurvivesATabSwitch() {
-        let panes = ThreeTabs()
-        var workspace = panes.workspace
-        _ = workspace.toggleZoomOnFocusedPane()
-
-        _ = workspace.focusTab(at: 0)
-        _ = workspace.focusTab(at: 1)
-
-        // Per tab, not per window: a zoomed tab is still zoomed when the user comes
-        // back to it, which is what makes zoom usable while a build runs.
-        #expect(workspace.focusedTab?.zoomedPane == panes.second)
-    }
-
-    @Test func addingATabFocusesIt() {
-        let opened = PaneID()
-        var workspace = Workspace(pane: PaneID())
-
-        workspace.addTab(pane: opened)
-
-        #expect(workspace.tabs.count == 2)
-        #expect(workspace.focusedTabIndex == 1)
-        #expect(workspace.focusedPane == opened)
-    }
-
-    @Test func closingTheLastRemainingTabIsRefused() {
-        var workspace = Workspace(pane: PaneID())
-        let before = workspace
-
-        let closed = workspace.closeFocusedTab()
-
-        #expect(!closed)
-        #expect(workspace == before)
-    }
-
-    @Test func closingATabFocusesWhicheverSlidIntoItsSlot() {
-        let panes = ThreeTabs()
-        var workspace = panes.workspace
-
-        let closed = workspace.closeFocusedTab()
-
-        #expect(closed)
-        #expect(workspace.focusedTabIndex == 1)
-        #expect(workspace.focusedPane == panes.third)
-    }
-
-    @Test func closingTheLastTabInTheBarFocusesTheOneBeforeIt() {
-        let panes = ThreeTabs()
-        var workspace = panes.workspace
-        _ = workspace.focusTab(at: 2)
-
-        let closed = workspace.closeFocusedTab()
-
-        // The clamp, which the middle-tab case never reaches: without it the index
-        // would name a tab that is no longer there and every key would go dead.
-        #expect(closed)
-        #expect(workspace.focusedTabIndex == 1)
-        #expect(workspace.focusedPane == panes.second)
-    }
-
-    @Test func focusingATabIndexNoTabHasIsRefused() {
-        let panes = ThreeTabs()
-        var workspace = panes.workspace
-        let before = workspace
-
-        // cmd+5 in a three-tab window, and the negative index a hand-edited session can
-        // carry.
-        let past = workspace.focusTab(at: 4)
-        let negative = workspace.focusTab(at: -1)
-
-        #expect(!past)
-        #expect(!negative)
-        #expect(workspace == before)
-    }
-
-    @Test func focusingTheTabThatIsAlreadyFocusedReportsNoChange() {
-        let panes = ThreeTabs()
-        var workspace = panes.workspace
-
-        let refocused = workspace.focusTab(at: 1)
-
-        #expect(!refocused)
-        #expect(workspace.focusedTabIndex == 1)
-    }
-
-    @Test func tabFocusWrapsAtBothEnds() {
-        let panes = ThreeTabs()
-        var workspace = panes.workspace
-
-        workspace.focusNextTab()
-        #expect(workspace.focusedTabIndex == 2)
-        workspace.focusNextTab()
-        #expect(workspace.focusedTabIndex == 0)
-        workspace.focusPreviousTab()
-        #expect(workspace.focusedTabIndex == 2)
-    }
-
-    @Test func tabFocusOnAnEmptyWorkspaceDoesNotDivideByTheTabCount() {
-        // A reconciled session that lost every tab is an empty workspace, and `%` by an
-        // empty collection's count traps rather than answering anything.
-        var workspace = Workspace(tabs: [], focusedTabIndex: 0)
-
-        workspace.focusNextTab()
-        workspace.focusPreviousTab()
-
-        #expect(workspace.focusedTab == nil)
-        #expect(workspace.focusedPane == nil)
-    }
-
     @Test func anOutOfRangeStoredIndexHasNoFocusedTab() {
         let workspace = Workspace(tabs: [Tab(pane: PaneID())], focusedTabIndex: 7)
 
@@ -646,7 +538,6 @@ import Testing
         // anyway, which is the shape of bug that makes a Bool return worthless.
         let split = workspace.splitFocusedPane(axis: .horizontal, newPane: PaneID(), ratio: 0.5)
         let closedPane = workspace.closeFocusedPane()
-        let closedTab = workspace.closeFocusedTab()
         let moved = workspace.moveFocus(.right)
         let cycled = workspace.focusNextPane()
         let zoomed = workspace.toggleZoomOnFocusedPane()
@@ -654,7 +545,6 @@ import Testing
 
         #expect(!split)
         #expect(!closedPane)
-        #expect(!closedTab)
         #expect(!moved)
         #expect(!cycled)
         #expect(!zoomed)
