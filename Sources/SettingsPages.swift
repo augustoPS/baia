@@ -354,7 +354,7 @@ enum SettingsPages {
             editor: editor,
             read: { $0.windowPadding },
             edit: { .windowPadding($0) }
-        ), caption: "Space between a pane's edge and its text. Applies to new panes; a running pane keeps the padding it opened with so its output does not reflow.")
+        ), caption: "Space between a pane's edge and its text. Applies to open and new panes. Changing it can reflow text in open panes.")
 
         page.toggleRow(nil, ToggleControl(
             title: "Balance padding",

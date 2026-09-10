@@ -1,15 +1,11 @@
 import AppKit
 
-/// One mechanism for the cluster's cards. A ``PalettePanel``, not an
-/// `NSPopover` — `ApprovalPopoverController.swift:61` records why (appearance
-/// must come from `NSWindow.appearance` so chrome follows the theme, set the
-/// same way the palette and the workspace window set theirs). The key
-/// discipline is the approval popover's, whole: take key while open, restore
-/// on dismiss only if still held, resign-key dismisses.
+/// One mechanism for the cluster's cards. A ``PalettePanel`` sets its
+/// `NSWindow.appearance` so chrome follows the theme, as the palette and
+/// workspace window do. It takes key while open, restores key on dismissal
+/// only if still held, and dismisses when it resigns key.
 ///
-/// Content-agnostic where ``ApprovalPopoverController`` owns one view for its
-/// whole life: three different cards will drop three different views in here,
-/// so ``show(content:anchoredTo:in:)`` takes any sized `NSView` and this
+/// ``show(content:anchoredTo:in:invalidateActions:onDismiss:)`` takes any sized `NSView` and this
 /// controller holds it only while it is on screen. What a card draws, and the
 /// theme/chrome it draws with, is the card's own business — the one
 /// window-level fact a view cannot set for itself is ``isDark``, which is why
@@ -21,9 +17,8 @@ import AppKit
 @MainActor
 final class ClusterCardController {
     /// The presented card's cleanup, taken as a parameter of
-    /// ``show(content:anchoredTo:in:onDismiss:)`` rather than as a settable
-    /// property — the same shape as ``ApprovalPopoverController``'s `present`
-    /// taking `onAction`, and for a concrete reason here: `show` dismisses any
+    /// ``show(content:anchoredTo:in:invalidateActions:onDismiss:)`` rather than as a settable
+    /// property: `show` dismisses any
     /// card already up, and a property assigned before the call would be the
     /// *new* card's handler fired (and cleared) for the *old* card's teardown.
     /// A parameter is assigned after that internal dismiss, so it cannot be.
@@ -42,8 +37,7 @@ final class ClusterCardController {
     private var resignObserver: (any NSObjectProtocol)?
 
     /// The window the card was summoned over, so key can be handed back to it
-    /// on dismissal rather than to nothing. Weak for the reason
-    /// ``ApprovalPopoverController/hostWindow`` gives: a window closed behind
+    /// on dismissal rather than to nothing. Weak so a window closed behind
     /// the card must not be kept alive by it.
     private weak var hostWindow: NSWindow?
 
@@ -70,10 +64,8 @@ final class ClusterCardController {
     var isShowing: Bool { panel.isVisible }
 
     /// Whether this card's window-level appearance is dark.
-    /// ``ApprovalPopoverController/isDark`` carries the full reasoning; this is
-    /// the same property on the next floating panel, fed from the same
-    /// `ConfigurationCenter.windowIsDark`. Chrome follows the theme, never the
-    /// system.
+    /// The pane supplies its theme-derived appearance. Chrome follows the
+    /// theme, never the system.
     var isDark: Bool = true {
         didSet {
             guard isDark != oldValue else { return }
@@ -82,9 +74,7 @@ final class ClusterCardController {
     }
 
     init() {
-        // The contentRect is a placeholder: unlike the approval popover, whose
-        // view has one known width, every `show` here sizes the panel to the
-        // card it was handed.
+        // The contentRect is a placeholder; `show` sizes it to each card.
         panel = PalettePanel(
             contentRect: NSRect(x: 0, y: 0, width: 320, height: 200),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -99,14 +89,13 @@ final class ClusterCardController {
         panel.backgroundColor = .clear
         panel.hasShadow = true
         // `isMovable = true` against the 26.2 glass-in-nonmovable-window
-        // regression; `ApprovalPopoverController`'s identical line carries the
-        // full account (forums 810314, the backdrop spike's probe). Cards may
-        // wear glass the way the popover does, so they need the same
+        // regression; `CommandPaletteController` documents the backdrop probe
+        // and forum report 810314. Cards may wear glass, so they need the same
         // workaround, and nothing here initiates a drag either, so the panel
         // still cannot be moved by hand.
         panel.isMovable = true
         // Appears and dismisses without animation, the same unconditional
-        // `.none` the palette, the find panel and the approval popover all set.
+        // `.none` the palette and the find panel set.
         panel.animationBehavior = .none
         // Written by hand once because a property observer is silent during
         // initialisation; see ``CommandPaletteController``'s identical line.
@@ -127,14 +116,10 @@ final class ClusterCardController {
     ///
     /// `segmentRect` is the summoning segment's frame in `host`'s coordinate
     /// space — the caller converts out of the capsule's view and into the
-    /// window, the same contract ``ApprovalPopoverController/present(anchoredTo:in:title:message:onAction:)``
-    /// states for its anchor — which is what `NSWindow.convertToScreen`
-    /// expects.
+    /// window, as `NSWindow.convertToScreen` expects.
     ///
     /// The caller sizes `content`; this controller reads `content.frame.size`,
-    /// or `fittingSize` when the frame is zero. The approval popover measures
-    /// its own view instead, because it knows what the view is; this one
-    /// cannot, so sizing is part of the content contract.
+    /// or `fittingSize` when the frame is zero.
     ///
     /// Calling this while another card is up dismisses that card first — the
     /// old card's `onDismiss` must fire so its subscriptions are cleaned up
@@ -167,10 +152,8 @@ final class ClusterCardController {
 
         panel.setFrameOrigin(origin(forAnchor: segmentRect, size: size, in: host))
         panel.makeKeyAndOrderFront(nil)
-        // The card itself takes first responder, the same direct grant the
-        // approval popover makes and for its reason: there may be no text
-        // field, and this is what routes ⎋ (and whatever keys the card
-        // handles) to the content view's own responder methods.
+        // Give the card first responder so its responder methods receive ⎋
+        // and other handled keys even when it has no text field.
         panel.makeFirstResponder(content)
 
         if resignObserver == nil {
@@ -221,9 +204,8 @@ final class ClusterCardController {
     func dismiss() {
         if panel.isVisible {
             // Read before ordering out, and honoured only when the card itself
-            // still held the keyboard — ``ApprovalPopoverController/dismiss()``
-            // explains the one-turn-late resign-key notification this guards
-            // against.
+            // still held the keyboard. A delayed resign-key notification must
+            // not steal key back from the window the user just selected.
             let hadKey = panel.isKeyWindow
             panel.orderOut(nil)
             if hadKey { hostWindow?.makeKey() }
@@ -237,8 +219,7 @@ final class ClusterCardController {
         onDismiss = nil
         invalidation?()
 
-        // Unlike the approval popover, which owns its view for the process's
-        // life, the card view belongs to the caller and only visits: it is
+        // The card view belongs to the caller and only visits: it is
         // released here so a dismissed card's view (and whatever it holds) does
         // not outlive its card behind an empty stand-in. Outside the visibility
         // branch on purpose — an AppKit-hidden panel still holds the card view,
@@ -248,8 +229,7 @@ final class ClusterCardController {
     }
 
     /// Below the segment, right-aligned to its right edge, clamped so the
-    /// panel never draws off the screen it opened on — the approval popover's
-    /// clamp arithmetic with the horizontal alignment flipped. Right-aligned
+    /// panel never draws off the screen it opened on. Right-aligned
     /// rather than left because the summoning capsule sits at the pane's
     /// TOP-right: a card growing rightward from the segment's left edge would
     /// run off the pane (and often the screen), while one hanging from the
@@ -274,6 +254,6 @@ final class ClusterCardController {
         return origin
     }
 
-    /// The approval popover's gap, unchanged.
+    /// Gap between the card and its anchor.
     private static let anchorGap: Double = 6
 }

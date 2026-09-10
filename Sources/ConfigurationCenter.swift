@@ -449,12 +449,10 @@ final class ConfigurationCenter {
     /// The dialled ``PaneTheme`` constants, translated from the chrome extras
     /// into the package's own vocabulary.
     ///
-    /// **The one place the hexes are parsed**, and a hex the parser rejects is
-    /// dropped rather than substituted: `RGB(hex:)` answers nil, the field stays
-    /// nil, and the ink falls back to its repair chain. A half-typed `#ff` in a
-    /// live text field would otherwise flash black across the sidebar on the way
-    /// to being finished, and black is a legitimate colour, so a substitution
-    /// would look like a deliberate choice with nothing to notice.
+    /// Parses the busy-dot override. If `RGB(hex:)` rejects a partial value
+    /// such as `#ff`, the adjustment stays nil and `PaneTheme.busyDot` uses its
+    /// normal `ok` ink. Substituting black would make incomplete input look
+    /// like a deliberate colour choice.
     ///
     /// The ratios are passed through unclamped. They are a floor handed to
     /// ``PaneChrome/PaneTheme/readable(_:on:minimumRatio:)``, whose fallback
