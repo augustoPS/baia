@@ -73,7 +73,7 @@ one's header says which route and why, so nobody re-derives it.
 
 | File | What it is |
 |---|---|
-| `isolated-app.sh` | Sourced, not run. Copies the Debug app, unique bundle id / executable (AX process name) / support / config / `ZDOTDIR`, exact-PID cleanup, hashes the owner's config/session/ack. Callers: control-channel, settings-window, capture.sh, config-wiring, tree-expansions, path-picker, prompt-path-bytes, split-command. Never process-name kills |
+| `isolated-app.sh` | Sourced, not run. Copies the Debug app, unique bundle id / executable (AX process name) / support / config / `ZDOTDIR`, exact-PID cleanup, hashes the owner's config/design overrides/session/ack. Callers: control-channel, settings-window, capture.sh, config-wiring, tree-expansions, path-picker, prompt-path-bytes, split-command. Never process-name kills |
 | `isolated-app-test.sh` | Static checks over a fake bundle. Launches nothing |
 | `app-identity.sh` | Sourced, not run. Answers *which* baia a probe is talking to, from the bundle it launched rather than from a spelling: `APP_NAME`, `APP_ID`, `APP_EXEC`, `APP_SUPPORT`, `APP_SESSION`, `APP_SOCKET`, plus `quit_app`, `activate_app` and `app_is_running`. Set `APP` before sourcing. Read its header before adding a fifth driver |
 | `app-identity-test.sh` | 13 checks over the kill pattern, run against command-line strings rather than processes, so it launches nothing and kills nothing. Includes the pre-2026-08-02 pattern as a worked example of the bug and an over-broad pattern as a negative control |

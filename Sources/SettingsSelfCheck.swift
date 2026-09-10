@@ -345,6 +345,37 @@
             check("a config created after initial attachment failure is observed",
                   await waitFor { absentCenter.settings.fontSize == 27 })
 
+            // Overrides belong to the injected store, including their watcher.
+            // Both directories are disposable; no normal override file is read
+            // or changed by this fixture.
+            let overridesRoot = URL(filePath: NSTemporaryDirectory(), directoryHint: .isDirectory)
+                .appending(path: "baia-overrides-watch-\(UUID().uuidString)")
+            try? FileManager.default.createDirectory(at: overridesRoot, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: overridesRoot) }
+            let overridesURL = overridesRoot.appending(path: "design-overrides.json")
+            try? Data(#"{"backgroundOpacity":0.23}"#.utf8).write(to: overridesURL)
+            let overrideCenter = ConfigurationCenter(store: SettingsStore(fileURL: overridesRoot.appending(path: "config.json")))
+            check("initial overrides are read beside the injected config",
+                  overrideCenter.effectiveSettings.backgroundOpacity == 0.23)
+            check("overrides leave the stored settings unchanged",
+                  overrideCenter.settings.backgroundOpacity == Settings.defaultSettings.backgroundOpacity)
+            check("an isolated center without overrides inherits none",
+                  absentCenter.designOverrides == nil && absentCenter.effectiveSettings == absentCenter.settings)
+
+            try? Data(#"{"backgroundOpacity":0.34}"#.utf8).write(to: overridesURL, options: .atomic)
+            check("atomic override replacement is observed",
+                  await waitFor { overrideCenter.effectiveSettings.backgroundOpacity == 0.34 })
+            try? Data(#"{"backgroundOpacity":0.45}"#.utf8).write(to: overridesURL)
+            check("override edits after replacement are observed",
+                  await waitFor { overrideCenter.effectiveSettings.backgroundOpacity == 0.45 })
+            try? FileManager.default.removeItem(at: overridesURL)
+            check("removing overrides restores the injected settings",
+                  await waitFor { overrideCenter.designOverrides == nil && overrideCenter.effectiveSettings == overrideCenter.settings })
+            try? Data(#"{"backgroundOpacity":0.56}"#.utf8).write(to: overridesURL)
+            check("creating overrides after removal is observed",
+                  await waitFor { overrideCenter.effectiveSettings.backgroundOpacity == 0.56 })
+            check("override changes do not cross store directories",
+                  absentCenter.designOverrides == nil && absentCenter.effectiveSettings == absentCenter.settings)
         }
 
         // MARK: - Helpers

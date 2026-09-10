@@ -8,9 +8,14 @@ non-zero on any failed check. Skip the build with
 
 The copy has its own bundle identifier, Application Support directory, config,
 and `ZDOTDIR`. It does not copy `~/.config/baia/config.json` and does not load
-the Debug session or acknowledgement. The owner's config/session/ack hashes
+the Debug session or acknowledgement. The owner's config/design overrides/session/ack hashes
 are compared before and after. This is the unacknowledged fixture: command
 execution stays off without `command-execution.ack`.
+
+Debug design overrides are resolved beside the selected config file. With
+`BAIA_CONFIG_FILE`, the copy reads and watches only its disposable sibling
+`design-overrides.json`. The regular Debug app still uses
+`~/.config/baia/design-overrides.json`.
 
 ## The question
 
@@ -50,7 +55,14 @@ a screenshot of them.
 - **Preview.** The sample pane's resolved chrome and theme equal the centre's
   derivation for the same settings, the sample sidebar follows the setting and
   the chrome, each of the five states sets focus, activation and attention as
-  named, and the sample renders non-blank pixels offscreen.
+  named, and the sample renders non-blank pixels offscreen. Opaque samples use
+  the native window backing for dark and light themes; returning to transparency
+  restores the neutral grey backdrop. These checks inspect the backing layer.
+  A live capture is still needed to verify the terminal's Metal composition.
+- **Override isolation.** Separate injected config stores do not inherit each
+  other's overrides. Initial loading, atomic replacement, subsequent edits,
+  removal and recreation use the sibling override file. Stored settings stay
+  unchanged while effective settings reflect the override.
 - **Malformed file.** A write is refused with the bytes untouched, the banner
   shows, repair keeps a byte-identical backup and leaves a valid file, and the
   banner hides.

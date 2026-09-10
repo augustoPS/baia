@@ -52,6 +52,7 @@ isolated_install_traps() {
 isolated_normal_paths() {
   printf '%s\n' \
     "$HOME/.config/baia/config.json" \
+    "$HOME/.config/baia/design-overrides.json" \
     "$HOME/Library/Application Support/baia/session.json" \
     "$HOME/Library/Application Support/baia-dev/session.json" \
     "$HOME/Library/Application Support/baia/command-execution.ack" \

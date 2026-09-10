@@ -693,8 +693,9 @@ final class ConfigurationCenter {
     #if DEBUG
         // MARK: - Watching the design overrides
 
-        /// `~/.config/baia/design-overrides.json`: the file the owner dials in
-        /// while the panel's own controls are not to be trusted.
+        /// `design-overrides.json` beside this center's settings file.
+        /// The normal Debug app reads `~/.config/baia/design-overrides.json`;
+        /// an injected store reads only its own directory.
         ///
         /// Beside `config.json` deliberately, in the directory the owner already
         /// opens to edit settings, so there is one place to look for everything
@@ -706,8 +707,8 @@ final class ConfigurationCenter {
         /// no save-back, unlike ``BaiaSettings/SettingsStore/writeDefaultIfAbsent()``
         /// beside it. The file is the owner's input, its absence is the ordinary
         /// state, and deleting it is how a dialling session is reset.
-        static func designOverridesFileURL() -> URL {
-            SettingsStore.defaultFileURL()
+        private func designOverridesFileURL() -> URL {
+            store.url
                 .deletingLastPathComponent()
                 .appending(path: "design-overrides.json")
         }
@@ -738,7 +739,7 @@ final class ConfigurationCenter {
         /// once something with that name lands in it.
         private func startWatchingDesignOverrides() {
             stopWatchingDesignOverrides()
-            let path = Self.designOverridesFileURL().path(percentEncoded: false)
+            let path = designOverridesFileURL().path(percentEncoded: false)
             let descriptor = open(path, O_EVTONLY)
             guard descriptor >= 0 else {
                 watchDesignOverridesDirectory()
@@ -764,7 +765,7 @@ final class ConfigurationCenter {
             designOverridesWatcher = source
         }
 
-        /// Watches `~/.config/baia/` for the overrides file appearing.
+        /// Watches the injected config's directory for the overrides file appearing.
         ///
         /// The file's absence is the ordinary state, so this is the arm that runs
         /// on most launches. A directory source fires on any change inside it,
@@ -774,7 +775,7 @@ final class ConfigurationCenter {
         /// and assigns nil over nil, which the equality guard in
         /// ``reloadDesignOverrides()`` drops before it can re-theme anything.
         private func watchDesignOverridesDirectory() {
-            let directory = Self.designOverridesFileURL().deletingLastPathComponent()
+            let directory = designOverridesFileURL().deletingLastPathComponent()
             let descriptor = open(directory.path(percentEncoded: false), O_EVTONLY)
             guard descriptor >= 0 else { return }
 
@@ -845,7 +846,7 @@ final class ConfigurationCenter {
         /// directory watcher above fires on writes to files that are not this one
         /// at all.
         private func reloadDesignOverrides() {
-            let path = Self.designOverridesFileURL().path(percentEncoded: false)
+            let path = designOverridesFileURL().path(percentEncoded: false)
             guard let data = FileManager.default.contents(atPath: path) else {
                 guard storedDesignOverrides != nil else { return }
                 designOverrides = nil
