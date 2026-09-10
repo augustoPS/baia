@@ -610,7 +610,7 @@ final class ControlServer {
         // malformed id from an out-of-scope one could probe the shape of the
         // namespace, which is the leak `authorize` refuses in every other verb.
         guard let target = ControlPaneID(uuidString: named) else {
-            respond(.failure(.unauthorized, "no pane you may read"), to: id)
+            respond(ControlResponse.failure(ControlError.unauthorized(ControlVerb.read.scope)), to: id)
             return
         }
         switch graph.authorize(token: request.token, verb: .read, target: target) {

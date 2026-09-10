@@ -594,6 +594,7 @@ def main():
     # scope decision was made for: the shape of all three goes out, and one
     # directory does. Anything later in this file would run against an alpha that
     # had acquired descendants, where a count proves nothing.
+    probe.await_directories(live[alpha], [alpha])
     exported = probe.layout_of(probe.request(live[alpha], "layout-export"))
     probe.check(
         "export answers a document this build writes",
@@ -1168,8 +1169,8 @@ def main():
     # probe the shape of the namespace.
     probe.check(
         "a malformed pane id answers exactly as an out-of-scope one does",
-        probe.code(probe.request(live[alpha], "read", {"peer": "not-a-uuid"})),
-        "unauthorized",
+        probe.request(live[alpha], "read", {"peer": "not-a-uuid"}).get("error"),
+        probe.request(live[alpha], "read", {"peer": bravo}).get("error"),
     )
     probe.check(
         "and a read with no pane at all is a bad frame",
