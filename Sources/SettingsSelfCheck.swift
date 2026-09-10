@@ -235,6 +235,34 @@
             sample.state = .focused
             check("the sample renders pixels", renders(sample.frame))
 
+            // Opaque workspaces have a native window backing, even when the
+            // stored opacity is below one. The sample must not show its fake
+            // desktop through that backing. Exercise both theme appearances.
+            var opaqueSettings = center.settings
+            opaqueSettings.chromeStyle = .solid
+            opaqueSettings.backgroundOpacity = 0.42
+            for (background, name) in [("#141414", NSAppearance.Name.darkAqua), ("#eeeeee", .aqua)] {
+                opaqueSettings.backgroundHex = background
+                sample.apply(opaqueSettings, appearance: center.appearance(for: opaqueSettings),
+                             windowIsTransparent: center.windowIsTransparent(for: opaqueSettings))
+                var expected: CGColor?
+                NSAppearance(named: name)?.performAsCurrentDrawingAppearance {
+                    expected = NSColor.windowBackgroundColor.cgColor
+                }
+                check("opaque sample uses the native \(name.rawValue) window backing",
+                      sample.frame.subviews.first?.layer?.backgroundColor == expected)
+            }
+            opaqueSettings.chromeStyle = .liquidGlass
+            let transparentAppearance = PaneAppearance.make(
+                settings: opaqueSettings, overrides: DesignOverrides.Chrome(), materialIsDark: false,
+                appearance: ChromeAppearance(isDark: false, reduceTransparency: false, reduceMotion: false)
+            )
+            sample.apply(opaqueSettings, appearance: transparentAppearance, windowIsTransparent: true)
+            check("returning to transparency restores the neutral sample backdrop",
+                  sample.frame.subviews.first?.layer?.backgroundColor == NSColor(white: 0.5, alpha: 1).cgColor)
+            sample.apply(center.settings, appearance: appearance,
+                         windowIsTransparent: center.windowIsTransparent(for: center.settings))
+
             // Malformed file: refused, banner up, repair keeps a backup.
             let good = (try? Data(contentsOf: store.url)) ?? Data()
             try? Data("{ broken".utf8).write(to: store.url)

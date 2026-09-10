@@ -122,11 +122,9 @@ final class SamplePaneController: NSViewController, SidebarHostedContent {
 /// the column's glass container, its band merge and its flat fill are the
 /// window's own, not a coloured rectangle standing in for them (audit S11).
 ///
-/// The backdrop is a mid grey rather than the desktop, and the caption under
-/// the picker says so: the sample sits inside an opaque window, so what a
-/// translucent well composites onto here is this view, and translucency is
-/// judged against the owner's own desktop through the real panes, which follow
-/// every edit live.
+/// Transparent workspaces use mid grey in place of the desktop. Opaque
+/// workspaces use the native window backing in the theme's appearance,
+/// including when Reduce Transparency makes the workspace opaque.
 @MainActor
 final class WorkspaceSampleController: NSViewController {
     let pane = SamplePaneController()
@@ -205,9 +203,16 @@ final class WorkspaceSampleController: NSViewController {
 
     /// Re-themes everything from one settings value and the appearance the
     /// centre resolved for it.
-    func apply(_ settings: Settings, appearance: PaneAppearance) {
+    func apply(_ settings: Settings, appearance: PaneAppearance, windowIsTransparent: Bool) {
         self.settings = settings
         self.appearance = appearance
+        let nativeAppearance = NSAppearance(named: PaneChrome.windowIsDark(paneTheme: appearance.theme) ? .darkAqua : .aqua)
+        frame.appearance = nativeAppearance
+        nativeAppearance?.performAsCurrentDrawingAppearance {
+            backdrop.layer?.backgroundColor = windowIsTransparent
+                ? NSColor(white: 0.5, alpha: 1).cgColor
+                : NSColor.windowBackgroundColor.cgColor
+        }
         pane.chrome.apply(appearance)
         sidebar.theme = appearance.theme
         sidebar.backgroundOpacity = settings.backgroundOpacity
@@ -356,6 +361,6 @@ final class SettingsPreviewController: NSViewController {
 
     private func updateCaption() {
         caption.stringValue = sample.state.explanation
-            + " The sample sits over a neutral grey; judge translucency against your desktop in the real panes, which follow every change as it is made."
+            + " Transparent backgrounds use neutral grey in this sample. Judge translucency against your desktop in the real panes, which follow every change as it is made."
     }
 }

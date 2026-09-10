@@ -325,9 +325,14 @@ final class ConfigurationCenter {
     /// it. Through ``effectiveSettings``, so a dialled style or opacity moves the
     /// window the same way a committed one does.
     var windowIsTransparent: Bool {
+        windowIsTransparent(for: effectiveSettings)
+    }
+
+    /// The preview uses the same window gate with its file settings.
+    func windowIsTransparent(for settings: Settings) -> Bool {
         PaneChrome.windowIsTransparent(
-            style: effectiveSettings.chromeStyle,
-            backgroundOpacity: effectiveSettings.backgroundOpacity,
+            style: settings.chromeStyle,
+            backgroundOpacity: settings.backgroundOpacity,
             appearance: appearanceObserver.appearance
         )
     }

@@ -286,7 +286,11 @@ enum SettingsPages {
             page.addChild(preview)
             page.fullWidth(preview.view)
             page.onRefresh { settings in
-                preview.sample.apply(settings, appearance: center.appearance(for: settings))
+                preview.sample.apply(
+                    settings,
+                    appearance: center.appearance(for: settings),
+                    windowIsTransparent: center.windowIsTransparent(for: settings)
+                )
             }
         }
     }
