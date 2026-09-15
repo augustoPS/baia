@@ -561,6 +561,53 @@ import Testing
         #expect(set.shadowPopover == ChromeMaterials.Light.shadowPopover)
     }
 
+    // MARK: - Native glass style: the one thing that separates sheer from liquidGlass
+
+    // Every fill role on `MaterialSet` is dormant at HEAD (see `SurfaceFill` in
+    // the app target), so before 2026-09-14 the standard and sheer sets differed
+    // only in values no surface read, and whole-display captures of the two
+    // styles were byte-identical. `nativeStyle` is the field a glass view does
+    // read, and these tests pin that the two styles ask the platform for two
+    // different materials.
+
+    @Test func standardMaterialSetsAskForRegularGlass() {
+        #expect(MaterialSet.dark.nativeStyle == .regular)
+        #expect(MaterialSet.light.nativeStyle == .regular)
+    }
+
+    @Test func sheerMaterialSetsAskForClearGlass() {
+        #expect(MaterialSet.sheerDark.nativeStyle == .clear)
+        #expect(MaterialSet.sheerLight.nativeStyle == .clear)
+    }
+
+    @Test func liquidGlassAndSheerNeverResolveToTheSameNativeStyle() {
+        let appearance = ChromeAppearance(isDark: true, reduceTransparency: false, reduceMotion: false)
+        for materialIsDark in [true, false] {
+            let standard = resolvedStyle(setting: .liquidGlass, materialIsDark: materialIsDark, appearance: appearance)
+            let sheer = resolvedStyle(setting: .sheer, materialIsDark: materialIsDark, appearance: appearance)
+            guard case let .glass(standardSet) = standard, case let .glass(sheerSet) = sheer else {
+                Issue.record("both see-through styles must resolve to glass when transparency is not reduced")
+                return
+            }
+            #expect(standardSet.nativeStyle == .regular)
+            #expect(sheerSet.nativeStyle == .clear)
+            #expect(standardSet.nativeStyle != sheerSet.nativeStyle)
+        }
+    }
+
+    @Test func theNativeStyleFollowsTheStyleSettingAndNotTheMaterialDarkness() {
+        // Dark/light is the appearance axis; regular/clear is the style axis.
+        // Neither may leak into the other.
+        #expect(MaterialSet.dark.nativeStyle == MaterialSet.light.nativeStyle)
+        #expect(MaterialSet.sheerDark.nativeStyle == MaterialSet.sheerLight.nativeStyle)
+    }
+
+    @Test func reduceTransparencyStillOutranksSheer() {
+        let appearance = ChromeAppearance(isDark: true, reduceTransparency: true, reduceMotion: false)
+        #expect(resolvedStyle(setting: .sheer, materialIsDark: true, appearance: appearance) == .flat)
+        #expect(resolvedStyle(setting: .sheer, materialIsDark: false, appearance: appearance) == .flat)
+    }
+
     // MARK: - Equatable, for tests and callers that diff a resolution
 
     @Test func resolvedChromeFlatEqualsFlat() {

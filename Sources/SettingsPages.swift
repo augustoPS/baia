@@ -285,7 +285,16 @@ enum SettingsPages {
         if let preview {
             page.addChild(preview)
             page.fullWidth(preview.view)
-            page.onRefresh { settings in
+            // The sample shows what a pane shows, so it reads the centre's
+            // effective settings and not the page's. The page value is the
+            // persisted transaction settings, which is what every control and
+            // its accessibility value must keep showing; a live pane reads
+            // `effectiveSettings`, which composes the Debug design overrides on
+            // top. With the two read from one value, a dialled
+            // `backgroundOpacity` moved every pane while the sample stayed on
+            // the file's figure. In Release the two values are the same.
+            page.onRefresh { _ in
+                let settings = center.effectiveSettings
                 preview.sample.apply(
                     settings,
                     appearance: center.appearance(for: settings),

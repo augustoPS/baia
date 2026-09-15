@@ -63,6 +63,34 @@ public struct ChromeAppearance: Sendable, Equatable {
     }
 }
 
+/// Which native glass material a `glass`-resolved surface asks AppKit for.
+///
+/// Mirrors `NSGlassEffectView.Style` case for case without importing AppKit,
+/// for the reason every other type in this file gives: the package must stay
+/// testable with no window, and the app target is the one place the mapping to
+/// the platform enum is made (see `SurfaceFill.swift`). The mapping there
+/// carries no `default`, so a case added here fails to compile until a
+/// platform style is named for it.
+///
+/// **This field is the whole visible difference between
+/// ``BaiaSettings/ChromeStyle/liquidGlass`` and ``BaiaSettings/ChromeStyle/sheer``
+/// as shipped.** Every fill role on ``MaterialSet`` is dormant (Design v5 Task
+/// 2, untinted glass), so until 2026-09-14 the two styles resolved to material
+/// sets that differed only in values no surface read, and every glass view was
+/// built at `.regular`. Whole-display captures of the two styles under Dawnfox
+/// and Dark Pastel, focused and unfocused, came back byte-identical. The
+/// platform's own lighter material is what "sheer" was always meant to be.
+public enum NativeGlassStyle: Sendable, Equatable {
+    /// `NSGlassEffectView.Style.regular`: the standard material, what
+    /// ``MaterialSet/dark`` and ``MaterialSet/light`` ask for.
+    case regular
+
+    /// `NSGlassEffectView.Style.clear`: the platform's most transparent
+    /// material, what ``MaterialSet/sheerDark`` and ``MaterialSet/sheerLight``
+    /// ask for.
+    case clear
+}
+
 /// The fills, rims, shadows and durations a `glass`-resolved surface draws
 /// with, picked for one appearance.
 ///
@@ -85,6 +113,10 @@ public struct MaterialSet: Sendable, Equatable {
     public var shadowWindow: ChromeShadow
     public var shadowPopover: ChromeShadow
 
+    /// The native material a glass view built from this set asks for. The one
+    /// field a glass surface reads at HEAD; see ``NativeGlassStyle``.
+    public var nativeStyle: NativeGlassStyle
+
     /// `ChromeMaterials.Dark`, the appearance most of the design was built
     /// against and the one `:root` declares with no `[data-appearance]`
     /// selector.
@@ -96,7 +128,8 @@ public struct MaterialSet: Sendable, Equatable {
         rimTopAlpha: ChromeMaterials.Dark.rimTopAlpha,
         rimBottomAlpha: ChromeMaterials.Dark.rimBottomAlpha,
         shadowWindow: ChromeMaterials.Dark.shadowWindow,
-        shadowPopover: ChromeMaterials.Dark.shadowPopover
+        shadowPopover: ChromeMaterials.Dark.shadowPopover,
+        nativeStyle: .regular
     )
 
     /// `ChromeMaterials.Light`, `appearance.css`'s `[data-appearance="light"]` override.
@@ -108,7 +141,8 @@ public struct MaterialSet: Sendable, Equatable {
         rimTopAlpha: ChromeMaterials.Light.rimTopAlpha,
         rimBottomAlpha: ChromeMaterials.Light.rimBottomAlpha,
         shadowWindow: ChromeMaterials.Light.shadowWindow,
-        shadowPopover: ChromeMaterials.Light.shadowPopover
+        shadowPopover: ChromeMaterials.Light.shadowPopover,
+        nativeStyle: .regular
     )
 
     /// ``BaiaSettings/ChromeStyle/sheer`` under a dark theme.
@@ -125,6 +159,13 @@ public struct MaterialSet: Sendable, Equatable {
     /// Fills come from ``ChromeMaterials/Sheer``; the rims and shadows are the
     /// unscaled `Dark` values, because they are depth cues rather than tint and
     /// the most transparent style is where a pane edge needs them most.
+    ///
+    /// ``nativeStyle`` is `.clear`, added 2026-09-14, and it is the one field
+    /// here a shipped surface reads: the fills above are dormant, so without it
+    /// sheer rendered the same `.regular` glass as `liquidGlass` and the two
+    /// styles captured byte-identical. It does not reopen the style-dimension
+    /// question above; the selection shape in
+    /// ``resolvedStyle(setting:materialIsDark:appearance:)`` is unchanged.
     public static let sheerDark = MaterialSet(
         fillChrome: ChromeMaterials.Sheer.Dark.fillChrome,
         fillSidebar: ChromeMaterials.Sheer.Dark.fillSidebar,
@@ -133,7 +174,8 @@ public struct MaterialSet: Sendable, Equatable {
         rimTopAlpha: ChromeMaterials.Dark.rimTopAlpha,
         rimBottomAlpha: ChromeMaterials.Dark.rimBottomAlpha,
         shadowWindow: ChromeMaterials.Dark.shadowWindow,
-        shadowPopover: ChromeMaterials.Dark.shadowPopover
+        shadowPopover: ChromeMaterials.Dark.shadowPopover,
+        nativeStyle: .clear
     )
 
     /// ``BaiaSettings/ChromeStyle/sheer`` under a light theme. See
@@ -146,7 +188,8 @@ public struct MaterialSet: Sendable, Equatable {
         rimTopAlpha: ChromeMaterials.Light.rimTopAlpha,
         rimBottomAlpha: ChromeMaterials.Light.rimBottomAlpha,
         shadowWindow: ChromeMaterials.Light.shadowWindow,
-        shadowPopover: ChromeMaterials.Light.shadowPopover
+        shadowPopover: ChromeMaterials.Light.shadowPopover,
+        nativeStyle: .clear
     )
 }
 

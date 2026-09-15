@@ -76,3 +76,26 @@ enum SurfaceFill {
         )
     }
 }
+
+/// The one place ``PaneChrome/NativeGlassStyle`` becomes the platform enum an
+/// `NSGlassEffectView` takes.
+///
+/// Every glass surface in the app (the pane plane, the sidebar column and its
+/// titlebar band, the palette, the approval popover, the sidebar's `git init`
+/// pill) writes `style` through this on creation **and on every
+/// `applyResolvedChrome` pass**, so a live switch between `liquidGlass` and
+/// `sheer` reaches a backing that already exists. Before 2026-09-14 every site
+/// hard-coded `.regular`, which is why the two styles rendered byte-identical;
+/// see ``PaneChrome/NativeGlassStyle``.
+///
+/// **No `default`, for the same reason ``SurfaceFill/colour(_:in:)`` has
+/// none:** a case added to the package enum must name its platform style here
+/// or fail to compile, rather than silently falling back to regular glass.
+extension NSGlassEffectView.Style {
+    init(_ intent: NativeGlassStyle) {
+        switch intent {
+        case .regular: self = .regular
+        case .clear: self = .clear
+        }
+    }
+}

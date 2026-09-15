@@ -80,6 +80,15 @@ final class TitlebarPathAccessory: NSTitlebarAccessoryViewController {
         }
     }
 
+    /// Glass can cross both light and dark compositor pixels, so its theme ink
+    /// needs an edge in the opposite luminance direction. Flat stays untouched.
+    var resolvedChrome: ResolvedChrome {
+        didSet {
+            guard resolvedChrome != oldValue else { return }
+            applyTheme()
+        }
+    }
+
     /// The working directory, already tilde-abbreviated and shortened by
     /// ``DisplayPath`` at the pane that resolved it. Shortened there rather than
     /// here because the same string is the window's subtitle, and two spellings
@@ -95,8 +104,9 @@ final class TitlebarPathAccessory: NSTitlebarAccessoryViewController {
     private let icon = NSImageView()
     private let label = NSTextField(labelWithString: "")
 
-    init(theme: PaneTheme) {
+    init(theme: PaneTheme, resolvedChrome: ResolvedChrome = .flat) {
         self.theme = theme
+        self.resolvedChrome = resolvedChrome
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -174,6 +184,22 @@ final class TitlebarPathAccessory: NSTitlebarAccessoryViewController {
         let ink = SidebarRowMetrics.nsColor(theme.inkFaint)
         icon.contentTintColor = ink
         label.textColor = ink
+
+        switch resolvedChrome {
+        case .flat:
+            icon.shadow = nil
+            label.shadow = nil
+        case .glass:
+            let shadow = NSShadow()
+            let edgeIsDark = theme.inkFaint.relativeLuminance > theme.background.relativeLuminance
+            shadow.shadowColor = edgeIsDark
+                ? NSColor.black.withAlphaComponent(0.72)
+                : NSColor.white.withAlphaComponent(0.72)
+            shadow.shadowBlurRadius = 1.5
+            shadow.shadowOffset = .zero
+            icon.shadow = shadow
+            label.shadow = shadow
+        }
     }
 
     /// 13 pt, which is `NSFont.systemFontSize` and what the titlebar's own title

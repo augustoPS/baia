@@ -325,6 +325,7 @@ final class WorkspaceWindowController: NSObject {
     var resolvedChrome: ResolvedChrome = .flat {
         didSet {
             guard resolvedChrome != oldValue else { return }
+            titlebarPath.resolvedChrome = resolvedChrome
             applyTitlebarGlass()
         }
     }
@@ -399,7 +400,7 @@ final class WorkspaceWindowController: NSObject {
         // is the same rule the four parameters above follow: a band that opened
         // in AppKit's default ink and was retinted on the first settings change
         // would show one frame of the wrong colour on every new window.
-        titlebarPath = TitlebarPathAccessory(theme: theme)
+        titlebarPath = TitlebarPathAccessory(theme: theme, resolvedChrome: resolvedChrome)
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1024, height: 680),
             // **`.fullSizeContentView` is what lets the band and the column be

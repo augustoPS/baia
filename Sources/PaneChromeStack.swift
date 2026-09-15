@@ -335,7 +335,9 @@ final class PaneChromeStack {
     ///
     /// Appearance only: both views sit behind the surface at the pane's full
     /// bounds, so neither creation nor teardown moves the surface's frame or any
-    /// padding.
+    /// padding. A glass-to-glass change (`liquidGlass` to `sheer`, or back)
+    /// keeps the existing plane and rewrites its native style, since the plane
+    /// did not need to move either.
     private func applyResolvedGlassPlane() {
         switch resolvedChrome {
         case .flat:
@@ -343,15 +345,19 @@ final class PaneChromeStack {
             glassWash = nil
             glassPlane?.removeFromSuperview()
             glassPlane = nil
-        case .glass:
-            guard glassPlane == nil, let host, let surface else { return }
-            installGlassPlane(in: host, below: surface)
+        case let .glass(set):
+            if let glassPlane {
+                glassPlane.style = NSGlassEffectView.Style(set.nativeStyle)
+                return
+            }
+            guard let host, let surface else { return }
+            installGlassPlane(in: host, below: surface, style: set.nativeStyle)
         }
     }
 
-    private func installGlassPlane(in host: NSView, below surface: NSView) {
+    private func installGlassPlane(in host: NSView, below surface: NSView, style: NativeGlassStyle) {
         let plane = PaneGlassPlaneView(frame: host.bounds)
-        plane.style = .regular
+        plane.style = NSGlassEffectView.Style(style)
         plane.wantsLayer = true
         // The mask carries the window's squircle; a uniform cornerRadius would
         // round corners the window does not cut.

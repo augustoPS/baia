@@ -359,7 +359,7 @@ final class SidebarHost: NSViewController {
     var titlebarFillMaterial: DesignOverrides.Chrome.Material? {
         didSet {
             guard titlebarFillMaterial != oldValue else { return }
-            updateGlassTint()
+            updateGlassMaterial()
         }
     }
 
@@ -394,7 +394,7 @@ final class SidebarHost: NSViewController {
     var fillMaterial: DesignOverrides.Chrome.Material? {
         didSet {
             guard fillMaterial != oldValue else { return }
-            updateGlassTint()
+            updateGlassMaterial()
             // **And down into the surface, since 2026-08-12.** `FilesSurface`
             // used to own no glass, so this key stopped at the column's own
             // plane. The owner's tinted-glass ruling gave its floating `git
@@ -406,7 +406,13 @@ final class SidebarHost: NSViewController {
         }
     }
 
-    /// Writes ``fillMaterial``'s colour onto ``glassBacking``, or nil.
+    /// Writes the set's native style and ``fillMaterial``'s colour (or nil) onto
+    /// ``glassBacking`` and ``bandGlass``.
+    ///
+    /// The style write is what makes a live `liquidGlass`/`sheer` switch land on
+    /// planes that already exist; the tint stays nil unless the design panel
+    /// says otherwise. See `NSGlassEffectView.Style.init(_:)` in
+    /// `SurfaceFill.swift`.
     ///
     /// **This host's tint was a write-once static until the design panel needed
     /// one.** The old spelling said, correctly, that nothing on this path ever
@@ -419,8 +425,11 @@ final class SidebarHost: NSViewController {
     /// A method rather than the creation-time assignment it replaces, because
     /// ``applyResolvedChrome()`` returns early when the backing already exists,
     /// so a tint dialled while the column is open would otherwise never land.
-    private func updateGlassTint() {
+    private func updateGlassMaterial() {
         guard case let .glass(set) = resolvedChrome else { return }
+        let style = NSGlassEffectView.Style(set.nativeStyle)
+        glassBacking?.style = style
+        bandGlass?.style = style
         glassBacking?.tintColor = SurfaceFill.colour(fillMaterial, in: set)
         // The band's own role, not the column's. See ``titlebarFillMaterial``
         // for why merging the planes did not merge the two overrides.
@@ -574,16 +583,22 @@ final class SidebarHost: NSViewController {
             glassContainer = nil
             glassBacking = nil
             bandGlass = nil
-        case .glass:
-            guard glassContainer == nil else { break }
+        case let .glass(set):
+            // An existing container is kept, and only its native style moves:
+            // a `liquidGlass`/`sheer` switch is the one glass-to-glass change
+            // that reaches this branch with planes already on screen.
+            guard glassContainer == nil else {
+                updateGlassMaterial()
+                break
+            }
 
             let backing = SidebarGlassBacking(frame: .zero)
-            backing.style = .regular
+            backing.style = NSGlassEffectView.Style(set.nativeStyle)
             backing.cornerRadius = 0
             backing.wantsLayer = true
 
             let band = TitlebarBandGlass(frame: .zero)
-            band.style = .regular
+            band.style = NSGlassEffectView.Style(set.nativeStyle)
             band.cornerRadius = 0
             band.wantsLayer = true
 
@@ -616,7 +631,7 @@ final class SidebarHost: NSViewController {
             glassBacking = backing
             bandGlass = band
 
-            updateGlassTint()
+            updateGlassMaterial()
         }
         view.needsLayout = true
     }

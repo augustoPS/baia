@@ -117,7 +117,7 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
     var fillMaterial: DesignOverrides.Chrome.Material? {
         didSet {
             guard fillMaterial != oldValue else { return }
-            updateGlassTint()
+            updateGlassMaterial()
         }
     }
 
@@ -439,8 +439,10 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
     /// deployment target.
     ///
     /// **Untinted glass (Task 2) is still what ships.** `backing.tintColor` used
-    /// to carry `set.fillMenu`; it is left nil now, the same untinted `regular`
-    /// glass the pane's own plane (`PaneGlassPlaneView`) ships with. The three bands above
+    /// to carry `set.fillMenu`; it is left nil now, the same untinted glass the
+    /// pane's own plane (`PaneGlassPlaneView`) ships with, at the native style
+    /// the resolved set names (`.regular` for `liquidGlass`, `.clear` for
+    /// `sheer`). The three bands above
     /// (``PaletteQueryView``, ``PaletteListView``, ``PaletteHintsView``) used to
     /// draw `fillMenu` a second time as their own fill; Task 2 removed that too,
     /// so nothing downstream of this method paints `fillMenu` any more — see
@@ -456,7 +458,7 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
             glassBacking?.removeFromSuperview()
             glassBacking = nil
             content.layer?.backgroundColor = nsColor(theme.panelBackground).cgColor
-        case .glass:
+        case let .glass(set):
             // Cleared rather than left at `panelBackground`: `content`'s own
             // layer sits behind `glassBacking` in the same window, and an
             // opaque colour there is exactly what the glass view would sample
@@ -470,7 +472,7 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
                 backing = existing
             } else {
                 backing = PaletteGlassBacking(frame: content.bounds)
-                backing.style = .regular
+                backing.style = NSGlassEffectView.Style(set.nativeStyle)
                 backing.wantsLayer = true
                 // Below the three bands, and untinted the same way they draw
                 // no fill of their own any more (Task 2) — see
@@ -481,17 +483,20 @@ final class CommandPaletteController: NSObject, NSTextFieldDelegate {
                 glassBacking = backing
             }
         }
-        updateGlassTint()
+        updateGlassMaterial()
     }
 
-    /// Writes ``fillMaterial``'s colour onto the backing, or nil — which is what
-    /// ships and what every Release build resolves.
+    /// Writes the set's native style and ``fillMaterial``'s colour onto the
+    /// backing; the colour is nil in what ships and in every Release build.
     ///
     /// Called from ``applyResolvedChrome()`` as well as from ``fillMaterial``'s
     /// own `didSet`, so a tint set before the backing existed still lands when
     /// it is created, and a stale one cannot survive a flat/glass round trip.
-    private func updateGlassTint() {
+    /// The style write on every pass is what lets a live `liquidGlass`/`sheer`
+    /// switch reach a backing the early-return above kept.
+    private func updateGlassMaterial() {
         guard let glassBacking, case let .glass(set) = resolvedChrome else { return }
+        glassBacking.style = NSGlassEffectView.Style(set.nativeStyle)
         glassBacking.tintColor = SurfaceFill.colour(fillMaterial, in: set)
     }
 
