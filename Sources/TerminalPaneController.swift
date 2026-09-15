@@ -1462,7 +1462,10 @@ final class TerminalPaneController: NSViewController {
             // Dismiss before the bytes: key is back with the host window
             // before the keystroke lands in the pane.
             clusterCards.dismiss()
-            send(ApprovalPopover.bytes(for: action))
+            // sendBytes uses Ghostty's paste path, which strips Escape.
+            // A binding writes the answer bytes without paste sanitization.
+            let answer = ApprovalPopover.bytes(for: action).map { String(format: "\\x%02x", $0) }.joined()
+            _ = terminalView.performBindingAction("text:" + answer)
         }
         card.onClose = { [weak self] in self?.clusterCards.dismiss() }
 
@@ -1540,6 +1543,13 @@ final class TerminalPaneController: NSViewController {
         noticeDismissal?.cancel()
         notice = text
         refreshStatus()
+        if view.window?.isKeyWindow == true {
+            NSAccessibility.post(
+                element: NSApp as Any,
+                notification: .announcementRequested,
+                userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue]
+            )
+        }
 
         let dismissal = DispatchWorkItem { [weak self] in
             guard let self else { return }
