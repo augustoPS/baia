@@ -339,7 +339,7 @@ cat > "$ISOLATED_OUT/pause.c" <<'EOF'
 #include <unistd.h>
 int main(void) { for (;;) pause(); }
 EOF
-cc -o "$ISOLATED_BINARY" "$ISOLATED_OUT/pause.c"
+xcrun --sdk macosx cc -o "$ISOLATED_BINARY" "$ISOLATED_OUT/pause.c"
 isolated_launch
 if isolated_app_is_running; then
   pass "launch records a live copied-binary child"

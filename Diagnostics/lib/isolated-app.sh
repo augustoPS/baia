@@ -293,7 +293,7 @@ isolated_stop_owned_process() {
     pid="$ISOLATED_CHILD_PID"
   fi
   case "$pid" in
-    *[!0-9]*|'') 
+    *[!0-9]*|'')
       rm -f "${ISOLATED_PID_FILE:-}"
       return 0
       ;;

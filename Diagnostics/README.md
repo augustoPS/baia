@@ -5,7 +5,7 @@ exercises, not in `design/`, not in a scratch directory. One home, so that askin
 "has this been checked live?" is a directory listing.
 
 A probe is not a unit test. The package test suites answer everything decidable
-without a window; `make test` runs them and there are 1,292 of them across twelve packages. A probe
+without a window; `make test` runs all local package suites. A probe
 answers what those cannot: something that needs a real window, a real Metal
 surface, a real spawned shell, a real socket, or a human comparing two images.
 The rule that draws the line is the one the packages already follow. If a fact is
@@ -50,6 +50,11 @@ responder inside a pane's window and silently kill every ghostty binding" is.
 | `clip-layout/` | The bug shape that has cost four hand-found hours: something derived from a view's size, the size changing, and the derived thing never rebuilt. Drives a real rows view through a first layout, a width change and a scroll |
 | `config-wiring/` | Task 6 of the config-wiring plan: every appearance key round-tripping into the running app. Colour checks are automated, the ones marked `LOOK` need a human |
 | `control-channel/` | 101 checks over an isolated instance's real socket: scopes, statuses, event kinds, backfill, acknowledgement-gated `run`, and a pane reporting on itself |
+| `desktop-acceptance/` | Bounded disposable app and reviewed evidence ledger for native computer-use checks. Unique identity, exact cleanup, negative ownership/evidence tests. Coordinator supplies actual UI actions and judgments |
+| `settings-colour-history/` | Shipped color field follows panel and history changes unless it holds typed text. Nine production-view cases with baseline bug controls; no ordered windows |
+| `settings-colour-interruption/` | Shipped color preview commits once on panel close or well deactivation. Six cases against the real transaction controller, including write refusal and baseline bug controls. Native held-drag replay remains separate |
+| `settings-field-history/` | Shipped Text/Number field mirrors follow history without stale commits on focus exit. Seventeen cases with baseline bug controls; no ordered windows |
+| `settings-invalid-fields/` | Shipped Settings recovery banner exposes invalid config fields and clears after correction. Fourteen cases with baseline bug controls; no ordered windows |
 | `settings-window/` | In-app Settings self-check on an isolated, unacknowledged copy. Takes focus; does not load Debug session/ack |
 | `find-in-pane/` | Whether the find panel breaks a responder inside a pane's window, or keeps a dead pane's shell alive |
 | `split-command/` | What ghostty actually does with the `command` config key, which its own documentation gets wrong, and therefore what `baia split --command` has to be given. Also the refusals, which need no app |

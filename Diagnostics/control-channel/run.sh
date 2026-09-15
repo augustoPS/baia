@@ -133,9 +133,7 @@ done
 } > "$SHELLS/pane-\$\$.env" 2>&1
 EOF
 
-BAIA_CONFIG_FILE="$ISOLATED_CONFIG" ZDOTDIR="$ISOLATED_ZDOT" \
-  "$ISOLATED_BINARY" > "$ISOLATED_EVIDENCE/app.log" 2>&1 &
-isolated_record_child "$!"
+isolated_launch
 echo "launched isolated baia as pid $ISOLATED_CHILD_PID"
 
 for _ in $(seq 1 60); do
