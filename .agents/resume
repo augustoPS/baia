@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# baia has no orb-side services, per-thread authentication, or runtime repair.
+# Toolchains and dependencies are restored from the project snapshot.
+exit 0
