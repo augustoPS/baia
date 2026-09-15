@@ -208,16 +208,49 @@ final class TextControl: SettingsControlBase, NSTextFieldDelegate {
         line.addArrangedSubview(field)
     }
 
-    private var isEditing: Bool {
-        field.currentEditor() != nil
+    /// True while the field holds text the owner typed and has not committed.
+    /// Focus is not this signal: `currentEditor()` is non-nil whenever the
+    /// field has focus, so an editor check froze the text through ⌘Z and
+    /// leaving the field then committed the frozen text over the undone value,
+    /// the same root `NumberControl` and `ColourControl` carried (found
+    /// 2026-09-10). A keystroke alone is not the signal either: a keystroke
+    /// and a Backspace leave the text as the mirror wrote it, and a flag that
+    /// stayed up froze the field through the next history change and wrote
+    /// the old text over it (found 2026-09-11).
+    private var fieldHoldsTyping = false
+
+    /// The running value as the field would show it. The field holds typing
+    /// while its text differs from this, so the mirror's own write never reads
+    /// as typing. Tracked through every refresh, including the ones that leave
+    /// refused or typed text in place, so the text that counts as the mirror
+    /// is what the file holds now rather than what it held when last shown
+    /// (a ⌘Z under refused text moves it).
+    private var mirroredText = ""
+
+    func controlTextDidChange(_ notification: Notification) {
+        fieldHoldsTyping = field.stringValue != mirroredText
     }
 
     func controlTextDidEndEditing(_ notification: Notification) {
-        commitText()
-        // The field editor's typing undo lives on the window's manager while
-        // the field is being edited and comes off it here, so ⌘Z after Return
-        // reverses the transaction the text produced rather than the keystrokes
-        // that produced the text.
+        // Only typed text is a proposal; leaving a mirror commits nothing.
+        if fieldHoldsTyping {
+            fieldHoldsTyping = false
+            commitText()
+        } else if hasError, field.stringValue == mirroredText {
+            // Refused text retyped back to the mirror. The file already holds
+            // it, so nothing is proposed and no history step is registered;
+            // only the reason comes down. Without this the error stayed up
+            // over the file's own value, because the mirror never proposes
+            // (found 2026-09-13, `settings-invalid-fields`).
+            show(nil)
+        }
+        // Meant to take the field editor's typing undo off the window's
+        // manager, so ⌘Z after Return reverses the transaction rather than
+        // the keystrokes. Measured 2026-09-11 (`settings-field-history`,
+        // `undo-wiring`): the field editor answers its own non-nil manager,
+        // not the window's, so in that rig this scrub finds nothing to remove.
+        // Kept unchanged until a native check says where the app's field
+        // editor undo lives.
         if let editorView = notification.userInfo?["NSFieldEditor"] as? NSTextView {
             field.window?.undoManager?.removeAllActions(withTarget: editorView)
         }
@@ -228,11 +261,12 @@ final class TextControl: SettingsControlBase, NSTextFieldDelegate {
     }
 
     override func refresh(_ settings: Settings) {
-        // Invalid text stays until the owner corrects it; a field mid-edit is
-        // left to the owner as well, so an external change cannot replace what
-        // is being typed.
-        guard !hasError, !isEditing else { return }
-        field.stringValue = read(settings)
+        mirroredText = read(settings)
+        // Invalid text stays until the owner corrects it, typed text until it
+        // is committed. A focused field with nothing typed follows the running
+        // value, so ⌘Z shows in it.
+        guard !hasError, !fieldHoldsTyping else { return }
+        field.stringValue = mirroredText
     }
 }
 
@@ -294,13 +328,56 @@ final class NumberControl: SettingsControlBase, NSTextFieldDelegate {
         line.addArrangedSubview(unit)
     }
 
+    /// True while the field holds text the owner typed and has not committed,
+    /// and the stepper has not replaced. Focus is not this signal:
+    /// `currentEditor()` is non-nil whenever the field has focus, so an editor
+    /// check froze the text through ⌘Z while the stepper beside it followed,
+    /// and leaving the field then committed the frozen text over the undone
+    /// value (found 2026-09-10, native: font size 14 stayed in the focused
+    /// field after ⌘Z wrote 11.5, and a toolbar click wrote 14 back). A
+    /// keystroke alone is not the signal either: a keystroke and a Backspace
+    /// leave the text as the mirror wrote it, and a flag that stayed up froze
+    /// the field through the next ⌘Z the same way (found 2026-09-11).
+    private var fieldHoldsTyping = false
+
+    /// The running value as the field would show it, written by `refresh` and
+    /// the stepper. The field holds typing while its text differs from this,
+    /// so those writes never read as typing. Tracked through every refresh,
+    /// including the ones that leave refused or typed text in place, so the
+    /// text that counts as the mirror is what the file holds now (a ⌘Z under
+    /// refused text moves it).
+    private var mirroredText = ""
+
     @objc private func stepped() {
         let value = min(max(stepper.doubleValue, range.lowerBound), range.upperBound)
-        field.stringValue = formatter.string(from: value as NSNumber) ?? "\(value)"
+        // The stepper's text replaces whatever was typed, so nothing is left
+        // to commit when focus leaves.
+        fieldHoldsTyping = false
+        mirroredText = formatter.string(from: value as NSNumber) ?? "\(value)"
+        field.stringValue = mirroredText
         show(editor.commit(edit(value), actionName: actionName))
     }
 
+    func controlTextDidChange(_ notification: Notification) {
+        fieldHoldsTyping = field.stringValue != mirroredText
+    }
+
     func controlTextDidEndEditing(_ notification: Notification) {
+        // Only typed text is a proposal; leaving a mirror commits nothing.
+        if fieldHoldsTyping {
+            fieldHoldsTyping = false
+            commitText()
+        } else if hasError, field.stringValue == mirroredText {
+            // Refused text retyped back to the mirror: nothing is proposed,
+            // only the reason comes down (found 2026-09-13, see `TextControl`).
+            show(nil)
+        }
+        if let editorView = notification.userInfo?["NSFieldEditor"] as? NSTextView {
+            field.window?.undoManager?.removeAllActions(withTarget: editorView)
+        }
+    }
+
+    private func commitText() {
         guard let value = formatter.number(from: field.stringValue.trimmingCharacters(in: .whitespaces))?.doubleValue else {
             show(SettingsValidationError(key: edit(0).key, message: "Enter a number."))
             return
@@ -317,16 +394,17 @@ final class NumberControl: SettingsControlBase, NSTextFieldDelegate {
             return
         }
         show(editor.commit(edit(value), actionName: actionName))
-        if let editorView = notification.userInfo?["NSFieldEditor"] as? NSTextView {
-            field.window?.undoManager?.removeAllActions(withTarget: editorView)
-        }
     }
 
     override func refresh(_ settings: Settings) {
         let value = read(settings)
         stepper.doubleValue = value
-        guard !hasError, field.currentEditor() == nil else { return }
-        field.stringValue = formatter.string(from: value as NSNumber) ?? "\(value)"
+        mirroredText = formatter.string(from: value as NSNumber) ?? "\(value)"
+        // Invalid text stays until corrected, typed text until committed. A
+        // focused field with nothing typed follows the running value like the
+        // stepper beside it.
+        guard !hasError, !fieldHoldsTyping else { return }
+        field.stringValue = mirroredText
     }
 }
 
@@ -405,14 +483,34 @@ final class SliderControl: SettingsControlBase {
 
 // MARK: - Colour
 
+/// Forwards deactivation so a Colors panel that disappears without a mouse-up
+/// still ends the open preview. Not a generic gesture helper: only this well
+/// has a panel whose close omits the action callback the slider still gets.
+@MainActor
+private final class ColourWell: NSColorWell {
+    var onDeactivate: (() -> Void)?
+
+    override func deactivate() {
+        super.deactivate()
+        onDeactivate?()
+    }
+}
+
 /// A colour well beside a hex field. Both write the same key; the well always
 /// produces a valid hex, the field is validated and keeps its text when it is
-/// not one.
+/// not one. A drag in the Colors panel previews; mouse-up, panel close, and
+/// well deactivation each commit the last accepted colour once.
 @MainActor
 final class ColourControl: SettingsControlBase, NSTextFieldDelegate {
-    private let well = NSColorWell()
+    private let well = ColourWell()
     private let field = NSTextField()
     private let actionName = "Change Background Colour"
+    /// True after a drag-frame preview and before that gesture is ended. The
+    /// panel's mouse-up is one end; closing the panel or deactivating the well
+    /// is the other, because those omit the mouse-up callback (found 2026-09-10,
+    /// native: field `#aaaaaa`, file `#141414` after AXPress on Colors close).
+    private var panelGestureOpen = false
+    private var observesPanelClose = false
 
     override init(editor: SettingsEditing) {
         super.init(editor: editor)
@@ -423,6 +521,7 @@ final class ColourControl: SettingsControlBase, NSTextFieldDelegate {
         well.target = self
         well.action = #selector(picked)
         well.setAccessibilityLabel("Background colour")
+        well.onDeactivate = { [weak self] in self?.finishOpenPanelGesture() }
         field.placeholderString = "#141414"
         field.delegate = self
         field.font = .monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
@@ -432,27 +531,97 @@ final class ColourControl: SettingsControlBase, NSTextFieldDelegate {
         line.addArrangedSubview(field)
     }
 
-    @objc private func picked() {
-        guard let colour = well.color.usingColorSpace(.sRGB) else { return }
-        let hex = String(
+    private var wellHex: String? {
+        guard let colour = well.color.usingColorSpace(.sRGB) else { return nil }
+        return String(
             format: "#%02x%02x%02x",
             Int((colour.redComponent * 255).rounded()),
             Int((colour.greenComponent * 255).rounded()),
             Int((colour.blueComponent * 255).rounded())
         )
+    }
+
+    @objc private func picked() {
+        guard let hex = wellHex else { return }
+        // The well's colour supersedes refused text. The reason comes down
+        // before the write, because the write refreshes this control while it
+        // runs and a refresh under an error leaves the text; clearing it after
+        // left `zzz` beside a well of another colour with nothing saying why
+        // (found 2026-09-11).
+        show(nil)
         // A drag inside the colour panel arrives as a stream of actions. Each
         // one is a valid colour, so they preview and the panel's mouse-up
-        // writes, exactly as the slider does.
+        // writes, exactly as the slider does. Close and deactivate also write,
+        // because the panel does not deliver that mouse-up.
         let type = NSApp.currentEvent?.type
         if type == .leftMouseDown || type == .leftMouseDragged {
+            panelGestureOpen = true
+            observePanelCloseIfNeeded()
             show(editor.preview(.backgroundHex(hex)))
         } else {
+            panelGestureOpen = false
             show(editor.endGesture(.backgroundHex(hex), actionName: actionName))
         }
     }
 
+    /// Commits the last previewed colour once. Idle close and a second
+    /// deactivation after mouse-up see the flag down and write nothing.
+    private func finishOpenPanelGesture() {
+        guard panelGestureOpen else { return }
+        panelGestureOpen = false
+        guard let hex = wellHex else { return }
+        show(nil)
+        show(editor.endGesture(.backgroundHex(hex), actionName: actionName))
+    }
+
+    private func observePanelCloseIfNeeded() {
+        guard !observesPanelClose else { return }
+        observesPanelClose = true
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(colorPanelWillClose(_:)),
+            name: NSWindow.willCloseNotification,
+            object: NSColorPanel.shared
+        )
+    }
+
+    @objc private func colorPanelWillClose(_ notification: Notification) {
+        finishOpenPanelGesture()
+    }
+
+    /// True while the field holds text the owner typed and has not committed.
+    /// Focus is not this signal: `currentEditor()` is non-nil whenever the
+    /// field has focus, and the page opens with it focused, so an editor check
+    /// froze the text through every panel drag and ⌘Z, and leaving the field
+    /// then committed the frozen text over the chosen colour (found
+    /// 2026-09-10). A keystroke alone is not the signal either: a keystroke
+    /// and a Backspace leave the text as the mirror wrote it, and a flag that
+    /// stayed up froze the field through the next panel pick the same way
+    /// (found 2026-09-11).
+    private var fieldHoldsTyping = false
+
+    /// The running value as the field would show it. The field holds typing
+    /// while its text differs from this, so the mirror's own write never reads
+    /// as typing. Tracked through every refresh, including the ones that leave
+    /// refused or typed text in place, so the text that counts as the mirror
+    /// is what the file holds now (a ⌘Z or panel pick under refused text
+    /// moves it).
+    private var mirroredText = ""
+
+    func controlTextDidChange(_ notification: Notification) {
+        fieldHoldsTyping = field.stringValue != mirroredText
+    }
+
     func controlTextDidEndEditing(_ notification: Notification) {
-        show(editor.commit(.backgroundHex(field.stringValue), actionName: actionName))
+        // Only typed text is a proposal; leaving a mirror commits nothing.
+        if fieldHoldsTyping {
+            fieldHoldsTyping = false
+            show(editor.commit(.backgroundHex(field.stringValue), actionName: actionName))
+        } else if hasError, field.stringValue == mirroredText {
+            // Refused text retyped back to the mirror: nothing is proposed,
+            // only the reason comes down (found 2026-09-13, see `TextControl`).
+            show(nil)
+        }
         if let editorView = notification.userInfo?["NSFieldEditor"] as? NSTextView {
             field.window?.undoManager?.removeAllActions(withTarget: editorView)
         }
@@ -467,8 +636,12 @@ final class ColourControl: SettingsControlBase, NSTextFieldDelegate {
                 alpha: 1
             )
         }
-        guard !hasError, field.currentEditor() == nil else { return }
-        field.stringValue = settings.backgroundHex
+        mirroredText = settings.backgroundHex
+        // Invalid text stays until corrected, typed text until committed. A
+        // focused field with nothing typed follows the running value like the
+        // well beside it.
+        guard !hasError, !fieldHoldsTyping else { return }
+        field.stringValue = mirroredText
     }
 }
 

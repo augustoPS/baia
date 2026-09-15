@@ -110,22 +110,40 @@
             }
             controller.select(.appearance)
 
-            // Exercise the actual text delegate, not just controller.commit.
+            // Exercise the actual text delegate the way an owner does: the page
+            // on screen, the field focused, the keystrokes inserted by the
+            // field editor, and focus leaving the field. `NumberControl` only
+            // proposes text it heard change (`controlTextDidChange` raises its
+            // typing flag; leaving a mirror commits nothing, so a focused field
+            // follows ⌘Z). Writing `stringValue` and calling the end-editing
+            // delegate directly never posted that change, so the control saw a
+            // mirror, proposed nothing, and all four checks failed
+            // (`settings-window`, 2026-09-15). The page must be selected: a
+            // page off screen has no window to lend it a field editor.
+            controller.select(.workspace)
             let workspacePage = controller.page(for: .workspace)
             if let depth = workspacePage.controls.compactMap({ $0 as? NumberControl }).first,
                let field = editableField(in: depth.view) {
                 let original = (try? Data(contentsOf: center.store.url)) ?? Data()
                 for text in ["999999999999999999999999", "-1", "2.5"] {
-                    field.stringValue = text
-                    depth.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification, object: field))
-                    check("depth rejects \(text) without writing", depth.hasError && (try? Data(contentsOf: center.store.url)) == original)
+                    let typed = typeAndLeave(text, in: field, window: window)
+                    check("depth rejects \(text) without writing",
+                          typed && depth.hasError && (try? Data(contentsOf: center.store.url)) == original,
+                          typed ? "error shown \(depth.hasError)" : "the field never took the typing")
                 }
-                field.stringValue = "5"
-                depth.controlTextDidEndEditing(Notification(name: NSControl.textDidEndEditingNotification, object: field))
-                check("depth accepts valid text", !depth.hasError && center.settings.discoveryMaxDepth == 5)
+                // A value that differs from the running one, so the accepted
+                // path is a real commit and not a retype of the mirror.
+                let accepted = center.settings.discoveryMaxDepth == 5 ? 6 : 5
+                let typed = typeAndLeave("\(accepted)", in: field, window: window)
+                check("depth accepts valid text",
+                      typed && !depth.hasError && center.settings.discoveryMaxDepth == accepted
+                          && center.store.load().settings.discoveryMaxDepth == accepted,
+                      typed ? "running \(center.settings.discoveryMaxDepth), error shown \(depth.hasError)"
+                          : "the field never took the typing")
             } else {
                 check("discovery depth has an editable number field", false)
             }
+            controller.select(.appearance)
 
             // Responder routing while Settings is key.
             let closeTarget = NSApp.target(forAction: #selector(AppDelegate.closePane(_:))) as AnyObject?
@@ -263,6 +281,48 @@
             sample.apply(center.settings, appearance: appearance,
                          windowIsTransparent: center.windowIsTransparent(for: center.settings))
 
+            // A design override reaches the sample the way it reaches a live
+            // pane, while every control keeps the persisted value. The
+            // override file is the disposable sibling of the scratch config
+            // (see `ConfigurationCenter.designOverridesFileURL()`), which is
+            // why this runs only under `BAIA_CONFIG_FILE`.
+            let sampleOverridesURL = store.url.deletingLastPathComponent().appending(path: "design-overrides.json")
+            check("no override file exists beside the scratch config before the sample check",
+                  !FileManager.default.fileExists(atPath: sampleOverridesURL.path(percentEncoded: false)))
+            _ = controller.commit(.backgroundOpacity(0.42), actionName: "self-check sample opacity")
+            check("the persisted opacity is 0.42 before the override", controller.settings.backgroundOpacity == 0.42)
+            try? Data(#"{"backgroundOpacity":0.9}"#.utf8).write(to: sampleOverridesURL)
+            check("the window's centre composes the override",
+                  await waitFor { center.effectiveSettings.backgroundOpacity == 0.9 })
+            let appearancePage = controller.page(for: .appearance)
+            let opacitySlider = appearancePage.controls.compactMap { $0 as? SliderControl }.first.flatMap { slider(in: $0.view) }
+            check("the opacity control keeps the persisted 0.42 under the override",
+                  opacitySlider?.doubleValue == 0.42, "\(String(describing: opacitySlider?.doubleValue))")
+            // The slider view is not what assistive technology reads. AppKit
+            // realizes `NSSliderCell` as the AXSlider element and answers nil
+            // for the view's own `accessibilityValue()`, in a window or out of
+            // one (measured 2026-09-15). Ask for the element the tree exposes,
+            // as VoiceOver does.
+            let opacityElement = opacitySlider
+                .flatMap { NSAccessibility.unignoredDescendant(of: $0) as? any NSAccessibilityProtocol }
+            check("the opacity control's accessibility element is a slider",
+                  opacityElement?.accessibilityRole() == .slider,
+                  "\(String(describing: opacityElement?.accessibilityRole()))")
+            check("the opacity control's accessibility value keeps the persisted 0.42",
+                  (opacityElement?.accessibilityValue() as? NSNumber)?.doubleValue == 0.42,
+                  "\(String(describing: opacityElement?.accessibilityValue()))")
+            check("the transaction settings keep the persisted 0.42", controller.settings.backgroundOpacity == 0.42)
+            check("the file keeps the persisted 0.42", store.load().settings.backgroundOpacity == 0.42)
+            check("the sample resolves the override's 0.9, as a pane does",
+                  sample.sidebar.backgroundOpacity == 0.9, "\(sample.sidebar.backgroundOpacity)")
+            check("the sample and a live pane agree under the override",
+                  pane == nil || pane?.lastAppliedAppearance?.backgroundOpacity == sample.sidebar.backgroundOpacity)
+            try? FileManager.default.removeItem(at: sampleOverridesURL)
+            check("removing the override returns the centre to the persisted settings",
+                  await waitFor { center.designOverrides == nil && center.effectiveSettings == center.settings })
+            check("the sample returns to the persisted 0.42 without the override",
+                  sample.sidebar.backgroundOpacity == 0.42, "\(sample.sidebar.backgroundOpacity)")
+
             // Malformed file: refused, banner up, repair keeps a backup.
             let good = (try? Data(contentsOf: store.url)) ?? Data()
             try? Data("{ broken".utf8).write(to: store.url)
@@ -376,6 +436,104 @@
                   await waitFor { overrideCenter.effectiveSettings.backgroundOpacity == 0.56 })
             check("override changes do not cross store directories",
                   absentCenter.designOverrides == nil && absentCenter.effectiveSettings == absentCenter.settings)
+
+            // Closing Settings takes its shared Colors panel down with it, by
+            // ⌘W and by the titlebar. Left standing, the panel outlives the
+            // window, AppKit hands key to a workspace, and the ⌥⌘W sent at what
+            // still looks like Settings closes that workspace (C01, 2026-09-14).
+            // A colour mid-drag when the window closes is committed once, the
+            // way a panel close or a well deactivation commits it.
+            controller.select(.appearance)
+            let colourWell = colorWell(in: controller.page(for: .appearance).view)
+            check("the appearance page has a colour well", colourWell != nil)
+            let closeTab = NSMenuItem()
+            closeTab.tag = MenuCommand.closeTab.tag
+            let closePaths: [(String, String, () -> Void)] = [
+                ("⌘W", "#3a3a3a", { controller.closePane(nil) }),
+                ("titlebar close", "#4b4b4b", { window.performClose(nil) }),
+            ]
+            for (path, dragHex, closeSettings) in closePaths {
+                delegate.showSettings(nil)
+                controller.select(.appearance)
+                let originHex = center.settings.backgroundHex
+                colourWell?.activate(true)
+                window.makeKeyAndOrderFront(nil)
+                check("\(path): the well opens the shared Colors panel",
+                      colorsPanelIsVisible() && colourWell?.isActive == true)
+                check("\(path): Settings is key over its Colors panel", window.isKeyWindow)
+                check("\(path): ⌘W resolves to Settings over its Colors panel",
+                      (NSApp.target(forAction: #selector(AppDelegate.closePane(_:))) as AnyObject?) === controller)
+                let previewed = colourWell.map { previewInPanel(dragHex, well: $0, window: window) } ?? false
+                check("\(path): a drag frame in the panel previews without writing",
+                      previewed && center.settings.backgroundHex == dragHex
+                          && store.load().settings.backgroundHex == originHex,
+                      "running \(center.settings.backgroundHex), file \(store.load().settings.backgroundHex)")
+                closeSettings()
+                check("\(path): Settings closed", !window.isVisible)
+                let colorsVisible = colorsPanelIsVisible()
+                check("\(path): the Colors panel closed with Settings", !colorsVisible)
+                check("\(path): the colour well deactivated with Settings", colourWell?.isActive == false)
+                check("\(path): the Colors panel is not key after Settings closed",
+                      !(NSColorPanel.sharedColorPanelExists && NSApp.keyWindow === NSColorPanel.shared))
+                check("\(path): no Colors panel stands over a workspace that ⌥⌘W would close",
+                      !(colorsVisible && delegate.validateMenuItem(closeTab)))
+                check("\(path): the dragged colour was committed once on close",
+                      center.settings.backgroundHex == dragHex && store.load().settings.backgroundHex == dragHex,
+                      "running \(center.settings.backgroundHex), file \(store.load().settings.backgroundHex)")
+                manager.undo()
+                check("\(path): one undo returns the colour to its origin",
+                      center.settings.backgroundHex == originHex && store.load().settings.backgroundHex == originHex)
+            }
+            delegate.showSettings(nil)
+            check("Settings reopens key after closing over its Colors panel", window.isKeyWindow)
+            check("reopening Settings does not bring the Colors panel back", !colorsPanelIsVisible())
+        }
+
+        // MARK: - Colors panel helpers
+
+        private static func colorsPanelIsVisible() -> Bool {
+            NSColorPanel.sharedColorPanelExists && NSColorPanel.shared.isVisible
+        }
+
+        private static func colorWell(in view: NSView) -> NSColorWell? {
+            if let well = view as? NSColorWell { return well }
+            for child in view.subviews {
+                if let well = colorWell(in: child) { return well }
+            }
+            return nil
+        }
+
+        private static var previewEventSerial = 1
+
+        /// A drag frame inside the Colors panel, as `ColourControl.picked`
+        /// sees it: the well takes the colour and fires its action while
+        /// `NSApp.currentEvent` is a `leftMouseDragged`. The event is posted
+        /// and dequeued so it is the one the control reads; the technique is
+        /// `Diagnostics/settings-colour-interruption`'s. Returns false when
+        /// the event could not be made current, so the caller does not grade
+        /// the mouse-up path as the drag path.
+        private static func previewInPanel(_ hex: String, well: NSColorWell, window: NSWindow) -> Bool {
+            guard let rgb = RGB(hex: hex) else { return false }
+            previewEventSerial += 1
+            guard let event = NSEvent.mouseEvent(
+                with: .leftMouseDragged,
+                location: NSPoint(x: 8, y: 8),
+                modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber,
+                context: nil,
+                eventNumber: previewEventSerial,
+                clickCount: 1,
+                pressure: 1
+            ) else { return false }
+            NSApp.postEvent(event, atStart: true)
+            guard NSApp.nextEvent(matching: .leftMouseDragged, until: Date().addingTimeInterval(0.05),
+                                  inMode: .default, dequeue: true) != nil,
+                NSApp.currentEvent?.type == .leftMouseDragged
+            else { return false }
+            well.color = NSColor(srgbRed: CGFloat(rgb.red), green: CGFloat(rgb.green), blue: CGFloat(rgb.blue), alpha: 1)
+            guard let action = well.action else { return false }
+            return well.sendAction(action, to: well.target)
         }
 
         // MARK: - Helpers
@@ -396,12 +554,37 @@
             return nil
         }
 
+        private static func slider(in view: NSView) -> NSSlider? {
+            if let slider = view as? NSSlider { return slider }
+            for child in view.subviews {
+                if let slider = slider(in: child) { return slider }
+            }
+            return nil
+        }
+
         private static func editableField(in view: NSView) -> NSTextField? {
             if let field = view as? NSTextField, field.isEditable { return field }
             for child in view.subviews {
                 if let field = editableField(in: child) { return field }
             }
             return nil
+        }
+
+        /// Owner typing into `field`, the way `Diagnostics/settings-field-history`
+        /// drives a control: focus through the window's responder chain, which
+        /// starts the field editor's session; the editor's own insertion, which
+        /// posts the change the control hears as `controlTextDidChange`; and
+        /// focus leaving the field, as a toolbar click does, which ends the
+        /// session and delivers `controlTextDidEndEditing` with the editor in
+        /// its `userInfo`. Returns false when the field never took an editor or
+        /// kept it, so the caller does not grade a skipped path as a rejection.
+        private static func typeAndLeave(_ text: String, in field: NSTextField, window: NSWindow) -> Bool {
+            guard window.makeFirstResponder(field),
+                  let editorView = field.currentEditor() as? NSTextView
+            else { return false }
+            let whole = NSRange(location: 0, length: (editorView.string as NSString).length)
+            editorView.insertText(text, replacementRange: whole)
+            return window.makeFirstResponder(nil) && field.currentEditor() == nil
         }
 
         private static func undoDepth(_ manager: UndoManager) -> Int {

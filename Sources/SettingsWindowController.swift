@@ -348,12 +348,51 @@ extension SettingsWindowController: NSWindowDelegate {
     func windowDidBecomeKey(_: Notification) {
         refreshRecoveryState()
     }
+
+    /// The shared Colors panel goes down with this window, by ⌘W and by the
+    /// titlebar alike, since both arrive here before the window leaves the
+    /// screen. AppKit does not do this on its own: with Settings gone and the
+    /// panel still floating, key passes to a workspace, and the ⌥⌘W a person
+    /// sends at what still reads as Settings closes that workspace (C01,
+    /// 2026-09-14, `…/DCB624F4…/c01/08-colors-after-cmd-w-ax.txt`). The
+    /// Appearance colour well is the only opener of the panel in this app, so
+    /// a visible panel is always this window's.
+    func windowWillClose(_: Notification) {
+        dismissColorsPanel()
+    }
+
+    /// `close()` rather than `orderOut(_:)`, so the panel posts
+    /// `willCloseNotification`: that is how `ColourControl` commits a colour
+    /// still being dragged, once. A well AppKit leaves active afterwards is
+    /// deactivated here, which is the control's other commit path and a
+    /// no-op once the first has run. Read through `sharedColorPanelExists`
+    /// so a Settings close never creates a panel that was never opened.
+    private func dismissColorsPanel() {
+        if NSColorPanel.sharedColorPanelExists, NSColorPanel.shared.isVisible {
+            NSColorPanel.shared.close()
+        }
+        guard let appearance = pages[.appearance] else { return }
+        for well in Self.activeColorWells(in: appearance.view) {
+            well.deactivate()
+        }
+    }
+
+    private static func activeColorWells(in view: NSView) -> [NSColorWell] {
+        var wells: [NSColorWell] = []
+        if let well = view as? NSColorWell, well.isActive { wells.append(well) }
+        for child in view.subviews {
+            wells.append(contentsOf: activeColorWells(in: child))
+        }
+        return wells
+    }
 }
 
 // MARK: - Recovery banner
 
 /// The persistent recovery state: what is wrong with the file, where it is,
-/// and the one way to replace it that keeps the original.
+/// and the one way to replace it that keeps the original. Invalid fields the
+/// decoder could not use are named here as well; they are not a broken
+/// document, so Repair stays reserved for a file that cannot be read as JSON.
 @MainActor
 final class SettingsRecoveryBanner: NSView {
     private let icon = NSImageView(image: NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Warning")!)
@@ -414,6 +453,7 @@ final class SettingsRecoveryBanner: NSView {
         retry.isHidden = !pending
         if pending, isHidden {
             message.stringValue = "An Undo or Redo could not be saved. Retry it when the configuration file is writable."
+            setAccessibilityValue(message.stringValue)
             repair.isHidden = true
             isHidden = false
         }
@@ -422,7 +462,10 @@ final class SettingsRecoveryBanner: NSView {
     /// Shows the state, or hides when the file is fine and the last write
     /// landed. Repair is offered only for a file that exists and is broken;
     /// an unreadable file is a permissions problem a new document would not
-    /// fix, and a missing one needs no repair.
+    /// fix, and a missing one needs no repair. A valid document whose decoder
+    /// rejected some fields still applies the rest and names the rejected
+    /// keys; the wording does not claim every rejected value became its
+    /// default, because some are clamped.
     func present(state: SettingsDocumentState, failure: SettingsWriteFailure?, fileURL: URL) {
         let path = fileURL.path(percentEncoded: false).replacingOccurrences(
             of: NSHomeDirectory(), with: "~"
@@ -441,15 +484,44 @@ final class SettingsRecoveryBanner: NSView {
         case .unreadable:
             lines.append("\(path) could not be read. Check its permissions.")
         }
-        if let failure, lines.isEmpty {
+        if state == .valid {
+            let invalidKeys = SettingsStore(fileURL: fileURL).load().invalidKeys
+            if !invalidKeys.isEmpty {
+                lines.append(Self.copy(forInvalidKeys: invalidKeys, path: path))
+            }
+        }
+        if let failure, state == .valid || state == .missing {
             lines.append("The last change was not saved. \(failure.message)")
         }
         guard !lines.isEmpty else {
             isHidden = true
+            setAccessibilityValue(nil)
             return
         }
         message.stringValue = lines.joined(separator: " ")
+        setAccessibilityValue(message.stringValue)
         repair.isHidden = !canRepair
         isHidden = false
+    }
+
+    /// Names the rejected keys and says a fallback was kept. "Fallback"
+    /// covers both a default and a clamp; claiming default for every
+    /// rejected value is wrong for opacity, padding, and depth.
+    private static func copy(forInvalidKeys keys: [String], path: String) -> String {
+        let named = keys.map { "`\($0)`" }
+        let listed: String
+        switch named.count {
+        case 0:
+            return ""
+        case 1:
+            listed = named[0]
+        case 2:
+            listed = "\(named[0]) and \(named[1])"
+        default:
+            listed = named.dropLast().joined(separator: ", ") + ", and \(named.last!)"
+        }
+        let verb = keys.count == 1 ? "is" : "are"
+        let fallback = keys.count == 1 ? "a fallback value" : "fallback values"
+        return "\(listed) in \(path) \(verb) out of range or the wrong type. Baia kept \(fallback) and applied the rest of the file."
     }
 }
