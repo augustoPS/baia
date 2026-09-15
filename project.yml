@@ -135,14 +135,14 @@ targets:
         # marketing version. 2 is the first build whose bundle id is
         # `pasqualotto.baia`; build 1 was tagged before the rename and does not
         # produce the app in /Applications.
-        CURRENT_PROJECT_VERSION: "4"
+        CURRENT_PROJECT_VERSION: "5"
 
         # The commit the bundle was built from, expanded into `BAIAGitCommit` in
         # Info.plist the same way `BAIA_SUPPORT_DIRECTORY` is. Both versions
-        # above are hand-edited constants, so every build between two edits
-        # calls itself 0.1.0 (2) and nothing in the bundle says which source it
-        # came from; the installed copy could only be tied to a commit by the
-        # binary's mtime, which is an inference and not a record.
+        # above are hand-edited constants, so every build between two edits has
+        # the same release identity and nothing in the bundle says which source
+        # it came from; the installed copy could only be tied to a commit by
+        # the binary's mtime, which is an inference and not a record.
         #
         # The real value is passed on the xcodebuild command line by `make
         # build`, because no build setting can run git. What stands here is the
