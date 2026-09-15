@@ -1,6 +1,6 @@
 # Cluster attention probe
 
-`./run.sh` from anywhere. Four arms, each followed by a control that damages the
+`./run.sh` from anywhere. Five arms, each followed by a control that damages the
 drawing and must fail. Nothing is captured from the screen, no window is made
 key, and no app is launched: every reading comes from a bitmap this process
 rasterizes through `cacheDisplay(in:to:)`.
@@ -33,6 +33,7 @@ with it.
 | `calm` | no pixel of a `done` segment is the attention colour | `done` rendered as `asking` |
 | `anchor` | the attention segment's rect is identical at every level | one level's glyph widened |
 | `ink` | the glyph is `theme.ink(on:)` of what it sits on | `run.sh` rewrites that call to `theme.foreground` |
+| `done-mark` | the done check differs from neutral across at least 14 by 12 device pixels at 2x | the done glyph is replaced with the neutral empty raster |
 
 `levels` compares renders rather than naming a colour, so it survives a change of
 treatment: whatever the levels are drawn as, they may not be drawn the same. A
@@ -51,6 +52,15 @@ Clean reads 0 attention-coloured pixels, the control 244.
 survived its reversal. `approvalAnchorRect()` anchors the approval popover to
 this segment, so a width that varied by level would move a popover as a side
 effect of an agent being seen. The mark changes; its box does not.
+
+`done-mark` guards the failure that colour and level-difference checks cannot
+see: a technically distinct mark can still be too small to recognize. It
+compares the shipped done view with the same production segment carrying no
+glyph, then measures only the resulting raster's physical extent. The former
+10 pt check occupied 14 by 11 device pixels in this direct raster and looked
+like a tiny chevron in a full-window capture. The 14 by 12 floor remains small
+while requiring both diagonals to survive at a material size. Its control
+renders the neutral copy twice and therefore has no differing raster.
 
 `ink`'s control is a `sed` in `run.sh` rather than a flag on the view, following
 `pane-resize`: a seam added to production for a probe to poke is a second way the

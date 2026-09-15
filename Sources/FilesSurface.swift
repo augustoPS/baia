@@ -398,16 +398,26 @@ private nonisolated final class FileTreeAccessibilityRow: NSAccessibilityElement
     private let path: RepositoryPath
     private let generation: Int
 
+    /// The one cell VoiceOver's table mode lands on. Built with the row and
+    /// never replaced, so it shares the row's identity, path and generation.
+    fileprivate let cell: FileTreeAccessibilityCell
+
     init(rowsView: FileTreeRowsView, path: RepositoryPath, generation: Int) {
         self.rowsView = rowsView
         self.path = path
         self.generation = generation
+        cell = FileTreeAccessibilityCell(rowsView: rowsView, path: path, generation: generation)
         super.init()
+        cell.row = self
     }
 
     override func accessibilityRole() -> NSAccessibility.Role? { .row }
 
+    override func accessibilitySubrole() -> NSAccessibility.Subrole? { .outlineRow }
+
     override func accessibilityParent() -> Any? { rowsView }
+
+    override func accessibilityChildren() -> [Any]? { [cell] }
 
     override func accessibilityIndex() -> Int {
         let rowsView = rowsView
@@ -522,6 +532,112 @@ private nonisolated final class FileTreeAccessibilityRow: NSAccessibilityElement
     }
 }
 
+/// The one cell under every semantic row.
+///
+/// VoiceOver walks an `AXList` through its children, which is why the palette's
+/// leaf rows speak, and walks an `AXOutline` in table mode, where the cursor
+/// lands on cells and never on a bare row. A row without a cell is reachable
+/// over the AX API and unreachable by VoiceOver: the 2026-09-10 native capture
+/// read "Files, table, No selection." and no cursor move entered the row.
+///
+/// The cell adds no state. Every property is the row's, resolved through the
+/// same path and generation, so a stale row and its cell go stale together and
+/// AXPress on either lands on the same ``FileTreeRowsView/activate``. It forwards
+/// through the rows view rather than through its row because an AX client may
+/// retain the cell alone.
+private nonisolated final class FileTreeAccessibilityCell: NSAccessibilityElement {
+    private weak var rowsView: FileTreeRowsView?
+    fileprivate weak var row: FileTreeAccessibilityRow?
+    private let path: RepositoryPath
+    private let generation: Int
+
+    init(rowsView: FileTreeRowsView, path: RepositoryPath, generation: Int) {
+        self.rowsView = rowsView
+        self.path = path
+        self.generation = generation
+        super.init()
+    }
+
+    override func accessibilityRole() -> NSAccessibility.Role? { .cell }
+
+    override func accessibilityParent() -> Any? { row }
+
+    override func accessibilityFrame() -> NSRect {
+        let rowsView = rowsView
+        let path = path
+        let generation = generation
+        return MainActor.assumeIsolated {
+            rowsView?.accessibilityFrame(for: path, generation: generation) ?? .zero
+        }
+    }
+
+    override func accessibilityLabel() -> String? {
+        let rowsView = rowsView
+        let path = path
+        let generation = generation
+        return MainActor.assumeIsolated {
+            rowsView?.accessibilityLabel(for: path, generation: generation)
+        }
+    }
+
+    override func accessibilityValue() -> Any? {
+        let rowsView = rowsView
+        let path = path
+        let generation = generation
+        return MainActor.assumeIsolated {
+            rowsView?.accessibilityValue(for: path, generation: generation)
+        }
+    }
+
+    override func accessibilityRowIndexRange() -> NSRange {
+        let rowsView = rowsView
+        let path = path
+        let generation = generation
+        let index = MainActor.assumeIsolated {
+            rowsView?.accessibilityIndex(for: path, generation: generation) ?? NSNotFound
+        }
+        return index == NSNotFound
+            ? NSRange(location: NSNotFound, length: 0)
+            : NSRange(location: index, length: 1)
+    }
+
+    override func accessibilityColumnIndexRange() -> NSRange { NSRange(location: 0, length: 1) }
+
+    override func isAccessibilitySelected() -> Bool {
+        let rowsView = rowsView
+        let path = path
+        let generation = generation
+        return MainActor.assumeIsolated {
+            rowsView?.accessibilitySelected(for: path, generation: generation) ?? false
+        }
+    }
+
+    override func isAccessibilityEnabled() -> Bool {
+        let rowsView = rowsView
+        let path = path
+        let generation = generation
+        return MainActor.assumeIsolated {
+            rowsView?.accessibilityEnabled(for: path, generation: generation) ?? false
+        }
+    }
+
+    override func accessibilityActionNames() -> [NSAccessibility.Action] { [.press] }
+
+    override func accessibilityPerformAction(_ action: NSAccessibility.Action) {
+        guard action == .press else { return }
+        _ = accessibilityPerformPress()
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        let rowsView = rowsView
+        let path = path
+        let generation = generation
+        return MainActor.assumeIsolated {
+            rowsView?.accessibilityPress(path: path, generation: generation) ?? false
+        }
+    }
+}
+
 @MainActor
 final class FileTreeRowsView: NSView {
     var theme: PaneTheme = .darkPastel { didSet { needsDisplay = true } }
@@ -589,8 +705,9 @@ final class FileTreeRowsView: NSView {
     /// hover/press/answer paint in ``RowFeedback``. Nothing draws from this value.
     private var accessibilitySelectedPath: RepositoryPath?
 
-    /// Virtual rows are retained while their paths remain part of this root, so
-    /// scrolling and disclosure do not replace the object under the AX cursor.
+    /// Virtual rows, each owning its one cell, are retained while their paths
+    /// remain part of this root, so scrolling and disclosure do not replace the
+    /// object under the AX cursor.
     /// A root or tree replacement advances the generation and clears the cache;
     /// a retained element can therefore never act on the same relative path in a
     /// different repository or a replacement result set.
@@ -636,6 +753,14 @@ final class FileTreeRowsView: NSView {
     }
 
     override func accessibilitySelectedRows() -> [Any]? { accessibilitySelectedChildren() }
+
+    override func accessibilityVisibleCells() -> [Any]? {
+        (accessibilityVisibleChildren() as? [FileTreeAccessibilityRow] ?? []).map(\.cell)
+    }
+
+    override func accessibilitySelectedCells() -> [Any]? {
+        (accessibilitySelectedChildren() as? [FileTreeAccessibilityRow] ?? []).map(\.cell)
+    }
 
     fileprivate func accessibilityIndex(for path: RepositoryPath, generation: Int) -> Int {
         currentIndex(for: path, generation: generation) ?? NSNotFound
@@ -1430,11 +1555,11 @@ final class InitOfferView: NSView {
     ///
     /// The ruling's first specific: this is `chrome.surfaces.sidebar`, the
     /// column's own key, so the pill follows the plane it floats over and no new
-    /// override key exists to disagree with it. See ``updateGlassTint()``.
+    /// override key exists to disagree with it. See ``updateGlassMaterial()``.
     var fillMaterial: DesignOverrides.Chrome.Material? {
         didSet {
             guard fillMaterial != oldValue else { return }
-            updateGlassTint()
+            updateGlassMaterial()
         }
     }
 
@@ -1622,19 +1747,19 @@ final class InitOfferView: NSView {
     /// hidden `NSGlassEffectView` still costs the compositing pass macOS runs
     /// whether or not it draws, and glass creates one only when none exists, so a
     /// glass-flat-glass round trip does not rebuild a view that did not move. The
-    /// tint is written by ``updateGlassTint()`` on every pass rather than at
-    /// creation, for the reason the host's own comment gives: a material dialled
-    /// while the column is open reaches an existing backing through the early
-    /// return.
+    /// native style and the tint are written by ``updateGlassMaterial()`` on
+    /// every pass rather than at creation, for the reason the host's own comment
+    /// gives: a material dialled, or a `liquidGlass`/`sheer` switch made, while
+    /// the column is open reaches an existing backing through the early return.
     private func applyResolvedChrome() {
         switch resolvedChrome {
         case .flat:
             glassBacking?.removeFromSuperview()
             glassBacking = nil
-        case .glass:
+        case let .glass(set):
             if glassBacking == nil {
                 let backing = InitOfferGlassBacking(frame: bounds)
-                backing.style = .regular
+                backing.style = NSGlassEffectView.Style(set.nativeStyle)
                 backing.wantsLayer = true
                 // The pill's own shape, at half the height, so the ends are full
                 // semicircles: the pane capsule's rule, now carried by the glass
@@ -1652,7 +1777,7 @@ final class InitOfferView: NSView {
                 addSubview(backing, positioned: .below, relativeTo: face)
                 glassBacking = backing
             }
-            updateGlassTint()
+            updateGlassMaterial()
         }
         face.resolvedChrome = resolvedChrome
         layOutLayers()
@@ -1666,9 +1791,11 @@ final class InitOfferView: NSView {
     /// the same ``SurfaceFill/colour(_:in:)``. So a material dialled in the design
     /// panel moves the pill and the plane it floats over together, and with
     /// nothing dialled — which is everything Release can be — both are untinted
-    /// `regular` glass, the shipped look since 2026-08-08.
-    private func updateGlassTint() {
+    /// glass, the shipped look since 2026-08-08, at the native style the set
+    /// names so the pill and the column change material together.
+    private func updateGlassMaterial() {
         guard case let .glass(set) = resolvedChrome else { return }
+        glassBacking?.style = NSGlassEffectView.Style(set.nativeStyle)
         glassBacking?.tintColor = SurfaceFill.colour(fillMaterial, in: set)
     }
 

@@ -426,6 +426,13 @@ final class PaneClusterView: PaneOverlayView {
     /// mark legible at this size.
     private static let capsuleGlyphFont = NSFont.monospacedSystemFont(ofSize: 10, weight: .heavy)
 
+    /// The calm check needs one more point than the compact request mark. At
+    /// 10 pt its raster is only 11 device pixels high at 2x and reads as a
+    /// chevron in a full-window capture. Drawing only `done` at 11 pt keeps the
+    /// shared capsule measurement and anchor stable while making the check's
+    /// second diagonal materially visible.
+    private static let doneGlyphFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .heavy)
+
     /// Width from the cached placement, height from the metrics. The pill
     /// sizes itself; the controller only pins its top-right corner.
     override var intrinsicContentSize: NSSize {
@@ -1000,7 +1007,7 @@ final class PaneClusterView: PaneOverlayView {
                 let glyph = attributed(
                     placement.segment.text,
                     ink: theme.ink(on: under),
-                    font: Self.capsuleGlyphFont
+                    font: placement.segment.isFinished ? Self.doneGlyphFont : Self.capsuleGlyphFont
                 )
                 let size = glyph.size()
                 glyph.draw(at: NSPoint(

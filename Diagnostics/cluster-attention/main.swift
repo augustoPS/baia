@@ -8,7 +8,7 @@
 // the capsule read. Spec:
 // `vault/projects/baia/specs/2026-08-15-what-the-capsule-says-about-attention.md`.
 //
-// Four arms, each with a `break` variant that damages the drawing rather than
+// Five arms, each with a `break` variant that damages the drawing rather than
 // the resolution:
 //
 //   levels    the three drawn levels differ from each other in pixels
@@ -16,6 +16,7 @@
 //   anchor    the attention segment's rect is the same at every level
 //   ink       the glyph on the fill is `theme.ink(on: fill)`, which is the
 //             measured legibility guarantee rather than a colour chosen here
+//   done-mark the finished mark has enough raster extent to read as a check
 //
 // `calm` exists because `levels` passed a wrong drawing: it asserts only that
 // the levels differ, and a `done` capsule filled in alert red differs from the
@@ -60,6 +61,15 @@ struct Render {
         let px = x * scale
         let py = y * scale
         let offset = py * bytesPerRow + px * 4
+        guard offset + 3 < pixels.count else { return Pixel(red: 0, green: 0, blue: 0, alpha: 0) }
+        return Pixel(
+            red: pixels[offset], green: pixels[offset + 1],
+            blue: pixels[offset + 2], alpha: pixels[offset + 3]
+        )
+    }
+
+    func devicePixel(x: Int, y: Int) -> Pixel {
+        let offset = y * bytesPerRow + x * 4
         guard offset + 3 < pixels.count else { return Pixel(red: 0, green: 0, blue: 0, alpha: 0) }
         return Pixel(
             red: pixels[offset], green: pixels[offset + 1],
@@ -356,6 +366,69 @@ func check(_ condition: Bool, _ label: String) {
     )
 }
 
+// MARK: - done mark
+
+/// Does the calm completion glyph occupy enough physical pixels to read as a
+/// check rather than a tiny chevron or antialiasing noise?
+///
+/// Compare the production done view with the same production attention segment
+/// carrying an empty glyph. This removes the pill and neighbouring labels from
+/// the measurement, leaving only pixels contributed by the check. The minimum
+/// extent is in device pixels at the app's 2x capture scale: 14 by 12 is still a
+/// small mark, but it has two diagonals long enough to be recognizable at a
+/// glance. The shipped 10 pt glyph measured 14 by 11 and failed this arm.
+@MainActor func doneMarkArm(breakIt: Bool) {
+    print("=== the finished mark is materially visible ===")
+    let done = makeView(.done)
+    let neutral = makeView(.done)
+    var neutralSegments = neutral.segments
+    if let index = neutralSegments.firstIndex(where: { $0.role == .attention }) {
+        // A monospaced space preserves the check's measured width and therefore
+        // the exact segment placement while contributing no visible glyph.
+        neutralSegments[index] = PaneClusterSegment(
+            role: .attention,
+            text: " ",
+            isFinished: true
+        )
+        neutral.segments = neutralSegments
+    }
+    guard let doneRender = rasterize(breakIt ? neutral : done),
+          let neutralRender = rasterize(neutral),
+          let doneRect = attentionRect(done),
+          let neutralRect = attentionRect(neutral)
+    else {
+        check(false, "the done and neutral views rasterized")
+        return
+    }
+
+    var changed: [(x: Int, y: Int)] = []
+    let deviceWidth = Int(min(doneRect.width, neutralRect.width) * Double(scale))
+    let deviceHeight = Int(min(doneRect.height, neutralRect.height) * Double(scale))
+    for y in 0..<deviceHeight {
+        for x in 0..<deviceWidth
+            where doneRender.devicePixel(
+                x: Int(doneRect.minX * Double(scale)) + x,
+                y: Int(doneRect.minY * Double(scale)) + y
+            ) != neutralRender.devicePixel(
+                x: Int(neutralRect.minX * Double(scale)) + x,
+                y: Int(neutralRect.minY * Double(scale)) + y
+            )
+        {
+            changed.append((x, y))
+        }
+    }
+    guard let minX = changed.map(\.x).min(), let maxX = changed.map(\.x).max(),
+          let minY = changed.map(\.y).min(), let maxY = changed.map(\.y).max()
+    else {
+        check(false, "the done view differs from neutral")
+        return
+    }
+    let width = maxX - minX + 1
+    let height = maxY - minY + 1
+    check(width >= 14, "the done check is at least 14 device pixels wide, got \(width)")
+    check(height >= 12, "the done check is at least 12 device pixels high, got \(height)")
+}
+
 // MARK: - main
 
 let arm = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : ""
@@ -367,8 +440,9 @@ MainActor.assumeIsolated {
     case "calm": calmArm(breakIt: breakIt)
     case "anchor": anchorArm(breakIt: breakIt)
     case "ink": inkArm(breakIt: breakIt)
+    case "done-mark": doneMarkArm(breakIt: breakIt)
     default:
-        print("usage: clusterattentiontest <levels|calm|anchor|ink> [break]")
+        print("usage: clusterattentiontest <levels|calm|anchor|ink|done-mark> [break]")
         exit(2)
     }
 }

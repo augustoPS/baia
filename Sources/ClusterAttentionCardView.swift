@@ -454,7 +454,7 @@ final class ApprovalPopoverView: NSView {
     var fillMaterial: DesignOverrides.Chrome.Material? {
         didSet {
             guard fillMaterial != oldValue else { return }
-            updateGlassTint()
+            updateGlassMaterial()
         }
     }
 
@@ -632,26 +632,28 @@ final class ApprovalPopoverView: NSView {
     }
 
     /// **Untinted glass (Task 2) is still what ships.** `backing.tintColor` used
-    /// to carry `set.fillMenu`; the tint is nil now, the same untinted `regular`
-    /// glass the pane's own plane (`PaneGlassPlaneView`) ships with.
+    /// to carry `set.fillMenu`; the tint is nil now, the same untinted glass the
+    /// pane's own plane (`PaneGlassPlaneView`) ships with, at the native style
+    /// the set names.
     ///
-    /// ``fillMaterial`` can put it back and only the debug design panel can set
-    /// it, which is why the `.glass` case below still does not bind its `set`:
-    /// ``updateGlassTint()`` re-reads ``resolvedChrome`` for the material set at
-    /// the one line that needs one, so a tint written before the backing existed
-    /// still lands. See ``SurfaceFill``.
+    /// ``fillMaterial`` can put the tint back and only the debug design panel
+    /// can set it. The `.glass` case binds its `set` for the creation-time
+    /// style alone; ``updateGlassMaterial()`` re-reads ``resolvedChrome`` for
+    /// the style and the tint on every pass, so a tint written before the
+    /// backing existed still lands and a live `liquidGlass`/`sheer` switch
+    /// reaches an existing backing. See ``SurfaceFill``.
     private func applyResolvedChrome() {
         switch resolvedChrome {
         case .flat:
             glassBacking?.removeFromSuperview()
             glassBacking = nil
-        case .glass:
+        case let .glass(set):
             let backing: ApprovalPopoverGlassBacking
             if let existing = glassBacking {
                 backing = existing
             } else {
                 backing = ApprovalPopoverGlassBacking(frame: bounds)
-                backing.style = .regular
+                backing.style = NSGlassEffectView.Style(set.nativeStyle)
                 backing.wantsLayer = true
                 // Below `contentView`, not below every subview: `nil` here
                 // would still be above this view's own `draw(_:)` layer (an
@@ -664,17 +666,18 @@ final class ApprovalPopoverView: NSView {
             }
             backing.frame = bounds
         }
-        updateGlassTint()
+        updateGlassMaterial()
         needsDisplay = true
         // `effectiveBackground` (and so the body's ink) depends on
         // `materialSet`, which just changed.
         contentView.needsDisplay = true
     }
 
-    /// Writes ``fillMaterial``'s colour onto the backing, or nil — which is what
-    /// ships and what every Release build resolves.
-    private func updateGlassTint() {
+    /// Writes the set's native style and ``fillMaterial``'s colour onto the
+    /// backing; the colour is nil in what ships and in every Release build.
+    private func updateGlassMaterial() {
         guard let glassBacking, let materialSet else { return }
+        glassBacking.style = NSGlassEffectView.Style(materialSet.nativeStyle)
         glassBacking.tintColor = SurfaceFill.colour(fillMaterial, in: materialSet)
     }
 
