@@ -146,6 +146,8 @@ final class WorkspaceWindowController: NSObject {
     /// `contentViewController`, and that reparents every live ghostty surface.
     let sidebar: SidebarHost
 
+    private var contentLayoutObservation: NSKeyValueObservation?
+
     /// The folder icon and the path, which is what the band says since the
     /// owner's 2026-08-13 ruling took the folder name out of it.
     ///
@@ -628,6 +630,13 @@ final class WorkspaceWindowController: NSObject {
         // which is what actually releases the panes.
         window.isReleasedWhenClosed = false
         window.delegate = self
+        // Native tabs change the unobstructed content rect without resizing a
+        // full-size content view. Relayout the band and panes after that change.
+        contentLayoutObservation = window.observe(\.contentLayoutRect, options: [.new]) { [weak self] _, _ in
+            MainActor.assumeIsolated {
+                self?.sidebar.view.needsLayout = true
+            }
+        }
 
         // Called rather than left to the property's `didSet`, which does not run
         // for an assignment made inside `init`. At `backgroundOpacity == 1` (or
@@ -945,14 +954,8 @@ extension WorkspaceWindowController: NSWindowDelegate {
     }
 
     func windowDidResize(_: Notification) {
-        // **The band's height is not a constant and a resize is when it moves**:
-        // it changes when a tab bar joins or leaves the window. `SidebarHost`
-        // reads it back through ``titlebarBandHeight`` for both the band plane's
-        // frame and the row it holds the pane tree at, and a layout pass AppKit
-        // schedules for the size change alone would run against the old number.
-        // So the host is asked for a fresh pass here rather than left to an
-        // autoresizing mask, which was the same reason the retired
-        // `layoutTitlebarGlass()` was called from this delegate.
+        // A frame resize also changes the host's layout. Native tab chrome
+        // changes are handled by contentLayoutObservation without a resize.
         sidebar.view.needsLayout = true
         onSessionChange?()
     }
