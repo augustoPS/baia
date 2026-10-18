@@ -11,10 +11,14 @@ drive `Sources/CloseSelfCheck.swift` through the production close actions:
 
 - `busy-pane`: Close Pane shows a sheet naming `sleep`; Cancel keeps the pane
   and the job; the second Close Pane is confirmed, the window closes and the
-  app exits. The fixture then checks the recorded sleep pid is gone.
+  app stays running for Quick Terminal. The driver checks the workspace is
+  gone and automatic termination is disabled, then explicitly quits the
+  isolated app. The fixture checks the recorded sleep pid is gone.
 - `busy-quit`: Quit shows the modal alert; Cancel keeps the workspace and the
   job; the second Quit is confirmed.
 - `idle-pane`: with no job, Close Pane closes the window without a sheet.
+  The driver checks the same stay-running policy, then explicitly quits the
+  isolated app.
 
 ## Pass criterion
 

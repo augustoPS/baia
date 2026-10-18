@@ -16,6 +16,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// and it would drift silently.
     private(set) var windows: [WorkspaceWindowController] = []
 
+    private var quickTerminal: QuickTerminalController?
+    private lazy var quickTerminalShortcut = GlobalTerminalShortcut { [weak self] in
+        self?.toggleQuickTerminal(nil)
+    }
+    private var shortcutFailure: Int32?
+
     private let sessionStore = SessionStore(fileURL: SessionStore.defaultFileURL(directoryName: SupportDirectory.name))
 
     /// Prevents repeated timers from stacking the same failure sheet. A successful
@@ -373,6 +379,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             openDesignPanelIfRequested()
         #endif
         installKeyMonitor()
+        registerQuickTerminalShortcut()
         // Warmed here so the first ⌘K of a session opens on a full list rather
         // than on an empty one that fills in a moment later.
         discoverProjects()
@@ -457,6 +464,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// match nothing here and are ignored.
     private func installKeyMonitor() {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if let self, let panel = quickTerminal?.panel, event.window === panel {
+                quickTerminal?.pane?.noteInput()
+            }
             if let window = event.window,
                let match = self?.windows.first(where: { $0.window === window }) {
                 match.tree.focusedPane?.noteInput()
@@ -466,7 +476,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool {
-        true
+        false
+    }
+
+    func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows _: Bool) -> Bool {
+        if windows.isEmpty { newWorkspaceWindow(nil) }
+        return true
+    }
+
+    private func registerQuickTerminalShortcut() {
+        let status = quickTerminalShortcut.register()
+        shortcutFailure = status == 0 ? nil : status
+        if status != 0 {
+            report("Command + backtick could not be registered (\(status)). Use File > Quick Terminal; release the shortcut in Ghostty or another app to enable it.")
+        }
+    }
+
+    @objc func toggleQuickTerminal(_: Any?) {
+        guard !isTerminating, NSApp.modalWindow == nil,
+              !NSApp.windows.contains(where: { $0.attachedSheet != nil }) else { return }
+        if shortcutFailure != nil { registerQuickTerminalShortcut() }
+        if quickTerminal == nil { quickTerminal = QuickTerminalController(configuration: configuration) }
+        quickTerminal?.toggle()
     }
 
     func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
@@ -508,6 +539,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_: Notification) {
         isTerminating = true
+        quickTerminal?.shutdown()
         // After the save, and last of all: every parked `recv` is answered with
         // an empty drain here, and a client that got a bare EOF instead would
         // report the app as broken on the one exit that is not.
@@ -884,6 +916,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func closeTab(_: Any?) {
+        if let panel = quickTerminal?.panel, NSApp.keyWindow === panel {
+            quickTerminal?.hide()
+            return
+        }
         guard case let .workspace(workspace) = commandContext else {
             NSSound.beep()
             return
@@ -930,6 +966,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// runs modally for the same reason.
     private func confirmQuitOverRunningWork() -> Bool {
         let activities = windows.flatMap { $0.tree.currentActivities }
+            + (quickTerminal?.pane.map { [$0.currentActivity] } ?? [])
         guard let confirmation = CloseConfirmation.needed(for: .quit, activities: activities) else {
             return true
         }
@@ -1420,6 +1457,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Re-derives everything that is not a pane after the config file changes.
     /// The panes themselves are updated by the configuration center directly.
     private func settingsDidChange() {
+        quickTerminal?.refreshAppearance()
         notifier.isEnabled = configuration.settings.notificationsEnabled
         control.settingsChanged(
             channelEnabled: configuration.settings.controlChannelEnabled,
@@ -2145,6 +2183,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func closePane(_: Any?) {
+        if let panel = quickTerminal?.panel, NSApp.keyWindow === panel {
+            quickTerminal?.hide()
+            return
+        }
         guard case let .workspace(workspace) = commandContext else {
             NSSound.beep()
             return
@@ -2260,6 +2302,15 @@ extension AppDelegate: NSMenuItemValidation {
             return pendingSessionRejection != nil && !isShowingSessionRecovery
         }
         guard let command = MenuCommand(tag: menuItem.tag) else { return true }
+        if command == .quickTerminal {
+            menuItem.toolTip = shortcutFailure == nil ? nil
+                : "Global shortcut unavailable. Release Command + backtick in Ghostty or another app, then choose this item to retry."
+            return true
+        }
+        if let panel = quickTerminal?.panel, NSApp.keyWindow === panel,
+           [.closePane, .closeTab, .closeWindow, .copy, .paste, .selectAll].contains(command) {
+            return true
+        }
         let state = CommandCatalog.entry(for: command, given: availability).state
         // Set here rather than when the menu is built. AppKit revalidates on
         // every menu open, so a checkmark applied at build time would sit on

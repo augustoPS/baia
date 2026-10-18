@@ -73,11 +73,16 @@
                 delegate.closePane(nil)
                 let sheet = controller.window.attachedSheet
                 check("asked again on the second close", buttons(in: sheet).map(\.title).sorted() == ["Cancel", "Close Pane"])
-                emit("self-check failures=\(failures)")
-                // The last pane: confirming closes the window and the app quits
-                // on its own. The fixture checks the sleep is gone from outside.
+                // The last pane closes its window while the app stays alive
+                // for Quick Terminal. Quit this isolated fixture explicitly.
                 emit("confirming")
                 clickButton("Close Pane", in: sheet)
+                after(0.4) {
+                    check("last workspace closed", delegate.windows.isEmpty)
+                    check("app stays running without workspaces",
+                          !delegate.applicationShouldTerminateAfterLastWindowClosed(NSApp))
+                    finish()
+                }
             }
         }
 
@@ -106,10 +111,15 @@
             guard let controller = delegate.windows.first else { return fail("no window") }
             let activity = controller.tree.focusedPane?.currentActivity
             check("the pane is idle", activity == .idleShell, "\(String(describing: activity))")
-            emit("self-check failures=\(failures)")
             delegate.closePane(nil)
             let sheet = controller.window.attachedSheet
             emit(sheet == nil ? "closed-without-sheet" : "unexpected-sheet \(buttons(in: sheet).map(\.title))")
+            after(0.4) {
+                check("last workspace closed", delegate.windows.isEmpty)
+                check("app stays running without workspaces",
+                      !delegate.applicationShouldTerminateAfterLastWindowClosed(NSApp))
+                finish()
+            }
         }
 
         // MARK: - Helpers

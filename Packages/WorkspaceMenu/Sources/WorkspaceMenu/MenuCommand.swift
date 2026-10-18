@@ -27,6 +27,7 @@ public enum MenuCommand: String, Sendable, Equatable, CaseIterable {
     case closeTab
     case closeWindow
     case openConfiguration
+    case quickTerminal
 
     case undo
     case redo
@@ -101,6 +102,7 @@ public enum MenuCommand: String, Sendable, Equatable, CaseIterable {
         case .closeTab: 203
         case .closeWindow: 204
         case .openConfiguration: 205
+        case .quickTerminal: 206
 
         case .copy: 300
         case .paste: 301

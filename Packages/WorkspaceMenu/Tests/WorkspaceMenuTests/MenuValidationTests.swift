@@ -21,7 +21,7 @@ import Testing
 
         #expect(Set(enabled) == [
             .about, .hide, .hideOthers, .showAll, .quit,
-            .newWindow, .openConfiguration,
+            .newWindow, .openConfiguration, .quickTerminal,
             .reloadProjectList, .bringAllToFront,
             .copyDiagnostics,
             .commandPalette,

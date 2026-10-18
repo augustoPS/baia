@@ -20,7 +20,7 @@ public enum MenuValidation {
         // stays enabled with no window at all: baia shipped without a ⌘Q once and
         // closing the window was the only way to leave the app.
         case .about, .hide, .hideOthers, .showAll, .quit,
-             .newWindow, .openConfiguration,
+             .newWindow, .openConfiguration, .quickTerminal,
              .reloadProjectList, .bringAllToFront, .copyDiagnostics:
             MenuItemState(isEnabled: true, isChecked: nil)
 

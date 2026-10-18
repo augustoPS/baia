@@ -98,6 +98,7 @@ public enum MenuBarLayout {
             items: [
                 item(.newWindow, "New Window", .character("n"), .command, .unbind),
                 item(.newTab, "New Tab", .character("t"), .command, .unbind),
+                item(.quickTerminal, "Quick Terminal", .character("`"), .command, .noConflict),
                 item(
                     .closePane, "Close Pane", .character("w"), .command, .unbind,
                     separatorBefore: true

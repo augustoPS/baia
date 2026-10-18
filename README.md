@@ -53,6 +53,19 @@ Useful commands are also available from the **Pane**, **Project**, **View**, and
 **Window** menus. Native macOS tabs can be reordered, dragged into another tabbed
 window, detached, and restored with the workspace session.
 
+Press **Command + backtick** from any app to toggle **Quick Terminal** at the top
+of the display under the pointer. Hiding it (or pressing Command-W) keeps the
+same shell and its running commands alive. Run `caffeinate` there to keep the
+Mac awake while the panel is hidden. Exiting its shell ends that session; the
+next toggle opens a fresh shell. Quick Terminal uses the terminal appearance
+from Settings and is separate from saved workspace windows.
+
+Baia stays running after its regular windows close. Use **Command-Q** to quit;
+quitting ends the quick terminal too. Click Baia in the Dock to open a workspace
+again. If Ghostty or another app already owns the shortcut, use **File > Quick
+Terminal**. Release that shortcut in the other app, then choose the menu item
+again to retry global registration.
+
 ## Architecture
 
 The terminal engine is [`Lakr233/libghostty-spm`](https://github.com/Lakr233/libghostty-spm),

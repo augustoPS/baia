@@ -24,6 +24,7 @@ extension CommandCatalog {
         case .closeTab: #selector(AppDelegate.closeTab(_:))
         case .closeWindow: #selector(NSWindow.performClose(_:))
         case .openConfiguration: #selector(AppDelegate.showSettings(_:))
+        case .quickTerminal: #selector(AppDelegate.toggleQuickTerminal(_:))
 
         // The standard responder-chain selectors. `undo:` and `redo:` are not
         // declared on any AppKit class Swift can name, so they are spelled as

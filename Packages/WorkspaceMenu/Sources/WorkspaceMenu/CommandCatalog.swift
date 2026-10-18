@@ -85,7 +85,7 @@ public enum CommandCatalog {
     private static func target(for command: MenuCommand) -> CommandTarget {
         switch command {
         case .about, .hide, .hideOthers, .showAll, .quit,
-             .newWindow, .openConfiguration,
+             .newWindow, .openConfiguration, .quickTerminal,
              .commandPalette, .reloadProjectList, .resetSidebarSize,
              .bringAllToFront, .copyDiagnostics:
             .application
