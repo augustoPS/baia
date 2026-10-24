@@ -19,6 +19,53 @@ import Testing
         return settings
     }
 
+    @Test func builtInThemesResolveTheirOwnPaletteAndFocusColor() {
+        let expected = [
+            ("Midnight", "#12101E", "#E6E0EF", "#B8A3EE"),
+            ("Aubergine", "#1B111D", "#EEE3E9", "#D4A4D7"),
+            ("Iris", "#17151D", "#E8E4ED", "#C0B3DB"),
+            ("Obsidian", "#0F0D15", "#E9E2F2", "#C2A0F0"),
+        ]
+        for (name, background, foreground, accent) in expected {
+            let value = settings(themeName: name, backgroundHex: background)
+            let definition = SettingsDerivations.themeDefinition(from: value)
+            #expect(definition?.name == name)
+            #expect(RGB(hex: definition?.background ?? "") == RGB(hex: background))
+            #expect(RGB(hex: definition?.foreground ?? "") == RGB(hex: foreground))
+            #expect(definition?.palette.count == 16)
+            let chrome = SettingsDerivations.paneTheme(from: value)
+            #expect(chrome.foreground == RGB(hex: foreground))
+            #expect(chrome.focusedAccent == RGB(hex: accent))
+            #expect(chrome.background == RGB(hex: background))
+        }
+    }
+
+    @Test func builtInThemeKeepsAnExplicitBackgroundAndFocusChoice() {
+        var value = settings(themeName: "Obsidian", backgroundHex: "#232323")
+        value.focusAccent = .bone
+        let theme = SettingsDerivations.paneTheme(from: value)
+        #expect(theme.background == RGB(hex: "#232323"))
+        #expect(theme.focusedAccent == theme.accent(for: .bone))
+    }
+
+    @Test func builtInTerminalConfigurationsContainValidPaletteColors() {
+        for theme in BuiltInTheme.all {
+            let value = settings(themeName: theme.name, backgroundHex: theme.background)
+            let terminal = SettingsDerivations.terminalTheme(from: value)
+            for configuration in [terminal.light, terminal.dark] {
+                #expect(!configuration.rendered.contains("##"))
+                #expect(configuration.rendered.contains("palette = 5=" + theme.palette[5]!))
+                #expect(configuration.rendered.contains("selection-background = " + theme.selectionBackground))
+            }
+        }
+    }
+
+    @Test func originalGhosttyObsidianRemainsAvailable() {
+        let definition = SettingsDerivations.themeDefinition(from: settings(themeName: "Obsidian (Ghostty)"))
+        #expect(definition?.name == "Obsidian")
+        #expect(RGB(hex: definition?.background ?? "") == RGB(hex: "#283033"))
+    }
+
     @Test func resolvesAThemeThatIsInTheCatalog() {
         let definition = SettingsDerivations.themeDefinition(from: settings(themeName: "Dark Pastel"))
         #expect(definition != nil)
@@ -39,6 +86,8 @@ import Testing
         #expect(fallback?.palette == byDefault?.palette)
         #expect(fallback?.foreground == byDefault?.foreground)
         #expect(fallback?.background == byDefault?.background)
+        #expect(SettingsDerivations.paneTheme(from: settings(themeName: "no such theme")).focusedAccent
+            == SettingsDerivations.paneTheme(from: settings(themeName: Settings.defaultSettings.themeName)).focusedAccent)
     }
 
     /// The configured background wins over the theme's own, which is the whole

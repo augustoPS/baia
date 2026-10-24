@@ -72,6 +72,17 @@ not press Enter, upload files or change the clipboard. Ask the running agent to
 read those image paths when you submit your message. Only existing readable
 local files are accepted; browser image data and promised files are not handled.
 
+## Appearance
+
+Obsidian is the default theme. Settings > Appearance also offers Midnight,
+Aubergine and Iris, followed by the Ghostty theme catalog. Selecting a Baia theme
+sets its background and terminal palette together. You can then adjust the
+background independently. Pane chrome, focus and selection follow the palette.
+
+The main app uses a lavender angular b on Obsidian ink with subtle illumination.
+The development app uses the inverse, ink on lavender.
+
+
 ## Architecture
 
 The terminal engine is [`Lakr233/libghostty-spm`](https://github.com/Lakr233/libghostty-spm),

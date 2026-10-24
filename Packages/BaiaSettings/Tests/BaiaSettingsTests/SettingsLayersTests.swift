@@ -20,7 +20,9 @@ import Testing
     /// carries. The owner's `#141414` is deliberately lifted off pure black, so
     /// losing it is a visible regression that reports nothing.
     @Test func theBackgroundBelongsToTheThemeLayerBecauseTheThemeIsRenderedLast() {
-        let settings = Settings.defaultSettings
+        var settings = Settings.defaultSettings
+        settings.themeName = "Dark Pastel"
+        settings.backgroundHex = "#141414"
         #expect(keys(settings.themeOverrides) == ["background"])
         #expect(value(settings.themeOverrides, "background") == "#141414")
         #expect(!keys(settings.sessionOverrides).contains("background"))

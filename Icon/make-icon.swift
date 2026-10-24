@@ -1,200 +1,36 @@
 #!/usr/bin/env swift
+// Draws both Obsidian angular-b app icons with native AppKit and iconutil.
+// Run from the repository root: swift Icon/make-icon.swift
 //
-// Draws the legacy Release icon and the approved flat angular-b Debug icon.
-//
-//   swift Icon/make-icon.swift
-//
-// Release retains SEAM from the 2026-07-25 design pass. Debug uses the flat
-// angular b approved on 2026-10-20: a tall divider joined to a low prompt.
+// The divider and lowered prompt retain the geometry approved on 2026-10-20.
 // Baia comes from Kimbundu ribaia, a compartment made by dividers, as supplied
-// by the owner. The current identity combines that divider with terminal
-// notation; it does not draw a pane layout or a physical object.
-//
-// Everything is drawn rather than rasterised from an SVG, for two reasons. No
-// build step needs a converter that is not already on the machine, and every
-// number below is the design's own, so the file is checkable against the
-// handoff line by line rather than through an export nobody can diff.
-//
-// The coordinate space is y-down at 1024, matching how the geometry was
-// specified. `flip` is what buys that, and removing it silently mirrors the
-// whole mark vertically, which on a symmetric squircle looks fine and puts the
-// glyph's cursor above its chevron instead of below.
+// by the owner. Release uses lavender on illuminated ink; Debug inverts them.
 
 import AppKit
 import CoreGraphics
 import Foundation
 
-// MARK: - The design's constants
-
-/// The canvas every number below is expressed in.
 let canvas: CGFloat = 1024
 
-/// The same lift off pure black the terminal uses. The icon is the app's
-/// smallest self-portrait, so it starts from the surface the app is made of.
-let field = CGColor(srgbRed: 0x14 / 255, green: 0x14 / 255, blue: 0x14 / 255, alpha: 1)
+func color(_ hex: UInt32, alpha: CGFloat = 1) -> CGColor {
+    CGColor(
+        srgbRed: CGFloat((hex >> 16) & 255) / 255,
+        green: CGFloat((hex >> 8) & 255) / 255,
+        blue: CGFloat(hex & 255) / 255,
+        alpha: alpha
+    )
+}
 
-/// `foreground.blended(with: background, fraction: 0.46)`. The planks, and the
-/// prompt drawn in the empty stall.
-let plank = CGColor(srgbRed: 0x6E / 255, green: 0x6E / 255, blue: 0x6E / 255, alpha: 1)
+let ink = color(0x0F0D15)
+let lavender = color(0xC2A0F0)
 
-/// A Release stall accent, or nil to use the approved flat Debug identity.
 struct IconSpec {
     let name: String
-    let occupied: CGColor?
+    let development: Bool
 }
 
-/// The squircle, transcribed. `r = 185.4` with a control offset of 74.16, which
-/// is `k = 0.40` of the radius rather than the 0.5523 that approximates a
-/// circle: the flatter shoulder is what makes it read as a macOS icon instead of
-/// a rounded rectangle.
-func squircle() -> CGPath {
-    let path = CGMutablePath()
-    path.move(to: CGPoint(x: 285.4, y: 100))
-    path.addLine(to: CGPoint(x: 738.6, y: 100))
-    path.addCurve(
-        to: CGPoint(x: 924, y: 285.4),
-        control1: CGPoint(x: 812.76, y: 100),
-        control2: CGPoint(x: 924, y: 211.24)
-    )
-    path.addLine(to: CGPoint(x: 924, y: 738.6))
-    path.addCurve(
-        to: CGPoint(x: 738.6, y: 924),
-        control1: CGPoint(x: 924, y: 812.76),
-        control2: CGPoint(x: 812.76, y: 924)
-    )
-    path.addLine(to: CGPoint(x: 285.4, y: 924))
-    path.addCurve(
-        to: CGPoint(x: 100, y: 738.6),
-        control1: CGPoint(x: 211.24, y: 924),
-        control2: CGPoint(x: 100, y: 812.76)
-    )
-    path.addLine(to: CGPoint(x: 100, y: 285.4))
-    path.addCurve(
-        to: CGPoint(x: 285.4, y: 100),
-        control1: CGPoint(x: 100, y: 211.24),
-        control2: CGPoint(x: 211.24, y: 100)
-    )
-    path.closeSubpath()
-    return path
-}
-
-// MARK: - Drawing
-
-/// Draws the mark into `ctx`, which is expected to be 1024 units square with y
-/// running downwards.
-///
-/// - Parameter heavy: the small-size treatment. At 32 px and below the glyph is
-///   thickened to 72 and its gap shrunk to 48, so the two shapes stay apart at a
-///   size where a 56-unit stroke closes up into a smudge. The unit's right edge
-///   and its ink baseline both hold, which is what stops the mark from shifting
-///   between sizes; the chevron gives up the five units the thicker stroke needs.
-/// - Parameter occupied: the accent for this icon's occupied stall.
-func drawMark(in ctx: CGContext, heavy: Bool, occupied: CGColor) {
-    ctx.saveGState()
-    ctx.addPath(squircle())
-    ctx.clip()
-
-    ctx.setFillColor(field)
-    ctx.fill(CGRect(x: 0, y: 0, width: canvas, height: canvas))
-
-    // The occupied stall, and the plank that makes it a stall rather than an
-    // edge. Both run the full height of the art box and are cropped by the
-    // clip, so the structure reads as continuing past the frame.
-    ctx.setFillColor(occupied)
-    ctx.fill(CGRect(x: 100, y: 100, width: 206, height: 824))
-
-    ctx.setFillColor(plank)
-    ctx.fill(CGRect(x: 306, y: 100, width: 44, height: 824))
-
-    drawPrompt(in: ctx, heavy: heavy)
-    ctx.restoreGState()
-}
-
-/// A drawn `>_` rather than set type, sitting a third of the way down.
-///
-/// No font travels with the export, and the spacing becomes a number that can be
-/// tuned instead of whatever the face happened to ship. The gap is one stroke
-/// weight plus a touch, which is why it holds at both ends of the size ramp: the
-/// relationship is proportional to the drawing rather than to the canvas.
-///
-/// The upper third rather than the middle. A prompt sits at the top of a fresh
-/// terminal, so centring the glyph made the mark read as a logo where this reads
-/// as a session that has just started. It also leaves the largest empty area at
-/// the bottom right, which is where the eye leaves the icon, so the mark exhales
-/// rather than filling.
-///
-/// Both shapes share a stroke weight and an *ink* baseline at 483, which is what
-/// makes them one unit rather than two marks. Mind the cap: a butt cap on a 45°
-/// segment overshoots its endpoint by `w/2 × √½`, so the path ends at 463 and
-/// the drawn edge lands at 483, exactly where the cursor's bottom is. The path
-/// numbers are not the baseline, and aligning to them puts the chevron nearly
-/// 20 units below the line.
-///
-/// The ghost plank from the design's base variant is deliberately absent. It is
-/// a hint that more stalls sit off-frame, and it reads as a smudge behind the
-/// glyph, which is why the handoff notes it comes out on any glyph variant.
-func drawPrompt(in ctx: CGContext, heavy: Bool) {
-    // Both variants are drawn rather than scaled from one. The heavy weight
-    // closes the gap, and the chevron has to give ground for it without the
-    // unit changing width, so the two sets of coordinates are not derivable
-    // from each other.
-    let weight: CGFloat = heavy ? 72 : 56
-    let vertex = CGPoint(x: heavy ? 560 : 559, y: 375)
-    let armX: CGFloat = heavy ? 477 : 471
-    let armTopY: CGFloat = heavy ? 292 : 287
-    let armBottomY: CGFloat = heavy ? 458 : 463
-    let cursor = heavy
-        ? CGRect(x: 608, y: 411, width: 216, height: 72)
-        : CGRect(x: 623, y: 427, width: 200, height: 56)
-
-    ctx.setStrokeColor(plank)
-    ctx.setLineWidth(weight)
-    ctx.setLineCap(.butt)
-    ctx.setLineJoin(.miter)
-    ctx.beginPath()
-    ctx.move(to: CGPoint(x: armX, y: armTopY))
-    ctx.addLine(to: vertex)
-    ctx.addLine(to: CGPoint(x: armX, y: armBottomY))
-    ctx.strokePath()
-
-    ctx.setFillColor(plank)
-    ctx.fill(cursor)
-}
-
-/// One PNG at `pixels` square.
-func render(pixels: Int, occupied: CGColor) -> Data? {
-    guard let ctx = CGContext(
-        data: nil,
-        width: pixels,
-        height: pixels,
-        bitsPerComponent: 8,
-        bytesPerRow: 0,
-        space: CGColorSpace(name: CGColorSpace.sRGB)!,
-        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-    ) else { return nil }
-
-    ctx.interpolationQuality = .high
-    ctx.setAllowsAntialiasing(true)
-
-    let scale = CGFloat(pixels) / canvas
-    ctx.scaleBy(x: scale, y: scale)
-    // y-down, so every number above is the design's own.
-    ctx.translateBy(x: 0, y: canvas)
-    ctx.scaleBy(x: 1, y: -1)
-
-    drawMark(in: ctx, heavy: pixels <= 32, occupied: occupied)
-
-    guard let image = ctx.makeImage() else { return nil }
-    let rep = NSBitmapImageRep(cgImage: image)
-    rep.size = NSSize(width: pixels, height: pixels)
-    return rep.representation(using: .png, properties: [:])
-}
-
-// MARK: - Approved Debug identity (2026-10-20)
-
-/// Approved flat angular b, including the separately drawn 16px and 32px slices.
-/// Coordinates and colors match the approved renderer, with no Debug badge.
-func renderApproved(pixels: Int) -> Data? {
+/// Angular b with separately drawn 16px and 32px optical slices.
+func render(pixels: Int, development: Bool) -> Data? {
     func points(_ values: [(CGFloat, CGFloat)]) -> [CGPoint] {
         values.map { CGPoint(x: $0.0, y: $0.1) }
     }
@@ -229,18 +65,54 @@ func renderApproved(pixels: Int) -> Data? {
     ) else { return nil }
     ctx.translateBy(x: 0, y: CGFloat(pixels))
     ctx.scaleBy(x: 1, y: -1)
-    ctx.setFillColor(CGColor(srgbRed: 20/255.0, green: 25/255.0, blue: 27/255.0, alpha: 1))
-    ctx.addPath(CGPath(roundedRect: tile, cornerWidth: radius, cornerHeight: radius, transform: nil))
-    ctx.fillPath()
+    let tilePath = CGPath(roundedRect: tile, cornerWidth: radius, cornerHeight: radius, transform: nil)
+    ctx.saveGState()
+    ctx.addPath(tilePath)
+    ctx.clip()
+    ctx.setFillColor(development ? lavender : ink)
+    ctx.fill(tile)
+    // A broad, low-energy light from the upper left. Keep optical slices flat.
+    if !development, pixels > 32 {
+        let light = CGGradient(
+            colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
+            colors: [lavender.copy(alpha: 0.10)!, lavender.copy(alpha: 0)!] as CFArray,
+            locations: [0, 1]
+        )!
+        ctx.drawRadialGradient(
+            light,
+            startCenter: CGPoint(x: tile.minX, y: tile.minY), startRadius: 0,
+            endCenter: CGPoint(x: tile.minX, y: tile.minY), endRadius: tile.width * 1.25,
+            options: [.drawsAfterEndLocation]
+        )
+    }
+    ctx.restoreGState()
     let mark = CGMutablePath()
     for contour in [outer, inner] {
         mark.move(to: contour[0])
         for point in contour.dropFirst() { mark.addLine(to: point) }
         mark.closeSubpath()
     }
-    ctx.setFillColor(CGColor(srgbRed: 238/255.0, green: 234/255.0, blue: 222/255.0, alpha: 1))
+    ctx.setFillColor(development ? ink : lavender)
     ctx.addPath(mark)
     ctx.drawPath(using: .eoFill)
+    if !development, pixels > 32 {
+        // Illuminate inside the original silhouette, including its open counter.
+        ctx.saveGState()
+        ctx.addPath(mark)
+        ctx.clip(using: .evenOdd)
+        let highlight = CGGradient(
+            colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
+            colors: [color(0xEEEADF, alpha: 0.20), color(0xEEEADF, alpha: 0)] as CFArray,
+            locations: [0, 1]
+        )!
+        ctx.drawLinearGradient(
+            highlight,
+            start: CGPoint(x: tile.midX, y: tile.minY),
+            end: CGPoint(x: tile.midX, y: tile.maxY),
+            options: [.drawsBeforeStartLocation, .drawsAfterEndLocation]
+        )
+        ctx.restoreGState()
+    }
     guard let image = ctx.makeImage() else { return nil }
     return NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
 }
@@ -272,7 +144,7 @@ func writeIcon(_ spec: IconSpec) throws {
 
     for slice in slices {
         let pixels = slice.point * slice.scale
-        let rendered = spec.occupied.map { render(pixels: pixels, occupied: $0) } ?? renderApproved(pixels: pixels)
+        let rendered = render(pixels: pixels, development: spec.development)
         guard let data = rendered else {
             FileHandle.standardError.write(Data("failed to render \(pixels)px\n".utf8))
             exit(1)
@@ -301,9 +173,8 @@ func writeIcon(_ spec: IconSpec) throws {
 }
 
 let specs: [IconSpec] = [
-    IconSpec(name: "baia", occupied: CGColor(srgbRed: 0xB5 / 255, green: 0xD5 / 255, blue: 0xFF / 255, alpha: 1)),
-    // No occupied-stall color selects the approved Debug drawing.
-    IconSpec(name: "baia-dev", occupied: nil),
+    IconSpec(name: "baia", development: false),
+    IconSpec(name: "baia-dev", development: true),
 ]
 
 for spec in specs {

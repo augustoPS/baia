@@ -4,14 +4,12 @@ import Testing
 @testable import BaiaSettings
 
 @Suite struct SettingsTests {
-    @Test func defaultsReproduceTheOwnersGhosttyConfig() {
-        // Every value here is transcribed from vault/projects/ghostty/config.ghostty,
-        // the terminal baia has to feel like on a first launch. Nothing in the app
-        // would look broken if one of them drifted, which is exactly why it is
-        // pinned here rather than left to be noticed by using the app.
+    @Test func defaultsUseObsidianWithExistingTerminalMetrics() {
+        // Palette defaults follow the approved Obsidian study. Font and padding
+        // retain the existing terminal metrics.
         let defaults = Settings.defaultSettings
-        #expect(defaults.themeName == "Dark Pastel")
-        #expect(defaults.backgroundHex == "#141414")
+        #expect(defaults.themeName == "Obsidian")
+        #expect(defaults.backgroundHex == "#0f0d15")
         #expect(defaults.fontSize == 11.5)
         #expect(defaults.windowPadding == 8)
         #expect(defaults.windowPaddingBalance)

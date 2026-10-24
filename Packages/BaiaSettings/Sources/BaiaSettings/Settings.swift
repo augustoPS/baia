@@ -186,13 +186,8 @@ public struct Settings: Sendable, Equatable {
     /// worth being able to switch off.
     public var controlAllowRead: Bool
 
-    /// The owner's ghostty config, field for field, transcribed from
-    /// `vault/projects/ghostty/config.ghostty`.
-    ///
-    /// The background is lifted off pure black on purpose. The config comment
-    /// records why: pure black amplifies the wallpaper bleed through a
-    /// translucent window, which widens the perceived gap between a focused and
-    /// an unfocused window rather than narrowing it.
+    /// Obsidian is Baia's default palette. Existing configuration files retain
+    /// their explicit theme and background until the owner selects another.
     ///
     /// The blur is the boolean, Gaussian-style one. Liquid Glass, spelled
     /// `background-blur = macos-glass-clear` or `macos-glass-regular`, was tried
@@ -202,8 +197,8 @@ public struct Settings: Sendable, Equatable {
     public static let defaultSettings = Settings(
         fontFamily: nil,
         fontSize: 11.5,
-        themeName: "Dark Pastel",
-        backgroundHex: "#141414",
+        themeName: "Obsidian",
+        backgroundHex: "#0f0d15",
         // 0.42 is design v5's well value, unblocked by the wells audit
         // (2026-08-05: every repair-chain promise holds at 0.42 over both
         // bounding backdrops, all 485 themes). 0.85 before that, the owner's

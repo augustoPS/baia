@@ -135,7 +135,7 @@ targets:
         # marketing version. 2 is the first build whose bundle id is
         # `pasqualotto.baia`; build 1 was tagged before the rename and does not
         # produce the app in /Applications.
-        CURRENT_PROJECT_VERSION: "6"
+        CURRENT_PROJECT_VERSION: "7"
 
         # The commit the bundle was built from, expanded into `BAIAGitCommit` in
         # Info.plist the same way `BAIA_SUPPORT_DIRECTORY` is. Both versions

@@ -592,8 +592,8 @@ public struct SettingsStore: Sendable {
     {
       "fontFamily": null,
       "fontSize": 11.5,
-      "themeName": "Dark Pastel",
-      "backgroundHex": "#141414",
+      "themeName": "Obsidian",
+      "backgroundHex": "#0f0d15",
       "backgroundOpacity": 0.42,
       "backgroundBlur": true,
       "windowPadding": 8,

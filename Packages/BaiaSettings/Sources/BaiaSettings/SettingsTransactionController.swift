@@ -2,9 +2,10 @@ import Foundation
 
 /// The editing contract behind the Settings window.
 ///
-/// A control proposes one ``SettingsEdit``. This validates it, patches that one
-/// key into the file, takes the decoded result as the new running value, hands
-/// it to `apply`, and registers the inverse edit with the undo manager. Undo and
+/// A control proposes one ``SettingsEdit``. This validates it, patches its keys
+/// into the file, takes the decoded result as the new running value, hands it
+/// to `apply`, and registers the inverse edits with the undo manager. Selecting
+/// a built-in theme also writes its background in the same transaction. Undo and
 /// redo come back through the same path, so both the running configuration and
 /// the file move together, and an undo that cannot be written reports why
 /// instead of pretending.
@@ -33,7 +34,7 @@ public final class SettingsTransactionController {
 
     // UndoManager consumes an invocation even when persistence fails. Keep
     // failed edits for an explicit retry after the file has been repaired.
-    private var pendingHistory: [(edit: SettingsEdit, name: String)] = []
+    private var pendingHistory: [(edit: [SettingsEdit], name: String)] = []
     public var hasPendingHistory: Bool { !pendingHistory.isEmpty }
 
     @discardableResult
@@ -87,28 +88,38 @@ public final class SettingsTransactionController {
     /// validation error, so the control keeps its text and shows the reason.
     @discardableResult
     public func commit(_ edit: SettingsEdit, actionName: String) -> SettingsWriteFailure? {
-        transact(edit, actionName: actionName)
+        var edits = [edit]
+        if case let .themeName(name) = edit, let theme = BuiltInTheme.named(name) {
+            edits.append(.backgroundHex(theme.background))
+        }
+        return transact(edits, actionName: actionName)
     }
 
     private func transact(_ edit: SettingsEdit, actionName: String, notifyFailure: Bool = true) -> SettingsWriteFailure? {
-        let valid: SettingsEdit
-        switch edit.validated() {
-        case let .success(value): valid = value
-        case let .failure(error): return .validation(error)
+        transact([edit], actionName: actionName, notifyFailure: notifyFailure)
+    }
+
+    private func transact(_ edits: [SettingsEdit], actionName: String, notifyFailure: Bool = true) -> SettingsWriteFailure? {
+        var valid: [SettingsEdit] = []
+        for edit in edits {
+            switch edit.validated() {
+            case let .success(value): valid.append(value)
+            case let .failure(error): return .validation(error)
+            }
         }
 
-        switch store.patchRecordingPrevious([valid]) {
+        switch store.patchRecordingPrevious(valid) {
         case let .failure(failure):
             lastFailure = failure
             if notifyFailure { onFailure?(failure) }
             return failure
         case let .success(receipt):
             lastFailure = nil
-            let inverse = SettingsEdit.value(of: valid.key, in: receipt.previous)
+            let inverse = valid.map { SettingsEdit.value(of: $0.key, in: receipt.previous) }
             let changed = settings != receipt.result.settings
             settings = receipt.result.settings
             if changed { apply(settings) }
-            if inverse != SettingsEdit.value(of: valid.key, in: settings) {
+            if inverse != valid.map({ SettingsEdit.value(of: $0.key, in: settings) }) {
                 registerUndo(inverse, actionName: actionName)
             }
             return nil
@@ -126,7 +137,7 @@ public final class SettingsTransactionController {
     /// into, so one is opened around the registration. A window's manager
     /// groups per event and has one open already; the manager also opens one
     /// itself while undoing, which is where the redo registration lands.
-    private func registerUndo(_ inverse: SettingsEdit, actionName: String) {
+    private func registerUndo(_ inverse: [SettingsEdit], actionName: String) {
         guard let undoManager else { return }
         let opensGroup = undoManager.groupingLevel == 0 && !undoManager.groupsByEvent
         if opensGroup { undoManager.beginUndoGrouping() }

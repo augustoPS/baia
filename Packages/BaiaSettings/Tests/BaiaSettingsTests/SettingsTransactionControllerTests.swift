@@ -105,14 +105,33 @@ import Testing
 
     // MARK: - Undo and redo
 
+    @Test func builtInThemeSelectionWritesItsBackgroundAndUndoesBothFields() throws {
+        #expect(store.writeDefaultIfAbsent())
+        #expect(try store.patch([.backgroundHex("#123456")]).get().settings.backgroundHex == "#123456")
+        let controller = makeController()
+        let previousTheme = controller.settings.themeName
+        #expect(controller.commit(.themeName("Midnight"), actionName: "Theme") == nil)
+        #expect(controller.settings.backgroundHex == "#12101e")
+        #expect(store.load().settings.backgroundHex == "#12101e")
+        undoManager.undo()
+        #expect(controller.settings.themeName == previousTheme)
+        #expect(controller.settings.backgroundHex == "#123456")
+        #expect(store.load().settings.backgroundHex == "#123456")
+        undoManager.redo()
+        #expect(controller.settings.themeName == "Midnight")
+        #expect(controller.settings.backgroundHex == "#12101e")
+        #expect(controller.commit(.backgroundHex("#abcdef"), actionName: "Background") == nil)
+        #expect(controller.settings.themeOverrides.contains(TerminalOverride(key: "background", value: "#abcdef")))
+    }
+
     @Test func undoAndRedoMoveBothTheRunningValueAndTheFile() throws {
         let controller = makeController()
         #expect(store.writeDefaultIfAbsent())
         _ = controller.commit(.themeName("Midnight"), actionName: "Change Theme")
 
         undoManager.undo()
-        #expect(controller.settings.themeName == "Dark Pastel")
-        #expect(store.load().settings.themeName == "Dark Pastel")
+        #expect(controller.settings.themeName == "Obsidian")
+        #expect(store.load().settings.themeName == "Obsidian")
         #expect(undoManager.canRedo)
         #expect(undoManager.redoActionName == "Change Theme")
 
@@ -121,7 +140,7 @@ import Testing
         #expect(store.load().settings.themeName == "Midnight")
         #expect(undoManager.canUndo)
 
-        #expect(applied.map(\.themeName) == ["Midnight", "Dark Pastel", "Midnight"])
+        #expect(applied.map(\.themeName) == ["Midnight", "Obsidian", "Midnight"])
     }
 
     @Test func undoWritesProjectRootsBackWithTheTilde() throws {
@@ -243,7 +262,7 @@ import Testing
     @Test func anExternalEditToAnotherFieldSurvivesTheNextTransaction() throws {
         let controller = makeController()
         #expect(store.writeDefaultIfAbsent())
-        try String(fileText.replacingOccurrences(of: "\"backgroundHex\": \"#141414\"", with: "\"backgroundHex\": \"#abcdef\""))
+        try String(fileText.replacingOccurrences(of: "\"backgroundHex\": \"#0f0d15\"", with: "\"backgroundHex\": \"#abcdef\""))
             .write(to: store.url, atomically: true, encoding: .utf8)
 
         _ = controller.commit(.fontSize(15), actionName: "x")

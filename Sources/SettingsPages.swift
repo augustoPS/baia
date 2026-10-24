@@ -169,7 +169,10 @@ enum SettingsPages {
     /// `allThemes` and not `search("")`: the latter filters on
     /// `contains("")`, which with Foundation imported is the range-based
     /// overload and matches nothing.
-    private static let themeNames: [String] = GhosttyThemeCatalog.allThemes.map(\.name).sorted()
+    private static let themeNames: [String] = BuiltInTheme.all.map(\.name)
+        + GhosttyThemeCatalog.allThemes.map { theme in
+            theme.name == "Obsidian" ? "Obsidian (Ghostty)" : theme.name
+        }.sorted()
 
     private static func appearance(
         _ page: SettingsPageController,

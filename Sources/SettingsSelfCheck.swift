@@ -487,6 +487,23 @@
             delegate.showSettings(nil)
             check("Settings reopens key after closing over its Colors panel", window.isKeyWindow)
             check("reopening Settings does not bring the Colors panel back", !colorsPanelIsVisible())
+
+            // Exercise every new preset through the real Settings transaction
+            // and live pane update path, including its paired background.
+            for theme in BuiltInTheme.all {
+                let error = controller.commit(.themeName(theme.name), actionName: "Change Theme")
+                check("\(theme.name): commits theme and background together",
+                      error == nil && center.settings.themeName == theme.name
+                          && center.settings.backgroundHex == theme.background
+                          && store.load().settings == center.settings)
+                check("\(theme.name): live pane receives terminal and chrome palettes",
+                      pane != nil && pane?.lastAppliedAppearance == center.paneAppearance
+                          && center.paneTheme.foreground == RGB(hex: theme.foreground)
+                          && center.paneTheme.background == RGB(hex: theme.background))
+                check("\(theme.name): terminal config contains all sixteen palette slots",
+                      center.paneAppearance.terminalTheme.dark.rendered
+                          .split(separator: "\n").filter { $0.hasPrefix("palette = ") }.count == 16)
+            }
         }
 
         // MARK: - Colors panel helpers

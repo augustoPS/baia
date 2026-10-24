@@ -10,9 +10,8 @@ import Foundation
 /// layer is not a style question: it is dropped in silence, and the only way to
 /// notice is to compare two screenshots.
 ///
-/// ``Settings/terminalOverrides`` stays as it is. It remains the value the
-/// "reproduces the owner's ghostty config" test compares against, and it is the
-/// single list a reader should look at to see what baia asks the terminal for.
+/// ``Settings/terminalOverrides`` remains the complete ordered list of settings
+/// overrides. Palette data is supplied by the resolved terminal theme.
 public extension Settings {
     /// Everything the theme does not touch, applied through
     /// `TerminalController.setTerminalConfiguration`.
@@ -23,12 +22,9 @@ public extension Settings {
     /// The keys that have to be applied on top of the resolved theme, folded into
     /// the `TerminalTheme` before it is handed to `setTheme`.
     ///
-    /// One key today. The background is here because the owner's `#141414` is
-    /// deliberately lifted off pure black, and every theme carries a background
-    /// of its own that would otherwise replace it. The config comment records the
-    /// reason: pure black amplifies wallpaper bleed through a translucent window,
-    /// which widens the perceived gap between a focused and an unfocused window
-    /// rather than narrowing it.
+    /// The configured background is applied last so an explicit background edit
+    /// survives theme resolution. Selecting a built-in theme through Settings
+    /// writes its own background as part of that transaction.
     var themeOverrides: [TerminalOverride] {
         terminalOverrides.filter { $0.key == "background" }
     }

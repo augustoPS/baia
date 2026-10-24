@@ -50,8 +50,24 @@ public enum SettingsDerivations {
     /// libghostty would do on its own, so a typo degrades to the terminal the
     /// owner already runs.
     public static func themeDefinition(from settings: Settings) -> GhosttyThemeDefinition? {
-        GhosttyThemeCatalog.theme(named: settings.themeName)
-            ?? GhosttyThemeCatalog.theme(named: Settings.defaultSettings.themeName)
+        if settings.themeName == "Obsidian (Ghostty)" {
+            return GhosttyThemeCatalog.theme(named: "Obsidian")
+        }
+        if let theme = BuiltInTheme.named(settings.themeName)
+            ?? (GhosttyThemeCatalog.theme(named: settings.themeName) == nil
+                ? BuiltInTheme.named(Settings.defaultSettings.themeName) : nil) {
+            return GhosttyThemeDefinition(
+                name: theme.name,
+                background: theme.background,
+                foreground: theme.foreground,
+                cursorColor: theme.cursorColor,
+                cursorText: theme.cursorText,
+                selectionBackground: theme.selectionBackground,
+                selectionForeground: theme.selectionForeground,
+                palette: theme.palette.mapValues { String($0.dropFirst()) }
+            )
+        }
+        return GhosttyThemeCatalog.theme(named: settings.themeName)
     }
 
     /// The terminal theme, with the configured background folded in on top.
@@ -134,6 +150,12 @@ public enum SettingsDerivations {
             palette: definition.palette,
             focusAccent: settings.focusAccent
         )
+        if settings.focusAccent == .accent,
+           settings.themeName != "Obsidian (Ghostty)",
+           let builtIn = BuiltInTheme.named(definition.name),
+           let accent = RGB(hex: builtIn.cursorColor) {
+            theme.focusedAccent = accent
+        }
         theme.adjustments = adjustments
         return theme
     }

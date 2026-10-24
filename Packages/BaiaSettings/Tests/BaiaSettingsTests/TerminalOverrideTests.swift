@@ -4,14 +4,17 @@ import Testing
 @testable import BaiaSettings
 
 @Suite struct TerminalOverrideTests {
-    @Test func defaultsEmitTheGhosttyConfigTheOwnerAlreadyRuns() {
+    @Test func legacySettingsStillEmitTheOriginalGhosttyConfig() {
         // Key names and value spellings are both transcribed from
         // vault/projects/ghostty/config.ghostty. ghostty ignores a key it does not
         // recognise and gives no diagnostic for it, so a misspelled key here is a
         // setting that appears to work and does nothing, invisible in every other
         // test in this package. Comparing the whole list also pins the order the
         // builder receives them in.
-        #expect(Settings.defaultSettings.terminalOverrides == [
+        var settings = Settings.defaultSettings
+        settings.themeName = "Dark Pastel"
+        settings.backgroundHex = "#141414"
+        #expect(settings.terminalOverrides == [
             TerminalOverride(key: "theme", value: "Dark Pastel"),
             TerminalOverride(key: "background", value: "#141414"),
             TerminalOverride(key: "background-opacity", value: "0.42"),
