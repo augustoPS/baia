@@ -597,7 +597,7 @@ final class TerminalPaneController: NSViewController {
         controller.setTheme(terminalTheme)
     }
 
-    private lazy var terminalView = TerminalView(
+    private lazy var terminalView = TerminalFileDropView(
         frame: NSRect(x: 0, y: 0, width: 1024, height: 680)
     )
 

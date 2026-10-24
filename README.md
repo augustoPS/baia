@@ -66,6 +66,12 @@ again. If Ghostty or another app already owns the shortcut, use **File > Quick
 Terminal**. Release that shortcut in the other app, then choose the menu item
 again to retry global registration.
 
+Drop image files from Finder onto a terminal pane to insert their quoted paths
+at the current input position. Multiple files keep their drop order. Baia does
+not press Enter, upload files or change the clipboard. Ask the running agent to
+read those image paths when you submit your message. Only existing readable
+local files are accepted; browser image data and promised files are not handled.
+
 ## Architecture
 
 The terminal engine is [`Lakr233/libghostty-spm`](https://github.com/Lakr233/libghostty-spm),

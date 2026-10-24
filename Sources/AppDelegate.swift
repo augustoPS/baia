@@ -396,6 +396,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             SessionSelfCheck.runIfRequested(in: self)
             WindowGroupSelfCheck.runIfRequested(in: self)
             CloseSelfCheck.runIfRequested(in: self)
+            FileDropSelfCheck.runIfRequested(in: self)
         #endif
         scheduleSave()
     }
