@@ -1,14 +1,14 @@
 #!/usr/bin/env swift
 //
-// Draws baia's app icon and writes an `.icns` per configuration.
+// Draws the legacy Release icon and the approved flat angular-b Debug icon.
 //
 //   swift Icon/make-icon.swift
 //
-// The mark is direction C, SEAM, from the 2026-07-25 design pass: one plank and
-// the two spaces it makes. A *baia* is a stall, the compartment planks make in a
-// stable so each animal gets its own space, which is the product in one word.
-// An earlier attempt drew the pane tree literally and read as a bar chart; a
-// diagram of a layout is not a mark, so this one is an object.
+// Release retains SEAM from the 2026-07-25 design pass. Debug uses the flat
+// angular b approved on 2026-10-20: a tall divider joined to a low prompt.
+// Baia comes from Kimbundu ribaia, a compartment made by dividers, as supplied
+// by the owner. The current identity combines that divider with terminal
+// notation; it does not draw a pane layout or a physical object.
 //
 // Everything is drawn rather than rasterised from an SVG, for two reasons. No
 // build step needs a converter that is not already on the machine, and every
@@ -37,12 +37,10 @@ let field = CGColor(srgbRed: 0x14 / 255, green: 0x14 / 255, blue: 0x14 / 255, al
 /// prompt drawn in the empty stall.
 let plank = CGColor(srgbRed: 0x6E / 255, green: 0x6E / 255, blue: 0x6E / 255, alpha: 1)
 
-/// One rendered icon: a name (`Icon/<name>.icns`) and the accent that fills the
-/// occupied stall. `focusedAccent`. One per icon, never two: the occupied stall
-/// is the only thing here with a hue, which is the same rule the footer follows.
+/// A Release stall accent, or nil to use the approved flat Debug identity.
 struct IconSpec {
     let name: String
-    let occupied: CGColor
+    let occupied: CGColor?
 }
 
 /// The squircle, transcribed. `r = 185.4` with a control offset of 74.16, which
@@ -192,6 +190,61 @@ func render(pixels: Int, occupied: CGColor) -> Data? {
     return rep.representation(using: .png, properties: [:])
 }
 
+// MARK: - Approved Debug identity (2026-10-20)
+
+/// Approved flat angular b, including the separately drawn 16px and 32px slices.
+/// Coordinates and colors match the approved renderer, with no Debug badge.
+func renderApproved(pixels: Int) -> Data? {
+    func points(_ values: [(CGFloat, CGFloat)]) -> [CGPoint] {
+        values.map { CGPoint(x: $0.0, y: $0.1) }
+    }
+    let tile: CGRect
+    let radius: CGFloat
+    let outer: [CGPoint]
+    let inner: [CGPoint]
+    if pixels == 16 {
+        tile = CGRect(x: 1.5, y: 1.5, width: 13, height: 13)
+        radius = 2.9
+        outer = points([(6,5),(7,5),(7,8),(10,9.65),(10,10.35),(7,12),(6,12)])
+        inner = points([(7,9),(7,11),(9,10)])
+    } else if pixels == 32 {
+        tile = CGRect(x: 3, y: 3, width: 26, height: 26)
+        radius = 5.7
+        outer = points([(12,10),(13.5,10),(13.5,17),(20,19.75),(20,20.75),(13.5,23.5),(12,23.5)])
+        inner = points([(13.5,18.8),(13.5,21.7),(16.4,20.25)])
+    } else {
+        let scale = CGFloat(pixels) / canvas
+        func convert(_ p: CGPoint) -> CGPoint {
+            CGPoint(x: (100 + p.x * 0.824) * scale, y: (100 + p.y * 0.824) * scale)
+        }
+        tile = CGRect(x: 100 * scale, y: 100 * scale, width: 824 * scale, height: 824 * scale)
+        radius = 181 * scale
+        outer = points([(360,260),(404,260),(404,540),(644,642),(644,678),(404,780),(360,780)]).map(convert)
+        inner = points([(404,600),(404,720),(524,660)]).map(convert)
+    }
+    guard let ctx = CGContext(
+        data: nil, width: pixels, height: pixels, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpace(name: CGColorSpace.sRGB)!,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    ) else { return nil }
+    ctx.translateBy(x: 0, y: CGFloat(pixels))
+    ctx.scaleBy(x: 1, y: -1)
+    ctx.setFillColor(CGColor(srgbRed: 20/255.0, green: 25/255.0, blue: 27/255.0, alpha: 1))
+    ctx.addPath(CGPath(roundedRect: tile, cornerWidth: radius, cornerHeight: radius, transform: nil))
+    ctx.fillPath()
+    let mark = CGMutablePath()
+    for contour in [outer, inner] {
+        mark.move(to: contour[0])
+        for point in contour.dropFirst() { mark.addLine(to: point) }
+        mark.closeSubpath()
+    }
+    ctx.setFillColor(CGColor(srgbRed: 238/255.0, green: 234/255.0, blue: 222/255.0, alpha: 1))
+    ctx.addPath(mark)
+    ctx.drawPath(using: .eoFill)
+    guard let image = ctx.makeImage() else { return nil }
+    return NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
+}
+
 // MARK: - Writing the iconset
 
 let root = URL(filePath: FileManager.default.currentDirectoryPath)
@@ -219,7 +272,8 @@ func writeIcon(_ spec: IconSpec) throws {
 
     for slice in slices {
         let pixels = slice.point * slice.scale
-        guard let data = render(pixels: pixels, occupied: spec.occupied) else {
+        let rendered = spec.occupied.map { render(pixels: pixels, occupied: $0) } ?? renderApproved(pixels: pixels)
+        guard let data = rendered else {
             FileHandle.standardError.write(Data("failed to render \(pixels)px\n".utf8))
             exit(1)
         }
@@ -248,9 +302,8 @@ func writeIcon(_ spec: IconSpec) throws {
 
 let specs: [IconSpec] = [
     IconSpec(name: "baia", occupied: CGColor(srgbRed: 0xB5 / 255, green: 0xD5 / 255, blue: 0xFF / 255, alpha: 1)),
-    // Midnight purple, a starting point rather than a finding: change this one
-    // constant if it reads badly at 32 pt in the Dock.
-    IconSpec(name: "baia-dev", occupied: CGColor(srgbRed: 0x6B / 255, green: 0x3F / 255, blue: 0xA0 / 255, alpha: 1)),
+    // No occupied-stall color selects the approved Debug drawing.
+    IconSpec(name: "baia-dev", occupied: nil),
 ]
 
 for spec in specs {
